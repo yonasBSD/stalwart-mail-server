@@ -46,7 +46,7 @@ const SERVICE: &str = include_str!("../../../resources/systemd/stalwart.mail.pli
 
 #[cfg(target_os = "linux")]
 const ACCOUNT_NAME: &str = "stalwart-mail";
-#[cfg(target_os = "macos")]
+#[cfg(not(target_os = "linux"))]
 const ACCOUNT_NAME: &str = "_stalwart-mail";
 
 #[cfg(not(target_env = "msvc"))]
