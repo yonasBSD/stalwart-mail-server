@@ -31,7 +31,7 @@ jobs:
             pkg update
             pkg install -y rust
 
-      - name: Install FoundationDB (freebsd-amd64)
+      - name: Install FoundationDB
         uses: vmactions/freebsd-vm@v1
         with:
           usesh: true
