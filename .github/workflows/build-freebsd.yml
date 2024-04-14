@@ -46,7 +46,7 @@ jobs:
             ext=""
 
             build() {
-              ${{matrix.env}} cargo build --release --target "${target}" "$@"
+              ${{matrix.env}} cargo build --release "$@"
             }
 
             artifact() {
