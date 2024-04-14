@@ -37,8 +37,8 @@ jobs:
 
             pkg update
             pkg install -y rust foundationdb
-            echo "USE_FOUNDATIONDB=1" >> "$GITHUB_ENV"
-      
+            echo "USE_FOUNDATIONDB=1" >> "$GITHUB_ENV" ; USE_FOUNDATIONDB=1
+                  
             target="${{matrix.target}}"
           
             root="${PWD}"
@@ -46,7 +46,7 @@ jobs:
             ext=""
 
             build() {
-              ${{matrix.env}} cargo build --release "$@"
+              ${{matrix.env}} RUSTFLAGS="-L /usr/local/lib/" cargo build --release "$@"
             }
 
             artifact() {
