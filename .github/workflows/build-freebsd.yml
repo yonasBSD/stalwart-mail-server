@@ -26,16 +26,17 @@ jobs:
       - name: Install Dependencies (FreeBSD)
         uses: vmactions/freebsd-vm@v1
         shell: sh
-        run: |
-          pkg update
-          pkg install -y rust
+        with:
+          run: |
+            pkg update
+            pkg install -y rust
 
       - name: Install FoundationDB (freebsd-amd64)
         uses: vmactions/freebsd-vm@v1
-        if: matrix.target == 'freebsd-amd64'
-        run: |
-          pkg install -y foundationdb
-          echo "USE_FOUNDATIONDB=1" >> "$GITHUB_ENV"
+        with:
+          run: |
+            pkg install -y foundationdb
+            echo "USE_FOUNDATIONDB=1" >> "$GITHUB_ENV"
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
@@ -45,37 +46,38 @@ jobs:
       - name: Build
         uses: vmactions/freebsd-vm@v1
         shell: sh
-        run: |
-          set -eux
+        with:
+          run: |
+            set -eux
 
-          target="${{matrix.target}}"
+            target="${{matrix.target}}"
           
-          root="${PWD}"
-          mkdir artifacts archives
-          ext=""
+            root="${PWD}"
+            mkdir artifacts archives
+            ext=""
 
-          build() {
-            ${{matrix.env}} cargo build --release --target "${target}" "$@"
-          }
+            build() {
+              ${{matrix.env}} cargo build --release --target "${target}" "$@"
+            }
 
-          artifact() {
-            local file="${1}${ext}"
-            local name="${root}/archives/${2:-$1}-${target}"
-            tar czvf "${name}.tar.gz" "${file}"
-            mv "${file}" "${root}/artifacts/${2:-$1}"
-          }
+            artifact() {
+              local file="${1}${ext}"
+              local name="${root}/archives/${2:-$1}-${target}"
+              tar czvf "${name}.tar.gz" "${file}"
+              mv "${file}" "${root}/artifacts/${2:-$1}"
+            }
 
-          mkdir -p "${root}/target/${target}/release" && cd "$_"
+            mkdir -p "${root}/target/${target}/release" && cd "$_"
 
-          if [ "${USE_FOUNDATIONDB:-0}" = 1 ]; then
-            build -p mail-server --no-default-features --features "foundationdb elastic s3 redis"
-            artifact stalwart-mail stalwart-mail-foundationdb
-          fi
+            if [ "${USE_FOUNDATIONDB:-0}" = 1 ]; then
+              build -p mail-server --no-default-features --features "foundationdb elastic s3 redis"
+              artifact stalwart-mail stalwart-mail-foundationdb
+            fi
 
-          build -p mail-server -p stalwart-cli
+            build -p mail-server -p stalwart-cli
 
-          artifact stalwart-mail
-          artifact stalwart-cli
+            artifact stalwart-mail
+            artifact stalwart-cli
 
       - name: Upload Archives
         uses: actions/upload-artifact@v3
