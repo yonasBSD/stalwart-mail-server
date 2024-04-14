@@ -18,19 +18,20 @@ jobs:
         include:
           - target: freebsd-amd64
             host_os: ubuntu-latest
-            uses: vmactions/freebsd-vm@v1
          
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Install Dependencies (FreeBSD)
+        uses: vmactions/freebsd-vm@v1
         shell: sh
         run: |
           pkg update
           pkg install -y rust
 
       - name: Install FoundationDB (freebsd-amd64)
+        uses: vmactions/freebsd-vm@v1
         if: matrix.target == 'freebsd-amd64'
         run: |
           pkg install -y foundationdb
@@ -42,13 +43,13 @@ jobs:
           key: ${{matrix.host_os}}-${{matrix.target}}-mail
 
       - name: Build
+        uses: vmactions/freebsd-vm@v1
         shell: sh
         run: |
           set -eux
 
           target="${{matrix.target}}"
-          rustup target add "${target}"
-
+          
           root="${PWD}"
           mkdir artifacts archives
           ext=""
