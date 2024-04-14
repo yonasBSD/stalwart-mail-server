@@ -1,0 +1,113 @@
+name: Build
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    tags: ["v*.*.*"]
+
+jobs:
+  build:
+    name: Build / ${{matrix.target}}
+
+    runs-on: ${{matrix.host_os}}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: freebsd-amd64
+            host_os: ubuntu-latest
+            uses: vmactions/freebsd-vm@v1
+         
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies (FreeBSD)
+        shell: sh
+        run: |
+          pkg update
+          pkg install -y rust
+
+      - name: Install FoundationDB (freebsd-amd64)
+        if: matrix.target == 'freebsd-amd64'
+        run: |
+          pkg install -y foundationdb
+          echo "USE_FOUNDATIONDB=1" >> "$GITHUB_ENV"
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{matrix.host_os}}-${{matrix.target}}-mail
+
+      - name: Build
+        shell: sh
+        run: |
+          set -eux
+
+          target="${{matrix.target}}"
+          rustup target add "${target}"
+
+          root="${PWD}"
+          mkdir artifacts archives
+          ext=""
+
+          build() {
+            ${{matrix.env}} cargo build --release --target "${target}" "$@"
+          }
+
+          artifact() {
+            local file="${1}${ext}"
+            local name="${root}/archives/${2:-$1}-${target}"
+            tar czvf "${name}.tar.gz" "${file}"
+            mv "${file}" "${root}/artifacts/${2:-$1}"
+          }
+
+          mkdir -p "${root}/target/${target}/release" && cd "$_"
+
+          if [ "${USE_FOUNDATIONDB:-0}" = 1 ]; then
+            build -p mail-server --no-default-features --features "foundationdb elastic s3 redis"
+            artifact stalwart-mail stalwart-mail-foundationdb
+          fi
+
+          build -p mail-server -p stalwart-cli
+
+          artifact stalwart-mail
+          artifact stalwart-cli
+
+      - name: Upload Archives
+        uses: actions/upload-artifact@v3
+        with:
+          name: archives
+          path: ./archives
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{matrix.target}}
+          path: ./artifacts
+
+  release:
+    name: Release
+
+    if: github.event_name == 'push'
+    needs: build
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download Artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: archives
+          path: ./archives
+
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ./archives/*
+          prerelease: ${{!startsWith(github.ref, 'refs/tags/') == true && true || null}}
+          tag_name: ${{!startsWith(github.ref, 'refs/tags/') == true && 'nightly' || null}}
