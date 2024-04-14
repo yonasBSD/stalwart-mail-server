@@ -25,8 +25,8 @@ jobs:
 
       - name: Install Dependencies (FreeBSD)
         uses: vmactions/freebsd-vm@v1
-        shell: sh
         with:
+          usesh: true
           run: |
             pkg update
             pkg install -y rust
@@ -34,6 +34,7 @@ jobs:
       - name: Install FoundationDB (freebsd-amd64)
         uses: vmactions/freebsd-vm@v1
         with:
+          usesh: true
           run: |
             pkg install -y foundationdb
             echo "USE_FOUNDATIONDB=1" >> "$GITHUB_ENV"
@@ -45,8 +46,8 @@ jobs:
 
       - name: Build
         uses: vmactions/freebsd-vm@v1
-        shell: sh
         with:
+          usesh: true
           run: |
             set -eux
 
