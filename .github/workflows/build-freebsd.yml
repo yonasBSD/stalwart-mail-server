@@ -23,34 +23,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Dependencies (FreeBSD)
-        uses: vmactions/freebsd-vm@v1
-        with:
-          usesh: true
-          run: |
-            pkg update
-            pkg install -y rust
-
-      - name: Install FoundationDB
-        uses: vmactions/freebsd-vm@v1
-        with:
-          usesh: true
-          run: |
-            pkg install -y foundationdb
-            echo "USE_FOUNDATIONDB=1" >> "$GITHUB_ENV"
-
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
           key: ${{matrix.host_os}}-${{matrix.target}}-mail
 
-      - name: Build
+      - name: Install Dependencies (FreeBSD)
         uses: vmactions/freebsd-vm@v1
         with:
           usesh: true
           run: |
             set -eux
 
+            pkg update
+            pkg install -y rust foundationdb
+            echo "USE_FOUNDATIONDB=1" >> "$GITHUB_ENV"
+      
             target="${{matrix.target}}"
           
             root="${PWD}"
