@@ -28,7 +28,7 @@ jobs:
         with:
           key: ${{matrix.host_os}}-${{matrix.target}}-mail
 
-      - name: Install Dependencies (FreeBSD)
+      - name: Install Dependencies and Build
         uses: vmactions/freebsd-vm@v1
         with:
           usesh: true
