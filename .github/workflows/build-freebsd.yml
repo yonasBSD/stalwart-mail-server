@@ -16,7 +16,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - target: freebsd-amd64
+          - target: x86_64-unknown-freebsd
             host_os: ubuntu-latest
          
     steps:
