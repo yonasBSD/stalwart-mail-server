@@ -36,7 +36,7 @@ jobs:
             set -eux
 
             pkg update
-            pkg install -y rust foundationdb llvm17-lite
+            pkg install -y gmake rust llvm17-lite foundationdb
             echo "USE_FOUNDATIONDB=1" >> "$GITHUB_ENV" ; USE_FOUNDATIONDB=1
                   
             target="${{matrix.target}}"
