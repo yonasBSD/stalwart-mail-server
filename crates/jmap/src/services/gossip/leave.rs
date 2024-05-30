@@ -21,47 +21,38 @@
  * for more details.
 */
 
-use std::sync::atomic::Ordering;
+use crate::services::gossip::State;
 
-use tokio::sync::oneshot;
+use super::request::Request;
+use super::{Gossiper, PeerStatus};
 
-use super::SMTP;
-
-impl SMTP {
-    pub async fn spawn_worker<U, V>(&self, f: U) -> Option<V>
-    where
-        U: FnOnce() -> V + Send + 'static,
-        V: Sync + Send + 'static,
-    {
-        let (tx, rx) = oneshot::channel();
-
-        self.inner.worker_pool.spawn(move || {
-            tx.send(f()).ok();
-        });
-
-        match rx.await {
-            Ok(result) => Some(result),
-            Err(err) => {
-                tracing::warn!(
-                    context = "worker-pool",
-                    event = "error",
-                    reason = %err,
-                );
-                None
+impl Gossiper {
+    pub async fn broadcast_leave(&self) {
+        let mut status: Vec<PeerStatus> = Vec::with_capacity(self.peers.len() + 1);
+        status.push(self.into());
+        for peer in &self.peers {
+            if !peer.is_offline() {
+                self.send_gossip(peer.addr, Request::Leave(status.clone()))
+                    .await;
             }
         }
     }
 
-    fn cleanup(&self) {
-        for throttle in [&self.inner.session_throttle, &self.inner.queue_throttle] {
-            throttle.retain(|_, v| v.concurrent.load(Ordering::Relaxed) > 0);
-        }
-    }
+    pub async fn handle_leave(&mut self, peers: Vec<PeerStatus>) {
+        if let Some(peer) = peers.first() {
+            for local_peer in self.peers.iter_mut() {
+                if local_peer.addr == peer.addr {
+                    tracing::debug!("Peer {} is leaving the cluster.", local_peer.addr);
 
-    pub fn spawn_cleanup(&self) {
-        let core = self.clone();
-        self.inner.worker_pool.spawn(move || {
-            core.cleanup();
-        });
+                    local_peer.state = State::Left;
+                    local_peer.epoch = peer.epoch;
+
+                    // Reload
+                    self.request_reload();
+
+                    break;
+                }
+            }
+        }
     }
 }

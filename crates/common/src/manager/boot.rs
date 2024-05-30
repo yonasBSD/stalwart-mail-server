@@ -37,13 +37,12 @@ use utils::{
 
 use crate::{
     config::{server::Servers, tracers::Tracers},
-    manager::SPAMFILTER_URL,
     Core, SharedCore,
 };
 
 use super::{
     config::{ConfigManager, Patterns},
-    download_resource, WEBADMIN_KEY, WEBADMIN_URL,
+    WEBADMIN_KEY,
 };
 
 pub struct BootManager {
@@ -53,43 +52,88 @@ pub struct BootManager {
     pub guards: Option<Vec<WorkerGuard>>,
 }
 
+const HELP: &str = r#"Stalwart Mail Server
+
+Usage: stalwart-mail [OPTIONS]
+
+Options:
+  -c, --config <PATH>              Start server with the specified configuration file
+  -e, --export <PATH>              Export all store data to a specific path
+  -i, --import <PATH>              Import store data from a specific path
+  -I, --init <PATH>                Initialize a new server at a specific path
+  -h, --help                       Print help
+  -V, --version                    Print version
+"#;
+
+#[derive(PartialEq, Eq)]
+enum ImportExport {
+    Export(PathBuf),
+    Import(PathBuf),
+    None,
+}
+
 impl BootManager {
     pub async fn init() -> Self {
         let mut config_path = std::env::var("CONFIG_PATH").ok();
+        let mut import_export = ImportExport::None;
 
         if config_path.is_none() {
             let mut args = std::env::args().skip(1);
 
-            if let Some(arg) = args
-                .next()
-                .and_then(|arg| arg.strip_prefix("--").map(|arg| arg.to_string()))
-            {
+            while let Some(arg) = args.next().and_then(|arg| {
+                arg.strip_prefix("--")
+                    .or_else(|| arg.strip_prefix('-'))
+                    .map(|arg| arg.to_string())
+            }) {
                 let (key, value) = if let Some((key, value)) = arg.split_once('=') {
-                    (key.to_string(), value.trim().to_string())
-                } else if let Some(value) = args.next() {
-                    (arg, value)
+                    (key.to_string(), Some(value.trim().to_string()))
                 } else {
-                    failed(&format!("Invalid command line argument: {arg}"));
+                    (arg, args.next())
                 };
 
-                match key.as_str() {
-                    "config" => {
+                match (key.as_str(), value) {
+                    ("help" | "h", _) => {
+                        eprintln!("{HELP}");
+                        std::process::exit(0);
+                    }
+                    ("version" | "V", _) => {
+                        println!("{}", env!("CARGO_PKG_VERSION"));
+                        std::process::exit(0);
+                    }
+                    ("config" | "c", Some(value)) => {
                         config_path = Some(value);
                     }
-                    "init" => {
+                    ("init" | "I", Some(value)) => {
                         quickstart(value);
                         std::process::exit(0);
                     }
-                    _ => {
-                        failed(&format!("Invalid command line argument: {key}"));
+                    ("export" | "e", Some(value)) => {
+                        import_export = ImportExport::Export(value.into());
                     }
+                    ("import" | "i", Some(value)) => {
+                        import_export = ImportExport::Import(value.into());
+                    }
+                    (_, None) => {
+                        failed(&format!("Unrecognized command '{key}', try '--help'."));
+                    }
+                    (_, Some(_)) => failed(&format!(
+                        "Missing value for argument '{key}', try '--help'."
+                    )),
                 }
+            }
+
+            if config_path.is_none() {
+                if import_export == ImportExport::None {
+                    eprintln!("{HELP}");
+                } else {
+                    eprintln!("Missing '--config' argument for import/export.")
+                }
+                std::process::exit(0);
             }
         }
 
         // Read main configuration file
-        let cfg_local_path =
-            PathBuf::from(config_path.failed("Missing parameter --config=<path-to-config>."));
+        let cfg_local_path = PathBuf::from(config_path.unwrap());
         let mut config = Config::default();
         match std::fs::read_to_string(&cfg_local_path) {
             Ok(value) => {
@@ -101,14 +145,17 @@ impl BootManager {
         }
         let cfg_local = config.keys.clone();
 
-        // Resolve macros
-        config.resolve_macros().await;
+        // Resolve environment macros
+        config.resolve_macros(&["env"]).await;
 
         // Parser servers
         let mut servers = Servers::parse(&mut config);
 
         // Bind ports and drop privileges
         servers.bind_and_drop_priv(&mut config);
+
+        // Resolve file and configuration macros
+        config.resolve_macros(&["file", "cfg"]).await;
 
         // Load stores
         let mut stores = Stores::parse(&mut config).await;
@@ -135,146 +182,185 @@ impl BootManager {
 
         // Enable tracing
         let guards = Tracers::parse(&mut config).enable(&mut config);
-        tracing::info!(
-            "Starting Stalwart Mail Server v{}...",
-            env!("CARGO_PKG_VERSION")
-        );
 
-        // Add hostname lookup if missing
-        let mut insert_keys = Vec::new();
-        if config
-            .value("lookup.default.hostname")
-            .filter(|v| !v.is_empty())
-            .is_none()
-        {
-            insert_keys.push(ConfigKey::from((
-                "lookup.default.hostname",
-                hostname::get()
-                    .map(|v| v.to_string_lossy().into_owned())
-                    .unwrap_or_else(|_| "localhost".to_string()),
-            )));
-        }
+        match import_export {
+            ImportExport::None => {
+                tracing::info!(
+                    "Starting Stalwart Mail Server v{}...",
+                    env!("CARGO_PKG_VERSION")
+                );
 
-        // Generate an OAuth key if missing
-        if config
-            .value("oauth.key")
-            .filter(|v| !v.is_empty())
-            .is_none()
-        {
-            insert_keys.push(ConfigKey::from((
-                "oauth.key",
-                thread_rng()
-                    .sample_iter(Alphanumeric)
-                    .take(64)
-                    .map(char::from)
-                    .collect::<String>(),
-            )));
-        }
-
-        // Download SPAM filters if missing
-        if config
-            .value("version.spam-filter")
-            .filter(|v| !v.is_empty())
-            .is_none()
-        {
-            match manager.fetch_external_config(SPAMFILTER_URL).await {
-                Ok(external_config) => {
-                    tracing::info!(
-                        context = "config",
-                        event = "import",
-                        url = SPAMFILTER_URL,
-                        version = external_config.version,
-                        "Imported spam filter rules"
-                    );
-                    insert_keys.extend(external_config.keys);
+                // Add hostname lookup if missing
+                let mut insert_keys = Vec::new();
+                if config
+                    .value("lookup.default.hostname")
+                    .filter(|v| !v.is_empty())
+                    .is_none()
+                {
+                    insert_keys.push(ConfigKey::from((
+                        "lookup.default.hostname",
+                        hostname::get()
+                            .map(|v| v.to_string_lossy().into_owned())
+                            .unwrap_or_else(|_| "localhost".to_string()),
+                    )));
                 }
-                Err(err) => {
-                    config.new_build_error("*", format!("Failed to fetch spam filter: {err}"));
+
+                // Generate an OAuth key if missing
+                if config
+                    .value("oauth.key")
+                    .filter(|v| !v.is_empty())
+                    .is_none()
+                {
+                    insert_keys.push(ConfigKey::from((
+                        "oauth.key",
+                        thread_rng()
+                            .sample_iter(Alphanumeric)
+                            .take(64)
+                            .map(char::from)
+                            .collect::<String>(),
+                    )));
                 }
-            }
 
-            // Add default settings
-            for key in [
-                ("queue.quota.size.messages", "100000"),
-                ("queue.quota.size.size", "10737418240"),
-                ("queue.quota.size.enable", "true"),
-                ("queue.throttle.rcpt.key", "rcpt_domain"),
-                ("queue.throttle.rcpt.concurrency", "5"),
-                ("queue.throttle.rcpt.enable", "true"),
-                ("session.throttle.ip.key", "remote_ip"),
-                ("session.throttle.ip.concurrency", "5"),
-                ("session.throttle.ip.enable", "true"),
-                ("session.throttle.sender.key.0", "sender_domain"),
-                ("session.throttle.sender.key.1", "rcpt"),
-                ("session.throttle.sender.rate", "25/1h"),
-                ("session.throttle.sender.enable", "true"),
-                ("report.analysis.addresses", "postmaster@*"),
-            ] {
-                insert_keys.push(ConfigKey::from(key));
-            }
-        }
+                // Generate a Cluster encryption key if missing
+                if config
+                    .value("cluster.key")
+                    .filter(|v| !v.is_empty())
+                    .is_none()
+                {
+                    insert_keys.push(ConfigKey::from((
+                        "cluster.key",
+                        thread_rng()
+                            .sample_iter(Alphanumeric)
+                            .take(64)
+                            .map(char::from)
+                            .collect::<String>(),
+                    )));
+                }
 
-        // Download webadmin if missing
-        if let Some(blob_store) = config
-            .value("storage.blob")
-            .and_then(|id| stores.blob_stores.get(id))
-        {
-            match blob_store.get_blob(WEBADMIN_KEY, 0..usize::MAX).await {
-                Ok(Some(_)) => (),
-                Ok(None) => match download_resource(WEBADMIN_URL).await {
-                    Ok(bytes) => match blob_store.put_blob(WEBADMIN_KEY, &bytes).await {
-                        Ok(_) => {
+                // Download SPAM filters if missing
+                if config
+                    .value("version.spam-filter")
+                    .filter(|v| !v.is_empty())
+                    .is_none()
+                {
+                    match manager.fetch_config_resource("spam-filter").await {
+                        Ok(external_config) => {
                             tracing::info!(
-                                context = "webadmin",
-                                event = "download",
-                                url = WEBADMIN_URL,
-                                "Downloaded webadmin bundle"
+                                context = "config",
+                                event = "import",
+                                version = external_config.version,
+                                "Imported spam filter rules"
                             );
+                            insert_keys.extend(external_config.keys);
                         }
                         Err(err) => {
                             config.new_build_error(
                                 "*",
-                                format!("Failed to store webadmin blob: {err}"),
+                                format!("Failed to fetch spam filter: {err}"),
                             );
                         }
-                    },
-                    Err(err) => {
-                        config.new_build_error("*", format!("Failed to download webadmin: {err}"));
                     }
-                },
-                Err(err) => {
-                    config.new_build_error("*", format!("Failed to access webadmin blob: {err}"))
+
+                    // Add default settings
+                    for key in [
+                        ("queue.quota.size.messages", "100000"),
+                        ("queue.quota.size.size", "10737418240"),
+                        ("queue.quota.size.enable", "true"),
+                        ("queue.throttle.rcpt.key", "rcpt_domain"),
+                        ("queue.throttle.rcpt.concurrency", "5"),
+                        ("queue.throttle.rcpt.enable", "true"),
+                        ("session.throttle.ip.key", "remote_ip"),
+                        ("session.throttle.ip.concurrency", "5"),
+                        ("session.throttle.ip.enable", "true"),
+                        ("session.throttle.sender.key.0", "sender_domain"),
+                        ("session.throttle.sender.key.1", "rcpt"),
+                        ("session.throttle.sender.rate", "25/1h"),
+                        ("session.throttle.sender.enable", "true"),
+                        ("report.analysis.addresses", "postmaster@*"),
+                    ] {
+                        insert_keys.push(ConfigKey::from(key));
+                    }
+                }
+
+                // Download webadmin if missing
+                if let Some(blob_store) = config
+                    .value("storage.blob")
+                    .and_then(|id| stores.blob_stores.get(id))
+                {
+                    match blob_store.get_blob(WEBADMIN_KEY, 0..usize::MAX).await {
+                        Ok(Some(_)) => (),
+                        Ok(None) => match manager.fetch_resource("webadmin").await {
+                            Ok(bytes) => match blob_store.put_blob(WEBADMIN_KEY, &bytes).await {
+                                Ok(_) => {
+                                    tracing::info!(
+                                        context = "webadmin",
+                                        event = "download",
+                                        "Downloaded webadmin bundle"
+                                    );
+                                }
+                                Err(err) => {
+                                    config.new_build_error(
+                                        "*",
+                                        format!("Failed to store webadmin blob: {err}"),
+                                    );
+                                }
+                            },
+                            Err(err) => {
+                                config.new_build_error(
+                                    "*",
+                                    format!("Failed to download webadmin: {err}"),
+                                );
+                            }
+                        },
+                        Err(err) => config
+                            .new_build_error("*", format!("Failed to access webadmin blob: {err}")),
+                    }
+                }
+
+                // Add missing settings
+                if !insert_keys.is_empty() {
+                    for item in &insert_keys {
+                        config.keys.insert(item.key.clone(), item.value.clone());
+                    }
+
+                    if let Err(err) = manager.set(insert_keys).await {
+                        config
+                            .new_build_error("*", format!("Failed to update configuration: {err}"));
+                    }
+                }
+
+                // Parse lookup stores
+                stores.parse_lookups(&mut config).await;
+
+                // Parse settings and build shared core
+                let core = Core::parse(&mut config, stores, manager)
+                    .await
+                    .into_shared();
+
+                // Parse TCP acceptors
+                servers.parse_tcp_acceptors(&mut config, core.clone());
+
+                BootManager {
+                    core,
+                    guards,
+                    config,
+                    servers,
                 }
             }
-        }
-
-        // Add missing settings
-        if !insert_keys.is_empty() {
-            for item in &insert_keys {
-                config.keys.insert(item.key.clone(), item.value.clone());
+            ImportExport::Export(path) => {
+                Core::parse(&mut config, stores, manager)
+                    .await
+                    .backup(path)
+                    .await;
+                std::process::exit(0);
             }
-
-            if let Err(err) = manager.set(insert_keys).await {
-                config.new_build_error("*", format!("Failed to update configuration: {err}"));
+            ImportExport::Import(path) => {
+                Core::parse(&mut config, stores, manager)
+                    .await
+                    .restore(path)
+                    .await;
+                std::process::exit(0);
             }
-        }
-
-        // Parse lookup stores
-        stores.parse_lookups(&mut config).await;
-
-        // Parse settings and build shared core
-        let core = Core::parse(&mut config, stores, manager)
-            .await
-            .into_shared();
-
-        // Parse TCP acceptors
-        servers.parse_tcp_acceptors(&mut config, core.clone());
-
-        BootManager {
-            core,
-            guards,
-            config,
-            servers,
         }
     }
 }
@@ -337,6 +423,15 @@ protocol = "imap"
 [server.listener.imaptls]
 bind = "[::]:993"
 protocol = "imap"
+tls.implicit = true
+
+[server.listener.pop3]
+bind = "[::]:110"
+protocol = "pop3"
+
+[server.listener.pop3s]
+bind = "[::]:995"
+protocol = "pop3"
 tls.implicit = true
 
 [server.listener.sieve]
@@ -403,6 +498,15 @@ protocol = "imap"
 [server.listener.imaptls]
 bind = "[::]:993"
 protocol = "imap"
+tls.implicit = true
+
+[server.listener.pop3]
+bind = "[::]:110"
+protocol = "pop3"
+
+[server.listener.pop3s]
+bind = "[::]:995"
+protocol = "pop3"
 tls.implicit = true
 
 [server.listener.sieve]

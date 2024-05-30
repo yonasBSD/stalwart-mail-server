@@ -11,7 +11,7 @@ use crate::{
     expr::{if_block::IfBlock, tokenizer::TokenMap, *},
 };
 
-use self::throttle::parse_throttle;
+use self::{resolver::Policy, throttle::parse_throttle};
 
 use super::*;
 
@@ -29,6 +29,7 @@ pub struct SessionConfig {
     pub rcpt: Rcpt,
     pub data: Data,
     pub extensions: Extensions,
+    pub mta_sts_policy: Option<Policy>,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -188,6 +189,7 @@ impl SessionConfig {
             .filter_map(|id| parse_pipe(config, &id, &has_rcpt_vars))
             .collect();
         session.throttle = SessionThrottle::parse(config);
+        session.mta_sts_policy = Policy::try_parse(config);
 
         for (value, key, token_map) in [
             (&mut session.duration, "session.duration", &has_conn_vars),
@@ -305,7 +307,7 @@ impl SessionConfig {
             (
                 &mut session.auth.must_match_sender,
                 "session.auth.must-match-sender",
-                &has_ehlo_hars,
+                &has_sender_vars,
             ),
             (
                 &mut session.mail.script,
@@ -564,7 +566,7 @@ impl Default for SessionConfig {
                 greeting: IfBlock::new::<()>(
                     "session.connect.greeting",
                     [],
-                    "'Stalwart ESMTP at your service'",
+                    "key_get('default', 'hostname') + ' Stalwart ESMTP at your service'",
                 ),
             },
             ehlo: Ehlo {
@@ -713,6 +715,7 @@ impl Default for SessionConfig {
                     "false",
                 ),
             },
+            mta_sts_policy: None,
         }
     }
 }

@@ -21,7 +21,6 @@
  * for more details.
 */
 
-use common::manager::SPAMFILTER_URL;
 use hyper::Method;
 use jmap_proto::error::request::RequestError;
 use serde_json::json;
@@ -29,6 +28,7 @@ use utils::url_params::UrlParams;
 
 use crate::{
     api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
+    services::housekeeper::Event,
     JMAP,
 };
 
@@ -60,10 +60,15 @@ impl JMAP {
             },
             (Some("server.blocked-ip"), &Method::GET) => {
                 match self.core.reload_blocked_ips().await {
-                    Ok(result) => JsonResponse::new(json!({
-                        "data": result.config,
-                    }))
-                    .into_http_response(),
+                    Ok(result) => {
+                        // Increment version counter
+                        self.core.network.blocked_ips.increment_version();
+
+                        JsonResponse::new(json!({
+                            "data": result.config,
+                        }))
+                        .into_http_response()
+                    }
                     Err(err) => err.into_http_response(),
                 }
             }
@@ -71,9 +76,22 @@ impl JMAP {
                 match self.core.reload().await {
                     Ok(result) => {
                         if !UrlParams::new(req.uri().query()).has_key("dry-run") {
-                            // Update core
                             if let Some(core) = result.new_core {
+                                // Update core
                                 self.shared_core.store(core.into());
+
+                                // Increment version counter
+                                self.inner.increment_config_version();
+                            }
+
+                            // Reload ACME
+                            if let Err(err) =
+                                self.inner.housekeeper_tx.send(Event::AcmeReload).await
+                            {
+                                tracing::warn!(
+                                    "Failed to send ACME reload event to housekeeper: {}",
+                                    err
+                                );
                             }
                         }
 
@@ -96,7 +114,7 @@ impl JMAP {
                     .core
                     .storage
                     .config
-                    .update_external_config(SPAMFILTER_URL)
+                    .update_config_resource("spam-filter")
                     .await
                 {
                     Ok(result) => JsonResponse::new(json!({
@@ -107,12 +125,7 @@ impl JMAP {
                 }
             }
             (Some("webadmin"), &Method::GET) => {
-                match self
-                    .inner
-                    .webadmin
-                    .update_and_unpack(&self.core.storage.blob)
-                    .await
-                {
+                match self.inner.webadmin.update_and_unpack(&self.core).await {
                     Ok(_) => JsonResponse::new(json!({
                         "data": (),
                     }))

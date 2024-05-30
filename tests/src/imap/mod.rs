@@ -31,11 +31,16 @@ pub mod fetch;
 pub mod idle;
 pub mod mailbox;
 pub mod managesieve;
+pub mod pop;
 pub mod search;
 pub mod store;
 pub mod thread;
 
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use ::managesieve::core::ManageSieveSessionManager;
 use common::{
@@ -49,6 +54,7 @@ use directory::backend::internal::manage::ManageDirectory;
 use imap::core::{ImapSessionManager, Inner, IMAP};
 use imap_proto::ResponseType;
 use jmap::{api::JmapSessionManager, services::IPC_CHANNEL_BUFFER, JMAP};
+use pop3::Pop3SessionManager;
 use smtp::core::{SmtpSessionManager, SMTP};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines, ReadHalf, WriteHalf},
@@ -77,6 +83,12 @@ tls.implicit = true
 [server.listener.sieve]
 bind = ["127.0.0.1:4190"]
 protocol = "managesieve"
+max-connections = 81920
+tls.implicit = true
+
+[server.listener.pop3]
+bind = ["127.0.0.1:4110"]
+protocol = "pop3"
 max-connections = 81920
 tls.implicit = true
 
@@ -270,7 +282,7 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
             .replace("{TMP}", &temp_dir.path.display().to_string()),
     )
     .unwrap();
-    config.resolve_macros().await;
+    config.resolve_all_macros().await;
 
     // Parse servers
     let mut servers = Servers::parse(&mut config);
@@ -303,7 +315,7 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
     config.assert_no_errors();
 
     // Spawn servers
-    let shutdown_tx = servers.spawn(|server, acceptor, shutdown_rx| {
+    let (shutdown_tx, _) = servers.spawn(|server, acceptor, shutdown_rx| {
         match &server.protocol {
             ServerProtocol::Smtp | ServerProtocol::Lmtp => server.spawn(
                 SmtpSessionManager::new(smtp.clone()),
@@ -319,6 +331,12 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
             ),
             ServerProtocol::Imap => server.spawn(
                 ImapSessionManager::new(imap.clone()),
+                shared_core.clone(),
+                acceptor,
+                shutdown_rx,
+            ),
+            ServerProtocol::Pop3 => server.spawn(
+                Pop3SessionManager::new(imap.clone()),
                 shared_core.clone(),
                 acceptor,
                 shutdown_rx,
@@ -355,6 +373,9 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
         .create_test_user_with_email("foobar@example.com", "secret", "Bill Foobar")
         .await;
     lookup
+        .create_test_user_with_email("popper@example.com", "secret", "Karl Popper")
+        .await;
+    lookup
         .create_test_group_with_email("support@example.com", "Support Group")
         .await;
     lookup
@@ -384,7 +405,7 @@ pub async fn imap_tests() {
                 .with_env_filter(
                     tracing_subscriber::EnvFilter::builder()
                         .parse(
-                            format!("smtp={level},imap={level},jmap={level},store={level},utils={level},directory={level}"),
+                            format!("smtp={level},imap={level},jmap={level},store={level},utils={level},common={level},pop3={level},directory={level}"),
                         )
                         .unwrap(),
                 )
@@ -394,6 +415,7 @@ pub async fn imap_tests() {
     }
 
     // Prepare settings
+    let start_time = Instant::now();
     let delete = true;
     let handle = init_imap_tests(
         &std::env::var("STORE")
@@ -447,6 +469,17 @@ pub async fn imap_tests() {
 
     // Run ManageSieve tests
     managesieve::test().await;
+
+    // Run POP3 tests
+    pop::test().await;
+
+    // Print elapsed time
+    let elapsed = start_time.elapsed();
+    println!(
+        "Elapsed: {}.{:03}s",
+        elapsed.as_secs(),
+        elapsed.subsec_millis()
+    );
 
     // Remove test data
     if delete {

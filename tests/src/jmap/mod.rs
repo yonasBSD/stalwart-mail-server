@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::{sync::Arc, time::Duration};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use base64::{
     engine::general_purpose::{self, STANDARD},
@@ -29,6 +29,7 @@ use base64::{
 };
 use common::{
     config::server::{ServerProtocol, Servers},
+    manager::config::{ConfigManager, Patterns},
     Core,
 };
 use hyper::{header::AUTHORIZATION, Method};
@@ -41,11 +42,16 @@ use jmap::{
 use jmap_client::client::{Client, Credentials};
 use jmap_proto::{error::request::RequestError, types::id::Id};
 use managesieve::core::ManageSieveSessionManager;
+use pop3::Pop3SessionManager;
 use reqwest::header;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use smtp::core::{SmtpSessionManager, SMTP};
 
-use store::Stores;
+use store::{
+    roaring::RoaringBitmap,
+    write::{key::DeserializeBigEndian, AnyKey},
+    IterateParams, Stores, SUBSPACE_PROPERTY,
+};
 use tokio::sync::{mpsc, watch};
 use utils::config::Config;
 
@@ -68,6 +74,7 @@ pub mod email_set;
 pub mod email_submission;
 pub mod event_source;
 pub mod mailbox;
+pub mod purge;
 pub mod push_subscription;
 pub mod quota;
 pub mod sieve_script;
@@ -80,7 +87,7 @@ pub mod websocket;
 const SERVER: &str = r#"
 [server]
 hostname = "'jmap.example.org'"
-url = "'https://127.0.0.1:8899'"
+http.url = "'https://127.0.0.1:8899'"
 
 [server.listener.jmap]
 bind = ["127.0.0.1:8899"]
@@ -183,8 +190,8 @@ password = "password"
 type = "elasticsearch"
 url = "https://localhost:9200"
 user = "elastic"
-password = "RtQ-Lu6+o4rxx=XJplVJ"
-allow-invalid-certs = true
+password = "changeme"
+tls.allow-invalid-certs = true
 disable = true
 
 [certificate.default]
@@ -232,6 +239,12 @@ throttle = "500ms"
 [jmap.push]
 throttle = "500ms"
 attempts.interval = "500ms"
+
+[jmap.email]
+auto-expunge = "1s"
+
+[jmap.protocol.changes]
+max-history = "1s"
 
 [store."auth"]
 type = "sqlite"
@@ -325,6 +338,7 @@ pub async fn jmap_tests() {
     quota::test(&mut params).await;
     crypto::test(&mut params).await;
     blob::test(&mut params).await;
+    purge::test(&mut params).await;
 
     if delete {
         params.temp_dir.delete();
@@ -340,7 +354,7 @@ pub async fn jmap_stress_tests() {
                 .with_env_filter(
                     tracing_subscriber::EnvFilter::builder()
                         .parse(
-                            format!("smtp={level},imap={level},jmap={level},store={level},utils={level},directory={level}"),
+                            format!("smtp={level},imap={level},jmap={level},store={level},utils={level},directory={level},common={level}"),
                         )
                         .unwrap(),
                 )
@@ -389,6 +403,9 @@ pub async fn assert_is_empty(server: Arc<JMAP>) {
     // Wait for pending FTS index tasks
     wait_for_index(&server).await;
 
+    // Purge accounts
+    emails_purge_tombstoned(&server).await;
+
     // Assert is empty
     server
         .core
@@ -396,6 +413,38 @@ pub async fn assert_is_empty(server: Arc<JMAP>) {
         .data
         .assert_is_empty(server.core.storage.blob.clone())
         .await;
+}
+
+pub async fn emails_purge_tombstoned(server: &JMAP) {
+    let mut account_ids = RoaringBitmap::new();
+    server
+        .core
+        .storage
+        .data
+        .iterate(
+            IterateParams::new(
+                AnyKey {
+                    subspace: SUBSPACE_PROPERTY,
+                    key: vec![0u8],
+                },
+                AnyKey {
+                    subspace: SUBSPACE_PROPERTY,
+                    key: vec![u8::MAX, u8::MAX, u8::MAX, u8::MAX],
+                },
+            )
+            .no_values(),
+            |key, _| {
+                account_ids.insert(key.deserialize_be_u32(0).unwrap());
+
+                Ok(true)
+            },
+        )
+        .await
+        .unwrap();
+
+    for account_id in account_ids {
+        server.emails_purge_tombstoned(account_id).await.unwrap();
+    }
 }
 
 async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
@@ -407,7 +456,7 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
             .replace("{TMP}", &temp_dir.path.display().to_string()),
     )
     .unwrap();
-    config.resolve_macros().await;
+    config.resolve_all_macros().await;
 
     // Parse servers
     let mut servers = Servers::parse(&mut config);
@@ -419,7 +468,17 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
     let stores = Stores::parse_all(&mut config).await;
 
     // Parse core
-    let core = Core::parse(&mut config, stores, Default::default()).await;
+    let config_manager = ConfigManager {
+        cfg_local: Default::default(),
+        cfg_local_path: PathBuf::new(),
+        cfg_local_patterns: Patterns::parse(&mut config).into(),
+        cfg_store: config
+            .value("storage.data")
+            .and_then(|id| stores.stores.get(id))
+            .cloned()
+            .unwrap_or_default(),
+    };
+    let core = Core::parse(&mut config, stores, config_manager).await;
     let store = core.storage.data.clone();
     let shared_core = core.into_shared();
 
@@ -440,7 +499,7 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
     config.assert_no_errors();
 
     // Spawn servers
-    let shutdown_tx = servers.spawn(|server, acceptor, shutdown_rx| {
+    let (shutdown_tx, _) = servers.spawn(|server, acceptor, shutdown_rx| {
         match &server.protocol {
             ServerProtocol::Smtp | ServerProtocol::Lmtp => server.spawn(
                 SmtpSessionManager::new(smtp.clone()),
@@ -456,6 +515,12 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
             ),
             ServerProtocol::Imap => server.spawn(
                 ImapSessionManager::new(imap.clone()),
+                shared_core.clone(),
+                acceptor,
+                shutdown_rx,
+            ),
+            ServerProtocol::Pop3 => server.spawn(
+                Pop3SessionManager::new(imap.clone()),
                 shared_core.clone(),
                 acceptor,
                 shutdown_rx,

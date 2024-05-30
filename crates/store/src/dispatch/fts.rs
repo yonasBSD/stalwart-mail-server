@@ -30,6 +30,8 @@ use crate::{
     FtsStore,
 };
 
+use super::DocumentSet;
+
 impl FtsStore {
     pub async fn index<T: Into<u8> + Display + Clone + std::fmt::Debug>(
         &self,
@@ -61,13 +63,13 @@ impl FtsStore {
         &self,
         account_id: u32,
         collection: u8,
-        document_id: u32,
-    ) -> crate::Result<bool> {
+        document_ids: &impl DocumentSet,
+    ) -> crate::Result<()> {
         match self {
-            FtsStore::Store(store) => store.fts_remove(account_id, collection, document_id).await,
+            FtsStore::Store(store) => store.fts_remove(account_id, collection, document_ids).await,
             #[cfg(feature = "elastic")]
             FtsStore::ElasticSearch(store) => {
-                store.fts_remove(account_id, collection, document_id).await
+                store.fts_remove(account_id, collection, document_ids).await
             }
         }
     }

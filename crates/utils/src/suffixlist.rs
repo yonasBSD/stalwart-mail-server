@@ -35,11 +35,59 @@ pub struct PublicSuffix {
     pub wildcards: Vec<String>,
 }
 
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub enum DomainPart {
+    Sld,
+    Tld,
+    Host,
+}
+
 impl PublicSuffix {
     pub fn contains(&self, suffix: &str) -> bool {
         self.suffixes.contains(suffix)
             || (!self.exceptions.contains(suffix)
                 && self.wildcards.iter().any(|w| suffix.ends_with(w)))
+    }
+
+    pub fn domain_part(&self, domain: &str, part: DomainPart) -> Option<String> {
+        let d = domain.trim().to_lowercase();
+        let mut seen_dot = false;
+        for (pos, ch) in d.as_bytes().iter().enumerate().rev() {
+            if *ch == b'.' {
+                if seen_dot {
+                    let maybe_domain =
+                        std::str::from_utf8(&d.as_bytes()[pos + 1..]).unwrap_or_default();
+                    if !self.contains(maybe_domain) {
+                        return if part == DomainPart::Sld {
+                            maybe_domain
+                        } else {
+                            std::str::from_utf8(&d.as_bytes()[..pos]).unwrap_or_default()
+                        }
+                        .to_string()
+                        .into();
+                    }
+                } else if part == DomainPart::Tld {
+                    return std::str::from_utf8(&d.as_bytes()[pos + 1..])
+                        .unwrap_or_default()
+                        .to_string()
+                        .into();
+                } else {
+                    seen_dot = true;
+                }
+            }
+        }
+
+        if seen_dot {
+            if part == DomainPart::Sld {
+                d.into()
+            } else {
+                None
+            }
+        } else if part == DomainPart::Host {
+            d.into()
+        } else {
+            None
+        }
     }
 }
 
@@ -85,7 +133,7 @@ impl PublicSuffix {
                         if r.status().is_success() {
                             r.bytes().await
                         } else {
-                            config.new_build_error(
+                            config.new_build_warning(
                                 format!("{value}.{idx}"),
                                 format!(
                                     "Failed to fetch public suffixes from {value:?}: Status {status}",
@@ -102,7 +150,7 @@ impl PublicSuffix {
                 match result {
                     Ok(bytes) => bytes.to_vec(),
                     Err(err) => {
-                        config.new_build_error(
+                        config.new_build_warning(
                             format!("{value}.{idx}"),
                             format!("Failed to fetch public suffixes from {value:?}: {err}",),
                         );
@@ -113,7 +161,7 @@ impl PublicSuffix {
                 match std::fs::read(filename) {
                     Ok(bytes) => bytes,
                     Err(err) => {
-                        config.new_build_error(
+                        config.new_build_warning(
                             format!("{value}.{idx}"),
                             format!("Failed to read public suffixes from {value:?}: {err}",),
                         );
@@ -131,7 +179,7 @@ impl PublicSuffix {
                 {
                     Ok(bytes) => bytes,
                     Err(err) => {
-                        config.new_build_error(
+                        config.new_build_warning(
                             format!("{value}.{idx}"),
                             format!(
                                 "Failed to decompress public suffixes from {value:?}: {err}",
@@ -151,7 +199,7 @@ impl PublicSuffix {
                     return PublicSuffix::from(list.as_str());
                 }
                 Err(err) => {
-                    config.new_build_error(
+                    config.new_build_warning(
                         format!("{value}.{idx}"),
                         format!(
                             "Failed to parse public suffixes from {value:?}: {err}",
@@ -164,7 +212,7 @@ impl PublicSuffix {
         }
 
         #[cfg(not(feature = "test_mode"))]
-        config.new_build_error(key, "Failed to parse public suffixes from any source.");
+        config.new_build_warning(key, "Failed to parse public suffixes from any source.");
 
         PublicSuffix::default()
     }

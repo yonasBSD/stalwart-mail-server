@@ -40,6 +40,8 @@ use crate::{
     JMAP,
 };
 
+use super::decode_path_element;
+
 enum ReportType {
     Dmarc,
     Tls,
@@ -50,7 +52,7 @@ impl JMAP {
     pub async fn handle_manage_reports(&self, req: &HttpRequest, path: Vec<&str>) -> HttpResponse {
         match (
             path.get(1).copied().unwrap_or_default(),
-            path.get(2).copied(),
+            path.get(2).copied().map(decode_path_element),
             req.method(),
         ) {
             (class @ ("dmarc" | "tls" | "arf"), None, &Method::GET) => {
@@ -59,30 +61,40 @@ impl JMAP {
                 let page: usize = params.parse::<usize>("page").unwrap_or_default();
                 let limit: usize = params.parse::<usize>("limit").unwrap_or_default();
 
+                let range_start = params.parse::<u64>("range-start").unwrap_or_default();
+                let range_end = params.parse::<u64>("range-end").unwrap_or(u64::MAX);
+                let max_total = params.parse::<usize>("max-total").unwrap_or_default();
+
                 let (from_key, to_key, typ) = match class {
                     "dmarc" => (
                         ValueKey::from(ValueClass::Report(ReportClass::Dmarc {
-                            id: 0,
+                            id: range_start,
                             expires: 0,
                         })),
                         ValueKey::from(ValueClass::Report(ReportClass::Dmarc {
-                            id: u64::MAX,
+                            id: range_end,
                             expires: u64::MAX,
                         })),
                         ReportType::Dmarc,
                     ),
                     "tls" => (
-                        ValueKey::from(ValueClass::Report(ReportClass::Tls { id: 0, expires: 0 })),
                         ValueKey::from(ValueClass::Report(ReportClass::Tls {
-                            id: u64::MAX,
+                            id: range_start,
+                            expires: 0,
+                        })),
+                        ValueKey::from(ValueClass::Report(ReportClass::Tls {
+                            id: range_end,
                             expires: u64::MAX,
                         })),
                         ReportType::Tls,
                     ),
                     "arf" => (
-                        ValueKey::from(ValueClass::Report(ReportClass::Arf { id: 0, expires: 0 })),
                         ValueKey::from(ValueClass::Report(ReportClass::Arf {
-                            id: u64::MAX,
+                            id: range_start,
+                            expires: 0,
+                        })),
+                        ValueKey::from(ValueClass::Report(ReportClass::Arf {
+                            id: range_end,
                             expires: u64::MAX,
                         })),
                         ReportType::Arf,
@@ -143,7 +155,7 @@ impl JMAP {
                                 total += 1;
                             }
 
-                            Ok(true)
+                            Ok(max_total == 0 || total < max_total)
                         },
                     )
                     .await;
@@ -159,7 +171,7 @@ impl JMAP {
                 }
             }
             (class @ ("dmarc" | "tls" | "arf"), Some(report_id), &Method::GET) => {
-                if let Some(report_id) = parse_incoming_report_id(class, report_id) {
+                if let Some(report_id) = parse_incoming_report_id(class, report_id.as_ref()) {
                     match &report_id {
                         ReportClass::Tls { .. } => match self
                             .core
@@ -215,7 +227,7 @@ impl JMAP {
                 }
             }
             (class @ ("dmarc" | "tls" | "arf"), Some(report_id), &Method::DELETE) => {
-                if let Some(report_id) = parse_incoming_report_id(class, report_id) {
+                if let Some(report_id) = parse_incoming_report_id(class, report_id.as_ref()) {
                     let mut batch = BatchBuilder::new();
                     batch.clear(ValueClass::Report(report_id));
                     let result = self.core.storage.data.write(batch.build()).await.is_ok();

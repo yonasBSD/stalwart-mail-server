@@ -21,7 +21,11 @@
  * for more details.
 */
 
-use std::{fmt::Debug, net::IpAddr};
+use std::{
+    fmt::Debug,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    sync::atomic::AtomicU8,
+};
 
 use ahash::AHashSet;
 use parking_lot::RwLock;
@@ -35,13 +39,23 @@ use crate::Core;
 
 pub struct BlockedIps {
     pub ip_addresses: RwLock<AHashSet<IpAddr>>,
+    pub version: AtomicU8,
     ip_networks: Vec<IpAddrMask>,
     has_networks: bool,
     limiter_rate: Option<Rate>,
 }
 
+#[derive(Clone)]
+pub struct AllowedIps {
+    ip_addresses: AHashSet<IpAddr>,
+    ip_networks: Vec<IpAddrMask>,
+    has_networks: bool,
+}
+
 pub const BLOCKED_IP_KEY: &str = "server.blocked-ip";
 pub const BLOCKED_IP_PREFIX: &str = "server.blocked-ip.";
+pub const ALLOWED_IP_KEY: &str = "server.allowed-ip";
+pub const ALLOWED_IP_PREFIX: &str = "server.allowed-ip.";
 
 impl BlockedIps {
     pub fn parse(config: &mut Config) -> Self {
@@ -71,6 +85,42 @@ impl BlockedIps {
             has_networks: !ip_networks.is_empty(),
             ip_networks,
             limiter_rate: config.property_or_default::<Rate>("authentication.fail2ban", "100/1d"),
+            version: 0.into(),
+        }
+    }
+}
+
+impl AllowedIps {
+    pub fn parse(config: &mut Config) -> Self {
+        let mut ip_addresses = AHashSet::new();
+        let mut ip_networks = Vec::new();
+
+        for ip in config
+            .set_values(ALLOWED_IP_KEY)
+            .map(IpAddrOrMask::parse_value)
+            .collect::<Vec<_>>()
+        {
+            match ip {
+                Ok(IpAddrOrMask::Ip(ip)) => {
+                    ip_addresses.insert(ip);
+                }
+                Ok(IpAddrOrMask::Mask(ip)) => {
+                    ip_networks.push(ip);
+                }
+                Err(err) => {
+                    config.new_parse_error(ALLOWED_IP_KEY, err);
+                }
+            }
+        }
+
+        // Add loopback addresses
+        ip_addresses.insert(IpAddr::V4(Ipv4Addr::LOCALHOST));
+        ip_addresses.insert(IpAddr::V6(Ipv6Addr::LOCALHOST));
+
+        AllowedIps {
+            ip_addresses,
+            has_networks: !ip_networks.is_empty(),
+            ip_networks,
         }
     }
 }
@@ -78,18 +128,19 @@ impl BlockedIps {
 impl Core {
     pub async fn is_fail2banned(&self, ip: IpAddr, login: String) -> store::Result<bool> {
         if let Some(rate) = &self.network.blocked_ips.limiter_rate {
-            let is_allowed = self
-                .storage
-                .lookup
-                .is_rate_allowed(format!("b:{}", ip).as_bytes(), rate, false)
-                .await?
-                .is_none()
-                && self
+            let is_allowed = self.is_ip_allowed(&ip)
+                || (self
                     .storage
                     .lookup
-                    .is_rate_allowed(format!("b:{}", login).as_bytes(), rate, false)
+                    .is_rate_allowed(format!("b:{}", ip).as_bytes(), rate, false)
                     .await?
-                    .is_none();
+                    .is_none()
+                    && self
+                        .storage
+                        .lookup
+                        .is_rate_allowed(format!("b:{}", login).as_bytes(), rate, false)
+                        .await?
+                        .is_none());
             if !is_allowed {
                 // Add IP to blocked list
                 self.network.blocked_ips.ip_addresses.write().insert(ip);
@@ -102,6 +153,9 @@ impl Core {
                         value: String::new(),
                     }])
                     .await?;
+
+                // Increment version
+                self.network.blocked_ips.increment_version();
 
                 return Ok(true);
             }
@@ -124,6 +178,24 @@ impl Core {
                     .iter()
                     .any(|network| network.matches(ip)))
     }
+
+    pub fn is_ip_allowed(&self, ip: &IpAddr) -> bool {
+        self.network.allowed_ips.ip_addresses.contains(ip)
+            || (self.network.allowed_ips.has_networks
+                && self
+                    .network
+                    .allowed_ips
+                    .ip_networks
+                    .iter()
+                    .any(|network| network.matches(ip)))
+    }
+}
+
+impl BlockedIps {
+    pub fn increment_version(&self) {
+        self.version
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
 }
 
 impl Default for BlockedIps {
@@ -133,6 +205,21 @@ impl Default for BlockedIps {
             ip_networks: Default::default(),
             has_networks: Default::default(),
             limiter_rate: Default::default(),
+            version: Default::default(),
+        }
+    }
+}
+
+impl Default for AllowedIps {
+    fn default() -> Self {
+        // Add IPv4 and IPv6 loopback addresses
+        Self {
+            ip_addresses: AHashSet::from_iter([
+                IpAddr::V4(Ipv4Addr::LOCALHOST),
+                IpAddr::V6(Ipv6Addr::LOCALHOST),
+            ]),
+            ip_networks: Default::default(),
+            has_networks: Default::default(),
         }
     }
 }
@@ -144,6 +231,10 @@ impl Clone for BlockedIps {
             ip_networks: self.ip_networks.clone(),
             has_networks: self.has_networks,
             limiter_rate: self.limiter_rate.clone(),
+            version: self
+                .version
+                .load(std::sync::atomic::Ordering::Relaxed)
+                .into(),
         }
     }
 }

@@ -2,6 +2,92 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.8.1] - 2024-05-23
+
+To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin and spam filter versions.
+
+## Added
+- POP3 support.
+- DKIM signature length exploit protection.
+- Faster email deletion.
+- Junk/Trash folder auto-expunge and changelog auto-expiry (#403)
+- IP allowlists.
+- HTTP Strict Transport Security option.
+- Add TLS Reporting DNS entry (#464).
+
+### Changed
+- Use separate account for master user.
+- Include server hostname in SMTP greetings (#448).
+
+### Fixed
+- IP addresses trigger `R_SUSPICIOUS_URL` false positive (#461 #419).
+- JMAP identities should not return null signatures.
+- Include authentication headers and check queue quotas on Sieve message forwards.
+- ARC seal using just one signature.
+- Remove technical subdomains from MTA-STS policies and TLS records (#429).
+
+## [0.8.0] - 2024-05-13
+
+This version uses a different database layout which is incompatible with previous versions. Please read the [UPGRADING.md](UPGRADING.md) file for more information on how to upgrade from previous versions.
+
+## Added
+- Clustering support with node auto-discovery and partition-tolerant failure detection.
+- Autoconfig and MS Autodiscover support (#336)
+- New variables `retry_num`, `notify_num`, `last_error` add `last_status` available in queue expressions.
+- Performance improvements, in particular for FoundationDB.
+- Improved full-text indexing with lower disk space usage.
+- MTA-STS policy management.
+- TLSA Records generation for DANE (#397)
+- Queued message visualization from the web-admin.
+- Master user support.
+
+### Changed
+- Make `certificate.*` local keys by default.
+- Removed `server.run-as.*` settings.
+- Add Microsoft Office Macro types to bad mime types (#391)
+
+### Fixed
+- mySQL TLS support (#415)
+- Resolve file macros after dropping root privileges.
+- Updated order of SPF Records (#395).
+- Avoid duplicate accountIds when using case insensitive external directories (#399)
+- `authenticated_as` variable not usable for must-match-sender (#372)
+- Remove `StandardOutput`, `StandardError` in service (#390)
+- SMTP `AUTH=LOGIN` compatibility issues with Microsoft Outlook (#400)
+
+## [0.7.3] - 2024-05-01
+
+To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin version.
+
+## Added
+- Full database export and import functionality
+- Add --help and --version command line arguments (#365)
+- Allow catch-all addresses when validating must match sender
+
+### Changed
+- Add `groupOfUniqueNames` to the list of LDAP object classes
+
+### Fixed
+- Trim spaces in DNS-01 ACME secrets (#382)
+- Allow only one journald tracer (#375)
+- `authenticated_as` variable not usable for must-match-sender (#372)
+- Fixed `BOGUS_ENCRYPTED_AND_TEXT` spam filter rule
+- Fixed parsing of IPv6 DNS server addresses
+
+## [0.7.2] - 2024-04-17
+
+To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin version.
+
+## Added
+- Support for `DNS-01` and `HTTP-01` ACME challenges (#226)
+- Configurable external resources (#355)
+
+### Changed
+
+### Fixed
+- Startup failure when Elasticsearch is down/starting up (#334)
+- URL decode path elements in REST API.
+
 ## [0.7.1] - 2024-04-12
 
 To upgrade replace the `stalwart-mail` binary.

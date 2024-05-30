@@ -26,10 +26,16 @@ use std::ops::{BitAndAssign, Range};
 use roaring::RoaringBitmap;
 
 use crate::{
-    write::{key::KeySerializer, now, AnyKey, Batch, BitmapClass, ReportClass, ValueClass},
-    BitmapKey, Deserialize, IterateParams, Key, Store, ValueKey, SUBSPACE_BITMAPS,
-    SUBSPACE_INDEXES, SUBSPACE_LOGS, U32_LEN,
+    write::{
+        key::{DeserializeBigEndian, KeySerializer},
+        now, AnyClass, AnyKey, AssignedIds, Batch, BatchBuilder, BitmapClass, BitmapHash,
+        Operation, ReportClass, ValueClass, ValueOp,
+    },
+    BitmapKey, Deserialize, IterateParams, Key, Store, ValueKey, SUBSPACE_BITMAP_ID,
+    SUBSPACE_BITMAP_TAG, SUBSPACE_BITMAP_TEXT, SUBSPACE_INDEXES, SUBSPACE_LOGS, U32_LEN,
 };
+
+use super::DocumentSet;
 
 #[cfg(feature = "test_mode")]
 lazy_static::lazy_static! {
@@ -59,7 +65,7 @@ impl Store {
 
     pub async fn get_bitmap(
         &self,
-        key: BitmapKey<BitmapClass>,
+        key: BitmapKey<BitmapClass<u32>>,
     ) -> crate::Result<Option<RoaringBitmap>> {
         match self {
             #[cfg(feature = "sqlite")]
@@ -78,7 +84,7 @@ impl Store {
 
     pub async fn get_bitmaps_intersection(
         &self,
-        keys: Vec<BitmapKey<BitmapClass>>,
+        keys: Vec<BitmapKey<BitmapClass<u32>>>,
     ) -> crate::Result<Option<RoaringBitmap>> {
         let mut result: Option<RoaringBitmap> = None;
         for key in keys {
@@ -120,7 +126,7 @@ impl Store {
 
     pub async fn get_counter(
         &self,
-        key: impl Into<ValueKey<ValueClass>> + Sync + Send,
+        key: impl Into<ValueKey<ValueClass<u32>>> + Sync + Send,
     ) -> crate::Result<i64> {
         match self {
             #[cfg(feature = "sqlite")]
@@ -137,15 +143,15 @@ impl Store {
         }
     }
 
-    pub async fn write(&self, batch: Batch) -> crate::Result<Option<i64>> {
+    pub async fn write(&self, batch: Batch) -> crate::Result<AssignedIds> {
         #[cfg(feature = "test_mode")]
         if std::env::var("PARANOID_WRITE").map_or(false, |v| v == "1") {
-            use crate::write::Operation;
             let mut account_id = u32::MAX;
             let mut collection = u8::MAX;
             let mut document_id = u32::MAX;
 
             let mut bitmaps = Vec::new();
+            let mut result = AssignedIds::default();
 
             for op in &batch.ops {
                 match op {
@@ -165,13 +171,19 @@ impl Store {
                         document_id = *document_id_;
                     }
                     Operation::Bitmap { class, set } => {
-                        let key = BitmapKey {
+                        if *set && matches!(class, BitmapClass::DocumentIds) {
+                            let id = result.document_ids.len() as u32;
+                            result.document_ids.push(id);
+                        }
+
+                        let key = class.serialize(
                             account_id,
                             collection,
-                            block_num: 0,
-                            class,
-                        }
-                        .serialize(0);
+                            document_id,
+                            0,
+                            (&result).into(),
+                        );
+
                         bitmaps.push((key, class.clone(), document_id, *set));
                     }
                     _ => {}
@@ -216,7 +228,7 @@ impl Store {
                 }
             }
 
-            return Ok(None);
+            return Ok(AssignedIds::default());
         }
 
         match self {
@@ -293,8 +305,88 @@ impl Store {
         }
     }
 
+    pub async fn delete_documents(
+        &self,
+        subspace: u8,
+        account_id: u32,
+        collection: u8,
+        collection_offset: Option<usize>,
+        document_ids: &impl DocumentSet,
+    ) -> crate::Result<()> {
+        // Serialize keys
+        let (from_key, to_key) = if collection_offset.is_some() {
+            (
+                KeySerializer::new(U32_LEN + 2)
+                    .write(account_id)
+                    .write(collection),
+                KeySerializer::new(U32_LEN + 2)
+                    .write(account_id)
+                    .write(collection + 1),
+            )
+        } else {
+            (
+                KeySerializer::new(U32_LEN).write(account_id),
+                KeySerializer::new(U32_LEN).write(account_id + 1),
+            )
+        };
+
+        // Find keys to delete
+        let mut delete_keys = Vec::new();
+        self.iterate(
+            IterateParams::new(
+                AnyKey {
+                    subspace,
+                    key: from_key.finalize(),
+                },
+                AnyKey {
+                    subspace,
+                    key: to_key.finalize(),
+                },
+            )
+            .no_values(),
+            |key, _| {
+                if collection_offset.map_or(true, |offset| {
+                    key.get(key.len() - U32_LEN - offset).copied() == Some(collection)
+                }) {
+                    let document_id = key.deserialize_be_u32(key.len() - U32_LEN)?;
+                    if document_ids.contains(document_id) {
+                        delete_keys.push(key.to_vec());
+                    }
+                }
+
+                Ok(true)
+            },
+        )
+        .await?;
+
+        // Remove keys
+        let mut batch = BatchBuilder::new();
+
+        for key in delete_keys {
+            if batch.ops.len() >= 1000 {
+                self.write(std::mem::take(&mut batch).build()).await?;
+            }
+            batch.ops.push(Operation::Value {
+                class: ValueClass::Any(AnyClass { subspace, key }),
+                op: ValueOp::Clear,
+            });
+        }
+
+        if !batch.is_empty() {
+            self.write(batch.build()).await?;
+        }
+
+        Ok(())
+    }
+
     pub async fn purge_account(&self, account_id: u32) -> crate::Result<()> {
-        for subspace in [SUBSPACE_BITMAPS, SUBSPACE_LOGS, SUBSPACE_INDEXES] {
+        for subspace in [
+            SUBSPACE_BITMAP_ID,
+            SUBSPACE_BITMAP_TAG,
+            SUBSPACE_BITMAP_TEXT,
+            SUBSPACE_LOGS,
+            SUBSPACE_INDEXES,
+        ] {
             self.delete_range(
                 AnyKey {
                     subspace,
@@ -310,9 +402,17 @@ impl Store {
 
         for (from_class, to_class) in [
             (ValueClass::Acl(account_id), ValueClass::Acl(account_id + 1)),
-            (ValueClass::ReservedId, ValueClass::ReservedId),
             (ValueClass::Property(0), ValueClass::Property(0)),
-            (ValueClass::TermIndex, ValueClass::TermIndex),
+            (
+                ValueClass::FtsIndex(BitmapHash {
+                    hash: [0u8; 8],
+                    len: 0,
+                }),
+                ValueClass::FtsIndex(BitmapHash {
+                    hash: [u8::MAX; 8],
+                    len: u8::MAX,
+                }),
+            ),
         ] {
             self.delete_range(
                 ValueKey {
@@ -388,15 +488,30 @@ impl Store {
 
     #[cfg(feature = "test_mode")]
     pub async fn destroy(&self) {
-        use crate::{SUBSPACE_BLOBS, SUBSPACE_COUNTERS, SUBSPACE_VALUES};
+        use crate::*;
 
         for subspace in [
-            SUBSPACE_VALUES,
-            SUBSPACE_LOGS,
-            SUBSPACE_BITMAPS,
+            SUBSPACE_ACL,
+            SUBSPACE_BITMAP_ID,
+            SUBSPACE_BITMAP_TAG,
+            SUBSPACE_BITMAP_TEXT,
+            SUBSPACE_DIRECTORY,
+            SUBSPACE_FTS_QUEUE,
             SUBSPACE_INDEXES,
-            SUBSPACE_COUNTERS,
+            SUBSPACE_BLOB_RESERVE,
+            SUBSPACE_BLOB_LINK,
+            SUBSPACE_LOGS,
+            SUBSPACE_LOOKUP_VALUE,
+            SUBSPACE_COUNTER,
+            SUBSPACE_PROPERTY,
+            SUBSPACE_SETTINGS,
             SUBSPACE_BLOBS,
+            SUBSPACE_QUEUE_MESSAGE,
+            SUBSPACE_QUEUE_EVENT,
+            SUBSPACE_QUOTA,
+            SUBSPACE_REPORT_OUT,
+            SUBSPACE_REPORT_IN,
+            SUBSPACE_FTS_INDEX,
         ] {
             self.delete_range(
                 AnyKey {
@@ -427,10 +542,7 @@ impl Store {
     pub async fn blob_expire_all(&self) {
         use utils::{BlobHash, BLOB_HASH_LEN};
 
-        use crate::{
-            write::{key::DeserializeBigEndian, BatchBuilder, BlobOp, Operation, ValueOp},
-            U64_LEN,
-        };
+        use crate::{write::BlobOp, U64_LEN};
 
         // Delete all temporary hashes
         let from_key = ValueKey {
@@ -456,7 +568,7 @@ impl Store {
         self.iterate(
             IterateParams::new(from_key, to_key).ascending().no_values(),
             |key, _| {
-                let account_id = key.deserialize_be_u32(1)?;
+                let account_id = key.deserialize_be_u32(0)?;
                 if account_id != last_account_id {
                     last_account_id = account_id;
                     batch.with_account_id(account_id);
@@ -465,7 +577,7 @@ impl Store {
                 batch.ops.push(Operation::Value {
                     class: ValueClass::Blob(BlobOp::Reserve {
                         hash: BlobHash::try_from_hash_slice(
-                            key.get(1 + U32_LEN..1 + U32_LEN + BLOB_HASH_LEN).unwrap(),
+                            key.get(U32_LEN..U32_LEN + BLOB_HASH_LEN).unwrap(),
                         )
                         .unwrap(),
                         until: key.deserialize_be_u64(key.len() - U64_LEN)?,
@@ -482,14 +594,77 @@ impl Store {
     }
 
     #[cfg(feature = "test_mode")]
+    pub async fn lookup_expire_all(&self) {
+        use crate::write::LookupClass;
+
+        // Delete all temporary counters
+        let from_key = ValueKey::from(ValueClass::Lookup(LookupClass::Key(vec![0u8])));
+        let to_key = ValueKey::from(ValueClass::Lookup(LookupClass::Key(vec![u8::MAX; 10])));
+
+        let mut expired_keys = Vec::new();
+        let mut expired_counters = Vec::new();
+
+        self.iterate(IterateParams::new(from_key, to_key), |key, value| {
+            let expiry = value.deserialize_be_u64(0)?;
+            if expiry == 0 {
+                expired_counters.push(key.to_vec());
+            } else if expiry != u64::MAX {
+                expired_keys.push(key.to_vec());
+            }
+            Ok(true)
+        })
+        .await
+        .unwrap();
+
+        if !expired_keys.is_empty() {
+            let mut batch = BatchBuilder::new();
+            for key in expired_keys {
+                batch.ops.push(Operation::Value {
+                    class: ValueClass::Lookup(LookupClass::Key(key)),
+                    op: ValueOp::Clear,
+                });
+                if batch.ops.len() >= 1000 {
+                    self.write(batch.build()).await.unwrap();
+                    batch = BatchBuilder::new();
+                }
+            }
+            if !batch.ops.is_empty() {
+                self.write(batch.build()).await.unwrap();
+            }
+        }
+
+        if !expired_counters.is_empty() {
+            let mut batch = BatchBuilder::new();
+            for key in expired_counters {
+                batch.ops.push(Operation::Value {
+                    class: ValueClass::Lookup(LookupClass::Counter(key.clone())),
+                    op: ValueOp::Clear,
+                });
+                batch.ops.push(Operation::Value {
+                    class: ValueClass::Lookup(LookupClass::Key(key)),
+                    op: ValueOp::Clear,
+                });
+                if batch.ops.len() >= 1000 {
+                    self.write(batch.build()).await.unwrap();
+                    batch = BatchBuilder::new();
+                }
+            }
+            if !batch.ops.is_empty() {
+                self.write(batch.build()).await.unwrap();
+            }
+        }
+    }
+
+    #[cfg(feature = "test_mode")]
     #[allow(unused_variables)]
 
     pub async fn assert_is_empty(&self, blob_store: crate::BlobStore) {
         use utils::codec::leb128::Leb128Iterator;
 
-        use crate::{SUBSPACE_BLOBS, SUBSPACE_COUNTERS, SUBSPACE_VALUES};
+        use crate::*;
 
         self.blob_expire_all().await;
+        self.lookup_expire_all().await;
         self.purge_blobs(blob_store).await.unwrap();
         self.purge_store().await.unwrap();
 
@@ -497,10 +672,26 @@ impl Store {
         let mut failed = false;
 
         for (subspace, with_values) in [
-            (SUBSPACE_VALUES, true),
-            (SUBSPACE_COUNTERS, false),
+            (SUBSPACE_ACL, true),
+            //(SUBSPACE_DIRECTORY, true),
+            (SUBSPACE_FTS_QUEUE, true),
+            (SUBSPACE_LOOKUP_VALUE, true),
+            (SUBSPACE_PROPERTY, true),
+            (SUBSPACE_SETTINGS, true),
+            (SUBSPACE_QUEUE_MESSAGE, true),
+            (SUBSPACE_QUEUE_EVENT, true),
+            (SUBSPACE_REPORT_OUT, true),
+            (SUBSPACE_REPORT_IN, true),
+            (SUBSPACE_FTS_INDEX, true),
+            (SUBSPACE_BLOB_RESERVE, true),
+            (SUBSPACE_BLOB_LINK, true),
             (SUBSPACE_BLOBS, true),
-            (SUBSPACE_BITMAPS, false),
+            (SUBSPACE_COUNTER, false),
+            (SUBSPACE_QUOTA, false),
+            (SUBSPACE_BLOBS, true),
+            (SUBSPACE_BITMAP_ID, false),
+            (SUBSPACE_BITMAP_TAG, false),
+            (SUBSPACE_BITMAP_TEXT, false),
             (SUBSPACE_INDEXES, false),
         ] {
             let from_key = crate::write::AnyKey {
@@ -516,15 +707,8 @@ impl Store {
                 IterateParams::new(from_key, to_key).set_values(with_values),
                 |key, value| {
                     match subspace {
-                        SUBSPACE_BITMAPS => {
+                        SUBSPACE_BITMAP_ID | SUBSPACE_BITMAP_TAG | SUBSPACE_BITMAP_TEXT => {
                             if key.get(0..4).unwrap_or_default() == u32::MAX.to_be_bytes() {
-                                return Ok(true);
-                            }
-
-                            #[cfg(feature = "rocks")]
-                            if matches!(store, Self::RocksDb(_))
-                                && RoaringBitmap::deserialize(value).unwrap().is_empty()
-                            {
                                 return Ok(true);
                             }
 
@@ -536,31 +720,31 @@ impl Store {
 
                             match key[5] {
                                 BM_DOCUMENT_IDS => {
-                                    eprint!("Found document ids bitmap");
+                                    print!("Found document ids bitmap");
                                 }
                                 BM_TAG => {
-                                    eprint!(
+                                    print!(
                                         "Found tagged id {} bitmap",
                                         key[7..].iter().next_leb128::<u32>().unwrap()
                                     );
                                 }
                                 TAG_TEXT => {
-                                    eprint!(
+                                    print!(
                                         "Found tagged text {:?} bitmap",
                                         String::from_utf8_lossy(&key[7..])
                                     );
                                 }
                                 TAG_STATIC => {
-                                    eprint!("Found tagged static {} bitmap", key[7]);
+                                    print!("Found tagged static {} bitmap", key[7]);
                                 }
                                 other => {
                                     if other & BM_TEXT == BM_TEXT {
-                                        eprint!(
+                                        print!(
                                             "Found text hash {:?} bitmap",
                                             String::from_utf8_lossy(&key[7..])
                                         );
                                     } else {
-                                        eprint!("Found unknown bitmap");
+                                        print!("Found unknown bitmap");
                                     }
                                 }
                             }
@@ -577,18 +761,6 @@ impl Store {
                                 key,
                                 value
                             );
-                        }
-                        SUBSPACE_VALUES
-                            if [3, 9, 10].contains(&key[0])
-                                || (key[0] >= 20 && key[0] < 30)
-                                || key.get(1..5).unwrap_or_default() == u32::MAX.to_be_bytes() =>
-                        {
-                            // Ignore lastId counter and ID mappings
-                            return Ok(true);
-                        }
-                        SUBSPACE_COUNTERS if key[0] == 9 || key.len() <= 4 => {
-                            // Ignore named keys
-                            return Ok(true);
                         }
                         SUBSPACE_INDEXES => {
                             println!(

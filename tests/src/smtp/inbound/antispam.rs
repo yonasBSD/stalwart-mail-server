@@ -3,7 +3,6 @@ use std::{
     collections::HashMap,
     fs,
     path::PathBuf,
-    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -23,7 +22,6 @@ use smtp::{
     scripts::ScriptResult,
 };
 use store::Stores;
-use tokio::runtime::Handle;
 use utils::config::Config;
 
 use crate::smtp::{build_smtp, session::TestSession, TempDir};
@@ -200,7 +198,7 @@ async fn antispam() {
 
     // Parse config
     let mut config = Config::new(&config).unwrap();
-    config.resolve_macros().await;
+    config.resolve_all_macros().await;
     let stores = Stores::parse_all(&mut config).await;
     let core = Core::parse(&mut config, stores, Default::default()).await;
     //config.assert_no_errors();
@@ -414,21 +412,16 @@ async fn antispam() {
             let mut params = session
                 .build_script_parameters("data")
                 .with_expected_variables(expected_variables)
-                .with_message(Arc::new(message.into_bytes()));
+                .with_message(message.as_bytes());
             for (name, value) in variables {
                 params = params.set_variable(name, value);
             }
 
             // Run script
-            let handle = Handle::current();
             let span = span.clone();
             let core_ = core.clone();
             let script = script.clone();
-            match core
-                .spawn_worker(move || core_.run_script_blocking(script, params, handle, span))
-                .await
-                .unwrap()
-            {
+            match core_.run_script(script, params, span).await {
                 ScriptResult::Accept { modifications } => {
                     if modifications.len() != expected_headers.len() {
                         panic!(

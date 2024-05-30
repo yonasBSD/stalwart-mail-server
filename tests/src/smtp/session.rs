@@ -274,6 +274,7 @@ impl TestSession for Session<DummyIo> {
                         dsn_info: None,
                     },
                 ],
+                self.core.inner.snowflake_id.generate().unwrap(),
             )
             .await;
         assert_eq!(
@@ -368,8 +369,7 @@ impl TestServerInstance for ServerInstance {
             id: "smtp".to_string(),
             protocol: ServerProtocol::Smtp,
             acceptor: TcpAcceptor::Tls {
-                acme_config: tls_config.clone(),
-                default_config: tls_config.clone(),
+                config: tls_config.clone(),
                 acceptor: TlsAcceptor::from(tls_config),
                 implicit: false,
             },

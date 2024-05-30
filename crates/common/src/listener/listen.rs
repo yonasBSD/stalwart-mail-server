@@ -115,7 +115,7 @@ impl Server {
                             match stream {
                                 Ok((stream, remote_addr)) => {
                                     let core = core.as_ref().load();
-                                    let enable_acme = is_https && core.has_acme_order_in_progress();
+                                    let enable_acme = (is_https && core.has_acme_tls_providers()).then_some(core.clone());
 
                                     if has_proxies && instance.proxy_networks.iter().any(|network| network.matches(&remote_addr.ip())) {
                                         let instance = instance.clone();
@@ -312,17 +312,9 @@ impl Servers {
         // Drop privileges
         #[cfg(not(target_env = "msvc"))]
         {
-            if let Some(run_as_user) = config
-                .value("server.run-as.user")
-                .map(|s| s.to_string())
-                .or_else(|| std::env::var("RUN_AS_USER").ok())
-            {
+            if let Ok(run_as_user) = std::env::var("RUN_AS_USER") {
                 let mut pd = privdrop::PrivDrop::default().user(run_as_user);
-                if let Some(run_as_group) = config
-                    .value("server.run-as.group")
-                    .map(|s| s.to_string())
-                    .or_else(|| std::env::var("RUN_AS_GROUP").ok())
-                {
+                if let Ok(run_as_group) = std::env::var("RUN_AS_GROUP") {
                     pd = pd.group(run_as_group);
                 }
                 pd.apply().failed("Failed to drop privileges");
@@ -333,7 +325,7 @@ impl Servers {
     pub fn spawn(
         mut self,
         spawn: impl Fn(Server, TcpAcceptor, watch::Receiver<bool>),
-    ) -> watch::Sender<bool> {
+    ) -> (watch::Sender<bool>, watch::Receiver<bool>) {
         // Spawn listeners
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         for server in self.servers {
@@ -344,7 +336,7 @@ impl Servers {
 
             spawn(server, acceptor, shutdown_rx.clone());
         }
-        shutdown_tx
+        (shutdown_tx, shutdown_rx)
     }
 }
 

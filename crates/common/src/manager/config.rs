@@ -27,6 +27,7 @@ use std::{
     sync::Arc,
 };
 
+use ahash::AHashMap;
 use arc_swap::ArcSwap;
 use store::{
     write::{BatchBuilder, ValueClass},
@@ -36,8 +37,6 @@ use utils::{
     config::{Config, ConfigKey},
     glob::GlobPattern,
 };
-
-use super::download_resource;
 
 #[derive(Default)]
 pub struct ConfigManager {
@@ -77,7 +76,7 @@ impl ConfigManager {
             keys: self.cfg_local.load().as_ref().clone(),
             ..Default::default()
         };
-        config.resolve_macros().await;
+        config.resolve_all_macros().await;
         self.extend_config(&mut config, prefix)
             .await
             .map(|_| config)
@@ -126,6 +125,32 @@ impl ConfigManager {
         Ok(results)
     }
 
+    pub async fn group(
+        &self,
+        prefix: &str,
+        suffix: &str,
+    ) -> store::Result<AHashMap<String, AHashMap<String, String>>> {
+        let mut grouped = AHashMap::new();
+
+        let mut list = self.list(prefix, true).await?;
+        for (key, _) in &list {
+            if let Some(key) = key.strip_suffix(suffix) {
+                grouped.insert(key.to_string(), AHashMap::new());
+            }
+        }
+
+        for (name, entries) in &mut grouped {
+            let prefix = format!("{name}.");
+            for (key, value) in &mut list {
+                if let Some(key) = key.strip_prefix(&prefix) {
+                    entries.insert(key.to_string(), std::mem::take(value));
+                }
+            }
+        }
+
+        Ok(grouped)
+    }
+
     async fn db_list(
         &self,
         prefix: &str,
@@ -145,12 +170,9 @@ impl ConfigManager {
             .iterate(
                 IterateParams::new(from_key, to_key).ascending(),
                 |key, value| {
-                    let mut key =
-                        std::str::from_utf8(key.get(1..).unwrap_or_default()).map_err(|_| {
-                            store::Error::InternalError(
-                                "Failed to deserialize config key".to_string(),
-                            )
-                        })?;
+                    let mut key = std::str::from_utf8(key).map_err(|_| {
+                        store::Error::InternalError("Failed to deserialize config key".to_string())
+                    })?;
 
                     if !patterns.is_local_key(key) {
                         if strip_prefix && !prefix.is_empty() {
@@ -320,9 +342,9 @@ impl ConfigManager {
             })
     }
 
-    pub async fn update_external_config(&self, url: &str) -> store::Result<Option<String>> {
+    pub async fn update_config_resource(&self, resource_id: &str) -> store::Result<Option<String>> {
         let external = self
-            .fetch_external_config(url)
+            .fetch_config_resource(resource_id)
             .await
             .map_err(store::Error::InternalError)?;
 
@@ -337,7 +359,7 @@ impl ConfigManager {
             tracing::debug!(
                 context = "config",
                 event = "update",
-                url = url,
+                resource_id = resource_id,
                 version = external.version,
                 "Configuration version is up-to-date"
             );
@@ -345,8 +367,11 @@ impl ConfigManager {
         }
     }
 
-    pub(crate) async fn fetch_external_config(&self, url: &str) -> Result<ExternalConfig, String> {
-        let config = String::from_utf8(download_resource(url).await?)
+    pub(crate) async fn fetch_config_resource(
+        &self,
+        resource_id: &str,
+    ) -> Result<ExternalConfig, String> {
+        let config = String::from_utf8(self.fetch_resource(resource_id).await?)
             .map_err(|err| format!("Configuration file has invalid UTF-8: {err}"))?;
         let config = Config::new(config)
             .map_err(|err| format!("Failed to parse external configuration: {err}"))?;
@@ -375,7 +400,7 @@ impl ConfigManager {
                     event = "import",
                     key = key,
                     value = value,
-                    url = url,
+                    resource_id = resource_id,
                     "Ignoring key"
                 );
             }
@@ -386,6 +411,51 @@ impl ConfigManager {
         } else {
             Err("External configuration file does not contain a version key".to_string())
         }
+    }
+
+    pub async fn get_services(&self) -> store::Result<Vec<(String, u16, bool)>> {
+        let mut result = Vec::new();
+
+        for listener in self
+            .group("server.listener.", ".protocol")
+            .await
+            .unwrap_or_default()
+            .into_values()
+        {
+            let is_tls = listener
+                .get("tls.implicit")
+                .map_or(false, |tls| tls == "true");
+            let protocol = listener
+                .get("protocol")
+                .map(|s| s.as_str())
+                .unwrap_or_default();
+            let port = listener
+                .get("bind")
+                .or_else(|| {
+                    listener.iter().find_map(|(key, value)| {
+                        if key.starts_with("bind.") {
+                            Some(value)
+                        } else {
+                            None
+                        }
+                    })
+                })
+                .and_then(|s| s.rsplit_once(':').and_then(|(_, p)| p.parse::<u16>().ok()))
+                .unwrap_or_default();
+
+            if port > 0 {
+                result.push((protocol.to_string(), port, is_tls));
+            }
+        }
+
+        // Sort by name, then tls and finally port
+        result.sort_unstable_by(|a, b| {
+            a.0.cmp(&b.0)
+                .then_with(|| b.2.cmp(&a.2))
+                .then_with(|| a.1.cmp(&b.1))
+        });
+
+        Ok(result)
     }
 }
 
@@ -432,7 +502,9 @@ impl Patterns {
                 Pattern::Include(MatchType::StartsWith("directory.".to_string())),
                 Pattern::Include(MatchType::StartsWith("tracer.".to_string())),
                 Pattern::Exclude(MatchType::StartsWith("server.blocked-ip.".to_string())),
+                Pattern::Exclude(MatchType::StartsWith("server.allowed-ip.".to_string())),
                 Pattern::Include(MatchType::StartsWith("server.".to_string())),
+                Pattern::Include(MatchType::StartsWith("certificate.".to_string())),
                 Pattern::Include(MatchType::StartsWith(
                     "authentication.fallback-admin.".to_string(),
                 )),

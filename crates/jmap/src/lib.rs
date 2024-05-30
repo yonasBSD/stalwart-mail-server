@@ -21,7 +21,12 @@
  * for more details.
 */
 
-use std::{collections::hash_map::RandomState, fmt::Display, sync::Arc, time::Duration};
+use std::{
+    collections::hash_map::RandomState,
+    fmt::Display,
+    sync::{atomic::AtomicU8, Arc},
+    time::Duration,
+};
 
 use auth::{rate_limit::ConcurrencyLimiters, AccessToken};
 use common::{manager::webadmin::WebAdminManager, Core, DeliveryEvent, SharedCore};
@@ -44,11 +49,13 @@ use services::{
 
 use smtp::core::SMTP;
 use store::{
+    dispatch::DocumentSet,
     fts::FtsFilter,
     query::{sort::Pagination, Comparator, Filter, ResultSet, SortedResultSet},
     roaring::RoaringBitmap,
     write::{
-        key::DeserializeBigEndian, BatchBuilder, BitmapClass, DirectoryClass, TagValue, ValueClass,
+        key::DeserializeBigEndian, AssignedIds, BatchBuilder, BitmapClass, DirectoryClass,
+        TagValue, ValueClass,
     },
     BitmapKey, Deserialize, IterateParams, ValueKey, U32_LEN,
 };
@@ -99,6 +106,7 @@ pub struct Inner {
     pub access_tokens: TtlDashMap<u32, Arc<AccessToken>>,
     pub snowflake_id: SnowflakeIdGenerator,
     pub webadmin: WebAdminManager,
+    pub config_version: AtomicU8,
 
     pub concurrency_limiter: DashMap<u32, Arc<ConcurrencyLimiters>>,
 
@@ -149,6 +157,7 @@ impl JMAP {
             cache_threads: LruCache::with_capacity(
                 config.property("cache.thread.size").unwrap_or(2048),
             ),
+            config_version: 0.into(),
         };
 
         // Unpack webadmin
@@ -172,26 +181,6 @@ impl JMAP {
         spawn_housekeeper(jmap_instance.clone(), housekeeper_rx);
 
         jmap_instance
-    }
-
-    pub async fn assign_document_id(
-        &self,
-        account_id: u32,
-        collection: Collection,
-    ) -> Result<u32, MethodError> {
-        self.core
-            .storage
-            .data
-            .assign_document_id(account_id, collection)
-            .await
-            .map_err(|err| {
-                tracing::error!(
-                    event = "error",
-                    context = "assign_document_id",
-                    error = ?err,
-                    "Failed to assign documentId.");
-                MethodError::ServerPartialFail
-            })
     }
 
     pub async fn get_property<U>(
@@ -240,7 +229,7 @@ impl JMAP {
         property: P,
     ) -> Result<Vec<(u32, U)>, MethodError>
     where
-        I: PropertiesIterator + Send + Sync,
+        I: DocumentSet + Send + Sync,
         P: AsRef<Property>,
         U: Deserialize + 'static,
     {
@@ -322,7 +311,7 @@ impl JMAP {
         account_id: u32,
         collection: Collection,
         property: impl AsRef<Property>,
-        value: impl Into<TagValue>,
+        value: impl Into<TagValue<u32>>,
     ) -> Result<Option<RoaringBitmap>, MethodError> {
         let property = property.as_ref();
         match self
@@ -336,7 +325,7 @@ impl JMAP {
                     field: property.into(),
                     value: value.into(),
                 },
-                block_num: 0,
+                document_id: 0,
             })
             .await
         {
@@ -544,13 +533,12 @@ impl JMAP {
         Ok(response)
     }
 
-    pub async fn write_batch(&self, batch: BatchBuilder) -> Result<(), MethodError> {
+    pub async fn write_batch(&self, batch: BatchBuilder) -> Result<AssignedIds, MethodError> {
         self.core
             .storage
             .data
             .write(batch.build())
             .await
-            .map(|_| ())
             .map_err(|err| {
                 match err {
                     store::Error::InternalError(err) => {
@@ -572,6 +560,27 @@ impl JMAP {
                     }
                 }
             })
+    }
+
+    pub async fn write_batch_expect_id(&self, batch: BatchBuilder) -> Result<u32, MethodError> {
+        self.write_batch(batch).await.and_then(|ids| {
+            ids.last_document_id().map_err(|err| {
+                tracing::error!(
+                    event = "error",
+                    context = "write_batch_expect_id",
+                    error = ?err,
+                    "Failed to obtain last document id."
+                );
+                MethodError::ServerPartialFail
+            })
+        })
+    }
+}
+
+impl Inner {
+    pub fn increment_config_version(&self) {
+        self.config_version
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 }
 
@@ -609,49 +618,5 @@ impl UpdateResults for QueryResponse {
         } else {
             Err(MethodError::AnchorNotFound)
         }
-    }
-}
-
-#[allow(clippy::len_without_is_empty)]
-pub trait PropertiesIterator {
-    fn min(&self) -> u32;
-    fn max(&self) -> u32;
-    fn contains(&self, id: u32) -> bool;
-    fn len(&self) -> usize;
-}
-
-impl PropertiesIterator for RoaringBitmap {
-    fn min(&self) -> u32 {
-        self.min().unwrap_or(0)
-    }
-
-    fn max(&self) -> u32 {
-        self.max().map(|m| m + 1).unwrap_or(0)
-    }
-
-    fn contains(&self, id: u32) -> bool {
-        self.contains(id)
-    }
-
-    fn len(&self) -> usize {
-        self.len() as usize
-    }
-}
-
-impl PropertiesIterator for () {
-    fn min(&self) -> u32 {
-        0
-    }
-
-    fn max(&self) -> u32 {
-        u32::MAX
-    }
-
-    fn contains(&self, _: u32) -> bool {
-        true
-    }
-
-    fn len(&self) -> usize {
-        0
     }
 }

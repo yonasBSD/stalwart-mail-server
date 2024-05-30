@@ -26,7 +26,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use store::write::purge::PurgeStore;
+use store::{write::purge::PurgeStore, BlobStore, LookupStore, Store};
 use tokio::sync::mpsc;
 use utils::map::ttl_dashmap::TtlMap;
 
@@ -37,13 +37,22 @@ use super::IPC_CHANNEL_BUFFER;
 pub enum Event {
     IndexStart,
     IndexDone,
+    AcmeReload,
     AcmeReschedule {
         provider_id: String,
         renew_at: Instant,
     },
+    Purge(PurgeType),
     #[cfg(feature = "test_mode")]
     IndexIsActive(tokio::sync::oneshot::Sender<bool>),
     Exit,
+}
+
+pub enum PurgeType {
+    Data(Store),
+    Blobs { store: Store, blob_store: BlobStore },
+    Lookup(LookupStore),
+    Account(Option<u32>),
 }
 
 #[derive(PartialEq, Eq)]
@@ -55,6 +64,7 @@ struct Action {
 #[derive(PartialEq, Eq, Debug)]
 enum ActionClass {
     Session,
+    Account,
     Store(usize),
     Acme(String),
 }
@@ -83,6 +93,10 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
         queue.schedule(
             Instant::now() + core_.jmap.session_purge_frequency.time_to_next(),
             ActionClass::Session,
+        );
+        queue.schedule(
+            Instant::now() + core_.jmap.account_purge_frequency.time_to_next(),
+            ActionClass::Account,
         );
         for (idx, schedule) in core_.storage.purge_schedules.iter().enumerate() {
             queue.schedule(
@@ -113,11 +127,41 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
         loop {
             match tokio::time::timeout(queue.wake_up_time(), rx.recv()).await {
                 Ok(Some(event)) => match event {
+                    Event::AcmeReload => {
+                        let core_ = core.core.load().clone();
+                        let inner = core.jmap_inner.clone();
+
+                        tokio::spawn(async move {
+                            for provider in core_.tls.acme_providers.values() {
+                                match core_.init_acme(provider).await {
+                                    Ok(renew_at) => {
+                                        inner
+                                            .housekeeper_tx
+                                            .send(Event::AcmeReschedule {
+                                                provider_id: provider.id.clone(),
+                                                renew_at: Instant::now() + renew_at,
+                                            })
+                                            .await
+                                            .ok();
+                                    }
+                                    Err(err) => {
+                                        tracing::error!(
+                                            context = "acme",
+                                            event = "error",
+                                            error = ?err,
+                                            "Failed to reload ACME certificate manager.");
+                                    }
+                                };
+                            }
+                        });
+                    }
                     Event::AcmeReschedule {
                         provider_id,
                         renew_at,
                     } => {
-                        queue.schedule(renew_at, ActionClass::Acme(provider_id));
+                        let action = ActionClass::Acme(provider_id);
+                        queue.remove_action(&action);
+                        queue.schedule(renew_at, action);
                     }
                     Event::IndexStart => {
                         if !index_busy {
@@ -141,6 +185,40 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                             index_busy = false;
                         }
                     }
+                    Event::Purge(purge) => match purge {
+                        PurgeType::Data(store) => {
+                            tokio::spawn(async move {
+                                if let Err(err) = store.purge_store().await {
+                                    tracing::error!("Failed to purge data store: {err}",);
+                                }
+                            });
+                        }
+                        PurgeType::Blobs { store, blob_store } => {
+                            tokio::spawn(async move {
+                                if let Err(err) = store.purge_blobs(blob_store).await {
+                                    tracing::error!("Failed to purge blob store: {err}",);
+                                }
+                            });
+                        }
+                        PurgeType::Lookup(store) => {
+                            tokio::spawn(async move {
+                                if let Err(err) = store.purge_lookup_store().await {
+                                    tracing::error!("Failed to purge lookup store: {err}",);
+                                }
+                            });
+                        }
+                        PurgeType::Account(account_id) => {
+                            let jmap = JMAP::from(core.clone());
+                            tokio::spawn(async move {
+                                tracing::debug!("Purging accounts.");
+                                if let Some(account_id) = account_id {
+                                    jmap.purge_account(account_id).await;
+                                } else {
+                                    jmap.purge_accounts().await;
+                                }
+                            });
+                        }
+                    },
                     #[cfg(feature = "test_mode")]
                     Event::IndexIsActive(tx) => {
                         tx.send(index_busy).ok();
@@ -192,6 +270,8 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                                             }
                                         };
 
+                                        inner.increment_config_version();
+
                                         inner
                                             .housekeeper_tx
                                             .send(Event::AcmeReschedule {
@@ -202,6 +282,18 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                                             .ok();
                                     }
                                 });
+                            }
+                            ActionClass::Account => {
+                                let jmap = JMAP::from(core.clone());
+                                tokio::spawn(async move {
+                                    tracing::debug!("Purging accounts.");
+                                    jmap.purge_accounts().await;
+                                });
+                                queue.schedule(
+                                    Instant::now()
+                                        + core_.jmap.account_purge_frequency.time_to_next(),
+                                    ActionClass::Account,
+                                );
                             }
                             ActionClass::Session => {
                                 let inner = core.jmap_inner.clone();
@@ -265,6 +357,10 @@ impl Queue {
     pub fn schedule(&mut self, due: Instant, event: ActionClass) {
         tracing::debug!(due_in = due.saturating_duration_since(Instant::now()).as_secs(), event = ?event, "Scheduling housekeeper event.");
         self.heap.push(Action { due, event });
+    }
+
+    pub fn remove_action(&mut self, event: &ActionClass) {
+        self.heap.retain(|e| &e.event != event);
     }
 
     pub fn wake_up_time(&self) -> Duration {
