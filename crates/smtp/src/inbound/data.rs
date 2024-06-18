@@ -29,7 +29,9 @@ use std::{
 };
 
 use common::{
-    config::smtp::auth::VerifyStrategy, listener::SessionStream, scripts::ScriptModification,
+    config::smtp::{auth::VerifyStrategy, session::Stage},
+    listener::SessionStream,
+    scripts::ScriptModification,
 };
 use mail_auth::{
     common::{headers::HeaderWriter, verify::VerifySignature},
@@ -398,7 +400,7 @@ impl<T: SessionStream> Session<T> {
         }
 
         // Run Milter filters
-        let mut edited_message = match self.run_milters(&auth_message).await {
+        let mut edited_message = match self.run_milters(Stage::Data, (&auth_message).into()).await {
             Ok(modifications) => {
                 if !modifications.is_empty() {
                     tracing::debug!(
@@ -680,7 +682,7 @@ impl<T: SessionStream> Session<T> {
             .unwrap_or_default()
         {
             if let Some(signer) = self.core.core.get_dkim_signer(&signer) {
-                match signer.sign_chained(&[headers.as_ref(), &raw_message]) {
+                match signer.sign_chained(&[headers.as_ref(), raw_message]) {
                     Ok(signature) => {
                         signature.write_header(&mut headers);
                     }
