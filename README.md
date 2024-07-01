@@ -94,6 +94,8 @@ Key features:
   - Encryption at rest with **S/MIME** or **OpenPGP**.
   - Automatic TLS certificate provisioning with [ACME](https://datatracker.ietf.org/doc/html/rfc8555) using `TLS-ALPN-01`, `DNS-01` or `HTTP-01` challenges.
   - OAuth 2.0 [authorization code](https://www.rfc-editor.org/rfc/rfc8628) and [device authorization](https://www.rfc-editor.org/rfc/rfc8628) flows.
+  - Two-factor authentication with Time-based One-Time Passwords (`2FA-TOTP`) 
+  - Application passwords (App Passwords).
   - Automated blocking of hosts that cause multiple authentication errors (aka **fail2ban**).
   - Access Control Lists (ACLs).
   - Rate limiting.
@@ -134,6 +136,14 @@ See the [open issues](https://github.com/stalwartlabs/mail-server/issues) for a 
 Part of the development of this project was funded through the [NGI0 Entrust Fund](https://nlnet.nl/entrust), a fund established by [NLnet](https://nlnet.nl/) with financial support from the European Commission's [Next Generation Internet](https://ngi.eu/) programme, under the aegis of DG Communications Networks, Content and Technology under grant agreement No 101069594.
 
 If you find the project useful you can help by [becoming a sponsor](https://liberapay.com/stalwartlabs). Thank you!
+
+## Sponsors
+
+These are some of our open-source sponsors:
+
+<!-- sponsors --><a href="https://github.com/kbjr"><img src="https://github.com/kbjr.png" width="60px" alt="James Brumond" /></a><a href="https://github.com/CarlSchwan"><img src="https://github.com/CarlSchwan.png" width="60px" alt="Carl Schwan" /></a><a href="https://github.com/cvalka2"><img src="https://github.com/cvalka2.png" width="60px" alt="" /></a><a href="https://github.com/EliRibble"><img src="https://github.com/EliRibble.png" width="60px" alt="Eli Ribble" /></a><a href="https://github.com/JAMflow-Cloud"><img src="https://github.com/JAMflow-Cloud.png" width="60px" alt="JAMflow Cloud" /></a><a href="https://github.com/starsong-consulting"><img src="https://github.com/starsong-consulting.png" width="60px" alt="Starsong Consulting" /></a><a href="https://github.com/Vie-eco"><img src="https://github.com/Vie-eco.png" width="60px" alt="Vie.eco" /></a><!-- sponsors -->
+
+<br/>If you would like to support our work, please consider [becoming a sponsor](https://github.com/sponsors/stalwartlabs).
 
 ## License
 
