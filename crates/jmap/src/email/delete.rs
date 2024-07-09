@@ -13,6 +13,7 @@ use jmap_proto::{
         type_state::DataType,
     },
 };
+#[cfg(feature = "enterprise")]
 use se_common::undelete::Undelete;
 use store::{
     ahash::AHashMap,
@@ -255,36 +256,6 @@ impl JMAP {
             .core
             .storage
             .lookup
-            .counter_get(format!("purge:{account_id}").into_bytes())
-            .await
-        {
-            Ok(count) => {
-                if count > 0 {
-                    tracing::debug!(
-                        event = "skipped",
-                        context = "email_purge_account",
-                        account_id = account_id,
-                        count,
-                        "Account is already being purged."
-                    );
-                    return;
-                }
-            }
-            Err(err) => {
-                tracing::error!(
-                    event = "error",
-                    context = "email_purge_account",
-                    account_id = account_id,
-                    error = ?err,
-                    "Failed to lock account."
-                );
-                return;
-            }
-        }
-        match self
-            .core
-            .storage
-            .lookup
             .counter_incr(
                 format!("purge:{account_id}").into_bytes(),
                 1,
@@ -350,6 +321,23 @@ impl JMAP {
                     "Failed to purge changes."
                 );
             }
+        }
+
+        // Delete lock
+        if let Err(err) = self
+            .core
+            .storage
+            .lookup
+            .counter_delete(format!("purge:{account_id}").into_bytes())
+            .await
+        {
+            tracing::error!(
+                event = "error",
+                context = "email_purge_account",
+                account_id = account_id,
+                error = ?err,
+                "Failed to delete lock."
+            );
         }
     }
 
@@ -529,6 +517,7 @@ impl JMAP {
                 // SPDX-License-Identifier: LicenseRef-SEL
 
                 // Hold blob for undeletion
+                #[cfg(feature = "enterprise")]
                 self.core.hold_undelete(
                     &mut batch,
                     Collection::Email.into(),
