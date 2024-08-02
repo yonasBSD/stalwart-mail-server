@@ -6,19 +6,19 @@
 
 use directory::QueryBy;
 use jmap_proto::{
-    error::method::MethodError,
     method::query::{Filter, QueryRequest, QueryResponse, RequestArguments},
     types::collection::Collection,
 };
 use store::{query::ResultSet, roaring::RoaringBitmap};
 
-use crate::JMAP;
+use crate::{api::http::HttpSessionData, JMAP};
 
 impl JMAP {
     pub async fn principal_query(
         &self,
         mut request: QueryRequest<RequestArguments>,
-    ) -> Result<QueryResponse, MethodError> {
+        session: &HttpSessionData,
+    ) -> trc::Result<QueryResponse> {
         let account_id = request.account_id.document_id();
         let mut result_set = ResultSet {
             account_id,
@@ -35,8 +35,7 @@ impl JMAP {
                         .storage
                         .directory
                         .query(QueryBy::Name(name.as_str()), false)
-                        .await
-                        .map_err(|_| MethodError::ServerPartialFail)?
+                        .await?
                     {
                         if is_set || result_set.results.contains(principal.id) {
                             result_set.results =
@@ -53,9 +52,8 @@ impl JMAP {
                     let mut ids = RoaringBitmap::new();
                     for id in self
                         .core
-                        .email_to_ids(&self.core.storage.directory, &email)
-                        .await
-                        .map_err(|_| MethodError::ServerPartialFail)?
+                        .email_to_ids(&self.core.storage.directory, &email, session.session_id)
+                        .await?
                     {
                         ids.insert(id);
                     }
@@ -67,7 +65,11 @@ impl JMAP {
                     }
                 }
                 Filter::Type(_) => {}
-                other => return Err(MethodError::UnsupportedFilter(other.to_string())),
+                other => {
+                    return Err(trc::JmapEvent::UnsupportedFilter
+                        .into_err()
+                        .details(other.to_string()))
+                }
             }
         }
 

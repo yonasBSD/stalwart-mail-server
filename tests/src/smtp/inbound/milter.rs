@@ -379,6 +379,7 @@ fn milter_address_modifications() {
         0,
         "127.0.0.1".parse().unwrap(),
         0,
+        0,
     );
 
     // ChangeFrom
@@ -484,6 +485,7 @@ fn milter_message_modifications() {
         0,
         "127.0.0.1".parse().unwrap(),
         0,
+        0,
     );
 
     for test in tests {
@@ -551,6 +553,7 @@ async fn milter_client_test() {
     let mut client = MilterClient::connect(
         &Milter {
             enable: IfBlock::empty(""),
+            id: "test".to_string().into(),
             addrs: vec![SocketAddr::from(([127, 0, 0, 1], PORT))],
             hostname: "localhost".to_string(),
             port: PORT,
@@ -566,7 +569,7 @@ async fn milter_client_test() {
             flags_protocol: None,
             run_on_stage: AHashSet::from([Stage::Data]),
         },
-        tracing::span!(tracing::Level::TRACE, "hi"),
+        0,
     )
     .await
     .unwrap();
@@ -807,7 +810,7 @@ pub fn spawn_mock_mta_hook_server() -> watch::Sender<bool> {
 
                                     async move {
 
-                                        let request = serde_json::from_slice::<Request>(&fetch_body(&mut req, 1024 * 1024).await.unwrap())
+                                        let request = serde_json::from_slice::<Request>(&fetch_body(&mut req, 1024 * 1024,0).await.unwrap())
                                         .unwrap();
                                         let response = handle_mta_hook(request, tests);
 
@@ -816,7 +819,7 @@ pub fn spawn_mock_mta_hook_server() -> watch::Sender<bool> {
                                                 content_type: "application/json",
                                                 contents: serde_json::to_string(&response).unwrap().into_bytes(),
                                             }
-                                            .into_http_response(),
+                                            .into_http_response().build(),
                                         )
                                     }
                                 }),

@@ -6,6 +6,7 @@
 
 use common::listener::SessionStream;
 use mail_auth::{report::AuthFailureType, AuthenticationResults, SpfOutput};
+use trc::OutgoingReportEvent;
 use utils::config::Rate;
 
 use crate::core::Session;
@@ -20,13 +21,14 @@ impl<T: SessionStream> Session<T> {
     ) {
         // Throttle recipient
         if !self.throttle_rcpt(rcpt, rate, "spf").await {
-            tracing::debug!(
-                parent: &self.span,
-                context = "report",
-                report = "spf",
-                event = "throttle",
-                rcpt = rcpt,
+            trc::event!(
+                OutgoingReport(OutgoingReportEvent::SpfRateLimited),
+                SpanId = self.data.session_id,
+                To = rcpt.to_string(),
+                Limit = rate.requests,
+                Interval = rate.period
             );
+
             return;
         }
 
@@ -35,7 +37,7 @@ impl<T: SessionStream> Session<T> {
         let from_addr = self
             .core
             .core
-            .eval_if(&config.address, self)
+            .eval_if(&config.address, self, self.data.session_id)
             .await
             .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_string());
         let mut report = Vec::with_capacity(128);
@@ -62,7 +64,7 @@ impl<T: SessionStream> Session<T> {
                 (
                     self.core
                         .core
-                        .eval_if(&config.name, self)
+                        .eval_if(&config.name, self, self.data.session_id)
                         .await
                         .unwrap_or_else(|| "Mailer Daemon".to_string())
                         .as_str(),
@@ -72,20 +74,18 @@ impl<T: SessionStream> Session<T> {
                 &self
                     .core
                     .core
-                    .eval_if(&config.subject, self)
+                    .eval_if(&config.subject, self, self.data.session_id)
                     .await
                     .unwrap_or_else(|| "SPF Report".to_string()),
                 &mut report,
             )
             .ok();
 
-        tracing::info!(
-            parent: &self.span,
-            context = "report",
-            report = "spf",
-            event = "queue",
-            rcpt = rcpt,
-            "Queueing SPF authentication failure report."
+        trc::event!(
+            OutgoingReport(OutgoingReportEvent::SpfReport),
+            SpanId = self.data.session_id,
+            To = rcpt.to_string(),
+            From = from_addr.to_string(),
         );
 
         // Send report
@@ -95,8 +95,8 @@ impl<T: SessionStream> Session<T> {
                 [rcpt].into_iter(),
                 report,
                 &config.sign,
-                &self.span,
                 true,
+                self.data.session_id,
             )
             .await;
     }

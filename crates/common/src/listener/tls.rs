@@ -28,7 +28,7 @@ use super::{
         resolver::{build_acme_static_resolver, IsTlsAlpnChallenge},
         AcmeProvider,
     },
-    SessionStream, TcpAcceptor, TcpAcceptorResult,
+    ServerInstance, SessionStream, TcpAcceptor, TcpAcceptorResult,
 };
 
 pub static TLS13_VERSION: &[&SupportedProtocolVersion] = &[&TLS13];
@@ -76,11 +76,9 @@ impl Core {
                             .and_then(|(_, domain)| certs.get(domain))
                     })
                     .or_else(|| {
-                        tracing::debug!(
-                            context = "tls",
-                            event = "not-found",
-                            client_name = name,
-                            "No SNI certificate found by name, using default."
+                        trc::event!(
+                            Tls(trc::TlsEvent::CertificateNotFound),
+                            Name = name.to_string(),
                         );
                         certs.get("*")
                     })
@@ -89,18 +87,16 @@ impl Core {
         .or_else(|| match certs.len().cmp(&1) {
             Ordering::Equal => certs.values().next(),
             Ordering::Greater => {
-                tracing::debug!(
-                    context = "tls",
-                    event = "error",
-                    "Multiple certificates available and no default certificate configured."
+                trc::event!(
+                    Tls(trc::TlsEvent::MultipleCertificatesAvailable),
+                    Count = certs.len(),
                 );
                 certs.values().next()
             }
             Ordering::Less => {
-                tracing::warn!(
-                    context = "tls",
-                    event = "error",
-                    "No certificates available, using self-signed."
+                trc::event!(
+                    Tls(trc::TlsEvent::NoCertificatesAvailable),
+                    Count = certs.len(),
                 );
                 self.tls.self_signed_cert.as_ref()
             }
@@ -114,6 +110,7 @@ impl TcpAcceptor {
         &self,
         stream: IO,
         enable_acme: Option<Arc<Core>>,
+        instance: &ServerInstance,
     ) -> TcpAcceptorResult<IO>
     where
         IO: SessionStream,
@@ -135,21 +132,23 @@ impl TcpAcceptor {
                                     Some(domain) => {
                                         let key = core.build_acme_certificate(domain).await;
 
-                                        tracing::trace!(
-                                            context = "acme",
-                                            event = "auth-key",
-                                            domain = %domain,
-                                            found_key = key.is_some(),
-                                            "Client supplied SNI");
+                                        trc::event!(
+                                            Acme(trc::AcmeEvent::ClientSuppliedSni),
+                                            ListenerId = instance.id.clone(),
+                                            Protocol = instance.protocol,
+                                            Name = domain.to_string(),
+                                            Key = key.is_some(),
+                                        );
+
                                         key
                                     }
                                     None => {
-                                        tracing::debug!(
-                                            context = "acme",
-                                            event = "error",
-                                            reason = "missing-sni",
-                                            "Client did not supply SNI"
+                                        trc::event!(
+                                            Acme(trc::AcmeEvent::ClientMissingSni),
+                                            ListenerId = instance.id.clone(),
+                                            Protocol = instance.protocol,
                                         );
+
                                         None
                                     }
                                 };
@@ -159,19 +158,20 @@ impl TcpAcceptor {
                                     .await
                                 {
                                     Ok(mut tls) => {
-                                        tracing::debug!(
-                                            context = "acme",
-                                            event = "validation",
-                                            "Received TLS-ALPN-01 validation request."
+                                        trc::event!(
+                                            Acme(trc::AcmeEvent::TlsAlpnReceived),
+                                            ListenerId = instance.id.clone(),
+                                            Protocol = instance.protocol,
                                         );
+
                                         let _ = tls.shutdown().await;
                                     }
                                     Err(err) => {
-                                        tracing::info!(
-                                            context = "acme",
-                                            event = "error",
-                                            error = ?err,
-                                            "TLS-ALPN-01 validation request failed."
+                                        trc::event!(
+                                            Acme(trc::AcmeEvent::TlsAlpnError),
+                                            ListenerId = instance.id.clone(),
+                                            Protocol = instance.protocol,
+                                            Reason = err.to_string(),
                                         );
                                     }
                                 }
@@ -182,11 +182,11 @@ impl TcpAcceptor {
                             }
                         }
                         Err(err) => {
-                            tracing::debug!(
-                                context = "listener",
-                                event = "error",
-                                error = ?err,
-                                "TLS handshake failed."
+                            trc::event!(
+                                Tls(trc::TlsEvent::HandshakeError),
+                                ListenerId = instance.id.clone(),
+                                Protocol = instance.protocol,
+                                Reason = err.to_string(),
                             );
                         }
                     }

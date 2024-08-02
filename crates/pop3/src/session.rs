@@ -6,12 +6,15 @@
 
 use std::borrow::Cow;
 
-use common::listener::{SessionData, SessionManager, SessionStream};
+use common::listener::{SessionData, SessionManager, SessionResult, SessionStream};
 use jmap::JMAP;
 use tokio_rustls::server::TlsStream;
 
 use crate::{
-    protocol::{request::Parser, response::Response},
+    protocol::{
+        request::Parser,
+        response::{Response, SerializeResponse},
+    },
     Pop3SessionManager, Session, State, SERVER_GREETING,
 };
 
@@ -36,7 +39,7 @@ impl SessionManager for Pop3SessionManager {
                 stream: session.stream,
                 in_flight: session.in_flight,
                 remote_addr: session.remote_ip,
-                span: session.span,
+                session_id: session.session_id,
             };
 
             if session
@@ -77,34 +80,53 @@ impl<T: SessionStream> Session<T> {
                         Ok(Ok(bytes_read)) => {
                             if bytes_read > 0 {
                                 match self.ingest(&buf[..bytes_read]).await {
-                                    Ok(true) => (),
-                                    Ok(false) => {
+                                    SessionResult::Continue => (),
+                                    SessionResult::UpgradeTls => {
                                         return true;
                                     }
-                                    Err(_) => {
-                                        tracing::debug!(parent: &self.span, event = "disconnect", "Disconnecting client.");
+                                    SessionResult::Close => {
                                         break;
                                     }
                                 }
                             } else {
-                                tracing::debug!(parent: &self.span, event = "close", "POP3 connection closed by client.");
+                                trc::event!(
+                                    Network(trc::NetworkEvent::Closed),
+                                    SpanId = self.session_id,
+                                    CausedBy = trc::location!()
+                                );
                                 break;
                             }
                         },
                         Ok(Err(err)) => {
-                            tracing::debug!(parent: &self.span, event = "error", reason = %err, "POP3 connection error.");
+                            trc::event!(
+                                Network(trc::NetworkEvent::ReadError),
+                                SpanId = self.session_id,
+                                Reason = err.to_string()    ,
+                                CausedBy = trc::location!()
+                            );
                             break;
                         },
                         Err(_) => {
+                            trc::event!(
+                                Network(trc::NetworkEvent::Timeout),
+                                SpanId = self.session_id,
+                                CausedBy = trc::location!()
+                            );
+
                             self.write_bytes(&b"-ERR Connection timed out.\r\n"[..]).await.ok();
-                            tracing::debug!(parent: &self.span, "POP3 connection timed out.");
                             break;
                         }
                     }
                 },
                 _ = shutdown_rx.changed() => {
+                    trc::event!(
+                        Network(trc::NetworkEvent::Closed),
+                        SpanId = self.session_id,
+                        Reason = "Server shutting down",
+                        CausedBy = trc::location!()
+                    );
+
                     self.write_bytes(&b"* BYE Server shutting down.\r\n"[..]).await.ok();
-                    tracing::debug!(parent: &self.span, event = "shutdown", "POP3 server shutting down.");
                     break;
                 }
             };
@@ -115,13 +137,16 @@ impl<T: SessionStream> Session<T> {
 
     pub async fn into_tls(self) -> Result<Session<TlsStream<T>>, ()> {
         Ok(Session {
-            stream: self.instance.tls_accept(self.stream, &self.span).await?,
+            stream: self
+                .instance
+                .tls_accept(self.stream, self.session_id)
+                .await?,
             jmap: self.jmap,
             imap: self.imap,
             instance: self.instance,
             receiver: self.receiver,
             state: self.state,
-            span: self.span,
+            session_id: self.session_id,
             in_flight: self.in_flight,
             remote_addr: self.remote_addr,
         })
@@ -129,34 +154,49 @@ impl<T: SessionStream> Session<T> {
 }
 
 impl<T: SessionStream> Session<T> {
-    pub async fn write_bytes(&mut self, bytes: impl AsRef<[u8]>) -> Result<(), ()> {
+    pub async fn write_bytes(&mut self, bytes: impl AsRef<[u8]>) -> trc::Result<()> {
         let bytes = bytes.as_ref();
-        /*for line in String::from_utf8_lossy(bytes.as_ref()).split("\r\n") {
-            let c = println!("{}", line);
-        }*/
-        tracing::trace!(
-            parent: &self.span,
-            event = "write",
-            data = std::str::from_utf8(bytes).unwrap_or_default(),
-            size = bytes.len()
+
+        trc::event!(
+            Pop3(trc::Pop3Event::RawOutput),
+            SpanId = self.session_id,
+            Size = bytes.len(),
+            Contents = trc::Value::from_maybe_string(bytes),
         );
 
-        if let Err(err) = self.stream.write_all(bytes.as_ref()).await {
-            tracing::trace!(parent: &self.span, "Failed to write to stream: {}", err);
-            Err(())
-        } else {
-            let _ = self.stream.flush().await;
-            Ok(())
-        }
+        self.stream.write_all(bytes.as_ref()).await.map_err(|err| {
+            trc::NetworkEvent::WriteError
+                .into_err()
+                .reason(err)
+                .caused_by(trc::location!())
+        })?;
+        self.stream.flush().await.map_err(|err| {
+            trc::NetworkEvent::WriteError
+                .into_err()
+                .reason(err)
+                .caused_by(trc::location!())
+        })
     }
 
-    pub async fn write_ok(&mut self, message: impl Into<Cow<'static, str>>) -> Result<(), ()> {
+    pub async fn write_ok(&mut self, message: impl Into<Cow<'static, str>>) -> trc::Result<()> {
         self.write_bytes(Response::Ok::<u32>(message.into()).serialize())
             .await
     }
 
-    pub async fn write_err(&mut self, message: impl Into<Cow<'static, str>>) -> Result<(), ()> {
-        self.write_bytes(Response::Err::<u32>(message.into()).serialize())
-            .await
+    pub async fn write_err(&mut self, err: trc::Error) -> bool {
+        let disconnect = err.must_disconnect();
+        let response = err.serialize();
+        let write_err = err.should_write_err();
+
+        trc::error!(err.span_id(self.session_id));
+
+        if write_err {
+            if let Err(err) = self.write_bytes(response).await {
+                trc::error!(err.span_id(self.session_id));
+                return false;
+            }
+        }
+
+        !disconnect
     }
 }

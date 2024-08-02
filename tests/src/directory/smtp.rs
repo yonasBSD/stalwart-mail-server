@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use common::listener::limiter::{ConcurrencyLimiter, InFlight};
-use directory::{DirectoryError, QueryBy};
+use directory::QueryBy;
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
 use tokio::{
@@ -78,22 +78,32 @@ async fn lmtp_directory() {
 
     for (item, expected) in &tests {
         let result: LookupResult = match item {
-            Item::IsAccount(v) => core.rcpt(&handle, v).await.unwrap().into(),
+            Item::IsAccount(v) => core.rcpt(&handle, v, 0).await.unwrap().into(),
             Item::Authenticate(v) => handle
                 .query(QueryBy::Credentials(v), true)
                 .await
                 .unwrap()
                 .is_some()
                 .into(),
-            Item::Verify(v) => match core.vrfy(&handle, v).await {
+            Item::Verify(v) => match core.vrfy(&handle, v, 0).await {
                 Ok(v) => v.into(),
-                Err(DirectoryError::Unsupported) => LookupResult::False,
-                Err(e) => panic!("Unexpected error: {e:?}"),
+                Err(e) => {
+                    if e.matches(trc::EventType::Store(trc::StoreEvent::NotSupported)) {
+                        LookupResult::False
+                    } else {
+                        panic!("Unexpected error: {e:?}")
+                    }
+                }
             },
-            Item::Expand(v) => match core.expn(&handle, v).await {
+            Item::Expand(v) => match core.expn(&handle, v, 0).await {
                 Ok(v) => v.into(),
-                Err(DirectoryError::Unsupported) => LookupResult::False,
-                Err(e) => panic!("Unexpected error: {e:?}"),
+                Err(e) => {
+                    if e.matches(trc::EventType::Store(trc::StoreEvent::NotSupported)) {
+                        LookupResult::False
+                    } else {
+                        panic!("Unexpected error: {e:?}")
+                    }
+                }
             },
         };
 
@@ -112,22 +122,32 @@ async fn lmtp_directory() {
         requests.push((
             tokio::spawn(async move {
                 let result: LookupResult = match &item {
-                    Item::IsAccount(v) => core.rcpt(&handle, v).await.unwrap().into(),
+                    Item::IsAccount(v) => core.rcpt(&handle, v, 0).await.unwrap().into(),
                     Item::Authenticate(v) => handle
                         .query(QueryBy::Credentials(v), true)
                         .await
                         .unwrap()
                         .is_some()
                         .into(),
-                    Item::Verify(v) => match core.vrfy(&handle, v).await {
+                    Item::Verify(v) => match core.vrfy(&handle, v, 0).await {
                         Ok(v) => v.into(),
-                        Err(DirectoryError::Unsupported) => LookupResult::False,
-                        Err(e) => panic!("Unexpected error: {e:?}"),
+                        Err(e) => {
+                            if e.matches(trc::EventType::Store(trc::StoreEvent::NotSupported)) {
+                                LookupResult::False
+                            } else {
+                                panic!("Unexpected error: {e:?}")
+                            }
+                        }
                     },
-                    Item::Expand(v) => match core.expn(&handle, v).await {
+                    Item::Expand(v) => match core.expn(&handle, v, 0).await {
                         Ok(v) => v.into(),
-                        Err(DirectoryError::Unsupported) => LookupResult::False,
-                        Err(e) => panic!("Unexpected error: {e:?}"),
+                        Err(e) => {
+                            if e.matches(trc::EventType::Store(trc::StoreEvent::NotSupported)) {
+                                LookupResult::False
+                            } else {
+                                panic!("Unexpected error: {e:?}")
+                            }
+                        }
                     },
                 };
 
@@ -162,7 +182,7 @@ async fn lmtp_directory() {
             requests.push((
                 tokio::spawn(async move {
                     let result: LookupResult = match &item {
-                        Item::IsAccount(v) => core.rcpt(&handle, v).await.unwrap().into(),
+                        Item::IsAccount(v) => core.rcpt(&handle, v, 0).await.unwrap().into(),
                         _ => unreachable!(),
                     };
 

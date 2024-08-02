@@ -6,14 +6,12 @@
 
 use std::{io, sync::Arc, time::SystemTime};
 
-use chrono::{TimeZone, Utc};
 use common::{
     config::smtp::{
         report::{AddressMatch, AggregateFrequency},
         resolver::{Policy, Tlsa},
     },
     expr::if_block::IfBlock,
-    webhooks::{WebhookPayload, WebhookType},
     USER_AGENT,
 };
 use mail_auth::{
@@ -119,21 +117,24 @@ impl SMTP {
         rcpts: impl Iterator<Item = impl AsRef<str>>,
         report: Vec<u8>,
         sign_config: &IfBlock,
-        span: &tracing::Span,
         deliver_now: bool,
+        parent_session_id: u64,
     ) {
         // Build message
         let from_addr_lcase = from_addr.to_lowercase();
         let from_addr_domain = from_addr_lcase.domain_part().to_string();
-        let mut message = self.new_message(from_addr, from_addr_lcase, from_addr_domain);
+        let mut message = self.new_message(
+            from_addr,
+            from_addr_lcase,
+            from_addr_domain,
+            parent_session_id,
+        );
         for rcpt_ in rcpts {
             message.add_recipient(rcpt_.as_ref(), self).await;
         }
 
         // Sign message
-        let signature = self
-            .sign_message(&mut message, sign_config, &report, span)
-            .await;
+        let signature = self.sign_message(&mut message, sign_config, &report).await;
 
         // Schedule delivery at a random time between now and the next 3 hours
         if !deliver_now {
@@ -150,53 +151,19 @@ impl SMTP {
             }
         }
 
-        // Send webhook
-        if self
-            .core
-            .has_webhook_subscribers(WebhookType::OutgoingReport)
-        {
-            self.inner
-                .ipc
-                .send_webhook(
-                    WebhookType::OutgoingReport,
-                    WebhookPayload::MessageAccepted {
-                        id: message.id,
-                        remote_ip: None,
-                        local_port: None,
-                        authenticated_as: None,
-                        return_path: message.return_path_lcase.clone(),
-                        recipients: message
-                            .recipients
-                            .iter()
-                            .map(|r| r.address_lcase.clone())
-                            .collect(),
-                        next_retry: Utc
-                            .timestamp_opt(message.next_delivery_event() as i64, 0)
-                            .single()
-                            .unwrap_or_else(Utc::now),
-                        next_dsn: Utc
-                            .timestamp_opt(message.next_dsn() as i64, 0)
-                            .single()
-                            .unwrap_or_else(Utc::now),
-                        expires: Utc
-                            .timestamp_opt(message.expires() as i64, 0)
-                            .single()
-                            .unwrap_or_else(Utc::now),
-                        size: message.size,
-                    },
-                )
-                .await;
-        }
-
         // Queue message
         message
-            .queue(signature.as_deref(), &report, self, span)
+            .queue(signature.as_deref(), &report, parent_session_id, self)
             .await;
     }
 
     pub async fn schedule_report(&self, report: impl Into<Event>) {
         if self.inner.report_tx.send(report.into()).await.is_err() {
-            tracing::warn!(context = "report", "Channel send failed.");
+            trc::event!(
+                Server(trc::ServerEvent::ThreadError),
+                CausedBy = trc::location!(),
+                Details = "Failed to send event to ReportScheduler"
+            );
         }
     }
 
@@ -205,26 +172,25 @@ impl SMTP {
         message: &mut Message,
         config: &IfBlock,
         bytes: &[u8],
-        span: &tracing::Span,
     ) -> Option<Vec<u8>> {
         let signers = self
             .core
-            .eval_if::<Vec<String>, _>(config, message)
+            .eval_if::<Vec<String>, _>(config, message, message.span_id)
             .await
             .unwrap_or_default();
         if !signers.is_empty() {
             let mut headers = Vec::with_capacity(64);
             for signer in signers.iter() {
-                if let Some(signer) = self.core.get_dkim_signer(signer) {
+                if let Some(signer) = self.core.get_dkim_signer(signer, message.span_id) {
                     match signer.sign(bytes) {
                         Ok(signature) => {
                             signature.write_header(&mut headers);
                         }
                         Err(err) => {
-                            tracing::warn!(parent: span,
-                        context = "dkim",
-                        event = "sign-failed",
-                        reason = %err);
+                            trc::error!(trc::Event::from(err)
+                                .span_id(message.span_id)
+                                .details("Failed to sign message")
+                                .caused_by(trc::location!()));
                         }
                     }
                 }

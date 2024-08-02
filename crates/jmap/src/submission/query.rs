@@ -5,7 +5,6 @@
  */
 
 use jmap_proto::{
-    error::method::MethodError,
     method::query::{
         Comparator, Filter, QueryRequest, QueryResponse, RequestArguments, SortProperty,
     },
@@ -19,7 +18,7 @@ impl JMAP {
     pub async fn email_submission_query(
         &self,
         mut request: QueryRequest<RequestArguments>,
-    ) -> Result<QueryResponse, MethodError> {
+    ) -> trc::Result<QueryResponse> {
         let account_id = request.account_id.document_id();
         let mut filters = Vec::with_capacity(request.filter.len());
 
@@ -60,7 +59,11 @@ impl JMAP {
                 Filter::And | Filter::Or | Filter::Not | Filter::Close => {
                     filters.push(cond.into());
                 }
-                other => return Err(MethodError::UnsupportedFilter(other.to_string())),
+                other => {
+                    return Err(trc::JmapEvent::UnsupportedFilter
+                        .into_err()
+                        .details(other.to_string()))
+                }
             }
         }
 
@@ -88,7 +91,11 @@ impl JMAP {
                     SortProperty::SentAt => {
                         query::Comparator::field(Property::SendAt, comparator.is_ascending)
                     }
-                    other => return Err(MethodError::UnsupportedSort(other.to_string())),
+                    other => {
+                        return Err(trc::JmapEvent::UnsupportedSort
+                            .into_err()
+                            .details(other.to_string()))
+                    }
                 });
             }
 

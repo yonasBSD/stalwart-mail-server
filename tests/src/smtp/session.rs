@@ -18,6 +18,7 @@ use tokio::{
 
 use smtp::core::{Session, SessionAddress, SessionData, SessionParameters, State, SMTP};
 use tokio_rustls::TlsAcceptor;
+use utils::snowflake::SnowflakeIdGenerator;
 
 pub struct DummyIo {
     pub tx_buf: Vec<u8>,
@@ -100,7 +101,6 @@ impl TestSession for Session<DummyIo> {
             state: State::default(),
             instance: Arc::new(ServerInstance::test_with_shutdown(shutdown_rx)),
             core,
-            span: tracing::info_span!("test"),
             stream: DummyIo {
                 rx_buf: vec![],
                 tx_buf: vec![],
@@ -110,6 +110,7 @@ impl TestSession for Session<DummyIo> {
                 "127.0.0.1".parse().unwrap(),
                 0,
                 "127.0.0.1".parse().unwrap(),
+                0,
                 0,
             ),
             params: SessionParameters::default(),
@@ -257,7 +258,8 @@ impl TestSession for Session<DummyIo> {
                         dsn_info: None,
                     },
                 ],
-                self.core.inner.snowflake_id.generate().unwrap(),
+                self.core.inner.queue_id_gen.generate().unwrap(),
+                0,
             )
             .await;
         assert_eq!(
@@ -359,6 +361,7 @@ impl TestServerInstance for ServerInstance {
             limiter: ConcurrencyLimiter::new(100),
             shutdown_rx,
             proxy_networks: vec![],
+            span_id_gen: Arc::new(SnowflakeIdGenerator::new()),
         }
     }
 }

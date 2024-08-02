@@ -13,9 +13,12 @@ use rustls::{
 
 use tokio::net::TcpSocket;
 use tokio_rustls::TlsAcceptor;
-use utils::config::{
-    utils::{AsKey, ParseValue},
-    Config,
+use utils::{
+    config::{
+        utils::{AsKey, ParseValue},
+        Config,
+    },
+    snowflake::SnowflakeIdGenerator,
 };
 
 use crate::{
@@ -31,7 +34,15 @@ use super::{
 impl Servers {
     pub fn parse(config: &mut Config) -> Self {
         // Parse ACME managers
-        let mut servers = Servers::default();
+        let mut servers = Servers {
+            span_id_gen: Arc::new(
+                config
+                    .property::<u64>("cluster.node-id")
+                    .map(SnowflakeIdGenerator::with_node_id)
+                    .unwrap_or_default(),
+            ),
+            ..Default::default()
+        };
 
         // Parse servers
         for id in config
@@ -181,6 +192,7 @@ impl Servers {
             proxy_networks.push(network);
         }
 
+        let span_id_gen = self.span_id_gen.clone();
         self.servers.push(Server {
             max_connections: config
                 .property_or_else(
@@ -193,6 +205,7 @@ impl Servers {
             protocol,
             listeners,
             proxy_networks,
+            span_id_gen,
         });
     }
 
@@ -304,7 +317,7 @@ impl Servers {
 }
 
 impl ParseValue for ServerProtocol {
-    fn parse_value(value: &str) -> utils::config::Result<Self> {
+    fn parse_value(value: &str) -> Result<Self, String> {
         if value.eq_ignore_ascii_case("smtp") {
             Ok(Self::Smtp)
         } else if value.eq_ignore_ascii_case("lmtp") {

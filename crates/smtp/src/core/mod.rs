@@ -30,7 +30,6 @@ use tokio::{
     sync::mpsc,
 };
 use tokio_rustls::TlsConnector;
-use tracing::Span;
 use utils::snowflake::SnowflakeIdGenerator;
 
 use crate::{
@@ -81,7 +80,8 @@ pub struct Inner {
     pub queue_throttle: DashMap<ThrottleKey, ConcurrencyLimiter, ThrottleKeyHasherBuilder>,
     pub queue_tx: mpsc::Sender<queue::Event>,
     pub report_tx: mpsc::Sender<reporting::Event>,
-    pub snowflake_id: SnowflakeIdGenerator,
+    pub queue_id_gen: SnowflakeIdGenerator,
+    pub span_id_gen: Arc<SnowflakeIdGenerator>,
     pub connectors: TlsConnectors,
     pub ipc: Ipc,
     pub script_cache: ScriptCache,
@@ -108,7 +108,6 @@ pub struct Session<T: AsyncWrite + AsyncRead> {
     pub state: State,
     pub instance: Arc<ServerInstance>,
     pub core: SMTP,
-    pub span: Span,
     pub stream: T,
     pub data: SessionData,
     pub params: SessionParameters,
@@ -116,6 +115,7 @@ pub struct Session<T: AsyncWrite + AsyncRead> {
 }
 
 pub struct SessionData {
+    pub session_id: u64,
     pub local_ip: IpAddr,
     pub local_ip_str: String,
     pub local_port: u16,
@@ -188,8 +188,15 @@ pub struct SessionParameters {
 }
 
 impl SessionData {
-    pub fn new(local_ip: IpAddr, local_port: u16, remote_ip: IpAddr, remote_port: u16) -> Self {
+    pub fn new(
+        local_ip: IpAddr,
+        local_port: u16,
+        remote_ip: IpAddr,
+        remote_port: u16,
+        session_id: u64,
+    ) -> Self {
         SessionData {
+            session_id,
             local_ip,
             local_port,
             remote_ip,
@@ -256,7 +263,7 @@ impl PartialOrd for SessionAddress {
 impl From<SmtpInstance> for SMTP {
     fn from(value: SmtpInstance) -> Self {
         SMTP {
-            core: value.core.load().clone(),
+            core: value.core.load_full(),
             inner: value.inner,
         }
     }
@@ -270,6 +277,7 @@ static ref SIEVE: Arc<ServerInstance> = Arc::new(ServerInstance {
     limiter: ConcurrencyLimiter::new(0),
     shutdown_rx: tokio::sync::watch::channel(false).1,
     proxy_networks: vec![],
+    span_id_gen: Arc::new(SnowflakeIdGenerator::new()),
 });
 }
 
@@ -280,21 +288,6 @@ impl Session<common::listener::stream::NullIo> {
             state: State::None,
             instance,
             core,
-            span: tracing::info_span!(
-                "local_delivery",
-                "return_path" =
-                    if let Some(addr) = data.mail_from.as_ref().map(|a| a.address_lcase.as_str()) {
-                        if !addr.is_empty() {
-                            addr
-                        } else {
-                            "<>"
-                        }
-                    } else {
-                        "<>"
-                    },
-                "nrcpt" = data.rcpt_to.len(),
-                "size" = data.message.len(),
-            ),
             stream: common::listener::stream::NullIo::default(),
             data,
             params: SessionParameters {
@@ -326,11 +319,12 @@ impl Session<common::listener::stream::NullIo> {
         mail_from: SessionAddress,
         rcpt_to: Vec<SessionAddress>,
         message: Vec<u8>,
+        session_id: u64,
     ) -> Self {
         Self::local(
             core,
             SIEVE.clone(),
-            SessionData::local(mail_from.into(), rcpt_to, message),
+            SessionData::local(mail_from.into(), rcpt_to, message, session_id),
         )
     }
 
@@ -354,6 +348,7 @@ impl SessionData {
         mail_from: Option<SessionAddress>,
         rcpt_to: Vec<SessionAddress>,
         message: Vec<u8>,
+        session_id: u64,
     ) -> Self {
         SessionData {
             local_ip: IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)),
@@ -362,6 +357,7 @@ impl SessionData {
             remote_ip_str: "127.0.0.1".to_string(),
             remote_port: 0,
             local_port: 0,
+            session_id,
             helo_domain: "localhost".into(),
             mail_from,
             rcpt_to,
@@ -386,7 +382,7 @@ impl SessionData {
 
 impl Default for SessionData {
     fn default() -> Self {
-        Self::local(None, vec![], vec![])
+        Self::local(None, vec![], vec![], 0)
     }
 }
 
@@ -411,14 +407,14 @@ impl Default for Inner {
             queue_throttle: Default::default(),
             queue_tx: mpsc::channel(1).0,
             report_tx: mpsc::channel(1).0,
-            snowflake_id: Default::default(),
+            queue_id_gen: Default::default(),
+            span_id_gen: Arc::new(SnowflakeIdGenerator::new()),
             connectors: TlsConnectors {
                 pki_verify: mail_send::smtp::tls::build_tls_connector(false),
                 dummy_verify: mail_send::smtp::tls::build_tls_connector(true),
             },
             ipc: Ipc {
                 delivery_tx: mpsc::channel(1).0,
-                webhook_tx: mpsc::channel(1).0,
             },
             script_cache: Default::default(),
         }

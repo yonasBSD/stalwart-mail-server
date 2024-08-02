@@ -381,17 +381,76 @@ impl ResponseCode {
             ResponseCode::UseAttr => b"USEATTR",
         });
     }
+
+    pub fn as_str(&self) -> &'static str {
+        // Only returns the name without arguments
+        match self {
+            ResponseCode::Alert => "ALERT",
+            ResponseCode::AlreadyExists => "ALREADYEXISTS",
+            ResponseCode::AppendUid { .. } => "APPENDUID",
+            ResponseCode::AuthenticationFailed => "AUTHENTICATIONFAILED",
+            ResponseCode::AuthorizationFailed => "AUTHORIZATIONFAILED",
+            ResponseCode::BadCharset => "BADCHARSET",
+            ResponseCode::Cannot => "CANNOT",
+            ResponseCode::Capability { .. } => "CAPABILITY",
+            ResponseCode::ClientBug => "CLIENTBUG",
+            ResponseCode::Closed => "CLOSED",
+            ResponseCode::ContactAdmin => "CONTACTADMIN",
+            ResponseCode::CopyUid { .. } => "COPYUID",
+            ResponseCode::Corruption => "CORRUPTION",
+            ResponseCode::Expired => "EXPIRED",
+            ResponseCode::ExpungeIssued => "EXPUNGEISSUED",
+            ResponseCode::HasChildren => "HASCHILDREN",
+            ResponseCode::InUse => "INUSE",
+            ResponseCode::Limit => "LIMIT",
+            ResponseCode::NonExistent => "NONEXISTENT",
+            ResponseCode::NoPerm => "NOPERM",
+            ResponseCode::OverQuota => "OVERQUOTA",
+            ResponseCode::Parse => "PARSE",
+            ResponseCode::PermanentFlags => "PERMANENTFLAGS",
+            ResponseCode::PrivacyRequired => "PRIVACYREQUIRED",
+            ResponseCode::ReadOnly => "READ-ONLY",
+            ResponseCode::ReadWrite => "READ-WRITE",
+            ResponseCode::ServerBug => "SERVERBUG",
+            ResponseCode::TryCreate => "TRYCREATE",
+            ResponseCode::UidNext => "UIDNEXT",
+            ResponseCode::UidNotSticky => "UIDNOTSTICKY",
+            ResponseCode::UidValidity => "UIDVALIDITY",
+            ResponseCode::Unavailable => "UNAVAILABLE",
+            ResponseCode::UnknownCte => "UNKNOWN-CTE",
+            ResponseCode::Modified { .. } => "MODIFIED",
+            ResponseCode::MailboxId { .. } => "MAILBOXID",
+            ResponseCode::HighestModseq { .. } => "HIGHESTMODSEQ",
+            ResponseCode::UseAttr => "USEATTR",
+        }
+    }
 }
 
 impl ResponseType {
     pub fn serialize(&self, buf: &mut Vec<u8>) {
-        buf.extend_from_slice(match self {
-            ResponseType::Ok => b"OK",
-            ResponseType::No => b"NO",
-            ResponseType::Bad => b"BAD",
-            ResponseType::PreAuth => b"PREAUTH",
-            ResponseType::Bye => b"BYE",
-        });
+        buf.extend_from_slice(self.as_str().as_bytes());
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ResponseType::Ok => "OK",
+            ResponseType::No => "NO",
+            ResponseType::Bad => "BAD",
+            ResponseType::PreAuth => "PREAUTH",
+            ResponseType::Bye => "BYE",
+        }
+    }
+}
+
+impl From<ResponseCode> for trc::Value {
+    fn from(value: ResponseCode) -> Self {
+        trc::Value::Static(value.as_str())
+    }
+}
+
+impl From<ResponseType> for trc::Value {
+    fn from(value: ResponseType) -> Self {
+        trc::Value::Static(value.as_str())
     }
 }
 
@@ -417,6 +476,48 @@ impl StatusResponse {
 
     pub fn into_bytes(self) -> Vec<u8> {
         self.serialize(Vec::with_capacity(16))
+    }
+}
+
+pub trait SerializeResponse {
+    fn serialize(&self) -> Vec<u8>;
+}
+
+impl SerializeResponse for trc::Error {
+    fn serialize(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(128);
+        if let Some(tag) = self.value_as_str(trc::Key::Id) {
+            buf.extend_from_slice(tag.as_bytes());
+        } else {
+            buf.push(b'*');
+        }
+        buf.push(b' ');
+        buf.extend_from_slice(self.value_as_str(trc::Key::Type).unwrap_or("NO").as_bytes());
+        buf.push(b' ');
+        if let Some(code) = self
+            .value_as_str(trc::Key::Code)
+            .or_else(|| match self.as_ref() {
+                trc::EventType::Store(trc::StoreEvent::NotFound) => {
+                    Some(ResponseCode::NonExistent.as_str())
+                }
+                trc::EventType::Store(_) => Some(ResponseCode::ContactAdmin.as_str()),
+                trc::EventType::Limit(trc::LimitEvent::Quota) => Some(ResponseCode::OverQuota.as_str()),
+                trc::EventType::Limit(_) => Some(ResponseCode::Limit.as_str()),
+                trc::EventType::Auth(_) => Some(ResponseCode::AuthenticationFailed.as_str()),
+                _ => None,
+            })
+        {
+            buf.push(b'[');
+            buf.extend_from_slice(code.as_bytes());
+            buf.extend_from_slice(b"] ");
+        }
+        buf.extend_from_slice(
+            self.value_as_str(trc::Key::Details)
+                .unwrap_or_else(|| self.as_ref().message())
+                .as_bytes(),
+        );
+        buf.extend_from_slice(b"\r\n");
+        buf
     }
 }
 

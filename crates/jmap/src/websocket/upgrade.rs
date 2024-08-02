@@ -6,16 +6,14 @@
 
 use std::sync::Arc;
 
-use common::listener::ServerInstance;
-use http_body_util::{BodyExt, Full};
-use hyper::{body::Bytes, Response, StatusCode};
+use hyper::StatusCode;
 use hyper_util::rt::TokioIo;
-use jmap_proto::error::request::RequestError;
 use tokio_tungstenite::WebSocketStream;
+use trc::JmapEvent;
 use tungstenite::{handshake::derive_accept_key, protocol::Role};
 
 use crate::{
-    api::{http::ToHttpResponse, HttpRequest, HttpResponse},
+    api::{http::HttpSessionData, HttpRequest, HttpResponse, HttpResponseBody},
     auth::AccessToken,
     JMAP,
 };
@@ -25,8 +23,8 @@ impl JMAP {
         &self,
         req: HttpRequest,
         access_token: Arc<AccessToken>,
-        instance: Arc<ServerInstance>,
-    ) -> HttpResponse {
+        session: HttpSessionData,
+    ) -> trc::Result<HttpResponse> {
         let headers = req.headers();
         if headers
             .get(hyper::header::CONNECTION)
@@ -37,12 +35,13 @@ impl JMAP {
                 .and_then(|h| h.to_str().ok())
                 != Some("websocket")
         {
-            return RequestError::blank(
-                StatusCode::BAD_REQUEST.as_u16(),
-                "WebSocket upgrade failed",
-                "Missing or Invalid Connection or Upgrade headers.",
-            )
-            .into_http_response();
+            return Err(trc::ResourceEvent::BadParameters
+                .into_err()
+                .details("WebSocket upgrade failed")
+                .ctx(
+                    trc::Key::Reason,
+                    "Missing or Invalid Connection or Upgrade headers.",
+                ));
         }
         let derived_key = match (
             headers
@@ -54,12 +53,13 @@ impl JMAP {
         ) {
             (Some(key), Some("13")) => derive_accept_key(key.as_bytes()),
             _ => {
-                return RequestError::blank(
-                    StatusCode::BAD_REQUEST.as_u16(),
-                    "WebSocket upgrade failed",
-                    "Missing or Invalid Sec-WebSocket-Key headers.",
-                )
-                .into_http_response();
+                return Err(trc::ResourceEvent::BadParameters
+                    .into_err()
+                    .details("WebSocket upgrade failed")
+                    .ctx(
+                        trc::Key::Reason,
+                        "Missing or Invalid Sec-WebSocket-Key headers.",
+                    ));
             }
         };
 
@@ -67,6 +67,7 @@ impl JMAP {
         let jmap = self.clone();
         tokio::spawn(async move {
             // Upgrade connection
+            let session_id = session.session_id;
             match hyper::upgrade::on(req).await {
                 Ok(upgraded) => {
                     jmap.handle_websocket_stream(
@@ -77,27 +78,27 @@ impl JMAP {
                         )
                         .await,
                         access_token,
-                        instance,
+                        session,
                     )
                     .await;
                 }
-                Err(e) => {
-                    tracing::debug!("WebSocket upgrade failed: {}", e);
+                Err(err) => {
+                    trc::event!(
+                        Jmap(JmapEvent::WebsocketError),
+                        Details = "Websocket upgrade failed",
+                        SpanId = session_id,
+                        Reason = err.to_string()
+                    );
                 }
             }
         });
 
-        Response::builder()
-            .status(hyper::StatusCode::SWITCHING_PROTOCOLS)
-            .header(hyper::header::CONNECTION, "upgrade")
-            .header(hyper::header::UPGRADE, "websocket")
-            .header("Sec-WebSocket-Accept", &derived_key)
-            .header("Sec-WebSocket-Protocol", "jmap")
-            .body(
-                Full::new(Bytes::from("Switching to WebSocket protocol"))
-                    .map_err(|never| match never {})
-                    .boxed(),
-            )
-            .unwrap()
+        Ok(HttpResponse {
+            status: StatusCode::SWITCHING_PROTOCOLS,
+            content_type: "".into(),
+            content_disposition: "".into(),
+            cache_control: "".into(),
+            body: HttpResponseBody::WebsocketUpgrade(derived_key),
+        })
     }
 }

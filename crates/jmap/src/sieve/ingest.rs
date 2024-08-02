@@ -16,12 +16,13 @@ use store::{
     ahash::AHashSet,
     write::{now, BatchBuilder, Bincode, F_VALUE},
 };
+use trc::{AddContext, SieveEvent};
 
 use crate::{
     email::ingest::{IngestEmail, IngestSource, IngestedEmail},
     mailbox::{INBOX_ID, TRASH_ID},
     sieve::SeenIdHash,
-    IngestError, JMAP,
+    JMAP,
 };
 
 use super::ActiveScript;
@@ -40,23 +41,23 @@ impl JMAP {
         envelope_from: &str,
         envelope_to: &str,
         account_id: u32,
+        session_id: u64,
         mut active_script: ActiveScript,
-    ) -> Result<IngestedEmail, IngestError> {
+    ) -> trc::Result<IngestedEmail> {
         // Parse message
         let message = if let Some(message) = MessageParser::new().parse(raw_message) {
             message
         } else {
-            return Err(IngestError::Permanent {
-                code: [5, 5, 0],
-                reason: "Failed to parse message.".to_string(),
-            });
+            return Err(trc::EventType::Store(trc::StoreEvent::IngestError)
+                .ctx(trc::Key::Code, 550)
+                .ctx(trc::Key::Reason, "Failed to parse e-mail message."));
         };
 
         // Obtain mailboxIds
         let mailbox_ids = self
             .mailbox_get_or_create(account_id)
             .await
-            .map_err(|_| IngestError::Temporary)?;
+            .caused_by(trc::location!())?;
 
         // Create Sieve instance
         let mut instance = self.core.sieve.untrusted_runtime.filter_parsed(message);
@@ -74,8 +75,8 @@ impl JMAP {
                 (p.quota as i64, p.emails.into_iter().next())
             }
             Ok(None) => (0, None),
-            Err(_) => {
-                return Err(IngestError::Temporary);
+            Err(err) => {
+                return Err(err.caused_by(trc::location!()));
             }
         };
 
@@ -221,11 +222,11 @@ impl JMAP {
                             }
                             do_deliver = true;
                         } else {
-                            tracing::error!(
-                                context = "sieve_script_ingest",
-                                event = "error",
-                                "Unknown message id {}.",
-                                message_id
+                            trc::event!(
+                                Sieve(SieveEvent::UnexpectedError),
+                                Details = "Unknown message id.",
+                                MessageId = message_id,
+                                SpanId = session_id
                             );
                         }
                         input = true.into();
@@ -300,11 +301,11 @@ impl JMAP {
                             }
                             do_deliver = true;
                         } else {
-                            tracing::error!(
-                                context = "sieve_script_ingest",
-                                event = "error",
-                                "Unknown message id {}.",
-                                message_id
+                            trc::event!(
+                                Sieve(SieveEvent::UnexpectedError),
+                                Details = "Unknown message id.",
+                                MessageId = message_id,
+                                SpanId = session_id
                             );
                         }
                         input = true.into();
@@ -316,46 +317,59 @@ impl JMAP {
                     } => {
                         input = true.into();
                         if let Some(message) = messages.get(message_id) {
+                            let recipients = match recipient {
+                                Recipient::Address(rcpt) => vec![SessionAddress::new(rcpt)],
+                                Recipient::Group(rcpts) => {
+                                    rcpts.into_iter().map(SessionAddress::new).collect()
+                                }
+                                Recipient::List(_) => {
+                                    // Not yet implemented
+                                    continue;
+                                }
+                            };
+
                             if message.raw_message.len() <= self.core.jmap.mail_max_size {
-                                let result = Session::<NullIo>::sieve(
+                                trc::event!(
+                                    Sieve(SieveEvent::SendMessage),
+                                    From = mail_from.clone(),
+                                    To = recipients
+                                        .iter()
+                                        .map(|r| trc::Value::String(r.address_lcase.clone()))
+                                        .collect::<Vec<_>>(),
+                                    Size = message.raw_message.len(),
+                                    SpanId = session_id
+                                );
+
+                                Session::<NullIo>::sieve(
                                     self.smtp.clone(),
                                     SessionAddress::new(mail_from.clone()),
-                                    match recipient {
-                                        Recipient::Address(rcpt) => vec![SessionAddress::new(rcpt)],
-                                        Recipient::Group(rcpts) => {
-                                            rcpts.into_iter().map(SessionAddress::new).collect()
-                                        }
-                                        Recipient::List(_) => {
-                                            // Not yet implemented
-                                            continue;
-                                        }
-                                    },
+                                    recipients,
                                     message.raw_message.to_vec(),
+                                    0,
                                 )
                                 .queue_message()
                                 .await;
-
-                                tracing::debug!(
-                                    context = "sieve_script_ingest",
-                                    event = "send_message",
-                                    smtp_response = std::str::from_utf8(&result).unwrap()
-                                );
                             } else {
-                                tracing::warn!(
-                                    context = "sieve_script_ingest",
-                                    event = "message_too_large",
-                                    from = mail_from.as_str(),
-                                    size = message.raw_message.len(),
-                                    max_size = self.core.jmap.mail_max_size
+                                trc::event!(
+                                    Sieve(SieveEvent::MessageTooLarge),
+                                    From = mail_from.clone(),
+                                    To = recipients
+                                        .iter()
+                                        .map(|r| trc::Value::String(r.address_lcase.clone()))
+                                        .collect::<Vec<_>>(),
+                                    Size = message.raw_message.len(),
+                                    Limit = self.core.jmap.mail_max_size,
+                                    SpanId = session_id,
                                 );
                             }
                         } else {
-                            tracing::error!(
-                                context = "sieve_script_ingest",
-                                event = "error",
-                                "Unknown message id {}.",
-                                message_id
+                            trc::event!(
+                                Sieve(SieveEvent::UnexpectedError),
+                                Details = "Unknown message id.",
+                                MessageId = message_id,
+                                SpanId = session_id
                             );
+
                             continue;
                         }
                     }
@@ -382,12 +396,12 @@ impl JMAP {
                 }
 
                 Err(err) => {
-                    tracing::debug!(
-                        context = "sieve_script_ingest",
-                        event = "error",
-                        reason = %err,
-                        "Runtime error",
+                    trc::event!(
+                        Sieve(SieveEvent::RuntimeError),
+                        Reason = err.to_string(),
+                        SpanId = session_id
                     );
+
                     input = true.into();
                 }
             }
@@ -411,11 +425,12 @@ impl JMAP {
                 {
                     message
                 } else {
-                    tracing::error!(
-                        context = "sieve_script_ingest",
-                        event = "error",
-                        "Failed to parse Sieve generated message.",
+                    trc::event!(
+                        Sieve(SieveEvent::UnexpectedError),
+                        Details = "Failed to parse Sieve generated message.",
+                        SpanId = session_id
                     );
+
                     continue;
                 };
 
@@ -431,6 +446,7 @@ impl JMAP {
                         received_at: None,
                         source: IngestSource::Smtp,
                         encrypt: self.core.jmap.encrypt,
+                        session_id,
                     })
                     .await
                 {
@@ -462,10 +478,9 @@ impl JMAP {
         }
 
         if let Some(reject_reason) = reject_reason {
-            Err(IngestError::Permanent {
-                code: [5, 7, 1],
-                reason: reject_reason,
-            })
+            Err(trc::EventType::Store(trc::StoreEvent::IngestError)
+                .ctx(trc::Key::Code, 571)
+                .ctx(trc::Key::Reason, reject_reason))
         } else if has_delivered || last_temp_error.is_none() {
             Ok(ingested_message)
         } else {

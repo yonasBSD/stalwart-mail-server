@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use trc::ClusterEvent;
+
 use crate::services::gossip::State;
 
 use super::request::Request;
@@ -25,7 +27,7 @@ impl Gossiper {
         if let Some(peer) = peers.first() {
             for local_peer in self.peers.iter_mut() {
                 if local_peer.addr == peer.addr {
-                    tracing::debug!("Peer {} is leaving the cluster.", local_peer.addr);
+                    trc::event!(Cluster(ClusterEvent::PeerLeaving), RemoteIp = peer.addr);
 
                     local_peer.state = State::Left;
                     local_peer.epoch = peer.epoch;

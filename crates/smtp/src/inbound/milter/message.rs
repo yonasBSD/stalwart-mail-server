@@ -14,6 +14,7 @@ use common::{
 use mail_auth::AuthenticatedMessage;
 use smtp_proto::{request::parser::Rfc5321Parser, IntoString};
 use tokio::io::{AsyncRead, AsyncWrite};
+use trc::MilterEvent;
 
 use crate::{
     core::{Session, SessionAddress, SessionData},
@@ -45,7 +46,7 @@ impl<T: SessionStream> Session<T> {
                 || !self
                     .core
                     .core
-                    .eval_if(&milter.enable, self)
+                    .eval_if(&milter.enable, self, self.data.session_id)
                     .await
                     .unwrap_or(false)
             {
@@ -54,6 +55,16 @@ impl<T: SessionStream> Session<T> {
 
             match self.connect_and_run(milter, message).await {
                 Ok(new_modifications) => {
+                    trc::event!(
+                        Milter(MilterEvent::ActionAccept),
+                        SpanId = self.data.session_id,
+                        Id = milter.id.to_string(),
+                        Contents = new_modifications
+                            .iter()
+                            .map(|m| m.to_string())
+                            .collect::<Vec<_>>(),
+                    );
+
                     if !modifications.is_empty() {
                         // The message body can only be replaced once, so we need to remove
                         // any previous replacements.
@@ -70,14 +81,21 @@ impl<T: SessionStream> Session<T> {
                     }
                 }
                 Err(Rejection::Action(action)) => {
-                    tracing::info!(
-                        parent: &self.span,
-                        milter.host = &milter.hostname,
-                        milter.port = &milter.port,
-                        context = "milter",
-                        event = "reject",
-                        action = ?action,
-                        "Milter rejected message.");
+                    trc::eventd!(
+                        Milter(match &action {
+                            Action::Discard => MilterEvent::ActionDiscard,
+                            Action::Reject => MilterEvent::ActionReject,
+                            Action::TempFail => MilterEvent::ActionTempFail,
+                            Action::ReplyCode { .. } => {
+                                MilterEvent::ActionReplyCode
+                            }
+                            Action::Shutdown => MilterEvent::ActionShutdown,
+                            Action::ConnectionFailure => MilterEvent::ActionConnectionFailure,
+                            Action::Accept | Action::Continue => unreachable!(),
+                        }),
+                        SpanId = self.data.session_id,
+                        Id = milter.id.to_string(),
+                    );
 
                     return Err(match action {
                         Action::Discard => FilterResponse::accept(),
@@ -102,14 +120,32 @@ impl<T: SessionStream> Session<T> {
                     });
                 }
                 Err(Rejection::Error(err)) => {
-                    tracing::warn!(
-                        parent: &self.span,
-                        milter.host = &milter.hostname,
-                        milter.port = &milter.port,
-                        context = "milter",
-                        event = "error",
-                        reason = ?err,
-                        "Milter filter failed");
+                    let (code, details) = match err {
+                        Error::Io(details) => {
+                            (MilterEvent::IoError, trc::Value::from(details.to_string()))
+                        }
+                        Error::FrameTooLarge(size) => {
+                            (MilterEvent::FrameTooLarge, trc::Value::from(size))
+                        }
+                        Error::FrameInvalid(bytes) => {
+                            (MilterEvent::FrameInvalid, trc::Value::from(bytes))
+                        }
+                        Error::Unexpected(response) => (
+                            MilterEvent::UnexpectedResponse,
+                            trc::Value::from(response.to_string()),
+                        ),
+                        Error::Timeout => (MilterEvent::Timeout, trc::Value::None),
+                        Error::TLSInvalidName => (MilterEvent::TlsInvalidName, trc::Value::None),
+                        Error::Disconnected => (MilterEvent::Disconnected, trc::Value::None),
+                    };
+
+                    trc::eventd!(
+                        Milter(code),
+                        SpanId = self.data.session_id,
+                        Id = milter.id.to_string(),
+                        Details = details,
+                    );
+
                     if milter.tempfail_on_error {
                         return Err(FilterResponse::server_failure());
                     }
@@ -126,7 +162,7 @@ impl<T: SessionStream> Session<T> {
         message: Option<&AuthenticatedMessage<'_>>,
     ) -> Result<Vec<Modification>, Rejection> {
         // Build client
-        let client = MilterClient::connect(milter, self.span.clone()).await?;
+        let client = MilterClient::connect(milter, self.data.session_id).await?;
         if !milter.tls {
             self.run(client, message).await
         } else {
@@ -196,9 +232,13 @@ impl<T: SessionStream> Session<T> {
                 .mail_from(
                     &format!("<{addr}>"),
                     None::<&[&str]>,
-                    Macros::new()
-                        .with_mail_address(addr)
-                        .with_sasl_login_name(&self.data.authenticated_as),
+                    if !self.data.authenticated_as.is_empty() {
+                        Macros::new()
+                            .with_mail_address(addr)
+                            .with_sasl_login_name(&self.data.authenticated_as)
+                    } else {
+                        Macros::new().with_mail_address(addr)
+                    },
                 )
                 .await?
                 .assert_continue()?;
@@ -282,11 +322,12 @@ impl SessionData {
                                 mail_from.dsn_info = addr.env_id;
                             }
                             Err(err) => {
-                                tracing::debug!(
-                                    context = "milter",
-                                    event = "error",
-                                    reason = ?err,
-                                    "Failed to parse milter mailFrom parameters.");
+                                trc::event!(
+                                    Milter(MilterEvent::ParseError),
+                                    SpanId = self.session_id,
+                                    Details = "Failed to parse milter mailFrom parameters",
+                                    Reason = err.to_string(),
+                                );
                             }
                         }
                     }
@@ -317,11 +358,12 @@ impl SessionData {
                                     rcpt.dsn_info = addr.orcpt;
                                 }
                                 Err(err) => {
-                                    tracing::debug!(
-                                    context = "milter",
-                                    event = "error",
-                                    reason = ?err,
-                                    "Failed to parse milter rcptTo parameters.");
+                                    trc::event!(
+                                        Milter(MilterEvent::ParseError),
+                                        SpanId = self.session_id,
+                                        Details = "Failed to parse milter rcptTo parameters",
+                                        Reason = err.to_string(),
+                                    );
                                 }
                             }
                         }

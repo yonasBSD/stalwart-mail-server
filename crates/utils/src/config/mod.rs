@@ -32,6 +32,7 @@ pub enum ConfigWarning {
     AppliedDefault { default: String },
     Unread { value: String },
     Build { error: String },
+    Parse { error: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -54,7 +55,7 @@ pub struct Rate {
     pub period: Duration,
 }
 
-pub type Result<T> = std::result::Result<T, String>;
+pub(crate) type Result<T> = std::result::Result<T, String>;
 
 impl Config {
     pub async fn resolve_macros(&mut self, classes: &[&str]) {
@@ -170,49 +171,56 @@ impl Config {
         self.keys.extend(settings);
     }
 
-    pub fn log_errors(&self, use_stderr: bool) {
+    pub fn log_errors(&self) {
         for (key, err) in &self.errors {
-            let message = match err {
-                ConfigError::Parse { error } => {
-                    format!("Failed to parse setting {key:?}: {error}")
-                }
-                ConfigError::Build { error } => {
-                    format!("Build error for key {key:?}: {error}")
-                }
-                ConfigError::Macro { error } => {
-                    format!("Macro expansion error for setting {key:?}: {error}")
-                }
+            let (cause, message) = match err {
+                ConfigError::Parse { error } => (
+                    trc::ConfigEvent::ParseError,
+                    format!("Failed to parse setting {key:?}: {error}"),
+                ),
+                ConfigError::Build { error } => (
+                    trc::ConfigEvent::BuildError,
+                    format!("Build error for key {key:?}: {error}"),
+                ),
+                ConfigError::Macro { error } => (
+                    trc::ConfigEvent::MacroError,
+                    format!("Macro expansion error for setting {key:?}: {error}"),
+                ),
             };
-            if !use_stderr {
-                tracing::error!("{}", message);
-            } else {
-                eprintln!("ERROR: {message}");
-            }
+
+            trc::error!(trc::EventType::Config(cause).into_err().details(message));
         }
     }
 
-    pub fn log_warnings(&mut self, use_stderr: bool) {
+    pub fn log_warnings(&mut self) {
         #[cfg(debug_assertions)]
         self.warn_unread_keys();
 
         for (key, warn) in &self.warnings {
-            let message = match warn {
-                ConfigWarning::AppliedDefault { default } => {
-                    format!("WARNING: Missing setting {key:?}, applied default {default:?}")
-                }
-                ConfigWarning::Missing => {
-                    format!("WARNING: Missing setting {key:?}")
-                }
-                ConfigWarning::Unread { value } => {
-                    format!("WARNING: Unused setting {key:?} with value {value:?}")
-                }
-                ConfigWarning::Build { error } => format!("WARNING for {key:?}: {error}"),
+            let (cause, message) = match warn {
+                ConfigWarning::AppliedDefault { default } => (
+                    trc::ConfigEvent::DefaultApplied,
+                    format!("WARNING: Missing setting {key:?}, applied default {default:?}"),
+                ),
+                ConfigWarning::Missing => (
+                    trc::ConfigEvent::MissingSetting,
+                    format!("WARNING: Missing setting {key:?}"),
+                ),
+                ConfigWarning::Unread { value } => (
+                    trc::ConfigEvent::UnusedSetting,
+                    format!("WARNING: Unused setting {key:?} with value {value:?}"),
+                ),
+                ConfigWarning::Parse { error } => (
+                    trc::ConfigEvent::ParseWarning,
+                    format!("WARNING: Failed to parse {key:?}: {error}"),
+                ),
+                ConfigWarning::Build { error } => (
+                    trc::ConfigEvent::BuildWarning,
+                    format!("WARNING for {key:?}: {error}"),
+                ),
             };
-            if !use_stderr {
-                tracing::debug!("{}", message);
-            } else {
-                eprintln!("{}", message);
-            }
+
+            trc::error!(trc::EventType::Config(cause).into_err().details(message));
         }
     }
 }

@@ -4,11 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use common::{config::smtp::session::Stage, listener::SessionStream, scripts::ScriptModification};
 use mail_auth::{IprevOutput, IprevResult, SpfOutput, SpfResult};
 use smtp_proto::{MailFrom, MtPriority, MAIL_BY_NOTIFY, MAIL_BY_RETURN, MAIL_REQUIRETLS};
+use trc::SmtpEvent;
 use utils::config::Rate;
 
 use crate::{
@@ -24,18 +25,34 @@ impl<T: SessionStream> Session<T> {
                 || self.params.spf_ehlo.verify()
                 || self.params.spf_mail_from.verify())
         {
+            trc::event!(
+                Smtp(SmtpEvent::DidNotSayEhlo),
+                SpanId = self.data.session_id,
+            );
+
             return self
                 .write(b"503 5.5.1 Polite people say EHLO first.\r\n")
                 .await;
         } else if self.data.mail_from.is_some() {
+            trc::event!(
+                Smtp(SmtpEvent::MultipleMailFrom),
+                SpanId = self.data.session_id,
+            );
+
             return self
                 .write(b"503 5.5.1 Multiple MAIL commands not allowed.\r\n")
                 .await;
         } else if self.params.auth_require && self.data.authenticated_as.is_empty() {
+            trc::event!(
+                Smtp(SmtpEvent::MailFromUnauthenticated),
+                SpanId = self.data.session_id,
+            );
+
             return self
                 .write(b"503 5.5.1 You must authenticate first.\r\n")
                 .await;
         } else if self.data.iprev.is_none() && self.params.iprev.verify() {
+            let time = Instant::now();
             let iprev = self
                 .core
                 .core
@@ -45,11 +62,16 @@ impl<T: SessionStream> Session<T> {
                 .verify_iprev(self.data.remote_ip)
                 .await;
 
-            tracing::debug!(parent: &self.span,
-                    context = "iprev",
-                    event = "lookup",
-                    result = %iprev.result,
-                    ptr = iprev.ptr.as_ref().and_then(|p| p.first()).map(|p| p.as_str()).unwrap_or_default()
+            trc::eventd!(
+                Smtp(if matches!(iprev.result(), IprevResult::Pass) {
+                    SmtpEvent::IprevPass
+                } else {
+                    SmtpEvent::IprevFail
+                }),
+                SpanId = self.data.session_id,
+                Domain = self.data.helo_domain.clone(),
+                Result = trc::Event::from(&iprev),
+                Elapsed = time.elapsed(),
             );
 
             self.data.iprev = iprev.into();
@@ -96,6 +118,21 @@ impl<T: SessionStream> Session<T> {
                     e == &address_lcase || (e.starts_with('@') && address_lcase.ends_with(e))
                 }))
         {
+            trc::event!(
+                Smtp(SmtpEvent::MailFromUnauthorized),
+                SpanId = self.data.session_id,
+                From = address_lcase,
+                Details = [trc::Value::String(self.data.authenticated_as.to_string())]
+                    .into_iter()
+                    .chain(
+                        self.data
+                            .authenticated_emails
+                            .iter()
+                            .map(|e| trc::Value::String(e.to_string()))
+                    )
+                    .collect::<Vec<_>>()
+            );
+
             return self
                 .write(b"501 5.5.4 You are not allowed to send from this address.\r\n")
                 .await;
@@ -115,9 +152,13 @@ impl<T: SessionStream> Session<T> {
         if let Some(script) = self
             .core
             .core
-            .eval_if::<String, _>(&self.core.core.smtp.session.mail.script, self)
+            .eval_if::<String, _>(
+                &self.core.core.smtp.session.mail.script,
+                self,
+                self.data.session_id,
+            )
             .await
-            .and_then(|name| self.core.core.get_sieve_script(&name))
+            .and_then(|name| self.core.core.get_sieve_script(&name, self.data.session_id))
         {
             match self
                 .run_script(script.clone(), self.build_script_parameters("mail"))
@@ -125,11 +166,6 @@ impl<T: SessionStream> Session<T> {
             {
                 ScriptResult::Accept { modifications } => {
                     if !modifications.is_empty() {
-                        tracing::debug!(parent: &self.span,
-                            context = "sieve",
-                            event = "modify",
-                            address = &self.data.mail_from.as_ref().unwrap().address,
-                            modifications = ?modifications);
                         for modification in modifications {
                             if let ScriptModification::SetEnvelope { name, value } = modification {
                                 self.data.apply_envelope_modification(name, value);
@@ -138,11 +174,6 @@ impl<T: SessionStream> Session<T> {
                     }
                 }
                 ScriptResult::Reject(message) => {
-                    tracing::info!(parent: &self.span,
-                        context = "sieve",
-                        event = "reject",
-                        address = &self.data.mail_from.as_ref().unwrap().address,
-                        reason = message);
                     self.data.mail_from = None;
                     return self.write(message.as_bytes()).await;
                 }
@@ -152,24 +183,12 @@ impl<T: SessionStream> Session<T> {
 
         // Milter filtering
         if let Err(message) = self.run_milters(Stage::Mail, None).await {
-            tracing::info!(parent: &self.span,
-                context = "milter",
-                event = "reject",
-                address = &self.data.mail_from.as_ref().unwrap().address,
-                reason = message.message.as_ref());
-
             self.data.mail_from = None;
             return self.write(message.message.as_bytes()).await;
         }
 
         // MTAHook filtering
         if let Err(message) = self.run_mta_hooks(Stage::Mail, None).await {
-            tracing::info!(parent: &self.span,
-                            context = "mta_hook",
-                            event = "reject",
-                            address = &self.data.mail_from.as_ref().unwrap().address,
-                            reason = message.message.as_ref());
-
             self.data.mail_from = None;
             return self.write(message.message.as_bytes()).await;
         }
@@ -178,10 +197,22 @@ impl<T: SessionStream> Session<T> {
         if let Some(new_address) = self
             .core
             .core
-            .eval_if::<String, _>(&self.core.core.smtp.session.mail.rewrite, self)
+            .eval_if::<String, _>(
+                &self.core.core.smtp.session.mail.rewrite,
+                self,
+                self.data.session_id,
+            )
             .await
         {
             let mail_from = self.data.mail_from.as_mut().unwrap();
+
+            trc::event!(
+                Smtp(SmtpEvent::MailFromRewritten),
+                SpanId = self.data.session_id,
+                OldName = mail_from.address_lcase.clone(),
+                Name = new_address.clone(),
+            );
+
             if new_address.contains('@') {
                 mail_from.address_lcase = new_address.to_lowercase();
                 mail_from.domain = mail_from.address_lcase.domain_part().to_string();
@@ -200,10 +231,14 @@ impl<T: SessionStream> Session<T> {
             && !self
                 .core
                 .core
-                .eval_if(&config.requiretls, self)
+                .eval_if(&config.requiretls, self, self.data.session_id)
                 .await
                 .unwrap_or(false)
         {
+            trc::event!(
+                Smtp(SmtpEvent::RequireTlsDisabled),
+                SpanId = self.data.session_id,
+            );
             self.data.mail_from = None;
             return self
                 .write(b"501 5.5.4 REQUIRETLS has been disabled.\r\n")
@@ -213,7 +248,7 @@ impl<T: SessionStream> Session<T> {
             if let Some(duration) = self
                 .core
                 .core
-                .eval_if::<Duration, _>(&config.deliver_by, self)
+                .eval_if::<Duration, _>(&config.deliver_by, self, self.data.session_id)
                 .await
             {
                 if from.by.checked_abs().unwrap_or(0) as u64 <= duration.as_secs()
@@ -222,6 +257,13 @@ impl<T: SessionStream> Session<T> {
                     self.data.delivery_by = from.by;
                 } else {
                     self.data.mail_from = None;
+
+                    trc::event!(
+                        Smtp(SmtpEvent::DeliverByInvalid),
+                        SpanId = self.data.session_id,
+                        Details = from.by,
+                    );
+
                     return self
                         .write(
                             format!(
@@ -233,6 +275,10 @@ impl<T: SessionStream> Session<T> {
                         .await;
                 }
             } else {
+                trc::event!(
+                    Smtp(SmtpEvent::DeliverByDisabled),
+                    SpanId = self.data.session_id,
+                );
                 self.data.mail_from = None;
                 return self
                     .write(b"501 5.5.4 DELIVERBY extension has been disabled.\r\n")
@@ -243,17 +289,26 @@ impl<T: SessionStream> Session<T> {
             if self
                 .core
                 .core
-                .eval_if::<MtPriority, _>(&config.mt_priority, self)
+                .eval_if::<MtPriority, _>(&config.mt_priority, self, self.data.session_id)
                 .await
                 .is_some()
             {
                 if (-6..6).contains(&from.mt_priority) {
                     self.data.priority = from.mt_priority as i16;
                 } else {
+                    trc::event!(
+                        Smtp(SmtpEvent::MtPriorityInvalid),
+                        SpanId = self.data.session_id,
+                        Details = from.mt_priority,
+                    );
                     self.data.mail_from = None;
                     return self.write(b"501 5.5.4 Invalid priority value.\r\n").await;
                 }
             } else {
+                trc::event!(
+                    Smtp(SmtpEvent::MtPriorityDisabled),
+                    SpanId = self.data.session_id,
+                );
                 self.data.mail_from = None;
                 return self
                     .write(b"501 5.5.4 MT-PRIORITY extension has been disabled.\r\n")
@@ -265,10 +320,16 @@ impl<T: SessionStream> Session<T> {
                 > self
                     .core
                     .core
-                    .eval_if(&config_data.max_message_size, self)
+                    .eval_if(&config_data.max_message_size, self, self.data.session_id)
                     .await
                     .unwrap_or(25 * 1024 * 1024)
         {
+            trc::event!(
+                Smtp(SmtpEvent::MessageTooLarge),
+                SpanId = self.data.session_id,
+                Size = from.size,
+            );
+
             self.data.mail_from = None;
             return self
                 .write(b"552 5.3.4 Message too big for system.\r\n")
@@ -278,7 +339,7 @@ impl<T: SessionStream> Session<T> {
             if let Some(max_hold) = self
                 .core
                 .core
-                .eval_if::<Duration, _>(&config.future_release, self)
+                .eval_if::<Duration, _>(&config.future_release, self, self.data.session_id)
                 .await
             {
                 let max_hold = max_hold.as_secs();
@@ -297,6 +358,11 @@ impl<T: SessionStream> Session<T> {
                 if hold_for <= max_hold {
                     self.data.future_release = hold_for;
                 } else {
+                    trc::event!(
+                        Smtp(SmtpEvent::FutureReleaseInvalid),
+                        SpanId = self.data.session_id,
+                        Details = hold_for,
+                    );
                     self.data.mail_from = None;
                     return self
                         .write(
@@ -308,6 +374,10 @@ impl<T: SessionStream> Session<T> {
                         .await;
                 }
             } else {
+                trc::event!(
+                    Smtp(SmtpEvent::FutureReleaseDisabled),
+                    SpanId = self.data.session_id,
+                );
                 self.data.mail_from = None;
                 return self
                     .write(b"501 5.5.4 FUTURERELEASE extension has been disabled.\r\n")
@@ -318,10 +388,11 @@ impl<T: SessionStream> Session<T> {
             && !self
                 .core
                 .core
-                .eval_if(&config.dsn, self)
+                .eval_if(&config.dsn, self, self.data.session_id)
                 .await
                 .unwrap_or(false)
         {
+            trc::event!(Smtp(SmtpEvent::DsnDisabled), SpanId = self.data.session_id,);
             self.data.mail_from = None;
             return self
                 .write(b"501 5.5.4 DSN extension has been disabled.\r\n")
@@ -331,6 +402,7 @@ impl<T: SessionStream> Session<T> {
         if self.is_allowed().await {
             // Verify SPF
             if self.params.spf_mail_from.verify() {
+                let time = Instant::now();
                 let mail_from = self.data.mail_from.as_ref().unwrap();
                 let spf_output = if !mail_from.address.is_empty() {
                     self.core
@@ -362,13 +434,22 @@ impl<T: SessionStream> Session<T> {
                         .await
                 };
 
-                tracing::debug!(parent: &self.span,
-                        context = "spf",
-                        event = "lookup",
-                        identity = "mail-from",
-                        domain = self.data.helo_domain,
-                        sender = if !mail_from.address.is_empty() {mail_from.address.as_str()} else {"<>"},
-                        result = %spf_output.result(),
+                trc::eventd!(
+                    Smtp(if matches!(spf_output.result(), SpfResult::Pass) {
+                        SmtpEvent::SpfFromPass
+                    } else {
+                        SmtpEvent::SpfFromFail
+                    }),
+                    SpanId = self.data.session_id,
+                    Domain = self.data.helo_domain.clone(),
+                    From = if !mail_from.address.is_empty() {
+                        mail_from.address.as_str()
+                    } else {
+                        "<>"
+                    }
+                    .to_string(),
+                    Result = trc::Event::from(&spf_output),
+                    Elapsed = time.elapsed(),
                 );
 
                 if self
@@ -382,14 +463,21 @@ impl<T: SessionStream> Session<T> {
                 }
             }
 
-            tracing::debug!(parent: &self.span,
-                context = "mail-from",
-                event = "success",
-                address = &self.data.mail_from.as_ref().unwrap().address);
+            trc::event!(
+                Smtp(SmtpEvent::MailFrom),
+                SpanId = self.data.session_id,
+                From = self.data.mail_from.as_ref().unwrap().address_lcase.clone(),
+            );
 
             self.eval_rcpt_params().await;
             self.write(b"250 2.1.0 OK\r\n").await
         } else {
+            trc::event!(
+                Smtp(SmtpEvent::RateLimitExceeded),
+                SpanId = self.data.session_id,
+                From = self.data.mail_from.as_ref().unwrap().address_lcase.clone(),
+            );
+
             self.data.mail_from = None;
             self.write(b"451 4.4.5 Rate limit exceeded, try again later.\r\n")
                 .await
@@ -423,7 +511,11 @@ impl<T: SessionStream> Session<T> {
             spf_output.report_address(),
             self.core
                 .core
-                .eval_if::<Rate, _>(&self.core.core.smtp.report.spf.send, self)
+                .eval_if::<Rate, _>(
+                    &self.core.core.smtp.report.spf.send,
+                    self,
+                    self.data.session_id,
+                )
                 .await,
         ) {
             self.send_spf_report(recipient, &rate, !result, spf_output)

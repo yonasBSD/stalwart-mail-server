@@ -30,12 +30,13 @@ use super::{
 
 impl JMAP {
     // Token endpoint
-    pub async fn handle_token_request(&self, req: &mut HttpRequest) -> HttpResponse {
+    pub async fn handle_token_request(
+        &self,
+        req: &mut HttpRequest,
+        session_id: u64,
+    ) -> trc::Result<HttpResponse> {
         // Parse form
-        let params = match FormData::from_request(req, MAX_POST_LEN).await {
-            Ok(params) => params,
-            Err(err) => return err,
-        };
+        let params = FormData::from_request(req, MAX_POST_LEN, session_id).await?;
         let grant_type = params.get("grant_type").unwrap_or_default();
 
         let mut response = TokenResponse::error(ErrorType::InvalidGrant);
@@ -52,38 +53,35 @@ impl JMAP {
                     .storage
                     .lookup
                     .key_get::<Bincode<OAuthCode>>(format!("oauth:{code}").into_bytes())
-                    .await
+                    .await?
                 {
-                    Ok(Some(auth_code)) => {
+                    Some(auth_code) => {
                         let oauth = auth_code.inner;
                         if client_id != oauth.client_id || redirect_uri != oauth.params {
                             TokenResponse::error(ErrorType::InvalidClient)
                         } else if oauth.status == OAuthStatus::Authorized {
                             // Mark this token as issued
-                            if let Err(err) = self
-                                .core
+                            self.core
                                 .storage
                                 .lookup
                                 .key_delete(format!("oauth:{code}").into_bytes())
-                                .await
-                            {
-                                return err.into_http_response();
-                            }
+                                .await?;
 
                             // Issue token
                             self.issue_token(oauth.account_id, &oauth.client_id, true)
                                 .await
                                 .map(TokenResponse::Granted)
-                                .unwrap_or_else(|err| {
-                                    tracing::error!("Failed to generate OAuth token: {}", err);
-                                    TokenResponse::error(ErrorType::InvalidRequest)
-                                })
+                                .map_err(|err| {
+                                    trc::AuthEvent::Error
+                                        .into_err()
+                                        .details(err)
+                                        .caused_by(trc::location!())
+                                })?
                         } else {
                             TokenResponse::error(ErrorType::InvalidGrant)
                         }
                     }
-                    Ok(None) => TokenResponse::error(ErrorType::AccessDenied),
-                    Err(err) => return err.into_http_response(),
+                    None => TokenResponse::error(ErrorType::AccessDenied),
                 }
             } else {
                 TokenResponse::error(ErrorType::InvalidClient)
@@ -95,64 +93,54 @@ impl JMAP {
                 (params.get("device_code"), params.get("client_id"))
             {
                 // Obtain code
-                match self
+                if let Some(auth_code) = self
                     .core
                     .storage
                     .lookup
                     .key_get::<Bincode<OAuthCode>>(format!("oauth:{device_code}").into_bytes())
-                    .await
+                    .await?
                 {
-                    Ok(Some(auth_code)) => {
-                        let oauth = auth_code.inner;
-                        response = if oauth.client_id != client_id {
-                            TokenResponse::error(ErrorType::InvalidClient)
-                        } else {
-                            match oauth.status {
-                                OAuthStatus::Authorized => {
-                                    // Mark this token as issued
-                                    if let Err(err) = self
-                                        .core
-                                        .storage
-                                        .lookup
-                                        .key_delete(format!("oauth:{device_code}").into_bytes())
-                                        .await
-                                    {
-                                        return err.into_http_response();
-                                    }
+                    let oauth = auth_code.inner;
+                    response = if oauth.client_id != client_id {
+                        TokenResponse::error(ErrorType::InvalidClient)
+                    } else {
+                        match oauth.status {
+                            OAuthStatus::Authorized => {
+                                // Mark this token as issued
+                                self.core
+                                    .storage
+                                    .lookup
+                                    .key_delete(format!("oauth:{device_code}").into_bytes())
+                                    .await?;
 
-                                    // Issue token
-                                    self.issue_token(oauth.account_id, &oauth.client_id, true)
-                                        .await
-                                        .map(TokenResponse::Granted)
-                                        .unwrap_or_else(|err| {
-                                            tracing::error!(
-                                                "Failed to generate OAuth token: {}",
-                                                err
-                                            );
-                                            TokenResponse::error(ErrorType::InvalidRequest)
-                                        })
-                                }
-                                OAuthStatus::Pending => {
-                                    TokenResponse::error(ErrorType::AuthorizationPending)
-                                }
-                                OAuthStatus::TokenIssued => {
-                                    TokenResponse::error(ErrorType::ExpiredToken)
-                                }
+                                // Issue token
+                                self.issue_token(oauth.account_id, &oauth.client_id, true)
+                                    .await
+                                    .map(TokenResponse::Granted)
+                                    .map_err(|err| {
+                                        trc::AuthEvent::Error
+                                            .into_err()
+                                            .details(err)
+                                            .caused_by(trc::location!())
+                                    })?
                             }
-                        };
-                    }
-                    Ok(None) => (),
-                    Err(err) => return err.into_http_response(),
+                            OAuthStatus::Pending => {
+                                TokenResponse::error(ErrorType::AuthorizationPending)
+                            }
+                            OAuthStatus::TokenIssued => {
+                                TokenResponse::error(ErrorType::ExpiredToken)
+                            }
+                        }
+                    };
                 }
             }
         } else if grant_type.eq_ignore_ascii_case("refresh_token") {
             if let Some(refresh_token) = params.get("refresh_token") {
-                if let Ok((account_id, client_id, time_left)) = self
+                response = match self
                     .validate_access_token("refresh_token", refresh_token)
                     .await
                 {
-                    // TODO: implement revoking client ids
-                    response = self
+                    Ok((account_id, client_id, time_left)) => self
                         .issue_token(
                             account_id,
                             &client_id,
@@ -160,17 +148,26 @@ impl JMAP {
                         )
                         .await
                         .map(TokenResponse::Granted)
-                        .unwrap_or_else(|err| {
-                            tracing::debug!("Failed to refresh OAuth token: {}", err);
-                            TokenResponse::error(ErrorType::InvalidGrant)
-                        });
-                }
+                        .map_err(|err| {
+                            trc::AuthEvent::Error
+                                .into_err()
+                                .details(err)
+                                .caused_by(trc::location!())
+                        })?,
+                    Err(err) => {
+                        trc::error!(err
+                            .caused_by(trc::location!())
+                            .details("Failed to validate refresh token")
+                            .span_id(session_id));
+                        TokenResponse::error(ErrorType::InvalidGrant)
+                    }
+                };
             } else {
                 response = TokenResponse::error(ErrorType::InvalidRequest);
             }
         }
 
-        JsonResponse::with_status(
+        Ok(JsonResponse::with_status(
             if response.is_error() {
                 StatusCode::BAD_REQUEST
             } else {
@@ -178,7 +175,7 @@ impl JMAP {
             },
             response,
         )
-        .into_http_response()
+        .into_http_response())
     }
 
     async fn password_hash(&self, account_id: u32) -> Result<String, &'static str> {
@@ -288,10 +285,16 @@ impl JMAP {
     pub async fn validate_access_token(
         &self,
         grant_type: &str,
-        token: &str,
-    ) -> Result<(u32, String, u64), &'static str> {
+        token_: &str,
+    ) -> trc::Result<(u32, String, u64)> {
         // Base64 decode token
-        let token = base64_decode(token.as_bytes()).ok_or("Failed to decode.")?;
+        let token = base64_decode(token_.as_bytes()).ok_or_else(|| {
+            trc::AuthEvent::Error
+                .into_err()
+                .ctx(trc::Key::Reason, "Failed to decode token")
+                .caused_by(trc::location!())
+                .details(token_.to_string())
+        })?;
         let (account_id, expiry, client_id) = token
             .get((RANDOM_CODE_LEN + SymmetricEncrypt::ENCRYPT_TAG_LEN)..)
             .and_then(|bytes| {
@@ -303,7 +306,13 @@ impl JMAP {
                 )
                     .into()
             })
-            .ok_or("Failed to decode token.")?;
+            .ok_or_else(|| {
+                trc::AuthEvent::Error
+                    .into_err()
+                    .ctx(trc::Key::Reason, "Failed to decode token")
+                    .caused_by(trc::location!())
+                    .details(token_.to_string())
+            })?;
 
         // Validate expiration
         let now = SystemTime::now()
@@ -312,11 +321,16 @@ impl JMAP {
             .unwrap_or(0)
             .saturating_sub(946684800); // Jan 1, 2000
         if expiry <= now {
-            return Err("Token expired.");
+            return Err(trc::AuthEvent::Error
+                .into_err()
+                .ctx(trc::Key::Reason, "Token expired"));
         }
 
         // Obtain password hash
-        let password_hash = self.password_hash(account_id).await?;
+        let password_hash = self
+            .password_hash(account_id)
+            .await
+            .map_err(|err| trc::AuthEvent::Error.into_err().ctx(trc::Key::Details, err))?;
 
         // Build context
         let key = self.core.jmap.oauth_key.clone();
@@ -344,7 +358,13 @@ impl JMAP {
                 &token[..RANDOM_CODE_LEN + SymmetricEncrypt::ENCRYPT_TAG_LEN],
                 &nonce,
             )
-            .map_err(|_| "Failed to decrypt token.")?;
+            .map_err(|err| {
+                trc::AuthEvent::Error
+                    .into_err()
+                    .ctx(trc::Key::Details, "Failed to decode token")
+                    .caused_by(trc::location!())
+                    .reason(err)
+            })?;
 
         // Success
         Ok((account_id, client_id, expiry - now))

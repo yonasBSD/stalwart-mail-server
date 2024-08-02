@@ -13,10 +13,7 @@ use std::{
 };
 
 use base64::{engine::general_purpose::STANDARD, Engine};
-use common::{
-    manager::webadmin::Resource,
-    webhooks::{WebhookEvent, WebhookEvents},
-};
+use common::manager::webadmin::Resource;
 use hyper::{body, server::conn::http1, service::service_fn};
 use hyper_util::rt::TokioIo;
 use jmap::api::http::{fetch_body, ToHttpResponse};
@@ -29,7 +26,7 @@ use super::JMAPTest;
 
 pub struct MockWebhookEndpoint {
     pub tx: watch::Sender<bool>,
-    pub events: Mutex<Vec<WebhookEvent>>,
+    pub events: Mutex<Vec<serde_json::Value>>,
     pub reject: AtomicBool,
 }
 
@@ -115,12 +112,16 @@ pub fn spawn_mock_webhook_endpoint() -> Arc<MockWebhookEndpoint> {
                                     async move {
                                         // Verify HMAC signature
                                         let key = hmac::Key::new(hmac::HMAC_SHA256, "ovos-moles".as_bytes());
-                                        let body = fetch_body(&mut req, 1024 * 1024).await.unwrap();
+                                        let body = fetch_body(&mut req, 1024 * 1024, 0).await.unwrap();
                                         let tag = STANDARD.decode(req.headers().get("X-Signature").unwrap().to_str().unwrap()).unwrap();
                                         hmac::verify(&key, &body, &tag).expect("Invalid signature");
 
                                         // Deserialize JSON
-                                        let request = serde_json::from_slice::<WebhookEvents>(&body)
+                                        #[derive(serde::Deserialize)]
+                                        struct WebhookRequest {
+                                            events: Vec<serde_json::Value>,
+                                        }
+                                        let request = serde_json::from_slice::<WebhookRequest>(&body)
                                         .expect("Failed to parse JSON");
 
                                         if !endpoint.reject.load(Ordering::Relaxed) {
@@ -134,13 +135,13 @@ pub fn spawn_mock_webhook_endpoint() -> Arc<MockWebhookEndpoint> {
                                                     content_type: "application/json",
                                                     contents: "[]".to_string().into_bytes(),
                                                 }
-                                                .into_http_response(),
+                                                .into_http_response().build(),
                                             )
                                         } else {
                                             //let c = print!("rejected webhook: {}", serde_json::to_string_pretty(&request).unwrap());
 
                                             Ok::<_, hyper::Error>(
-                                                RequestError::not_found().into_http_response()
+                                                RequestError::not_found().into_http_response().build()
                                             )
                                         }
 

@@ -8,6 +8,7 @@ use common::config::smtp::resolver::Tlsa;
 use rustls_pki_types::CertificateDer;
 use sha1::Digest;
 use sha2::{Sha256, Sha512};
+use trc::DaneEvent;
 use x509_parser::prelude::{FromDer, X509Certificate};
 
 use crate::queue::{Error, ErrorDetails, Status};
@@ -15,7 +16,7 @@ use crate::queue::{Error, ErrorDetails, Status};
 pub trait TlsaVerify {
     fn verify(
         &self,
-        span: &tracing::Span,
+        session_id: u64,
         hostname: &str,
         certificates: Option<&[CertificateDer<'_>]>,
     ) -> Result<(), Status<(), Error>>;
@@ -24,20 +25,19 @@ pub trait TlsaVerify {
 impl TlsaVerify for Tlsa {
     fn verify(
         &self,
-        span: &tracing::Span,
+        session_id: u64,
         hostname: &str,
         certificates: Option<&[CertificateDer<'_>]>,
     ) -> Result<(), Status<(), Error>> {
         let certificates = if let Some(certificates) = certificates {
             certificates
         } else {
-            tracing::info!(
-                parent: span,
-                context = "dane",
-                event = "no-server-certs-found",
-                mx = hostname,
-                "No certificates were provided."
+            trc::event!(
+                Dane(DaneEvent::NoCertificatesFound),
+                SpanId = session_id,
+                Hostname = hostname.to_string(),
             );
+
             return Err(Status::TemporaryFailure(Error::DaneError(ErrorDetails {
                 entity: hostname.to_string(),
                 details: "No certificates were provided by host".to_string(),
@@ -51,14 +51,13 @@ impl TlsaVerify for Tlsa {
             let certificate = match X509Certificate::from_der(der_certificate.as_ref()) {
                 Ok((_, certificate)) => certificate,
                 Err(err) => {
-                    tracing::debug!(
-                        parent: span,
-                        context = "dane",
-                        event = "cert-parse-error",
-                        "Failed to parse X.509 certificate for host {}: {}",
-                        hostname,
-                        err
+                    trc::event!(
+                        Dane(DaneEvent::CertificateParseError),
+                        SpanId = session_id,
+                        Hostname = hostname.to_string(),
+                        Reason = err.to_string(),
                     );
+
                     return Err(Status::TemporaryFailure(Error::DaneError(ErrorDetails {
                         entity: hostname.to_string(),
                         details: "Failed to parse X.509 certificate".to_string(),
@@ -95,18 +94,16 @@ impl TlsaVerify for Tlsa {
                     };
 
                     if hash == record.data {
-                        tracing::debug!(
-                            parent: span,
-                            context = "dane",
-                            event = "info",
-                            mx = hostname,
-                            certificate = if is_end_entity {
+                        trc::event!(
+                            Dane(DaneEvent::TlsaRecordMatch),
+                            SpanId = session_id,
+                            Hostname = hostname.to_string(),
+                            Type = if is_end_entity {
                                 "end-entity"
                             } else {
                                 "intermediate"
                             },
-                            "Matched TLSA record with hash {:x?}.",
-                            hash
+                            Details = format!("{:x?}", hash),
                         );
 
                         if is_end_entity {
@@ -131,22 +128,20 @@ impl TlsaVerify for Tlsa {
             || ((self.has_end_entities == matched_end_entity)
                 && (self.has_intermediates == matched_intermediate))
         {
-            tracing::info!(
-                parent: span,
-                context = "dane",
-                event = "authenticated",
-                mx = hostname,
-                "DANE authentication successful.",
+            trc::event!(
+                Dane(DaneEvent::AuthenticationSuccess),
+                SpanId = session_id,
+                Hostname = hostname.to_string(),
             );
+
             Ok(())
         } else {
-            tracing::warn!(
-                parent: span,
-                context = "dane",
-                event = "auth-failure",
-                mx = hostname,
-                "No matching certificates found in TLSA records.",
+            trc::event!(
+                Dane(DaneEvent::AuthenticationFailure),
+                SpanId = session_id,
+                Hostname = hostname.to_string(),
             );
+
             Err(Status::PermanentFailure(Error::DaneError(ErrorDetails {
                 entity: hostname.to_string(),
                 details: "No matching certificates found in TLSA records".to_string(),

@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use utils::map::vec_map::VecMap;
 
 use crate::{
-    error::{method::MethodError, set::SetError},
+    error::set::SetError,
     method::{copy::CopyResponse, set::SetResponse, upload::DataSourceObject},
     object::Object,
     request::{
@@ -33,7 +33,7 @@ enum EvalResult {
 }
 
 impl Response {
-    pub fn resolve_references(&self, request: &mut RequestMethod) -> Result<(), MethodError> {
+    pub fn resolve_references(&self, request: &mut RequestMethod) -> trc::Result<()> {
         match request {
             RequestMethod::Get(request) => {
                 // Resolve id references
@@ -50,9 +50,11 @@ impl Response {
                                 if let Some(resolved_id) = self.created_ids.get(reference) {
                                     *id = MaybeReference::Value(resolved_id.clone());
                                 } else {
-                                    return Err(MethodError::InvalidResultReference(format!(
-                                        "Id reference {reference:?} does not exist."
-                                    )));
+                                    return Err(trc::JmapEvent::InvalidResultReference
+                                        .into_err()
+                                        .details(format!(
+                                            "Id reference {reference:?} does not exist."
+                                        )));
                                 }
                             }
                         }
@@ -149,7 +151,9 @@ impl Response {
                                         *id = MaybeReference::Value(blob_id.clone());
                                     }
                                     Some(_) => {
-                                        return Err(MethodError::InvalidResultReference(format!(
+                                        return Err(trc::JmapEvent::InvalidResultReference
+                                            .into_err()
+                                            .details(format!(
                                             "Id reference {parent_id:?} points to invalid type."
                                         )));
                                     }
@@ -246,13 +250,13 @@ impl Response {
         EvalResult::Failed
     }
 
-    fn eval_id_reference(&self, ir: &str) -> Result<Id, MethodError> {
+    fn eval_id_reference(&self, ir: &str) -> trc::Result<Id> {
         if let Some(AnyId::Id(id)) = self.created_ids.get(ir) {
             Ok(*id)
         } else {
-            Err(MethodError::InvalidResultReference(format!(
-                "Id reference {ir:?} not found."
-            )))
+            Err(trc::JmapEvent::InvalidResultReference
+                .into_err()
+                .details(format!("Id reference {ir:?} not found.")))
         }
     }
 
@@ -260,7 +264,7 @@ impl Response {
         &self,
         obj: &mut Object<SetValue>,
         mut graph: Option<(&str, &mut HashMap<String, Vec<String>>)>,
-    ) -> Result<(), MethodError> {
+    ) -> trc::Result<()> {
         for set_value in obj.properties.values_mut() {
             match set_value {
                 SetValue::IdReference(MaybeReference::Reference(parent_id)) => {
@@ -272,9 +276,9 @@ impl Response {
                             .or_insert_with(Vec::new)
                             .push(parent_id.to_string());
                     } else {
-                        return Err(MethodError::InvalidResultReference(format!(
-                            "Id reference {parent_id:?} not found."
-                        )));
+                        return Err(trc::JmapEvent::InvalidResultReference
+                            .into_err()
+                            .details(format!("Id reference {parent_id:?} not found.")));
                     }
                 }
                 SetValue::IdReferences(id_refs) => {
@@ -288,9 +292,9 @@ impl Response {
                                     .or_insert_with(Vec::new)
                                     .push(parent_id.to_string());
                             } else {
-                                return Err(MethodError::InvalidResultReference(format!(
-                                    "Id reference {parent_id:?} not found."
-                                )));
+                                return Err(trc::JmapEvent::InvalidResultReference
+                                    .into_err()
+                                    .details(format!("Id reference {parent_id:?} not found.")));
                             }
                         }
                     }
@@ -310,14 +314,16 @@ impl Response {
 fn topological_sort<T>(
     create: &mut VecMap<String, T>,
     graph: HashMap<String, Vec<String>>,
-) -> Result<VecMap<String, T>, MethodError> {
+) -> trc::Result<VecMap<String, T>> {
     // Make sure all references exist
     for (from_id, to_ids) in graph.iter() {
         for to_id in to_ids {
             if !create.contains_key(to_id) {
-                return Err(MethodError::InvalidResultReference(format!(
-                    "Invalid reference to non-existing object {to_id:?} from {from_id:?}"
-                )));
+                return Err(trc::JmapEvent::InvalidResultReference
+                    .into_err()
+                    .details(format!(
+                        "Invalid reference to non-existing object {to_id:?} from {from_id:?}"
+                    )));
             }
         }
     }
@@ -332,9 +338,9 @@ fn topological_sort<T>(
             if let Some(to_ids) = graph.get(from_id) {
                 it_stack.push((it, from_id));
                 if it_stack.len() > 1000 {
-                    return Err(MethodError::InvalidArguments(
-                        "Cyclical references are not allowed.".to_string(),
-                    ));
+                    return Err(trc::JmapEvent::InvalidArguments
+                        .into_err()
+                        .details("Cyclical references are not allowed.".to_string()));
                 }
                 it = to_ids.iter();
                 continue;
@@ -437,7 +443,7 @@ impl EvalObjectReferences for CopyResponse {
 }
 
 impl EvalResult {
-    pub fn unwrap_ids(self, rr: &ResultReference) -> Result<Vec<Id>, MethodError> {
+    pub fn unwrap_ids(self, rr: &ResultReference) -> trc::Result<Vec<Id>> {
         if let EvalResult::Values(values) = self {
             let mut ids = Vec::with_capacity(values.len());
             for value in values {
@@ -448,32 +454,34 @@ impl EvalResult {
                             match value {
                                 Value::Id(id) => ids.push(id),
                                 _ => {
-                                    return Err(MethodError::InvalidResultReference(format!(
-                                        "Failed to evaluate {rr} result reference."
-                                    )));
+                                    return Err(trc::JmapEvent::InvalidResultReference
+                                        .into_err()
+                                        .details(format!(
+                                            "Failed to evaluate {rr} result reference."
+                                        )));
                                 }
                             }
                         }
                     }
                     _ => {
-                        return Err(MethodError::InvalidResultReference(format!(
-                            "Failed to evaluate {rr} result reference."
-                        )))
+                        return Err(trc::JmapEvent::InvalidResultReference
+                            .into_err()
+                            .details(format!("Failed to evaluate {rr} result reference.")))
                     }
                 }
             }
             Ok(ids)
         } else {
-            Err(MethodError::InvalidResultReference(format!(
-                "Failed to evaluate {rr} result reference."
-            )))
+            Err(trc::JmapEvent::InvalidResultReference
+                .into_err()
+                .details(format!("Failed to evaluate {rr} result reference.")))
         }
     }
 
     pub fn unwrap_any_ids(
         self,
         rr: &ResultReference,
-    ) -> Result<Vec<MaybeReference<AnyId, String>>, MethodError> {
+    ) -> trc::Result<Vec<MaybeReference<AnyId, String>>> {
         if let EvalResult::Values(values) = self {
             let mut ids = Vec::with_capacity(values.len());
             for value in values {
@@ -488,35 +496,37 @@ impl EvalResult {
                                     ids.push(MaybeReference::Value(blob_id.into()))
                                 }
                                 _ => {
-                                    return Err(MethodError::InvalidResultReference(format!(
-                                        "Failed to evaluate {rr} result reference."
-                                    )));
+                                    return Err(trc::JmapEvent::InvalidResultReference
+                                        .into_err()
+                                        .details(format!(
+                                            "Failed to evaluate {rr} result reference."
+                                        )));
                                 }
                             }
                         }
                     }
                     _ => {
-                        return Err(MethodError::InvalidResultReference(format!(
-                            "Failed to evaluate {rr} result reference."
-                        )))
+                        return Err(trc::JmapEvent::InvalidResultReference
+                            .into_err()
+                            .details(format!("Failed to evaluate {rr} result reference.")))
                     }
                 }
             }
             Ok(ids)
         } else {
-            Err(MethodError::InvalidResultReference(format!(
-                "Failed to evaluate {rr} result reference."
-            )))
+            Err(trc::JmapEvent::InvalidResultReference
+                .into_err()
+                .details(format!("Failed to evaluate {rr} result reference.")))
         }
     }
 
-    pub fn unwrap_properties(self, rr: &ResultReference) -> Result<Vec<Property>, MethodError> {
+    pub fn unwrap_properties(self, rr: &ResultReference) -> trc::Result<Vec<Property>> {
         if let EvalResult::Properties(properties) = self {
             Ok(properties)
         } else {
-            Err(MethodError::InvalidResultReference(format!(
-                "Failed to evaluate {rr} result reference."
-            )))
+            Err(trc::JmapEvent::InvalidResultReference
+                .into_err()
+                .details(format!("Failed to evaluate {rr} result reference.")))
         }
     }
 }
@@ -526,7 +536,6 @@ mod tests {
     use std::collections::HashMap;
 
     use crate::{
-        error::method::MethodError,
         request::{Request, RequestMethod},
         response::Response,
         types::{
@@ -685,7 +694,10 @@ mod tests {
                 ),
                 Err(err) => {
                     assert_eq!(test_num, 3);
-                    assert!(matches!(err, MethodError::InvalidArguments(_)));
+                    assert!(matches!(
+                        err.value(trc::Key::Type).and_then(|v| v.as_str()).unwrap(),
+                        "invalidArguments"
+                    ));
                     continue;
                 }
             }

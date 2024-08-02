@@ -12,7 +12,6 @@ use store::{
     rand::{distributions::Alphanumeric, thread_rng, Rng},
     Stores,
 };
-use tracing_appender::non_blocking::WorkerGuard;
 use utils::{
     config::{Config, ConfigKey},
     failed, UnwrapFailure,
@@ -32,7 +31,6 @@ pub struct BootManager {
     pub config: Config,
     pub core: SharedCore,
     pub servers: Servers,
-    pub guards: Option<Vec<WorkerGuard>>,
 }
 
 const HELP: &str = r#"Stalwart Mail Server
@@ -164,13 +162,13 @@ impl BootManager {
         }
 
         // Enable tracing
-        let guards = Tracers::parse(&mut config).enable(&mut config);
+        Tracers::parse(&mut config).enable();
 
         match import_export {
             ImportExport::None => {
-                tracing::info!(
-                    "Starting Stalwart Mail Server v{}...",
-                    env!("CARGO_PKG_VERSION")
+                trc::event!(
+                    Server(trc::ServerEvent::Startup),
+                    Version = env!("CARGO_PKG_VERSION"),
                 );
 
                 // Add hostname lookup if missing
@@ -228,11 +226,10 @@ impl BootManager {
                 {
                     match manager.fetch_config_resource("spam-filter").await {
                         Ok(external_config) => {
-                            tracing::info!(
-                                context = "config",
-                                event = "import",
-                                version = external_config.version,
-                                "Imported spam filter rules"
+                            trc::event!(
+                                Config(trc::ConfigEvent::ImportExternal),
+                                Version = external_config.version,
+                                Id = "spam-filter"
                             );
                             insert_keys.extend(external_config.keys);
                         }
@@ -275,10 +272,9 @@ impl BootManager {
                         Ok(None) => match manager.fetch_resource("webadmin").await {
                             Ok(bytes) => match blob_store.put_blob(WEBADMIN_KEY, &bytes).await {
                                 Ok(_) => {
-                                    tracing::info!(
-                                        context = "webadmin",
-                                        event = "download",
-                                        "Downloaded webadmin bundle"
+                                    trc::event!(
+                                        Resource(trc::ResourceEvent::DownloadExternal),
+                                        Id = "webadmin"
                                     );
                                 }
                                 Err(err) => {
@@ -325,7 +321,6 @@ impl BootManager {
 
                 BootManager {
                     core,
-                    guards,
                     config,
                     servers,
                 }

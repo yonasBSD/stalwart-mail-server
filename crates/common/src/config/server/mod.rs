@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{fmt::Display, net::SocketAddr, time::Duration};
+use std::{fmt::Display, net::SocketAddr, sync::Arc, time::Duration};
 
 use ahash::AHashMap;
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpSocket;
-use utils::config::ipmask::IpAddrMask;
+use utils::{config::ipmask::IpAddrMask, snowflake::SnowflakeIdGenerator};
 
 use crate::listener::TcpAcceptor;
 
@@ -20,6 +20,7 @@ pub mod tls;
 pub struct Servers {
     pub servers: Vec<Server>,
     pub tcp_acceptors: AHashMap<String, TcpAcceptor>,
+    pub span_id_gen: Arc<SnowflakeIdGenerator>,
 }
 
 #[derive(Debug, Default)]
@@ -29,6 +30,7 @@ pub struct Server {
     pub listeners: Vec<Listener>,
     pub proxy_networks: Vec<IpAddrMask>,
     pub max_connections: u64,
+    pub span_id_gen: Arc<SnowflakeIdGenerator>,
 }
 
 #[derive(Debug)]
@@ -70,5 +72,18 @@ impl ServerProtocol {
 impl Display for ServerProtocol {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
+    }
+}
+
+impl From<ServerProtocol> for trc::Value {
+    fn from(value: ServerProtocol) -> Self {
+        trc::Value::Protocol(match value {
+            ServerProtocol::Smtp => trc::Protocol::Smtp,
+            ServerProtocol::Lmtp => trc::Protocol::Lmtp,
+            ServerProtocol::Imap => trc::Protocol::Imap,
+            ServerProtocol::Pop3 => trc::Protocol::Pop3,
+            ServerProtocol::Http => trc::Protocol::Http,
+            ServerProtocol::ManageSieve => trc::Protocol::ManageSieve,
+        })
     }
 }

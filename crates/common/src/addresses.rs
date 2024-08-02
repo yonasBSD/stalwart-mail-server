@@ -22,13 +22,14 @@ impl Core {
         &self,
         directory: &Directory,
         email: &str,
-    ) -> directory::Result<Vec<u32>> {
+        session_id: u64,
+    ) -> trc::Result<Vec<u32>> {
         let mut address = self
             .smtp
             .session
             .rcpt
             .subaddressing
-            .to_subaddress(self, email)
+            .to_subaddress(self, email, session_id)
             .await;
 
         for _ in 0..2 {
@@ -41,7 +42,7 @@ impl Core {
                 .session
                 .rcpt
                 .catch_all
-                .to_catch_all(self, email)
+                .to_catch_all(self, email, session_id)
                 .await
             {
                 address = catch_all;
@@ -53,14 +54,19 @@ impl Core {
         Ok(vec![])
     }
 
-    pub async fn rcpt(&self, directory: &Directory, email: &str) -> directory::Result<bool> {
+    pub async fn rcpt(
+        &self,
+        directory: &Directory,
+        email: &str,
+        session_id: u64,
+    ) -> trc::Result<bool> {
         // Expand subaddress
         let mut address = self
             .smtp
             .session
             .rcpt
             .subaddressing
-            .to_subaddress(self, email)
+            .to_subaddress(self, email, session_id)
             .await;
 
         for _ in 0..2 {
@@ -71,7 +77,7 @@ impl Core {
                 .session
                 .rcpt
                 .catch_all
-                .to_catch_all(self, email)
+                .to_catch_all(self, email, session_id)
                 .await
             {
                 address = catch_all;
@@ -87,14 +93,15 @@ impl Core {
         &self,
         directory: &Directory,
         address: &str,
-    ) -> directory::Result<Vec<String>> {
+        session_id: u64,
+    ) -> trc::Result<Vec<String>> {
         directory
             .vrfy(
                 self.smtp
                     .session
                     .rcpt
                     .subaddressing
-                    .to_subaddress(self, address)
+                    .to_subaddress(self, address, session_id)
                     .await
                     .as_ref(),
             )
@@ -105,14 +112,15 @@ impl Core {
         &self,
         directory: &Directory,
         address: &str,
-    ) -> directory::Result<Vec<String>> {
+        session_id: u64,
+    ) -> trc::Result<Vec<String>> {
         directory
             .expn(
                 self.smtp
                     .session
                     .rcpt
                     .subaddressing
-                    .to_subaddress(self, address)
+                    .to_subaddress(self, address, session_id)
                     .await
                     .as_ref(),
             )
@@ -164,6 +172,7 @@ impl AddressMapping {
         &'x self,
         core: &Core,
         address: &'y str,
+        session_id: u64,
     ) -> Cow<'x, str> {
         match self {
             AddressMapping::Enable => {
@@ -174,11 +183,10 @@ impl AddressMapping {
                 }
             }
             AddressMapping::Custom(if_block) => {
-                if let Ok(result) = String::try_from(
-                    if_block
-                        .eval(&Address(address), core, "session.rcpt.sub-addressing")
-                        .await,
-                ) {
+                if let Some(result) = core
+                    .eval_if::<String, _>(if_block, &Address(address), session_id)
+                    .await
+                {
                     return result.into();
                 }
             }
@@ -192,24 +200,17 @@ impl AddressMapping {
         &'x self,
         core: &Core,
         address: &'y str,
+        session_id: u64,
     ) -> Option<Cow<'x, str>> {
         match self {
             AddressMapping::Enable => address
                 .rsplit_once('@')
                 .map(|(_, domain_part)| format!("@{}", domain_part))
                 .map(Cow::Owned),
-
-            AddressMapping::Custom(if_block) => {
-                if let Ok(result) = String::try_from(
-                    if_block
-                        .eval(&Address(address), core, "session.rcpt.catch-all")
-                        .await,
-                ) {
-                    Some(result.into())
-                } else {
-                    None
-                }
-            }
+            AddressMapping::Custom(if_block) => core
+                .eval_if::<String, _>(if_block, &Address(address), session_id)
+                .await
+                .map(Cow::Owned),
             AddressMapping::Disable => None,
         }
     }

@@ -45,7 +45,8 @@ async fn generate_dsn() {
     let flags = RCPT_NOTIFY_FAILURE | RCPT_NOTIFY_DELAY | RCPT_NOTIFY_SUCCESS;
     let mut message = Message {
         size,
-        id: 0,
+        queue_id: 0,
+        span_id: 0,
         created: SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs()),
@@ -86,7 +87,6 @@ async fn generate_dsn() {
         blob_hash: BlobHash::from(dsn_original.as_bytes()),
         quota_keys: vec![],
     };
-    let span = tracing::span!(tracing::Level::INFO, "hi");
 
     // Load config
     let mut local = TestServer::new("smtp_dsn_test", CONFIG.to_string() + SIGNATURES, true).await;
@@ -100,13 +100,13 @@ async fn generate_dsn() {
         .unwrap();
 
     // Disabled DSN
-    core.send_dsn(&mut message, &span).await;
+    core.send_dsn(&mut message).await;
     qr.assert_no_events();
     qr.assert_queue_is_empty().await;
 
     // Failure DSN
     message.recipients[0].flags = flags;
-    core.send_dsn(&mut message, &span).await;
+    core.send_dsn(&mut message).await;
     let dsn_message = qr.expect_message().await;
     qr.compare_dsn(dsn_message, "failure.eml").await;
 
@@ -126,7 +126,7 @@ async fn generate_dsn() {
         flags,
         orcpt: None,
     });
-    core.send_dsn(&mut message, &span).await;
+    core.send_dsn(&mut message).await;
     let dsn_message = qr.expect_message().await;
     qr.compare_dsn(dsn_message, "success.eml").await;
 
@@ -139,7 +139,7 @@ async fn generate_dsn() {
         flags,
         orcpt: "jdoe@example.org".to_string().into(),
     });
-    core.send_dsn(&mut message, &span).await;
+    core.send_dsn(&mut message).await;
     let dsn_message = qr.expect_message().await;
     qr.compare_dsn(dsn_message, "delay.eml").await;
 
@@ -148,7 +148,7 @@ async fn generate_dsn() {
         rcpt.flags = flags;
     }
     message.domains[0].notify.due = now();
-    core.send_dsn(&mut message, &span).await;
+    core.send_dsn(&mut message).await;
     let dsn_message = qr.expect_message().await;
     qr.compare_dsn(dsn_message, "mixed.eml").await;
 

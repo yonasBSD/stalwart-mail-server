@@ -146,6 +146,23 @@ impl Mechanism {
     }
 }
 
+pub trait SerializeResponse {
+    fn serialize(&self) -> Vec<u8>;
+}
+
+impl SerializeResponse for trc::Error {
+    fn serialize(&self) -> Vec<u8> {
+        let message = self
+            .value_as_str(trc::Key::Details)
+            .unwrap_or_else(|| self.as_ref().message());
+        let mut buf = Vec::with_capacity(message.len() + 6);
+        buf.extend_from_slice(b"-ERR ");
+        buf.extend_from_slice(message.as_bytes());
+        buf.extend_from_slice(b"\r\n");
+        buf
+    }
+}
+
 #[cfg(test)]
 mod tests {
 

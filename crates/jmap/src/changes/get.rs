@@ -5,11 +5,11 @@
  */
 
 use jmap_proto::{
-    error::method::MethodError,
     method::changes::{ChangesRequest, ChangesResponse, RequestArguments},
     types::{collection::Collection, property::Property, state::State},
 };
 use store::query::log::{Change, Changes, Query};
+use trc::AddContext;
 
 use crate::{auth::AccessToken, JMAP};
 
@@ -18,7 +18,7 @@ impl JMAP {
         &self,
         request: ChangesRequest,
         access_token: &AccessToken,
-    ) -> Result<ChangesResponse, MethodError> {
+    ) -> trc::Result<ChangesResponse> {
         // Map collection and validate ACLs
         let collection = match request.arguments {
             RequestArguments::Email => {
@@ -48,7 +48,7 @@ impl JMAP {
             RequestArguments::Quota => {
                 access_token.assert_is_member(request.account_id)?;
 
-                return Err(MethodError::CannotCalculateChanges);
+                return Err(trc::JmapEvent::CannotCalculateChanges.into_err());
             }
         };
 
@@ -164,21 +164,12 @@ impl JMAP {
         account_id: u32,
         collection: Collection,
         query: Query,
-    ) -> Result<Changes, MethodError> {
+    ) -> trc::Result<Changes> {
         self.core
             .storage
             .data
             .changes(account_id, collection, query)
             .await
-            .map_err(|err| {
-                tracing::error!(
-                event = "error",
-                context = "changes",
-                account_id = account_id,
-                collection = ?collection,
-                error = ?err,
-                "Failed to query changes.");
-                MethodError::ServerPartialFail
-            })
+            .caused_by(trc::location!())
     }
 }

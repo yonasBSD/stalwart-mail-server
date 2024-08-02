@@ -4,11 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
-use common::listener::ServerInstance;
 use jmap_proto::{
-    error::{method::MethodError, request::RequestError},
     method::{
         get, query,
         set::{self},
@@ -17,16 +15,19 @@ use jmap_proto::{
     response::{Response, ResponseMethod},
     types::collection::Collection,
 };
+use trc::JmapEvent;
 
 use crate::{auth::AccessToken, JMAP};
+
+use super::http::HttpSessionData;
 
 impl JMAP {
     pub async fn handle_request(
         &self,
         request: Request,
         access_token: Arc<AccessToken>,
-        instance: &Arc<ServerInstance>,
-    ) -> Result<Response, RequestError> {
+        session: &HttpSessionData,
+    ) -> Response {
         let mut response = Response::new(
             access_token.state(),
             request.created_ids.unwrap_or_default(),
@@ -36,7 +37,11 @@ impl JMAP {
 
         for mut call in request.method_calls {
             // Resolve result and id references
-            if let Err(method_error) = response.resolve_references(&mut call.method) {
+            if let Err(error) = response.resolve_references(&mut call.method) {
+                let method_error = error.clone();
+
+                trc::error!(error.span_id(session.session_id));
+
                 response.push_response(call.id, MethodName::error(), method_error);
                 continue;
             }
@@ -45,8 +50,15 @@ impl JMAP {
                 let mut next_call = None;
 
                 // Add response
+                let method_name = call.name.as_str();
                 match self
-                    .handle_method_call(call.method, &access_token, &mut next_call, instance)
+                    .handle_method_call(
+                        call.method,
+                        method_name,
+                        &access_token,
+                        &mut next_call,
+                        session,
+                    )
                     .await
                 {
                     Ok(mut method_response) => {
@@ -84,8 +96,15 @@ impl JMAP {
 
                         response.push_response(call.id, call.name, method_response);
                     }
-                    Err(err) => {
-                        response.push_error(call.id, err);
+                    Err(error) => {
+                        let method_error = error.clone();
+
+                        trc::error!(error
+                            .span_id(session.session_id)
+                            .ctx_unique(trc::Key::AccountId, access_token.primary_id())
+                            .caused_by(method_name));
+
+                        response.push_error(call.id, method_error);
                     }
                 }
 
@@ -104,17 +123,19 @@ impl JMAP {
             response.created_ids.clear();
         }
 
-        Ok(response)
+        response
     }
 
     async fn handle_method_call(
         &self,
         method: RequestMethod,
+        method_name: &'static str,
         access_token: &AccessToken,
         next_call: &mut Option<Call<RequestMethod>>,
-        instance: &Arc<ServerInstance>,
-    ) -> Result<ResponseMethod, MethodError> {
-        Ok(match method {
+        session: &HttpSessionData,
+    ) -> trc::Result<ResponseMethod> {
+        let op_start = Instant::now();
+        let response = match method {
             RequestMethod::Get(mut req) => match req.take_arguments() {
                 get::RequestArguments::Email(arguments) => {
                     access_token.assert_has_access(req.account_id, Collection::Email)?;
@@ -160,9 +181,9 @@ impl JMAP {
                     if self.core.jmap.principal_allow_lookups || access_token.is_super_user() {
                         self.principal_get(req).await?.into()
                     } else {
-                        return Err(MethodError::Forbidden(
-                            "Principal lookups are disabled".to_string(),
-                        ));
+                        return Err(trc::JmapEvent::Forbidden
+                            .into_err()
+                            .details("Principal lookups are disabled".to_string()));
                     }
                 }
                 get::RequestArguments::Quota => {
@@ -205,11 +226,11 @@ impl JMAP {
                 }
                 query::RequestArguments::Principal => {
                     if self.core.jmap.principal_allow_lookups || access_token.is_super_user() {
-                        self.principal_query(req).await?.into()
+                        self.principal_query(req, session).await?.into()
                     } else {
-                        return Err(MethodError::Forbidden(
-                            "Principal lookups are disabled".to_string(),
-                        ));
+                        return Err(trc::JmapEvent::Forbidden
+                            .into_err()
+                            .details("Principal lookups are disabled".to_string()));
                     }
                 }
                 query::RequestArguments::Quota => {
@@ -222,7 +243,7 @@ impl JMAP {
                 set::RequestArguments::Email => {
                     access_token.assert_has_access(req.account_id, Collection::Email)?;
 
-                    self.email_set(req, access_token).await?.into()
+                    self.email_set(req, access_token, session).await?.into()
                 }
                 set::RequestArguments::Mailbox(arguments) => {
                     access_token.assert_has_access(req.account_id, Collection::Mailbox)?;
@@ -239,9 +260,13 @@ impl JMAP {
                 set::RequestArguments::EmailSubmission(arguments) => {
                     access_token.assert_is_member(req.account_id)?;
 
-                    self.email_submission_set(req.with_arguments(arguments), instance, next_call)
-                        .await?
-                        .into()
+                    self.email_submission_set(
+                        req.with_arguments(arguments),
+                        &session.instance,
+                        next_call,
+                    )
+                    .await?
+                    .into()
                 }
                 set::RequestArguments::PushSubscription => {
                     self.push_subscription_set(req, access_token).await?.into()
@@ -249,7 +274,7 @@ impl JMAP {
                 set::RequestArguments::SieveScript(arguments) => {
                     access_token.assert_is_member(req.account_id)?;
 
-                    self.sieve_script_set(req.with_arguments(arguments), access_token)
+                    self.sieve_script_set(req.with_arguments(arguments), access_token, session)
                         .await?
                         .into()
                 }
@@ -265,12 +290,14 @@ impl JMAP {
                     .assert_has_access(req.account_id, Collection::Email)?
                     .assert_has_access(req.from_account_id, Collection::Email)?;
 
-                self.email_copy(req, access_token, next_call).await?.into()
+                self.email_copy(req, access_token, next_call, session)
+                    .await?
+                    .into()
             }
             RequestMethod::ImportEmail(req) => {
                 access_token.assert_has_access(req.account_id, Collection::Email)?;
 
-                self.email_import(req, access_token).await?.into()
+                self.email_import(req, access_token, session).await?.into()
             }
             RequestMethod::ParseEmail(req) => {
                 access_token.assert_has_access(req.account_id, Collection::Email)?;
@@ -305,6 +332,16 @@ impl JMAP {
             }
             RequestMethod::Echo(req) => req.into(),
             RequestMethod::Error(error) => return Err(error),
-        })
+        };
+
+        trc::event!(
+            Jmap(JmapEvent::MethodCall),
+            Name = method_name,
+            SpanId = session.session_id,
+            AccountId = access_token.primary_id(),
+            Elapsed = op_start.elapsed(),
+        );
+
+        Ok(response)
     }
 }

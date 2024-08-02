@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{fs, net::IpAddr, path::PathBuf, time::Duration};
+use std::{fs, net::IpAddr, path::PathBuf, sync::Arc, time::Duration};
 
 use common::{
     config::{
@@ -262,6 +262,7 @@ fn parse_throttles() {
         throttle,
         vec![
             Throttle {
+                id: "0000".to_string(),
                 expr: Expression {
                     items: vec![
                         ExpressionItem::Variable(8),
@@ -278,6 +279,7 @@ fn parse_throttles() {
                 .into()
             },
             Throttle {
+                id: "0001".to_string(),
                 expr: Expression::default(),
                 keys: THROTTLE_SENDER_DOMAIN,
                 concurrency: 10000.into(),
@@ -300,6 +302,7 @@ fn parse_servers() {
     // Parse servers
     let mut config = Config::new(toml).unwrap();
     let servers = Servers::parse(&mut config).servers;
+    let id_generator = Arc::new(utils::snowflake::SnowflakeIdGenerator::new());
     let expected_servers = vec![
         Server {
             id: "smtp".to_string(),
@@ -314,6 +317,7 @@ fn parse_servers() {
             }],
             max_connections: 8192,
             proxy_networks: vec![],
+            span_id_gen: id_generator.clone(),
         },
         Server {
             id: "smtps".to_string(),
@@ -338,6 +342,7 @@ fn parse_servers() {
             ],
             max_connections: 1024,
             proxy_networks: vec![],
+            span_id_gen: id_generator.clone(),
         },
         Server {
             id: "submission".to_string(),
@@ -352,6 +357,7 @@ fn parse_servers() {
             }],
             max_connections: 8192,
             proxy_networks: vec![],
+            span_id_gen: id_generator.clone(),
         },
     ];
 
@@ -428,8 +434,9 @@ async fn eval_if() {
                 }],
                 default: Expression::from(false),
             }
-            .eval(&envelope, &core, &key)
+            .eval(&envelope, &core, 0)
             .await
+            .unwrap()
             .to_bool(),
             expected_result.parse::<bool>().unwrap(),
             "failed for {key:?}"
@@ -478,7 +485,7 @@ async fn eval_dynvalue() {
             .unwrap_or_else(|| panic!("Missing expect for test {test_name:?}"));
 
         assert_eq!(
-            String::try_from(if_block.eval(&envelope, &core, test_name.as_str()).await).ok(),
+            String::try_from(if_block.eval(&envelope, &core, 0).await.unwrap()).ok(),
             expected,
             "failed for test {test_name:?}"
         );

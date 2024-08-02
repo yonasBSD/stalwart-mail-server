@@ -5,10 +5,7 @@
  */
 
 use jmap_proto::{
-    error::{
-        method::MethodError,
-        set::{SetError, SetErrorType},
-    },
+    error::set::{SetError, SetErrorType},
     method::import::{ImportEmailRequest, ImportEmailResponse},
     types::{
         acl::Acl,
@@ -22,7 +19,7 @@ use jmap_proto::{
 use mail_parser::MessageParser;
 use utils::map::vec_map::VecMap;
 
-use crate::{auth::AccessToken, IngestError, JMAP};
+use crate::{api::http::HttpSessionData, auth::AccessToken, JMAP};
 
 use super::ingest::{IngestEmail, IngestSource};
 
@@ -31,7 +28,8 @@ impl JMAP {
         &self,
         request: ImportEmailRequest,
         access_token: &AccessToken,
-    ) -> Result<ImportEmailResponse, MethodError> {
+        session: &HttpSessionData,
+    ) -> trc::Result<ImportEmailResponse> {
         // Validate state
         let account_id = request.account_id.document_id();
         let old_state: State = self
@@ -125,28 +123,35 @@ impl JMAP {
                     received_at: email.received_at.map(|r| r.into()),
                     source: IngestSource::Jmap,
                     encrypt: self.core.jmap.encrypt && self.core.jmap.encrypt_append,
+                    session_id: session.session_id,
                 })
                 .await
             {
                 Ok(email) => {
                     response.created.append(id, email.into());
                 }
-                Err(IngestError::Permanent { reason, .. }) => {
-                    response.not_created.append(
-                        id,
-                        SetError::new(SetErrorType::InvalidEmail).with_description(reason),
-                    );
-                }
-                Err(IngestError::OverQuota) => {
-                    response.not_created.append(
-                        id,
-                        SetError::new(SetErrorType::OverQuota)
-                            .with_description("You have exceeded your disk quota."),
-                    );
-                }
-                Err(IngestError::Temporary) => {
-                    return Err(MethodError::ServerPartialFail);
-                }
+                Err(mut err) => match err.as_ref() {
+                    trc::EventType::Limit(trc::LimitEvent::Quota) => {
+                        response.not_created.append(
+                            id,
+                            SetError::new(SetErrorType::OverQuota)
+                                .with_description("You have exceeded your disk quota."),
+                        );
+                    }
+                    trc::EventType::Store(trc::StoreEvent::IngestError) => {
+                        response.not_created.append(
+                            id,
+                            SetError::new(SetErrorType::InvalidEmail).with_description(
+                                err.take_value(trc::Key::Reason)
+                                    .and_then(|v| v.into_string())
+                                    .unwrap(),
+                            ),
+                        );
+                    }
+                    _ => {
+                        return Err(err);
+                    }
+                },
             }
         }
 

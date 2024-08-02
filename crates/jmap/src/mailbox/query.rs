@@ -5,7 +5,6 @@
  */
 
 use jmap_proto::{
-    error::method::MethodError,
     method::query::{Comparator, Filter, QueryRequest, QueryResponse, SortProperty},
     object::{mailbox::QueryArguments, Object},
     types::{acl::Acl, collection::Collection, property::Property, value::Value},
@@ -23,7 +22,7 @@ impl JMAP {
         &self,
         mut request: QueryRequest<QueryArguments>,
         access_token: &AccessToken,
-    ) -> Result<QueryResponse, MethodError> {
+    ) -> trc::Result<QueryResponse> {
         let account_id = request.account_id.document_id();
         let sort_as_tree = request.arguments.sort_as_tree.unwrap_or(false);
         let filter_as_tree = request.arguments.filter_as_tree.unwrap_or(false);
@@ -80,7 +79,11 @@ impl JMAP {
                     filters.push(cond.into());
                 }
 
-                other => return Err(MethodError::UnsupportedFilter(other.to_string())),
+                other => {
+                    return Err(trc::JmapEvent::UnsupportedFilter
+                        .into_err()
+                        .details(other.to_string()))
+                }
             }
         }
 
@@ -182,7 +185,11 @@ impl JMAP {
                         query::Comparator::field(Property::ParentId, comparator.is_ascending)
                     }
 
-                    other => return Err(MethodError::UnsupportedSort(other.to_string())),
+                    other => {
+                        return Err(trc::JmapEvent::UnsupportedSort
+                            .into_err()
+                            .details(other.to_string()))
+                    }
                 });
             }
 

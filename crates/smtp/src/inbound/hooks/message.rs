@@ -11,6 +11,7 @@ use common::{
     DAEMON_NAME,
 };
 use mail_auth::AuthenticatedMessage;
+use trc::MtaHookEvent;
 
 use crate::{
     core::Session,
@@ -42,7 +43,7 @@ impl<T: SessionStream> Session<T> {
                 || !self
                     .core
                     .core
-                    .eval_if(&mta_hook.enable, self)
+                    .eval_if(&mta_hook.enable, self, self.data.session_id)
                     .await
                     .unwrap_or(false)
             {
@@ -51,6 +52,22 @@ impl<T: SessionStream> Session<T> {
 
             match self.run_mta_hook(stage, mta_hook, message).await {
                 Ok(response) => {
+                    trc::eventd!(
+                        MtaHook(match response.action {
+                            Action::Accept => MtaHookEvent::ActionAccept,
+                            Action::Discard => MtaHookEvent::ActionDiscard,
+                            Action::Reject => MtaHookEvent::ActionReject,
+                            Action::Quarantine => MtaHookEvent::ActionQuarantine,
+                        }),
+                        SpanId = self.data.session_id,
+                        Id = mta_hook.id.clone(),
+                        Contents = response
+                            .modifications
+                            .iter()
+                            .map(|m| format!("{m:?}"))
+                            .collect::<Vec<_>>()
+                    );
+
                     let mut new_modifications = Vec::with_capacity(response.modifications.len());
                     for modification in response.modifications {
                         new_modifications.push(match modification {
@@ -135,13 +152,13 @@ impl<T: SessionStream> Session<T> {
                     return Err(message);
                 }
                 Err(err) => {
-                    tracing::warn!(
-                        parent: &self.span,
-                        mta_hook.url = &mta_hook.url,
-                        context = "mta_hook",
-                        event = "error",
-                        reason = ?err,
-                        "MTAHook filter failed");
+                    trc::event!(
+                        MtaHook(MtaHookEvent::Error),
+                        SpanId = self.data.session_id,
+                        Id = mta_hook.id.clone(),
+                        Reason = err,
+                    );
+
                     if mta_hook.tempfail_on_error {
                         return Err(FilterResponse::server_failure());
                     }

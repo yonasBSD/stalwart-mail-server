@@ -11,9 +11,11 @@ use base64::{
     Engine,
 };
 use common::{
-    config::server::{ServerProtocol, Servers},
+    config::{
+        server::{ServerProtocol, Servers},
+        tracers::Tracers,
+    },
     manager::config::{ConfigManager, Patterns},
-    webhooks::manager::spawn_webhook_manager,
     Core, Ipc, IPC_CHANNEL_BUFFER,
 };
 use hyper::{header::AUTHORIZATION, Method};
@@ -253,6 +255,9 @@ email = "address"
 quota = "quota"
 class = "type"
 
+[imap.auth]
+allow-plain-text = true
+
 [oauth]
 key = "parerga_und_paralipomena"
 
@@ -269,12 +274,16 @@ refresh-token-renew = "2s"
 expn = true
 vrfy = true
 
+[tracer.console]
+type = "console"
+level = "{LEVEL}"
+multiline = false
+ansi = true
+disabled-events = ["network.*"]
+
 [webhook."test"]
 url = "http://127.0.0.1:8821/hook"
-events = ["auth.success", "auth.failure", "auth.banned", "auth.error", 
-          "message.accepted", "message.rejected", "message.appended", 
-          "account.over-quota", "dsn", "double-bounce", "report.incoming.dmarc", 
-          "report.incoming.tls", "report.incoming.arf", "report.outgoing"]
+events = ["auth.*", "delivery.dsn*", "store.ingest"]
 signature-key = "ovos-moles"
 throttle = "100ms"
 
@@ -282,21 +291,6 @@ throttle = "100ms"
 
 #[tokio::test(flavor = "multi_thread")]
 pub async fn jmap_tests() {
-    if let Ok(level) = std::env::var("LOG") {
-        tracing::subscriber::set_global_default(
-            tracing_subscriber::FmtSubscriber::builder()
-                .with_env_filter(
-                    tracing_subscriber::EnvFilter::builder()
-                        .parse(
-                            format!("smtp={level},imap={level},jmap={level},store={level},utils={level},directory={level},common={level}"),
-                        )
-                        .unwrap(),
-                )
-                .finish(),
-        )
-        .unwrap();
-    }
-
     let delete = true;
     let mut params = init_jmap_tests(
         &std::env::var("STORE")
@@ -340,21 +334,6 @@ pub async fn jmap_tests() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
 pub async fn jmap_stress_tests() {
-    if let Ok(level) = std::env::var("LOG") {
-        tracing::subscriber::set_global_default(
-            tracing_subscriber::FmtSubscriber::builder()
-                .with_env_filter(
-                    tracing_subscriber::EnvFilter::builder()
-                        .parse(
-                            format!("smtp={level},imap={level},jmap={level},store={level},utils={level},directory={level},common={level}"),
-                        )
-                        .unwrap(),
-                )
-                .finish(),
-        )
-        .unwrap();
-    }
-
     let params = init_jmap_tests(
         &std::env::var("STORE")
             .expect("Missing store type. Try running `STORE=<store_type> cargo test`"),
@@ -446,7 +425,11 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
     let mut config = Config::new(
         add_test_certs(SERVER)
             .replace("{STORE}", store_id)
-            .replace("{TMP}", &temp_dir.path.display().to_string()),
+            .replace("{TMP}", &temp_dir.path.display().to_string())
+            .replace(
+                "{LEVEL}",
+                &std::env::var("LOG").unwrap_or_else(|_| "disable".to_string()),
+            ),
     )
     .unwrap();
     config.resolve_all_macros().await;
@@ -471,6 +454,7 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
             .cloned()
             .unwrap_or_default(),
     };
+    let tracers = Tracers::parse(&mut config);
     let core = Core::parse(&mut config, stores, config_manager).await;
     let store = core.storage.data.clone();
     let shared_core = core.into_shared();
@@ -478,18 +462,21 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
     // Parse acceptors
     servers.parse_tcp_acceptors(&mut config, shared_core.clone());
 
-    // Spawn webhook manager
-    let webhook_tx = spawn_webhook_manager(shared_core.clone());
+    // Enable tracing
+    tracers.enable();
 
     // Setup IPC channels
     let (delivery_tx, delivery_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
-    let ipc = Ipc {
-        delivery_tx,
-        webhook_tx,
-    };
+    let ipc = Ipc { delivery_tx };
 
     // Init servers
-    let smtp = SMTP::init(&mut config, shared_core.clone(), ipc).await;
+    let smtp = SMTP::init(
+        &mut config,
+        shared_core.clone(),
+        ipc,
+        servers.span_id_gen.clone(),
+    )
+    .await;
     let jmap = JMAP::init(
         &mut config,
         delivery_rx,
@@ -689,7 +676,7 @@ pub async fn test_account_login(login: &str, secret: &str) -> Client {
 #[derive(Deserialize)]
 #[serde(untagged)]
 pub enum Response<T> {
-    RequestError(RequestError),
+    RequestError(RequestError<'static>),
     Error { error: String, details: String },
     Data { data: T },
 }

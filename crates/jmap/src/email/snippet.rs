@@ -5,7 +5,6 @@
  */
 
 use jmap_proto::{
-    error::method::MethodError,
     method::{
         query::Filter,
         search_snippet::{GetSearchSnippetRequest, GetSearchSnippetResponse, SearchSnippet},
@@ -25,7 +24,7 @@ impl JMAP {
         &self,
         request: GetSearchSnippetRequest,
         access_token: &AccessToken,
-    ) -> Result<GetSearchSnippetResponse, MethodError> {
+    ) -> trc::Result<GetSearchSnippetResponse> {
         let mut filter_stack = vec![];
         let mut include_term = true;
         let mut terms = vec![];
@@ -83,7 +82,7 @@ impl JMAP {
         };
 
         if email_ids.len() > self.core.jmap.snippet_max_results {
-            return Err(MethodError::RequestTooLarge);
+            return Err(trc::JmapEvent::RequestTooLarge.into_err());
         }
 
         for email_id in email_ids {
@@ -138,12 +137,16 @@ impl JMAP {
             {
                 raw_message
             } else {
-                tracing::warn!(event = "not-found",
-                    account_id = account_id,
-                    collection = ?Collection::Email,
-                    document_id = email_id.document_id(),
-                    blob_id = ?metadata.blob_hash,
-                    "Blob not found");
+                trc::event!(
+                    Store(trc::StoreEvent::NotFound),
+                    AccountId = account_id,
+                    DocumentId = email_id.document_id(),
+                    Collection = Collection::Email,
+                    BlobId = metadata.blob_hash.to_hex(),
+                    Details = "Blob not found.",
+                    CausedBy = trc::location!(),
+                );
+
                 response.not_found.push(email_id);
                 continue;
             };

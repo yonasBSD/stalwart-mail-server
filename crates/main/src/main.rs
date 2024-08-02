@@ -6,16 +6,14 @@
 
 use std::time::Duration;
 
-use common::{
-    config::server::ServerProtocol, manager::boot::BootManager,
-    webhooks::manager::spawn_webhook_manager, Ipc, IPC_CHANNEL_BUFFER,
-};
+use common::{config::server::ServerProtocol, manager::boot::BootManager, Ipc, IPC_CHANNEL_BUFFER};
 use imap::core::{ImapSessionManager, IMAP};
 use jmap::{api::JmapSessionManager, services::gossip::spawn::GossiperBuilder, JMAP};
 use managesieve::core::ManageSieveSessionManager;
 use pop3::Pop3SessionManager;
 use smtp::core::{SmtpSessionManager, SMTP};
 use tokio::sync::mpsc;
+use trc::collector::Collector;
 use utils::wait_for_shutdown;
 
 #[cfg(not(target_env = "msvc"))]
@@ -34,25 +32,25 @@ async fn main() -> std::io::Result<()> {
     let mut config = init.config;
     let core = init.core;
 
-    // Spawn webhook manager
-    let webhook_tx = spawn_webhook_manager(core.clone());
-
     // Setup IPC channels
     let (delivery_tx, delivery_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
-    let ipc = Ipc {
-        delivery_tx,
-        webhook_tx,
-    };
+    let ipc = Ipc { delivery_tx };
 
     // Init servers
-    let smtp = SMTP::init(&mut config, core.clone(), ipc).await;
+    let smtp = SMTP::init(
+        &mut config,
+        core.clone(),
+        ipc,
+        init.servers.span_id_gen.clone(),
+    )
+    .await;
     let jmap = JMAP::init(&mut config, delivery_rx, core.clone(), smtp.inner.clone()).await;
     let imap = IMAP::init(&mut config, jmap.clone()).await;
     let gossiper = GossiperBuilder::try_parse(&mut config);
 
     // Log configuration errors
-    config.log_errors(init.guards.is_none());
-    config.log_warnings(init.guards.is_none());
+    config.log_errors();
+    config.log_warnings();
 
     // Log licensing information
     #[cfg(feature = "enterprise")]
@@ -100,11 +98,10 @@ async fn main() -> std::io::Result<()> {
     }
 
     // Wait for shutdown signal
-    wait_for_shutdown(&format!(
-        "Shutting down Stalwart Mail Server v{}...",
-        env!("CARGO_PKG_VERSION")
-    ))
-    .await;
+    wait_for_shutdown().await;
+
+    // Shutdown collector
+    Collector::shutdown();
 
     // Stop services
     let _ = shutdown_tx.send(true);

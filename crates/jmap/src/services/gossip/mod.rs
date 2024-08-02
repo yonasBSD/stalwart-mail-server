@@ -18,6 +18,7 @@ use std::{
     time::Instant,
 };
 use tokio::sync::mpsc;
+use trc::ClusterEvent;
 
 use crate::JmapInstance;
 
@@ -124,7 +125,12 @@ impl Gossiper {
             .send((SocketAddr::new(dest, self.port), request))
             .await
         {
-            tracing::error!("Failed to send gossip message: {}", err);
+            trc::event!(
+                Cluster(ClusterEvent::Error),
+                RemoteIp = dest,
+                Details = "Failed to send gossip message",
+                Reason = err.to_string()
+            );
         };
     }
 }

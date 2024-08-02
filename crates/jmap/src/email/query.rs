@@ -5,7 +5,6 @@
  */
 
 use jmap_proto::{
-    error::method::MethodError,
     method::query::{Comparator, Filter, QueryRequest, QueryResponse, SortProperty},
     object::email::QueryArguments,
     types::{acl::Acl, collection::Collection, keyword::Keyword, property::Property},
@@ -27,7 +26,7 @@ impl JMAP {
         &self,
         mut request: QueryRequest<QueryArguments>,
         access_token: &AccessToken,
-    ) -> Result<QueryResponse, MethodError> {
+    ) -> trc::Result<QueryResponse> {
         let account_id = request.account_id.document_id();
         let mut filters = Vec::with_capacity(request.filter.len());
 
@@ -109,16 +108,18 @@ impl JMAP {
                             Filter::Header(header) => {
                                 let mut header = header.into_iter();
                                 let header_name = header.next().ok_or_else(|| {
-                                    MethodError::InvalidArguments(
-                                        "Header name is missing.".to_string(),
-                                    )
+                                    trc::JmapEvent::InvalidArguments
+                                        .into_err()
+                                        .details("Header name is missing.".to_string())
                                 })?;
 
                                 match HeaderName::parse(header_name) {
                                     Some(HeaderName::Other(header_name)) => {
-                                        return Err(MethodError::InvalidArguments(format!(
-                                            "Querying header '{header_name}' is not supported.",
-                                        )));
+                                        return Err(trc::JmapEvent::InvalidArguments
+                                            .into_err()
+                                            .details(format!(
+                                                "Querying header '{header_name}' is not supported.",
+                                            )));
                                     }
                                     Some(header_name) => {
                                         if let Some(header_value) = header.next() {
@@ -153,7 +154,11 @@ impl JMAP {
                             Filter::And | Filter::Or | Filter::Not | Filter::Close => {
                                 fts_filters.push(cond.into());
                             }
-                            other => return Err(MethodError::UnsupportedFilter(other.to_string())),
+                            other => {
+                                return Err(trc::JmapEvent::UnsupportedFilter
+                                    .into_err()
+                                    .details(other.to_string()))
+                            }
                         }
                     }
                     filters.push(query::Filter::is_in_set(
@@ -248,7 +253,11 @@ impl JMAP {
                             filters.push(cond.into());
                         }
 
-                        other => return Err(MethodError::UnsupportedFilter(other.to_string())),
+                        other => {
+                            return Err(trc::JmapEvent::UnsupportedFilter
+                                .into_err()
+                                .details(other.to_string()))
+                        }
                     }
                 }
             }
@@ -324,7 +333,11 @@ impl JMAP {
                         query::Comparator::field(Property::Cc, comparator.is_ascending)
                     }
 
-                    other => return Err(MethodError::UnsupportedSort(other.to_string())),
+                    other => {
+                        return Err(trc::JmapEvent::UnsupportedSort
+                            .into_err()
+                            .details(other.to_string()))
+                    }
                 });
             }
 
@@ -353,7 +366,7 @@ impl JMAP {
         account_id: u32,
         keyword: Keyword,
         match_all: bool,
-    ) -> Result<RoaringBitmap, MethodError> {
+    ) -> trc::Result<RoaringBitmap> {
         let keyword_doc_ids = self
             .get_tag(account_id, Collection::Email, Property::Keywords, keyword)
             .await?

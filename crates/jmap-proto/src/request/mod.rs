@@ -17,7 +17,6 @@ use std::{
 };
 
 use crate::{
-    error::method::MethodError,
     method::{
         changes::ChangesRequest,
         copy::{self, CopyBlobRequest, CopyRequest},
@@ -74,11 +73,11 @@ pub enum RequestMethod {
     LookupBlob(BlobLookupRequest),
     UploadBlob(BlobUploadRequest),
     Echo(Echo),
-    Error(MethodError),
+    Error(trc::Error),
 }
 
 impl JsonObjectParser for RequestProperty {
-    fn parse(parser: &mut Parser<'_>) -> crate::parser::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -113,9 +112,5 @@ impl Display for RequestProperty {
 }
 
 pub trait RequestPropertyParser {
-    fn parse(
-        &mut self,
-        parser: &mut Parser,
-        property: RequestProperty,
-    ) -> crate::parser::Result<bool>;
+    fn parse(&mut self, parser: &mut Parser, property: RequestProperty) -> trc::Result<bool>;
 }

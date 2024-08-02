@@ -28,12 +28,12 @@ impl SMTP {
         throttle: &'x Throttle,
         envelope: &impl ResolveVariable,
         in_flight: &mut Vec<InFlight>,
-        span: &tracing::Span,
+        session_id: u64,
     ) -> Result<(), Error> {
         if throttle.expr.is_empty()
             || self
                 .core
-                .eval_expr(&throttle.expr, envelope, "throttle")
+                .eval_expr(&throttle.expr, envelope, "throttle", session_id)
                 .await
                 .unwrap_or(false)
         {
@@ -47,14 +47,14 @@ impl SMTP {
                     .is_rate_allowed(key.as_ref(), rate, false)
                     .await
                 {
-                    tracing::info!(
-                        parent: span,
-                        context = "throttle",
-                        event = "rate-limit-exceeded",
-                        max_requests = rate.requests,
-                        max_interval = rate.period.as_secs(),
-                        "Queue rate limit exceeded."
+                    trc::event!(
+                        Queue(trc::QueueEvent::RateLimitExceeded),
+                        SpanId = session_id,
+                        Id = throttle.id.clone(),
+                        Limit = rate.requests,
+                        Interval = rate.period.as_secs()
                     );
+
                     return Err(Error::Rate {
                         retry_at: now() + next_refill,
                     });
@@ -68,13 +68,13 @@ impl SMTP {
                         if let Some(inflight) = limiter.is_allowed() {
                             in_flight.push(inflight);
                         } else {
-                            tracing::info!(
-                                parent: span,
-                                context = "throttle",
-                                event = "too-many-requests",
-                                max_concurrent = limiter.max_concurrent,
-                                "Queue concurrency limit exceeded."
+                            trc::event!(
+                                Queue(trc::QueueEvent::ConcurrencyLimitExceeded),
+                                SpanId = session_id,
+                                Id = throttle.id.clone(),
+                                Limit = limiter.max_concurrent,
                             );
+
                             return Err(Error::Concurrency {
                                 limiter: limiter.clone(),
                             });

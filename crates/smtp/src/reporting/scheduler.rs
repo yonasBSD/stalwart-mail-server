@@ -11,7 +11,7 @@ use mail_auth::dmarc::Dmarc;
 use std::time::{Duration, Instant, SystemTime};
 use store::{
     write::{now, BatchBuilder, QueueClass, ReportEvent, ValueClass},
-    Deserialize, IterateParams, Serialize, ValueKey,
+    Deserialize, IterateParams, Key, Serialize, ValueKey,
 };
 use tokio::sync::mpsc;
 
@@ -31,7 +31,7 @@ impl SpawnReport for mpsc::Receiver<Event> {
             loop {
                 // Read events
                 let now = now();
-                let events = next_report_event(&core.core.load()).await;
+                let events = next_report_event(&core.core.load_full()).await;
                 next_wake_up = events
                     .last()
                     .and_then(|e| match e {
@@ -142,12 +142,9 @@ async fn next_report_event(core: &Core) -> Vec<QueueClass> {
         .await;
 
     if let Err(err) = result {
-        tracing::error!(
-            context = "queue",
-            event = "error",
-            "Failed to read from store: {}",
-            err
-        );
+        trc::error!(err
+            .caused_by(trc::location!())
+            .details("Failed to read from store"));
     }
 
     events
@@ -173,53 +170,46 @@ impl SMTP {
                     );
                     match self.core.storage.data.write(batch.build()).await {
                         Ok(_) => true,
-                        Err(store::Error::AssertValueFailed) => {
-                            tracing::debug!(
-                                context = "queue",
-                                event = "locked",
-                                key = ?lock,
-                                "Lock busy: Event already locked."
+                        Err(err) if err.is_assertion_failure() => {
+                            trc::event!(
+                                OutgoingReport(trc::OutgoingReportEvent::LockBusy),
+                                Expires = trc::Value::Timestamp(expiry),
+                                CausedBy = err,
+                                Key = ValueKey::from(ValueClass::Queue(lock)).serialize(0)
                             );
                             false
                         }
                         Err(err) => {
-                            tracing::error!(
-                                context = "queue",
-                                event = "error",
-                                "Lock busy: {}",
-                                err
-                            );
+                            trc::error!(err
+                                .caused_by(trc::location!())
+                                .details("Failed to lock report"));
+
                             false
                         }
                     }
                 } else {
-                    tracing::debug!(
-                        context = "queue",
-                        event = "locked",
-                        key = ?lock,
-                        expiry = expiry - now,
-                        "Lock busy: Report already locked."
+                    trc::event!(
+                        OutgoingReport(trc::OutgoingReportEvent::Locked),
+                        Expires = trc::Value::Timestamp(expiry),
+                        Key = ValueKey::from(ValueClass::Queue(lock)).serialize(0)
                     );
+
                     false
                 }
             }
             Ok(None) => {
-                tracing::debug!(
-                    context = "queue",
-                    event = "locked",
-                    key = ?lock,
-                    "Lock busy: Report lock deleted."
+                trc::event!(
+                    OutgoingReport(trc::OutgoingReportEvent::LockDeleted),
+                    Key = ValueKey::from(ValueClass::Queue(lock)).serialize(0)
                 );
+
                 false
             }
             Err(err) => {
-                tracing::error!(
-                    context = "queue",
-                    event = "error",
-                    key = ?lock,
-                    "Lock error: {}",
-                    err
-                );
+                trc::error!(err
+                    .caused_by(trc::location!())
+                    .details("Failed to lock report"));
+
                 false
             }
         }

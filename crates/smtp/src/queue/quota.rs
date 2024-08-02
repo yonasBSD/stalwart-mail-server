@@ -9,6 +9,7 @@ use store::{
     write::{BatchBuilder, QueueClass, ValueClass},
     ValueKey,
 };
+use trc::QueueEvent;
 
 use crate::core::{throttle::NewKey, SMTP};
 
@@ -21,9 +22,23 @@ impl SMTP {
         if !self.core.smtp.queue.quota.sender.is_empty() {
             for quota in &self.core.smtp.queue.quota.sender {
                 if !self
-                    .check_quota(quota, message, message.size, 0, &mut quota_keys)
+                    .check_quota(
+                        quota,
+                        message,
+                        message.size,
+                        0,
+                        &mut quota_keys,
+                        message.span_id,
+                    )
                     .await
                 {
+                    trc::event!(
+                        Queue(QueueEvent::QuotaExceeded),
+                        SpanId = message.span_id,
+                        Id = quota.id.clone(),
+                        Type = "Sender"
+                    );
+
                     return false;
                 }
             }
@@ -38,9 +53,17 @@ impl SMTP {
                         message.size,
                         ((domain_idx + 1) << 32) as u64,
                         &mut quota_keys,
+                        message.span_id,
                     )
                     .await
                 {
+                    trc::event!(
+                        Queue(QueueEvent::QuotaExceeded),
+                        SpanId = message.span_id,
+                        Id = quota.id.clone(),
+                        Type = "Domain"
+                    );
+
                     return false;
                 }
             }
@@ -55,9 +78,17 @@ impl SMTP {
                         message.size,
                         (rcpt_idx + 1) as u64,
                         &mut quota_keys,
+                        message.span_id,
                     )
                     .await
                 {
+                    trc::event!(
+                        Queue(QueueEvent::QuotaExceeded),
+                        SpanId = message.span_id,
+                        Id = quota.id.clone(),
+                        Type = "Recipient"
+                    );
+
                     return false;
                 }
             }
@@ -75,11 +106,12 @@ impl SMTP {
         size: usize,
         id: u64,
         refs: &mut Vec<QuotaKey>,
+        session_id: u64,
     ) -> bool {
         if !quota.expr.is_empty()
             && self
                 .core
-                .eval_expr(&quota.expr, envelope, "check_quota")
+                .eval_expr(&quota.expr, envelope, "check_quota", session_id)
                 .await
                 .unwrap_or(false)
         {

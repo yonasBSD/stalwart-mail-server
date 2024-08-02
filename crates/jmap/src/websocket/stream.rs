@@ -6,7 +6,6 @@
 
 use std::{sync::Arc, time::Instant};
 
-use common::listener::ServerInstance;
 use futures_util::{SinkExt, StreamExt};
 use hyper::upgrade::Upgraded;
 use hyper_util::rt::TokioIo;
@@ -18,21 +17,27 @@ use jmap_proto::{
     types::type_state::DataType,
 };
 use tokio_tungstenite::WebSocketStream;
+use trc::JmapEvent;
 use tungstenite::Message;
 use utils::map::bitmap::Bitmap;
 
-use crate::{auth::AccessToken, JMAP};
+use crate::{
+    api::http::{HttpSessionData, ToRequestError},
+    auth::AccessToken,
+    JMAP,
+};
 
 impl JMAP {
     pub async fn handle_websocket_stream(
         &self,
         mut stream: WebSocketStream<TokioIo<Upgraded>>,
         access_token: Arc<AccessToken>,
-        instance: Arc<ServerInstance>,
+        session: HttpSessionData,
     ) {
-        let span = tracing::info_span!(
-            "WebSocket connection established",
-            "account_id" = access_token.primary_id(),
+        trc::event!(
+            Jmap(JmapEvent::WebsocketStart),
+            SpanId = session.session_id,
+            AccountId = access_token.primary_id(),
         );
 
         // Set timeouts
@@ -45,19 +50,26 @@ impl JMAP {
         let mut next_event = heartbeat;
 
         // Register with state manager
-        let mut change_rx = if let Some(change_rx) = self
+        let mut change_rx = match self
             .subscribe_state_manager(access_token.primary_id(), Bitmap::all())
             .await
         {
-            change_rx
-        } else {
-            let _ = stream
-                .send(Message::Text(
-                    WebSocketRequestError::from(RequestError::internal_server_error()).to_json(),
-                ))
-                .await;
-            return;
+            Ok(change_rx) => change_rx,
+            Err(err) => {
+                trc::error!(err
+                    .details("Failed to subscribe to state manager")
+                    .span_id(session.session_id));
+
+                let _ = stream
+                    .send(Message::Text(
+                        WebSocketRequestError::from(RequestError::internal_server_error())
+                            .to_json(),
+                    ))
+                    .await;
+                return;
+            }
         };
+
         let mut changes = WebSocketStateChange::new(None);
         let mut change_types: Bitmap<DataType> = Bitmap::new();
 
@@ -74,23 +86,16 @@ impl JMAP {
                                         self.core.jmap.request_max_size,
                                     ) {
                                         Ok(WebSocketMessage::Request(request)) => {
-                                            match self
+                                            let response = self
                                                 .handle_request(
                                                     request.request,
                                                     access_token.clone(),
-                                                    &instance,
+                                                    &session,
                                                 )
-                                                .await
-                                            {
-                                                Ok(response) => {
-                                                    WebSocketResponse::from_response(response, request.id)
-                                                        .to_json()
-                                                }
-                                                Err(err) => {
-                                                    WebSocketRequestError::from_error(err, request.id)
-                                                        .to_json()
-                                                }
-                                            }
+                                                .await;
+
+                                            WebSocketResponse::from_response(response, request.id)
+                                            .to_json()
                                         }
                                         Ok(WebSocketMessage::PushEnable(push_enable)) => {
                                             change_types = if !push_enable.data_types.is_empty() {
@@ -104,15 +109,27 @@ impl JMAP {
                                             change_types = Bitmap::new();
                                             continue;
                                         }
-                                        Err(err) => err.to_json(),
+                                        Err(err) => {
+                                            let response = WebSocketRequestError::from(err.to_request_error()).to_json();
+                                            trc::error!(err.details("Failed to parse WebSocket message").span_id(session.session_id));
+                                            response
+                                        },
                                     };
                                     if let Err(err) = stream.send(Message::Text(response)).await {
-                                        tracing::debug!(parent: &span, error = ?err, "Failed to send text message");
+                                        trc::event!(Jmap(JmapEvent::WebsocketError),
+                                                    Details = "Failed to send text message",
+                                                    SpanId = session.session_id,
+                                                    Reason = err.to_string()
+                                        );
                                     }
                                 }
                                 Message::Ping(bytes) => {
                                     if let Err(err) = stream.send(Message::Pong(bytes)).await {
-                                        tracing::debug!(parent: &span, error = ?err, "Failed to send pong message");
+                                        trc::event!(Jmap(JmapEvent::WebsocketError),
+                                                    Details = "Failed to send pong message",
+                                                    SpanId = session.session_id,
+                                                    Reason = err.to_string()
+                                        );
                                     }
                                 }
                                 Message::Close(frame) => {
@@ -126,18 +143,23 @@ impl JMAP {
                             last_heartbeat = Instant::now();
                         }
                         Ok(Some(Err(err))) => {
-                            tracing::debug!(parent: &span, error = ?err, "Websocket error");
+                            trc::event!(Jmap(JmapEvent::WebsocketError),
+                                                    Details = "Websocket error",
+                                                    SpanId = session.session_id,
+                                                    Reason = err.to_string()
+                                        );
                             break;
                         }
                         Ok(None) => break,
                         Err(_) => {
                             // Verify timeout
                             if last_request.elapsed() > timeout {
-                                tracing::debug!(
-                                    parent: &span,
-                                    event = "disconnect",
-                                    "Disconnecting idle client"
+                                trc::event!(
+                                    Jmap(JmapEvent::WebsocketStop),
+                                    SpanId = session.session_id,
+                                    Reason = "Idle client"
                                 );
+
                                 break;
                             }
                         }
@@ -158,11 +180,12 @@ impl JMAP {
                                 }
                             }
                     } else {
-                        tracing::debug!(
-                            parent: &span,
-                            event = "channel-closed",
-                            "Disconnecting client, channel closed"
+                        trc::event!(
+                            Jmap(JmapEvent::WebsocketStop),
+                            SpanId = session.session_id,
+                            Reason = "State manager channel closed"
                         );
+
                         break;
                     }
                 }
@@ -173,7 +196,12 @@ impl JMAP {
                 let elapsed = last_changes_sent.elapsed();
                 if elapsed >= throttle {
                     if let Err(err) = stream.send(Message::Text(changes.to_json())).await {
-                        tracing::debug!(parent: &span, error = ?err, "Failed to send state change message");
+                        trc::event!(
+                            Jmap(JmapEvent::WebsocketError),
+                            Details = "Failed to send state change message.",
+                            SpanId = session.session_id,
+                            Reason = err.to_string()
+                        );
                     }
                     changes.changed.clear();
                     last_changes_sent = Instant::now();
@@ -184,7 +212,12 @@ impl JMAP {
                 }
             } else if last_heartbeat.elapsed() > heartbeat {
                 if let Err(err) = stream.send(Message::Ping(vec![])).await {
-                    tracing::debug!(parent: &span, error = ?err, "Failed to send ping message");
+                    trc::event!(
+                        Jmap(JmapEvent::WebsocketError),
+                        Details = "Failed to send ping message.",
+                        SpanId = session.session_id,
+                        Reason = err.to_string()
+                    );
                     break;
                 }
                 last_heartbeat = Instant::now();

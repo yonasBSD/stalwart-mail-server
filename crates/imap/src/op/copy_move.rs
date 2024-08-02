@@ -4,18 +4,21 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use imap_proto::{
     protocol::copy_move::Arguments, receiver::Request, Command, ResponseCode, ResponseType,
     StatusResponse,
 };
 
-use crate::core::{MailboxId, SelectedMailbox, Session, SessionData};
+use crate::{
+    core::{MailboxId, SelectedMailbox, Session, SessionData},
+    spawn_op,
+};
 use common::listener::SessionStream;
 use jmap::{email::set::TagManager, mailbox::UidMailbox};
 use jmap_proto::{
-    error::{method::MethodError, set::SetErrorType},
+    error::set::SetErrorType,
     types::{
         acl::Acl, collection::Collection, id::Id, property::Property, state::StateChange,
         type_state::DataType,
@@ -26,81 +29,65 @@ use store::{
     write::{assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, F_VALUE},
 };
 
+use super::ImapContext;
+
 impl<T: SessionStream> Session<T> {
     pub async fn handle_copy_move(
         &mut self,
         request: Request<Command>,
         is_move: bool,
         is_uid: bool,
-    ) -> crate::OpResult {
-        match request.parse_copy_move(self.version) {
-            Ok(arguments) => {
-                let (data, src_mailbox) = self.state.mailbox_state();
+    ) -> trc::Result<()> {
+        let op_start = Instant::now();
+        let arguments = request.parse_copy_move(self.version)?;
+        let (data, src_mailbox) = self.state.mailbox_state();
+        let is_qresync = self.is_qresync;
 
-                let is_qresync = self.is_qresync;
-                tokio::spawn(async move {
-                    // Refresh mailboxes
-                    if let Err(err) = data.synchronize_mailboxes(false).await {
-                        return data
-                            .write_bytes(err.with_tag(arguments.tag).into_bytes())
-                            .await;
-                    }
+        spawn_op!(data, {
+            // Refresh mailboxes
+            data.synchronize_mailboxes(false)
+                .await
+                .imap_ctx(&arguments.tag, trc::location!())?;
 
-                    // Make sure the mailbox exists.
-                    let dest_mailbox =
-                        if let Some(mailbox) = data.get_mailbox_by_name(&arguments.mailbox_name) {
-                            mailbox
-                        } else {
-                            return data
-                                .write_bytes(
-                                    StatusResponse::no("Destination mailbox does not exist.")
-                                        .with_tag(arguments.tag)
-                                        .with_code(ResponseCode::TryCreate)
-                                        .into_bytes(),
-                                )
-                                .await;
-                        };
+            // Make sure the mailbox exists.
+            let dest_mailbox =
+                if let Some(mailbox) = data.get_mailbox_by_name(&arguments.mailbox_name) {
+                    mailbox
+                } else {
+                    return Err(trc::ImapEvent::Error
+                        .into_err()
+                        .details("Destination mailbox does not exist.")
+                        .code(ResponseCode::TryCreate)
+                        .id(arguments.tag));
+                };
 
-                    // Check that the destination mailbox is not the same as the source mailbox.
-                    if src_mailbox.id.account_id == dest_mailbox.account_id
-                        && src_mailbox.id.mailbox_id == dest_mailbox.mailbox_id
-                    {
-                        return data
-                            .write_bytes(
-                                StatusResponse::no(
-                                    "Source and destination mailboxes are the same.",
-                                )
-                                .with_tag(arguments.tag)
-                                .with_code(ResponseCode::Cannot)
-                                .into_bytes(),
-                            )
-                            .await;
-                    }
-
-                    if let Err(err) = data
-                        .copy_move(
-                            arguments,
-                            src_mailbox,
-                            dest_mailbox,
-                            is_move,
-                            is_uid,
-                            is_qresync,
-                        )
-                        .await
-                    {
-                        data.write_bytes(err.into_bytes()).await;
-                    }
-
-                    true
-                });
-                Ok(())
+            // Check that the destination mailbox is not the same as the source mailbox.
+            if src_mailbox.id.account_id == dest_mailbox.account_id
+                && src_mailbox.id.mailbox_id == dest_mailbox.mailbox_id
+            {
+                return Err(trc::ImapEvent::Error
+                    .into_err()
+                    .details("Source and destination mailboxes are the same.")
+                    .code(ResponseCode::Cannot)
+                    .id(arguments.tag));
             }
-            Err(response) => self.write_bytes(response.into_bytes()).await,
-        }
+
+            data.copy_move(
+                arguments,
+                src_mailbox,
+                dest_mailbox,
+                is_move,
+                is_uid,
+                is_qresync,
+                op_start,
+            )
+            .await
+        })
     }
 }
 
 impl<T: SessionStream> SessionData<T> {
+    #[allow(clippy::too_many_arguments)]
     pub async fn copy_move(
         &self,
         arguments: Arguments,
@@ -109,24 +96,20 @@ impl<T: SessionStream> SessionData<T> {
         is_move: bool,
         is_uid: bool,
         is_qresync: bool,
-    ) -> Result<(), StatusResponse> {
+        op_start: Instant,
+    ) -> trc::Result<()> {
         // Convert IMAP ids to JMAP ids.
-        let ids = match src_mailbox
+        let ids = src_mailbox
             .sequence_to_ids(&arguments.sequence_set, is_uid)
             .await
-        {
-            Ok(ids) => {
-                if ids.is_empty() {
-                    return Err(
-                        StatusResponse::no("No messages were found.").with_tag(arguments.tag)
-                    );
-                }
-                ids
-            }
-            Err(response) => {
-                return Err(response.with_tag(arguments.tag));
-            }
-        };
+            .imap_ctx(&arguments.tag, trc::location!())?;
+
+        if ids.is_empty() {
+            return Err(trc::ImapEvent::Error
+                .into_err()
+                .details("No messages were found.")
+                .id(arguments.tag));
+        }
 
         // Verify that the user can delete messages from the source mailbox.
         if is_move
@@ -137,12 +120,16 @@ impl<T: SessionStream> SessionData<T> {
                     Acl::RemoveItems,
                 )
                 .await
-                .map_err(|_| StatusResponse::database_failure().with_tag(&arguments.tag))?
+                .imap_ctx(&arguments.tag, trc::location!())?
         {
-            return Err(StatusResponse::no(
-                    "You do not have the required permissions to remove messages from the source mailbox.",
-                )
-                .with_tag(arguments.tag).with_code(ResponseCode::NoPerm));
+            return Err(trc::ImapEvent::Error
+                .into_err()
+                .details(concat!(
+                    "You do not have the required permissions to ",
+                    "remove messages from the source mailbox."
+                ))
+                .code(ResponseCode::NoPerm)
+                .id(arguments.tag));
         }
 
         // Verify that the user can append messages to the destination mailbox.
@@ -150,12 +137,16 @@ impl<T: SessionStream> SessionData<T> {
         if !self
             .check_mailbox_acl(dest_mailbox.account_id, dest_mailbox_id, Acl::AddItems)
             .await
-            .map_err(|_| StatusResponse::database_failure().with_tag(&arguments.tag))?
+            .imap_ctx(&arguments.tag, trc::location!())?
         {
-            return Err(StatusResponse::no(
-                    "You do not have the required permissions to add messages to the destination mailbox.",
-                )
-                .with_tag(arguments.tag).with_code(ResponseCode::NoPerm));
+            return Err(trc::ImapEvent::Error
+                .into_err()
+                .details(concat!(
+                    "You do not have the required permissions to ",
+                    "add messages to the destination mailbox."
+                ))
+                .code(ResponseCode::NoPerm)
+                .id(arguments.tag));
         }
 
         let mut response = StatusResponse::completed(if is_move {
@@ -175,7 +166,7 @@ impl<T: SessionStream> SessionData<T> {
                 let (mut mailboxes, thread_id) = if let Some(result) = self
                     .get_mailbox_tags(account_id, id)
                     .await
-                    .map_err(|_| StatusResponse::database_failure().with_tag(&arguments.tag))?
+                    .imap_ctx(&arguments.tag, trc::location!())?
                 {
                     result
                 } else {
@@ -188,11 +179,6 @@ impl<T: SessionStream> SessionData<T> {
                     .contains(&UidMailbox::new_unassigned(src_mailbox.id.mailbox_id))
                     || mailboxes.current().contains(&dest_mailbox_id)
                 {
-                    tracing::debug!(
-                        account_id = account_id,
-                        document_id = id,
-                        "Message does not belong to this mailbox"
-                    );
                     continue;
                 }
 
@@ -205,23 +191,14 @@ impl<T: SessionStream> SessionData<T> {
                 // Assign IMAP UIDs
                 for uid_mailbox in mailboxes.inner_tags_mut() {
                     if uid_mailbox.uid == 0 {
-                        uid_mailbox.uid = match self
+                        let assigned_uid = self
                             .jmap
                             .assign_imap_uid(account_id, uid_mailbox.mailbox_id)
                             .await
-                        {
-                            Ok(assigned_uid) => {
-                                debug_assert!(assigned_uid > 0);
-                                copied_ids.push((imap_id.uid, assigned_uid));
-
-                                assigned_uid
-                            }
-                            Err(_) => {
-                                return Err(
-                                    StatusResponse::database_failure().with_tag(&arguments.tag)
-                                );
-                            }
-                        };
+                            .imap_ctx(&arguments.tag, trc::location!())?;
+                        debug_assert!(assigned_uid > 0);
+                        copied_ids.push((imap_id.uid, assigned_uid));
+                        uid_mailbox.uid = assigned_uid;
                     }
                 }
 
@@ -233,29 +210,22 @@ impl<T: SessionStream> SessionData<T> {
                     .update_document(id);
                 mailboxes.update_batch(&mut batch, Property::MailboxIds);
                 if changelog.change_id == u64::MAX {
-                    changelog.change_id =
-                        self.jmap.assign_change_id(account_id).await.map_err(|_| {
-                            StatusResponse::database_failure().with_tag(&arguments.tag)
-                        })?
+                    changelog.change_id = self
+                        .jmap
+                        .assign_change_id(account_id)
+                        .await
+                        .imap_ctx(&arguments.tag, trc::location!())?;
                 }
                 batch.value(Property::Cid, changelog.change_id, F_VALUE);
-                match self.jmap.write_batch(batch).await {
-                    Ok(_) => {
-                        changelog.log_update(Collection::Email, Id::from_parts(thread_id, id));
-                        changelog.log_child_update(Collection::Mailbox, dest_mailbox_id.mailbox_id);
-                        if is_move {
-                            changelog
-                                .log_child_update(Collection::Mailbox, src_mailbox.id.mailbox_id);
-                            did_move = true;
-                        }
-                    }
-                    Err(MethodError::ServerUnavailable) => {
-                        response.rtype = ResponseType::No;
-                        response.message = "Some messages could not be copied.".into();
-                    }
-                    Err(_) => {
-                        return Err(StatusResponse::database_failure().with_tag(&arguments.tag));
-                    }
+                self.jmap
+                    .write_batch(batch)
+                    .await
+                    .imap_ctx(&arguments.tag, trc::location!())?;
+                changelog.log_update(Collection::Email, Id::from_parts(thread_id, id));
+                changelog.log_child_update(Collection::Mailbox, dest_mailbox_id.mailbox_id);
+                if is_move {
+                    changelog.log_child_update(Collection::Mailbox, src_mailbox.id.mailbox_id);
+                    did_move = true;
                 }
             }
         } else {
@@ -267,10 +237,7 @@ impl<T: SessionStream> SessionData<T> {
                 .jmap
                 .get_cached_access_token(dest_account_id)
                 .await
-                .ok_or_else(|| {
-                    StatusResponse::no("Failed to obtain access token")
-                        .with_code(ResponseCode::ContactAdmin)
-                })?
+                .imap_ctx(&arguments.tag, trc::location!())?
                 .quota as i64;
             let mut destroy_ids = RoaringBitmap::new();
             for (id, imap_id) in ids {
@@ -284,17 +251,19 @@ impl<T: SessionStream> SessionData<T> {
                         vec![dest_mailbox_id],
                         Vec::new(),
                         None,
+                        self.session_id,
                     )
                     .await
+                    .imap_ctx(&arguments.tag, trc::location!())?
                 {
-                    Ok(Ok(email)) => {
+                    Ok(email) => {
                         dest_change_id = email.change_id.into();
                         if let Some(assigned_uid) = email.imap_uids.first() {
                             debug_assert!(*assigned_uid > 0);
                             copied_ids.push((imap_id.uid, *assigned_uid));
                         }
                     }
-                    Ok(Err(err)) => {
+                    Err(err) => {
                         if err.type_ != SetErrorType::NotFound {
                             response.rtype = ResponseType::No;
                             response.code = Some(err.type_.into());
@@ -303,9 +272,6 @@ impl<T: SessionStream> SessionData<T> {
                             }
                         }
                         continue;
-                    }
-                    Err(_) => {
-                        return Err(StatusResponse::database_failure().with_tag(arguments.tag))
                     }
                 };
 
@@ -319,11 +285,11 @@ impl<T: SessionStream> SessionData<T> {
                 self.email_untag_or_delete(
                     src_account_id,
                     src_mailbox.id.mailbox_id,
-                    destroy_ids,
+                    &destroy_ids,
                     &mut changelog,
                 )
                 .await
-                .map_err(|err| err.with_tag(&arguments.tag))?;
+                .imap_ctx(&arguments.tag, trc::location!())?;
                 did_move = true;
             }
 
@@ -346,9 +312,7 @@ impl<T: SessionStream> SessionData<T> {
                 .jmap
                 .commit_changes(src_mailbox.id.account_id, changelog)
                 .await
-                .map_err(|_| {
-                    StatusResponse::database_failure().with_tag(response.tag.as_ref().unwrap())
-                })?;
+                .imap_ctx(&arguments.tag, trc::location!())?;
             self.jmap
                 .broadcast_state_change(
                     StateChange::new(src_mailbox.id.account_id)
@@ -361,18 +325,25 @@ impl<T: SessionStream> SessionData<T> {
         // Map copied JMAP Ids to IMAP UIDs in the destination folder.
         if copied_ids.is_empty() {
             return Err(if response.rtype != ResponseType::Ok {
-                response
+                trc::ImapEvent::Error
+                    .into_err()
+                    .details(response.message)
+                    .ctx_opt(trc::Key::Code, response.code)
             } else {
-                StatusResponse::no("No messages were copied.")
+                trc::ImapEvent::Error.into_err().details(if is_move {
+                    "No messages were moved."
+                } else {
+                    "No messages were copied."
+                })
             }
-            .with_tag(arguments.tag));
+            .id(arguments.tag));
         }
 
         // Prepare response
         let uid_validity = self
             .get_uid_validity(&dest_mailbox)
             .await
-            .map_err(|r| r.with_tag(&arguments.tag))?;
+            .imap_ctx(&arguments.tag, trc::location!())?;
         let mut src_uids = Vec::with_capacity(copied_ids.len());
         let mut dest_uids = Vec::with_capacity(copied_ids.len());
         for (src_uid, dest_uid) in copied_ids {
@@ -381,6 +352,28 @@ impl<T: SessionStream> SessionData<T> {
         }
         src_uids.sort_unstable();
         dest_uids.sort_unstable();
+
+        trc::eventd!(
+            Imap(if is_move {
+                trc::ImapEvent::Move
+            } else {
+                trc::ImapEvent::Copy
+            }),
+            SpanId = self.session_id,
+            SourceAccountId = src_mailbox.id.account_id,
+            SourceMailboxId = src_mailbox.id.mailbox_id,
+            SourceUid = src_uids
+                .iter()
+                .map(|r| trc::Value::from(*r))
+                .collect::<Vec<_>>(),
+            AccountId = dest_mailbox.account_id,
+            MailboxId = dest_mailbox.mailbox_id,
+            Uid = dest_uids
+                .iter()
+                .map(|r| trc::Value::from(*r))
+                .collect::<Vec<_>>(),
+            Elapsed = op_start.elapsed()
+        );
 
         let response = if is_move {
             self.write_bytes(
@@ -392,13 +385,13 @@ impl<T: SessionStream> SessionData<T> {
                     })
                     .into_bytes(),
             )
-            .await;
+            .await?;
 
             if did_move {
                 // Resynchronize source mailbox on a successful move
                 self.write_mailbox_changes(&src_mailbox, is_qresync)
                     .await
-                    .map_err(|r| r.with_tag(&arguments.tag))?;
+                    .imap_ctx(&arguments.tag, trc::location!())?;
             }
 
             response.with_tag(arguments.tag).into_bytes()
@@ -413,16 +406,14 @@ impl<T: SessionStream> SessionData<T> {
                 .into_bytes()
         };
 
-        self.write_bytes(response).await;
-
-        Ok(())
+        self.write_bytes(response).await
     }
 
     pub async fn get_mailbox_tags(
         &self,
         account_id: u32,
         id: u32,
-    ) -> Result<Option<(TagManager<UidMailbox>, u32)>, MethodError> {
+    ) -> trc::Result<Option<(TagManager<UidMailbox>, u32)>> {
         // Obtain mailbox tags
         if let (Some(mailboxes), Some(thread_id)) = (
             self.jmap
@@ -439,11 +430,15 @@ impl<T: SessionStream> SessionData<T> {
         ) {
             Ok(Some((TagManager::new(mailboxes), thread_id)))
         } else {
-            tracing::debug!(
-                account_id = account_id,
-                document_id = id,
-                "Message not found"
+            trc::event!(
+                Store(trc::StoreEvent::NotFound),
+                AccountId = account_id,
+                Collection = Collection::Email,
+                MessageId = id,
+                SpanId = self.session_id,
+                Details = "Message not found"
             );
+
             Ok(None)
         }
     }

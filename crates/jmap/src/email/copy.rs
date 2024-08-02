@@ -5,7 +5,7 @@
  */
 
 use jmap_proto::{
-    error::{method::MethodError, set::SetError},
+    error::set::SetError,
     method::{
         copy::{CopyRequest, CopyResponse, RequestArguments},
         set::{self, SetRequest},
@@ -38,9 +38,13 @@ use store::{
     },
     BlobClass, Serialize,
 };
+use trc::AddContext;
 use utils::map::vec_map::VecMap;
 
-use crate::{auth::AccessToken, mailbox::UidMailbox, services::housekeeper::Event, JMAP};
+use crate::{
+    api::http::HttpSessionData, auth::AccessToken, mailbox::UidMailbox,
+    services::housekeeper::Event, JMAP,
+};
 
 use super::{
     index::{EmailIndexBuilder, TrimTextValue, VisitValues, MAX_ID_LENGTH, MAX_SORT_FIELD_LENGTH},
@@ -54,14 +58,15 @@ impl JMAP {
         request: CopyRequest<RequestArguments>,
         access_token: &AccessToken,
         next_call: &mut Option<Call<RequestMethod>>,
-    ) -> Result<CopyResponse, MethodError> {
+        session: &HttpSessionData,
+    ) -> trc::Result<CopyResponse> {
         let account_id = request.account_id.document_id();
         let from_account_id = request.from_account_id.document_id();
 
         if account_id == from_account_id {
-            return Err(MethodError::InvalidArguments(
-                "From accountId is equal to fromAccountId".to_string(),
-            ));
+            return Err(trc::JmapEvent::InvalidArguments
+                .into_err()
+                .details("From accountId is equal to fromAccountId"));
         }
         let old_state = self
             .assert_state(account_id, Collection::Email, &request.if_in_state)
@@ -218,6 +223,7 @@ impl JMAP {
                     mailboxes,
                     keywords,
                     received_at,
+                    session.session_id,
                 )
                 .await?
             {
@@ -277,7 +283,8 @@ impl JMAP {
         mailboxes: Vec<u32>,
         keywords: Vec<Keyword>,
         received_at: Option<UTCDate>,
-    ) -> Result<Result<IngestedEmail, SetError>, MethodError> {
+        session_id: u64,
+    ) -> trc::Result<Result<IngestedEmail, SetError>> {
         // Obtain metadata
         let mut metadata = if let Some(metadata) = self
             .get_property::<Bincode<MessageMetadata>>(
@@ -297,11 +304,19 @@ impl JMAP {
         };
 
         // Check quota
-        if !self
+        match self
             .has_available_quota(account_id, account_quota, metadata.size as i64)
-            .await?
+            .await
         {
-            return Ok(Err(SetError::over_quota()));
+            Ok(_) => (),
+            Err(err) => {
+                if err.matches(trc::EventType::Limit(trc::LimitEvent::Quota)) {
+                    trc::error!(err.account_id(account_id).span_id(session_id));
+                    return Ok(Err(SetError::over_quota()));
+                } else {
+                    return Err(err);
+                }
+            }
         }
 
         // Set receivedAt
@@ -341,7 +356,7 @@ impl JMAP {
         let thread_id = if !references.is_empty() {
             self.find_or_merge_thread(account_id, subject, &references)
                 .await
-                .map_err(|_| MethodError::ServerPartialFail)?
+                .caused_by(trc::location!())?
         } else {
             None
         };
@@ -360,14 +375,7 @@ impl JMAP {
             let uid = self
                 .assign_imap_uid(account_id, *mailbox_id)
                 .await
-                .map_err(|err| {
-                    tracing::error!(
-                            event = "error",
-                            context = "email_copy",
-                            error = ?err,
-                            "Failed to assign IMAP UID.");
-                    MethodError::ServerPartialFail
-                })?;
+                .caused_by(trc::location!())?;
             mailbox_ids.push(UidMailbox::new(*mailbox_id, uid));
             email.imap_uids.push(uid);
         }
@@ -416,23 +424,12 @@ impl JMAP {
             .data
             .write(batch.build())
             .await
-            .map_err(|err| {
-                tracing::error!(
-                    event = "error",
-                    context = "email_copy",
-                    error = ?err,
-                    "Failed to write message to database.");
-                MethodError::ServerPartialFail
-            })?;
+            .caused_by(trc::location!())?;
         let thread_id = match thread_id {
             Some(thread_id) => thread_id,
-            None => ids
-                .first_document_id()
-                .map_err(|_| MethodError::ServerPartialFail)?,
+            None => ids.first_document_id().caused_by(trc::location!())?,
         };
-        let document_id = ids
-            .last_document_id()
-            .map_err(|_| MethodError::ServerPartialFail)?;
+        let document_id = ids.last_document_id().caused_by(trc::location!())?;
 
         // Request FTS index
         let _ = self.inner.housekeeper_tx.send(Event::IndexStart).await;

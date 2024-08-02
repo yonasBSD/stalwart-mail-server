@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::listener::{SessionData, SessionManager, SessionStream};
+use common::listener::{SessionData, SessionManager, SessionResult, SessionStream};
 use imap_proto::receiver::{self, Receiver};
 use jmap::JMAP;
 use tokio_rustls::server::TlsStream;
@@ -29,7 +29,7 @@ impl SessionManager for ManageSieveSessionManager {
                 imap: self.imap.imap_inner,
                 instance: session.instance,
                 state: State::NotAuthenticated { auth_failures: 0 },
-                span: session.span,
+                session_id: session.session_id,
                 stream: session.stream,
                 in_flight: session.in_flight,
                 remote_addr: session.remote_ip,
@@ -76,33 +76,37 @@ impl<T: SessionStream> Session<T> {
                             Ok(Ok(bytes_read)) => {
                                 if bytes_read > 0 {
                                     match self.ingest(&buf[..bytes_read]).await {
-                                        Ok(true) => (),
-                                        Ok(false) => {
+                                        SessionResult::Continue => (),
+                                        SessionResult::UpgradeTls => {
                                             return true;
                                         }
-                                        Err(_) => {
+                                        SessionResult::Close => {
                                             break;
                                         }
                                     }
                                 } else {
-                                    tracing::debug!(
-                                        parent: &self.span,
-                                        event = "disconnect",
-                                        reason = "peer",
-                                        "Connection closed by peer."
+                                    trc::event!(
+                                        Network(trc::NetworkEvent::Closed),
+                                        SpanId = self.session_id,
+                                        CausedBy = trc::location!()
                                     );
                                     break;
                                 }
                             }
-                            Ok(Err(_)) => {
+                            Ok(Err(err)) => {
+                                trc::event!(
+                                    Network(trc::NetworkEvent::ReadError),
+                                    SpanId = self.session_id,
+                                    Reason = err,
+                                    CausedBy = trc::location!()
+                                );
                                 break;
                             }
                             Err(_) => {
-                                tracing::debug!(
-                                    parent: &self.span,
-                                    event = "disconnect",
-                                    reason = "timeout",
-                                    "Connection timed out."
+                                trc::event!(
+                                    Network(trc::NetworkEvent::Timeout),
+                                    SpanId = self.session_id,
+                                    CausedBy = trc::location!()
                                 );
                                 self
                                     .write(b"BYE \"Connection timed out.\"\r\n")
@@ -113,11 +117,11 @@ impl<T: SessionStream> Session<T> {
                         }
                 },
                 _ = shutdown_rx.changed() => {
-                    tracing::debug!(
-                        parent: &self.span,
-                        event = "disconnect",
-                        reason = "shutdown",
-                        "Server shutting down."
+                    trc::event!(
+                        Network(trc::NetworkEvent::Closed),
+                        SpanId = self.session_id,
+                        Reason = "Server shutting down",
+                        CausedBy = trc::location!()
                     );
                     self.write(b"BYE \"Server shutting down.\"\r\n").await.ok();
                     break;
@@ -129,13 +133,15 @@ impl<T: SessionStream> Session<T> {
     }
 
     pub async fn into_tls(self) -> Result<Session<TlsStream<T>>, ()> {
-        let span = self.span;
         Ok(Session {
-            stream: self.instance.tls_accept(self.stream, &span).await?,
+            stream: self
+                .instance
+                .tls_accept(self.stream, self.session_id)
+                .await?,
             state: self.state,
             instance: self.instance,
             in_flight: self.in_flight,
-            span,
+            session_id: self.session_id,
             jmap: self.jmap,
             imap: self.imap,
             receiver: self.receiver,

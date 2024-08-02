@@ -10,7 +10,13 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use crate::core::{Command, ResponseCode, Session, StatusResponse};
 
 impl<T: AsyncRead + AsyncWrite> Session<T> {
-    pub async fn handle_noop(&mut self, request: Request<Command>) -> super::OpResult {
+    pub async fn handle_noop(&mut self, request: Request<Command>) -> trc::Result<Vec<u8>> {
+        trc::event!(
+            ManageSieve(trc::ManageSieveEvent::Noop),
+            SpanId = self.session_id,
+            Elapsed = trc::Value::Duration(0)
+        );
+
         Ok(if let Some(tag) = request
             .tokens
             .into_iter()

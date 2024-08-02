@@ -6,13 +6,10 @@
 
 use std::collections::HashMap;
 
-use hyper::{header::CONTENT_TYPE, StatusCode};
+use hyper::header::CONTENT_TYPE;
 use serde::{Deserialize, Serialize};
 
-use crate::api::{
-    http::{fetch_body, ToHttpResponse},
-    HtmlResponse, HttpRequest, HttpResponse,
-};
+use crate::api::{http::fetch_body, HttpRequest};
 
 pub mod auth;
 pub mod token;
@@ -205,13 +202,17 @@ pub struct FormData {
 }
 
 impl FormData {
-    pub async fn from_request(req: &mut HttpRequest, max_len: usize) -> Result<Self, HttpResponse> {
+    pub async fn from_request(
+        req: &mut HttpRequest,
+        max_len: usize,
+        session_id: u64,
+    ) -> trc::Result<Self> {
         match (
             req.headers()
                 .get(CONTENT_TYPE)
                 .and_then(|h| h.to_str().ok())
                 .and_then(|val| val.parse::<mime::Mime>().ok()),
-            fetch_body(req, max_len).await,
+            fetch_body(req, max_len, session_id).await,
         ) {
             (Some(content_type), Some(body)) => {
                 let mut fields = HashMap::new();
@@ -229,11 +230,9 @@ impl FormData {
                 }
                 Ok(FormData { fields })
             }
-            _ => Err(HtmlResponse::with_status(
-                StatusCode::BAD_REQUEST,
-                "Invalid post request".to_string(),
-            )
-            .into_http_response()),
+            _ => Err(trc::ResourceEvent::BadParameters
+                .into_err()
+                .details("Invalid post request")),
         }
     }
 

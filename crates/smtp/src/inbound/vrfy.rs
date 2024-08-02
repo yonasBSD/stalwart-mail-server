@@ -5,7 +5,7 @@
  */
 
 use common::listener::SessionStream;
-use directory::DirectoryError;
+use trc::SmtpEvent;
 
 use crate::core::Session;
 use std::fmt::Write;
@@ -15,7 +15,11 @@ impl<T: SessionStream> Session<T> {
         match self
             .core
             .core
-            .eval_if::<String, _>(&self.core.core.smtp.session.rcpt.directory, self)
+            .eval_if::<String, _>(
+                &self.core.core.smtp.session.rcpt.directory,
+                self,
+                self.data.session_id,
+            )
             .await
             .and_then(|name| self.core.core.get_directory(&name))
         {
@@ -23,7 +27,7 @@ impl<T: SessionStream> Session<T> {
                 match self
                     .core
                     .core
-                    .vrfy(directory, &address.to_lowercase())
+                    .vrfy(directory, &address.to_lowercase(), self.data.session_id)
                     .await
                 {
                     Ok(values) if !values.is_empty() => {
@@ -37,37 +41,45 @@ impl<T: SessionStream> Session<T> {
                             );
                         }
 
-                        tracing::debug!(parent: &self.span,
-                            context = "vrfy",
-                            event = "success",
-                            address = &address);
+                        trc::event!(
+                            Smtp(SmtpEvent::Vrfy),
+                            SpanId = self.data.session_id,
+                            Name = address,
+                            Result = values,
+                        );
 
                         self.write(result.as_bytes()).await
                     }
-                    Ok(_) | Err(DirectoryError::Unsupported) => {
-                        tracing::debug!(parent: &self.span,
-                            context = "vrfy",
-                            event = "not-found",
-                            address = &address);
+                    Ok(_) => {
+                        trc::event!(
+                            Smtp(SmtpEvent::VrfyNotFound),
+                            SpanId = self.data.session_id,
+                            Name = address,
+                        );
 
                         self.write(b"550 5.1.2 Address not found.\r\n").await
                     }
-                    Err(_) => {
-                        tracing::debug!(parent: &self.span,
-                            context = "vrfy",
-                            event = "temp-fail",
-                            address = &address);
+                    Err(err) => {
+                        let is_not_supported =
+                            err.matches(trc::EventType::Store(trc::StoreEvent::NotSupported));
 
-                        self.write(b"252 2.4.3 Unable to verify address at this time.\r\n")
-                            .await
+                        trc::error!(err.span_id(self.data.session_id).details("VRFY failed"));
+
+                        if !is_not_supported {
+                            self.write(b"252 2.4.3 Unable to verify address at this time.\r\n")
+                                .await
+                        } else {
+                            self.write(b"550 5.1.2 Address not found.\r\n").await
+                        }
                     }
                 }
             }
             _ => {
-                tracing::debug!(parent: &self.span,
-                    context = "vrfy",
-                    event = "forbidden",
-                    address = &address);
+                trc::event!(
+                    Smtp(SmtpEvent::VrfyDisabled),
+                    SpanId = self.data.session_id,
+                    Name = address,
+                );
 
                 self.write(b"252 2.5.1 VRFY is disabled.\r\n").await
             }
@@ -78,7 +90,11 @@ impl<T: SessionStream> Session<T> {
         match self
             .core
             .core
-            .eval_if::<String, _>(&self.core.core.smtp.session.rcpt.directory, self)
+            .eval_if::<String, _>(
+                &self.core.core.smtp.session.rcpt.directory,
+                self,
+                self.data.session_id,
+            )
             .await
             .and_then(|name| self.core.core.get_directory(&name))
         {
@@ -86,7 +102,7 @@ impl<T: SessionStream> Session<T> {
                 match self
                     .core
                     .core
-                    .expn(directory, &address.to_lowercase())
+                    .expn(directory, &address.to_lowercase(), self.data.session_id)
                     .await
                 {
                     Ok(values) if !values.is_empty() => {
@@ -99,36 +115,46 @@ impl<T: SessionStream> Session<T> {
                                 value
                             );
                         }
-                        tracing::debug!(parent: &self.span,
-                            context = "expn",
-                            event = "success",
-                            address = &address);
+
+                        trc::event!(
+                            Smtp(SmtpEvent::Expn),
+                            SpanId = self.data.session_id,
+                            Name = address,
+                            Result = values,
+                        );
+
                         self.write(result.as_bytes()).await
                     }
-                    Ok(_) | Err(DirectoryError::Unsupported) => {
-                        tracing::debug!(parent: &self.span,
-                            context = "expn",
-                            event = "not-found",
-                            address = &address);
+                    Ok(_) => {
+                        trc::event!(
+                            Smtp(SmtpEvent::ExpnNotFound),
+                            SpanId = self.data.session_id,
+                            Name = address,
+                        );
 
                         self.write(b"550 5.1.2 Mailing list not found.\r\n").await
                     }
-                    Err(_) => {
-                        tracing::debug!(parent: &self.span,
-                            context = "expn",
-                            event = "temp-fail",
-                            address = &address);
+                    Err(err) => {
+                        let is_not_supported =
+                            err.matches(trc::EventType::Store(trc::StoreEvent::NotSupported));
 
-                        self.write(b"252 2.4.3 Unable to expand mailing list at this time.\r\n")
-                            .await
+                        trc::error!(err.span_id(self.data.session_id).details("VRFY failed"));
+
+                        if !is_not_supported {
+                            self.write(b"252 2.4.3 Unable to expand mailing list at this time.\r\n")
+                                .await
+                        } else {
+                            self.write(b"550 5.1.2 Mailing list not found.\r\n").await
+                        }
                     }
                 }
             }
             _ => {
-                tracing::debug!(parent: &self.span,
-                    context = "expn",
-                    event = "forbidden",
-                    address = &address);
+                trc::event!(
+                    Smtp(SmtpEvent::ExpnDisabled),
+                    SpanId = self.data.session_id,
+                    Name = address,
+                );
 
                 self.write(b"252 2.5.1 EXPN is disabled.\r\n").await
             }

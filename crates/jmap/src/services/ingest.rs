@@ -13,7 +13,7 @@ use store::ahash::AHashMap;
 use crate::{
     email::ingest::{IngestEmail, IngestSource},
     mailbox::INBOX_ID,
-    IngestError, JMAP,
+    JMAP,
 };
 
 impl JMAP {
@@ -27,13 +27,25 @@ impl JMAP {
             .await
         {
             Ok(Some(raw_message)) => raw_message,
-            result => {
-                tracing::error!(
-                    context = "ingest",
-                    rcpts = ?message.recipients,
-                    error = ?result,
-                    "Failed to fetch message blob."
+            Ok(None) => {
+                trc::event!(
+                    Store(trc::StoreEvent::IngestError),
+                    Reason = "Blob not found.",
+                    SpanId = message.session_id,
+                    CausedBy = trc::location!()
                 );
+
+                return (0..message.recipients.len())
+                    .map(|_| DeliveryResult::TemporaryFailure {
+                        reason: "Blob not found.".into(),
+                    })
+                    .collect::<Vec<_>>();
+            }
+            Err(err) => {
+                trc::error!(err
+                    .details("Failed to fetch message blob.")
+                    .span_id(message.session_id)
+                    .caused_by(trc::location!()));
 
                 return (0..message.recipients.len())
                     .map(|_| DeliveryResult::TemporaryFailure {
@@ -49,7 +61,7 @@ impl JMAP {
         for rcpt in &message.recipients {
             match self
                 .core
-                .email_to_ids(&self.core.storage.directory, rcpt)
+                .email_to_ids(&self.core.storage.directory, rcpt, message.session_id)
                 .await
             {
                 Ok(uids) => {
@@ -59,12 +71,11 @@ impl JMAP {
                     recipients.push(uids);
                 }
                 Err(err) => {
-                    tracing::error!(
-                        context = "ingest",
-                        error = ?err,
-                        rcpt = rcpt,
-                        "Failed to lookup recipient"
-                    );
+                    trc::error!(err
+                        .details("Failed to lookup recipient.")
+                        .ctx(trc::Key::To, rcpt.to_string())
+                        .span_id(message.session_id)
+                        .caused_by(trc::location!()));
                     recipients.push(vec![]);
                 }
             }
@@ -80,6 +91,7 @@ impl JMAP {
                         &message.sender_address,
                         rcpt,
                         *uid,
+                        message.session_id,
                         active_script,
                     )
                     .await
@@ -94,7 +106,13 @@ impl JMAP {
                     {
                         Ok(Some(p)) => p.quota as i64,
                         Ok(None) => 0,
-                        Err(_) => {
+                        Err(err) => {
+                            trc::error!(err
+                                .details("Failed to obtain account quota.")
+                                .ctx(trc::Key::To, rcpt.to_string())
+                                .span_id(message.session_id)
+                                .caused_by(trc::location!()));
+
                             *status = DeliveryResult::TemporaryFailure {
                                 reason: "Transient server failure.".into(),
                             };
@@ -112,10 +130,16 @@ impl JMAP {
                         received_at: None,
                         source: IngestSource::Smtp,
                         encrypt: self.core.jmap.encrypt,
+                        session_id: message.session_id,
                     })
                     .await
                 }
-                Err(_) => {
+                Err(err) => {
+                    trc::error!(err
+                        .details("Failed to ingest message.")
+                        .ctx(trc::Key::To, rcpt.to_string())
+                        .span_id(message.session_id));
+
                     *status = DeliveryResult::TemporaryFailure {
                         reason: "Transient server failure.".into(),
                     };
@@ -137,24 +161,40 @@ impl JMAP {
                         .await;
                     }
                 }
-                Err(err) => match err {
-                    IngestError::OverQuota => {
-                        *status = DeliveryResult::TemporaryFailure {
-                            reason: "Mailbox over quota.".into(),
+                Err(err) => {
+                    match err.as_ref() {
+                        trc::EventType::Limit(trc::LimitEvent::Quota) => {
+                            *status = DeliveryResult::TemporaryFailure {
+                                reason: "Mailbox over quota.".into(),
+                            }
+                        }
+                        trc::EventType::Store(trc::StoreEvent::IngestError) => {
+                            *status = DeliveryResult::PermanentFailure {
+                                code: err
+                                    .value(trc::Key::Code)
+                                    .and_then(|v| v.to_uint())
+                                    .map(|n| {
+                                        [(n / 100) as u8, ((n % 100) / 10) as u8, (n % 10) as u8]
+                                    })
+                                    .unwrap_or([5, 5, 0]),
+                                reason: err
+                                    .value_as_str(trc::Key::Reason)
+                                    .unwrap_or_default()
+                                    .to_string()
+                                    .into(),
+                            }
+                        }
+                        _ => {
+                            *status = DeliveryResult::TemporaryFailure {
+                                reason: "Transient server failure.".into(),
+                            }
                         }
                     }
-                    IngestError::Temporary => {
-                        *status = DeliveryResult::TemporaryFailure {
-                            reason: "Transient server failure.".into(),
-                        }
-                    }
-                    IngestError::Permanent { code, reason } => {
-                        *status = DeliveryResult::PermanentFailure {
-                            code,
-                            reason: reason.into(),
-                        }
-                    }
-                },
+
+                    trc::error!(err
+                        .ctx(trc::Key::To, rcpt.to_string())
+                        .span_id(message.session_id));
+                }
             }
         }
 

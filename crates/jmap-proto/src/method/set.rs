@@ -8,12 +8,9 @@ use ahash::AHashMap;
 use utils::map::{bitmap::Bitmap, vec_map::VecMap};
 
 use crate::{
-    error::{
-        method::MethodError,
-        set::{InvalidProperty, SetError},
-    },
+    error::set::{InvalidProperty, SetError},
     object::{email_submission, mailbox, sieve, Object},
-    parser::{json::Parser, Error, JsonObjectParser, Token},
+    parser::{json::Parser, JsonObjectParser, Token},
     request::{
         method::MethodObject,
         reference::{MaybeReference, ResultReference},
@@ -99,7 +96,7 @@ pub struct SetResponse {
 }
 
 impl JsonObjectParser for SetRequest<RequestArguments> {
-    fn parse(parser: &mut Parser) -> crate::parser::Result<Self>
+    fn parse(parser: &mut Parser) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -115,10 +112,9 @@ impl JsonObjectParser for SetRequest<RequestArguments> {
                 MethodObject::VacationResponse => RequestArguments::VacationResponse,
                 MethodObject::SieveScript => RequestArguments::SieveScript(Default::default()),
                 _ => {
-                    return Err(Error::Method(MethodError::UnknownMethod(format!(
-                        "{}/set",
-                        parser.ctx
-                    ))))
+                    return Err(trc::JmapEvent::UnknownMethod
+                        .into_err()
+                        .details(format!("{}/set", parser.ctx)))
                 }
             },
             account_id: Id::default(),
@@ -168,7 +164,7 @@ impl JsonObjectParser for SetRequest<RequestArguments> {
 }
 
 impl JsonObjectParser for Object<SetValue> {
-    fn parse(parser: &mut Parser<'_>) -> crate::parser::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -385,11 +381,7 @@ impl<T: Into<AnyId>> From<Vec<MaybeReference<T, String>>> for SetValue {
 }
 
 impl RequestPropertyParser for RequestArguments {
-    fn parse(
-        &mut self,
-        parser: &mut Parser,
-        property: RequestProperty,
-    ) -> crate::parser::Result<bool> {
+    fn parse(&mut self, parser: &mut Parser, property: RequestProperty) -> trc::Result<bool> {
         match self {
             RequestArguments::Mailbox(args) => args.parse(parser, property),
             RequestArguments::EmailSubmission(args) => args.parse(parser, property),
@@ -400,7 +392,7 @@ impl RequestPropertyParser for RequestArguments {
 }
 
 impl<T> SetRequest<T> {
-    pub fn validate(&self, max_objects_in_set: usize) -> Result<(), MethodError> {
+    pub fn validate(&self, max_objects_in_set: usize) -> trc::Result<()> {
         if self.create.as_ref().map_or(0, |objs| objs.len())
             + self.update.as_ref().map_or(0, |objs| objs.len())
             + self.destroy.as_ref().map_or(0, |objs| {
@@ -412,7 +404,7 @@ impl<T> SetRequest<T> {
             })
             > max_objects_in_set
         {
-            Err(MethodError::RequestTooLarge)
+            Err(trc::JmapEvent::RequestTooLarge.into_err())
         } else {
             Ok(())
         }
@@ -460,10 +452,7 @@ impl SetRequest<RequestArguments> {
 }
 
 impl SetResponse {
-    pub fn from_request<T>(
-        request: &SetRequest<T>,
-        max_objects: usize,
-    ) -> Result<Self, MethodError> {
+    pub fn from_request<T>(request: &SetRequest<T>, max_objects: usize) -> trc::Result<Self> {
         let n_create = request.create.as_ref().map_or(0, |objs| objs.len());
         let n_update = request.update.as_ref().map_or(0, |objs| objs.len());
         let n_destroy = request.destroy.as_ref().map_or(0, |objs| {
@@ -491,7 +480,7 @@ impl SetResponse {
                 state_change: None,
             })
         } else {
-            Err(MethodError::RequestTooLarge)
+            Err(trc::JmapEvent::RequestTooLarge.into_err())
         }
     }
 

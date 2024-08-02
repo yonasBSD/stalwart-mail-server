@@ -27,8 +27,10 @@ use std::{
 
 use ::managesieve::core::ManageSieveSessionManager;
 use common::{
-    config::server::{ServerProtocol, Servers},
-    webhooks::manager::spawn_webhook_manager,
+    config::{
+        server::{ServerProtocol, Servers},
+        tracers::Tracers,
+    },
     Core, Ipc, IPC_CHANNEL_BUFFER,
 };
 
@@ -267,6 +269,14 @@ user-code = "1s"
 token = "1s"
 refresh-token = "3s"
 refresh-token-renew = "2s"
+
+[tracer.console]
+type = "console"
+level = "{LEVEL}"
+multiline = false
+ansi = true
+disabled-events = ["network.*"]
+
 "#;
 
 #[allow(dead_code)]
@@ -283,7 +293,11 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
     let mut config = Config::new(
         add_test_certs(SERVER)
             .replace("{STORE}", store_id)
-            .replace("{TMP}", &temp_dir.path.display().to_string()),
+            .replace("{TMP}", &temp_dir.path.display().to_string())
+            .replace(
+                "{LEVEL}",
+                &std::env::var("LOG").unwrap_or_else(|_| "disable".to_string()),
+            ),
     )
     .unwrap();
     config.resolve_all_macros().await;
@@ -298,6 +312,7 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
     let stores = Stores::parse_all(&mut config).await;
 
     // Parse core
+    let tracers = Tracers::parse(&mut config);
     let core = Core::parse(&mut config, stores, Default::default()).await;
     let store = core.storage.data.clone();
     let shared_core = core.into_shared();
@@ -305,18 +320,21 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
     // Parse acceptors
     servers.parse_tcp_acceptors(&mut config, shared_core.clone());
 
-    // Spawn webhook manager
-    let webhook_tx = spawn_webhook_manager(shared_core.clone());
+    // Enable tracing
+    tracers.enable();
 
     // Setup IPC channels
     let (delivery_tx, delivery_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
-    let ipc = Ipc {
-        delivery_tx,
-        webhook_tx,
-    };
+    let ipc = Ipc { delivery_tx };
 
     // Init servers
-    let smtp = SMTP::init(&mut config, shared_core.clone(), ipc).await;
+    let smtp = SMTP::init(
+        &mut config,
+        shared_core.clone(),
+        ipc,
+        servers.span_id_gen.clone(),
+    )
+    .await;
     let jmap = JMAP::init(
         &mut config,
         delivery_rx,
@@ -413,21 +431,6 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
 
 #[tokio::test]
 pub async fn imap_tests() {
-    if let Ok(level) = std::env::var("LOG") {
-        tracing::subscriber::set_global_default(
-            tracing_subscriber::FmtSubscriber::builder()
-                .with_env_filter(
-                    tracing_subscriber::EnvFilter::builder()
-                        .parse(
-                            format!("smtp={level},imap={level},jmap={level},store={level},utils={level},common={level},pop3={level},directory={level}"),
-                        )
-                        .unwrap(),
-                )
-                .finish(),
-        )
-        .unwrap();
-    }
-
     // Prepare settings
     let start_time = Instant::now();
     let delete = true;

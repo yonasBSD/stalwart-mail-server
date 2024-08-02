@@ -4,15 +4,15 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, fmt::Display};
+use std::fmt::Display;
 
-use super::{ResponseCode, ResponseType, StatusResponse};
+use super::{ResponseCode, ResponseType};
 
 #[derive(Debug, Clone)]
 pub enum Error {
     NeedsMoreData,
     NeedsLiteral { size: u32 },
-    Error { response: StatusResponse },
+    Error { response: trc::Error },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -92,7 +92,7 @@ impl<T: CommandParser> Receiver<T> {
         }
     }
 
-    pub fn error_reset(&mut self, message: impl Into<Cow<'static, str>>) -> Error {
+    pub fn error_reset(&mut self, message: impl Into<trc::Value>) -> Error {
         let request = std::mem::take(&mut self.request);
         let err = Error::err(
             if !request.tag.is_empty() {
@@ -462,14 +462,13 @@ impl Display for Token {
 }
 
 impl Error {
-    pub fn err(tag: Option<String>, message: impl Into<Cow<'static, str>>) -> Self {
+    pub fn err(tag: Option<String>, message: impl Into<trc::Value>) -> Self {
         Error::Error {
-            response: StatusResponse {
-                tag,
-                code: ResponseCode::Parse.into(),
-                message: message.into(),
-                rtype: ResponseType::Bad,
-            },
+            response: trc::ImapEvent::Error
+                .ctx(trc::Key::Details, message)
+                .ctx_opt(trc::Key::Id, tag)
+                .ctx(trc::Key::Type, ResponseType::Bad)
+                .code(ResponseCode::Parse),
         }
     }
 }
@@ -488,78 +487,26 @@ impl<T: CommandParser> Default for Receiver<T> {
 }
 
 impl<T: CommandParser> Request<T> {
-    pub fn into_error(self, message: impl Into<Cow<'static, str>>) -> StatusResponse {
-        StatusResponse {
-            tag: self.tag.into(),
-            code: None,
-            message: message.into(),
-            rtype: ResponseType::No,
-        }
+    pub fn into_error(self, message: impl Into<trc::Value>) -> trc::Error {
+        trc::ImapEvent::Error
+            .ctx(trc::Key::Details, message)
+            .ctx(trc::Key::Id, self.tag)
     }
 
-    pub fn into_parse_error(self, message: impl Into<Cow<'static, str>>) -> StatusResponse {
-        StatusResponse {
-            tag: self.tag.into(),
-            code: ResponseCode::Parse.into(),
-            message: message.into(),
-            rtype: ResponseType::Bad,
-        }
+    pub fn into_parse_error(self, message: impl Into<trc::Value>) -> trc::Error {
+        trc::ImapEvent::Error
+            .ctx(trc::Key::Details, message)
+            .ctx(trc::Key::Id, self.tag)
+            .ctx(trc::Key::Code, ResponseCode::Parse)
+            .ctx(trc::Key::Type, ResponseType::Bad)
     }
 }
 
-impl From<(String, &'static str)> for StatusResponse {
-    fn from((tag, message): (String, &'static str)) -> Self {
-        StatusResponse {
-            tag: Some(tag),
-            code: None,
-            message: message.into(),
-            rtype: ResponseType::Bad,
-        }
-    }
-}
-
-impl From<(&str, &'static str)> for StatusResponse {
-    fn from((tag, message): (&str, &'static str)) -> Self {
-        StatusResponse {
-            tag: Some(tag.to_string()),
-            code: None,
-            message: message.into(),
-            rtype: ResponseType::Bad,
-        }
-    }
-}
-
-impl From<(String, String)> for StatusResponse {
-    fn from((tag, message): (String, String)) -> Self {
-        StatusResponse {
-            tag: Some(tag),
-            code: None,
-            message: message.into(),
-            rtype: ResponseType::Bad,
-        }
-    }
-}
-
-impl From<(String, Cow<'static, str>)> for StatusResponse {
-    fn from((tag, message): (String, Cow<'static, str>)) -> Self {
-        StatusResponse {
-            tag: Some(tag),
-            code: None,
-            message,
-            rtype: ResponseType::Bad,
-        }
-    }
-}
-
-impl From<(&str, Cow<'static, str>)> for StatusResponse {
-    fn from((tag, message): (&str, Cow<'static, str>)) -> Self {
-        StatusResponse {
-            tag: Some(tag.to_string()),
-            code: None,
-            message,
-            rtype: ResponseType::Bad,
-        }
-    }
+pub(crate) fn bad(tag: impl Into<trc::Value>, message: impl Into<trc::Value>) -> trc::Error {
+    trc::ImapEvent::Error
+        .ctx(trc::Key::Details, message)
+        .ctx(trc::Key::Id, tag)
+        .ctx(trc::Key::Type, ResponseType::Bad)
 }
 
 /*

@@ -5,7 +5,6 @@
  */
 
 use jmap_proto::{
-    error::method::MethodError,
     method::get::{GetRequest, GetResponse},
     object::{email::GetArguments, Object},
     types::{
@@ -21,6 +20,7 @@ use jmap_proto::{
 };
 use mail_parser::HeaderName;
 use store::{write::Bincode, BlobClass};
+use trc::{AddContext, StoreEvent};
 
 use crate::{auth::AccessToken, email::headers::HeaderToValue, mailbox::UidMailbox, JMAP};
 
@@ -35,7 +35,7 @@ impl JMAP {
         &self,
         mut request: GetRequest<GetArguments>,
         access_token: &AccessToken,
-    ) -> Result<GetResponse, MethodError> {
+    ) -> trc::Result<GetResponse> {
         let ids = request.unwrap_ids(self.core.jmap.get_max_objects)?;
         let properties = request.unwrap_properties(&[
             Property::Id,
@@ -95,14 +95,7 @@ impl JMAP {
                 .collect::<Vec<_>>();
             self.get_cached_thread_ids(account_id, document_ids.iter().copied())
                 .await
-                .map_err(|err| {
-                    tracing::error!(event = "error",
-                                context = "store",
-                                account_id = account_id,
-                                error = ?err,
-                                "Failed to retrieve thread Ids");
-                    MethodError::ServerPartialFail
-                })?
+                .caused_by(trc::location!())?
                 .into_iter()
                 .filter_map(|(document_id, thread_id)| {
                     Id::from_parts(thread_id, document_id).into()
@@ -160,12 +153,16 @@ impl JMAP {
                 {
                     raw_message
                 } else {
-                    tracing::warn!(event = "not-found",
-                        account_id = account_id,
-                        collection = ?Collection::Email,
-                        document_id = id.document_id(),
-                        blob_id = ?metadata.blob_hash,
-                        "Blob not found");
+                    trc::event!(
+                        Store(StoreEvent::NotFound),
+                        AccountId = account_id,
+                        DocumentId = id.document_id(),
+                        Collection = Collection::Email,
+                        BlobId = metadata.blob_hash.to_hex(),
+                        Details = "Blob not found.",
+                        CausedBy = trc::location!(),
+                    );
+
                     response.not_found.push(id.into());
                     continue;
                 }
@@ -218,11 +215,15 @@ impl JMAP {
                         {
                             email.append(property.clone(), mailboxes);
                         } else {
-                            tracing::debug!(event = "not-found",
-                                            account_id = account_id,
-                                            collection = ?Collection::Email,
-                                            document_id = id.document_id(),
-                                            "Mailbox property not found");
+                            trc::event!(
+                                Store(StoreEvent::NotFound),
+                                AccountId = account_id,
+                                DocumentId = id.document_id(),
+                                Collection = Collection::Email,
+                                Details = "Mailbox property not found.",
+                                CausedBy = trc::location!(),
+                            );
+
                             response.not_found.push(id.into());
                             continue 'outer;
                         }
@@ -246,11 +247,15 @@ impl JMAP {
                         {
                             email.append(property.clone(), keywords);
                         } else {
-                            tracing::debug!(event = "not-found",
-                                account_id = account_id,
-                                collection = ?Collection::Email,
-                                document_id = id.document_id(),
-                                "Keywords property not found");
+                            trc::event!(
+                                Store(StoreEvent::NotFound),
+                                AccountId = account_id,
+                                DocumentId = id.document_id(),
+                                Collection = Collection::Email,
+                                Details = "Keywords property not found.",
+                                CausedBy = trc::location!(),
+                            );
+
                             response.not_found.push(id.into());
                             continue 'outer;
                         }
@@ -406,9 +411,9 @@ impl JMAP {
                     }
 
                     _ => {
-                        return Err(MethodError::InvalidArguments(format!(
-                            "Invalid property {property:?}"
-                        )));
+                        return Err(trc::JmapEvent::InvalidArguments
+                            .into_err()
+                            .details(format!("Invalid property {property:?}")));
                     }
                 }
             }
