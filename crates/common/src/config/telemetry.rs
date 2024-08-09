@@ -110,8 +110,13 @@ pub struct Tracers {
 
 #[derive(Debug, Clone, Default)]
 pub struct Metrics {
-    pub prometheus: bool,
+    pub prometheus: Option<PrometheusMetrics>,
     pub otel: Option<Arc<OtelMetrics>>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct PrometheusMetrics {
+    pub auth: Option<String>,
 }
 
 impl Telemetry {
@@ -123,11 +128,13 @@ impl Telemetry {
 
         // Parse metrics
         if config
-            .property_or_default("metrics.prometheus.enable", "true")
-            .unwrap_or(true)
-            || config
-                .property_or_default("metrics.open-telemetry.enable", "false")
-                .unwrap_or(false)
+            .property_or_default("metrics.prometheus.enable", "false")
+            .unwrap_or(false)
+            || ["http", "grpc"].contains(
+                &config
+                    .value("metrics.open-telemetry.transport")
+                    .unwrap_or("disabled"),
+            )
         {
             apply_events(
                 config
@@ -136,7 +143,9 @@ impl Telemetry {
                     .map(|(_, e)| e),
                 false,
                 |event_type| {
-                    telemetry.metrics.set(event_type);
+                    if event_type.is_metric() {
+                        telemetry.metrics.set(event_type);
+                    }
                 },
             );
         }
@@ -553,16 +562,40 @@ impl Tracers {
 impl Metrics {
     pub fn parse(config: &mut Config) -> Self {
         let mut metrics = Metrics {
-            prometheus: config
-                .property_or_default("metrics.prometheus.enable", "true")
-                .unwrap_or(true),
+            prometheus: None,
             otel: None,
         };
 
         if config
-            .property_or_default("metrics.open-telemetry.enable", "false")
+            .property_or_default("metrics.prometheus.enable", "false")
             .unwrap_or(false)
         {
+            metrics.prometheus = Some(PrometheusMetrics {
+                auth: config
+                    .value("metrics.prometheus.auth.username")
+                    .and_then(|user| {
+                        config
+                            .value("metrics.prometheus.auth.secret")
+                            .map(|secret| STANDARD.encode(format!("{user}:{secret}")))
+                    }),
+            });
+        }
+
+        let otel_enabled = match config
+            .value("metrics.open-telemetry.transport")
+            .unwrap_or("disable")
+        {
+            "grpc" => true.into(),
+            "http" | "https" => false.into(),
+            "disable" | "disabled" => None,
+            transport => {
+                let err = format!("Invalid transport: {transport}");
+                config.new_parse_error("metrics.open-telemetry.transport", err);
+                None
+            }
+        };
+
+        if let Some(is_grpc) = otel_enabled {
             let timeout = config
                 .property::<Duration>("metrics.open-telemetry.timeout")
                 .unwrap_or(Duration::from_secs(
@@ -579,92 +612,78 @@ impl Metrics {
                 .with_version(env!("CARGO_PKG_VERSION"))
                 .build();
 
-            match config
-                .value_require("metrics.open-telemetry.transport")
-                .unwrap_or_default()
+            if is_grpc {
+                let mut exporter = opentelemetry_otlp::new_exporter()
+                    .tonic()
+                    .with_protocol(opentelemetry_otlp::Protocol::Grpc)
+                    .with_timeout(timeout);
+                if let Some(endpoint) = config.value("metrics.open-telemetry.endpoint") {
+                    exporter = exporter.with_endpoint(endpoint);
+                }
+
+                match exporter.build_metrics_exporter(
+                    Box::new(DefaultAggregationSelector::new()),
+                    Box::new(DefaultTemporalitySelector::new()),
+                ) {
+                    Ok(exporter) => {
+                        metrics.otel = Some(Arc::new(OtelMetrics {
+                            exporter: Box::new(exporter),
+                            interval,
+                            resource,
+                            instrumentation,
+                        }));
+                    }
+                    Err(err) => {
+                        config.new_build_error(
+                            "metrics.open-telemetry",
+                            format!("Failed to build OpenTelemetry metrics exporter: {err}"),
+                        );
+                    }
+                }
+            } else if let Some(endpoint) = config
+                .value_require("metrics.open-telemetry.endpoint")
+                .map(|s| s.to_string())
             {
-                "grpc" => {
-                    let mut exporter = opentelemetry_otlp::new_exporter()
-                        .tonic()
-                        .with_protocol(opentelemetry_otlp::Protocol::Grpc)
-                        .with_timeout(timeout);
-                    if let Some(endpoint) = config.value("metrics.open-telemetry.endpoint") {
-                        exporter = exporter.with_endpoint(endpoint);
-                    }
-
-                    match exporter.build_metrics_exporter(
-                        Box::new(DefaultAggregationSelector::new()),
-                        Box::new(DefaultTemporalitySelector::new()),
-                    ) {
-                        Ok(exporter) => {
-                            metrics.otel = Some(Arc::new(OtelMetrics {
-                                exporter: Box::new(exporter),
-                                interval,
-                                resource,
-                                instrumentation,
-                            }));
-                        }
-                        Err(err) => {
-                            config.new_build_error(
-                                "metrics.open-telemetry",
-                                format!("Failed to build OpenTelemetry metrics exporter: {err}"),
-                            );
-                        }
+                let mut headers = HashMap::new();
+                let mut err = None;
+                for (_, value) in config.values("metrics.open-telemetry.headers") {
+                    if let Some((key, value)) = value.split_once(':') {
+                        headers.insert(key.trim().to_string(), value.trim().to_string());
+                    } else {
+                        err = format!("Invalid open-telemetry header {value:?}").into();
+                        break;
                     }
                 }
-                "http" => {
-                    if let Some(endpoint) = config
-                        .value_require("metrics.open-telemetry.endpoint")
-                        .map(|s| s.to_string())
-                    {
-                        let mut headers = HashMap::new();
-                        let mut err = None;
-                        for (_, value) in config.values("metrics.open-telemetry.headers") {
-                            if let Some((key, value)) = value.split_once(':') {
-                                headers.insert(key.trim().to_string(), value.trim().to_string());
-                            } else {
-                                err = format!("Invalid open-telemetry header {value:?}").into();
-                                break;
-                            }
-                        }
-                        if let Some(err) = err {
-                            config.new_parse_error("metrics.open-telemetry.headers", err);
-                        }
-
-                        let mut exporter = opentelemetry_otlp::new_exporter()
-                            .http()
-                            .with_endpoint(&endpoint)
-                            .with_timeout(timeout);
-                        if !headers.is_empty() {
-                            exporter = exporter.with_headers(headers);
-                        }
-
-                        match exporter.build_metrics_exporter(
-                            Box::new(DefaultAggregationSelector::new()),
-                            Box::new(DefaultTemporalitySelector::new()),
-                        ) {
-                            Ok(exporter) => {
-                                metrics.otel = Some(Arc::new(OtelMetrics {
-                                    exporter: Box::new(exporter),
-                                    interval,
-                                    resource,
-                                    instrumentation,
-                                }));
-                            }
-                            Err(err) => {
-                                config.new_build_error(
-                                    "metrics.open-telemetry",
-                                    format!(
-                                        "Failed to build OpenTelemetry metrics exporter: {err}"
-                                    ),
-                                );
-                            }
-                        }
-                    }
+                if let Some(err) = err {
+                    config.new_parse_error("metrics.open-telemetry.headers", err);
                 }
-                transport => {
-                    let err = format!("Invalid transport: {transport}");
-                    config.new_parse_error("metrics.open-telemetry.transport", err);
+
+                let mut exporter = opentelemetry_otlp::new_exporter()
+                    .http()
+                    .with_endpoint(&endpoint)
+                    .with_timeout(timeout);
+                if !headers.is_empty() {
+                    exporter = exporter.with_headers(headers);
+                }
+
+                match exporter.build_metrics_exporter(
+                    Box::new(DefaultAggregationSelector::new()),
+                    Box::new(DefaultTemporalitySelector::new()),
+                ) {
+                    Ok(exporter) => {
+                        metrics.otel = Some(Arc::new(OtelMetrics {
+                            exporter: Box::new(exporter),
+                            interval,
+                            resource,
+                            instrumentation,
+                        }));
+                    }
+                    Err(err) => {
+                        config.new_build_error(
+                            "metrics.open-telemetry",
+                            format!("Failed to build OpenTelemetry metrics exporter: {err}"),
+                        );
+                    }
                 }
             }
         }
@@ -791,7 +810,11 @@ fn apply_events(
     for event_or_many in event_types {
         match event_or_many {
             EventOrMany::Event(event_type) => {
-                apply_fn(event_type);
+                if inclusive {
+                    apply_fn(event_type);
+                } else {
+                    exclude_events.insert(event_type);
+                }
             }
             EventOrMany::StartsWith(value) => {
                 for (event_type, name) in event_names.iter() {
