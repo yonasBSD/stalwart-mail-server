@@ -130,7 +130,11 @@ impl Stores {
                 }
                 #[cfg(feature = "postgres")]
                 "postgresql" => {
-                    if let Some(db) = PostgresStore::open(config, prefix).await.map(Store::from) {
+                    if let Some(db) =
+                        PostgresStore::open(config, prefix, config.is_active_store(id))
+                            .await
+                            .map(Store::from)
+                    {
                         self.stores.insert(store_id.clone(), db.clone());
                         self.fts_stores.insert(store_id.clone(), db.clone().into());
                         self.blob_stores.insert(
@@ -142,7 +146,10 @@ impl Stores {
                 }
                 #[cfg(feature = "mysql")]
                 "mysql" => {
-                    if let Some(db) = MysqlStore::open(config, prefix).await.map(Store::from) {
+                    if let Some(db) = MysqlStore::open(config, prefix, config.is_active_store(id))
+                        .await
+                        .map(Store::from)
+                    {
                         self.stores.insert(store_id.clone(), db.clone());
                         self.fts_stores.insert(store_id.clone(), db.clone().into());
                         self.blob_stores.insert(
@@ -206,7 +213,7 @@ impl Stores {
                     }
                 }
                 #[cfg(feature = "enterprise")]
-                "composite-read" | "composite-blob" => {
+                "sql-read-replica" | "composite-blob" => {
                     composite_stores.push((store_id, protocol));
                 }
                 unknown => {
@@ -221,12 +228,30 @@ impl Stores {
         #[cfg(feature = "enterprise")]
         for (id, protocol) in composite_stores {
             let prefix = ("store", id.as_str());
+            let compression = config
+                .property_or_default::<CompressionAlgo>(
+                    ("store", id.as_str(), "compression"),
+                    "none",
+                )
+                .unwrap_or(CompressionAlgo::None);
             match protocol.as_str() {
-                "composite-read" => {
+                "sql-read-replica" => {
                     if let Some(db) = crate::backend::composite::read_replica::SQLReadReplica::open(
-                        config, prefix, self,
-                    ) {
-                        self.stores.insert(id, Store::SQLReadReplica(db.into()));
+                        config,
+                        prefix,
+                        self,
+                        config.is_active_store(&id),
+                    )
+                    .await
+                    {
+                        let db = Store::SQLReadReplica(db.into());
+                        self.stores.insert(id.to_string(), db.clone());
+                        self.fts_stores.insert(id.to_string(), db.clone().into());
+                        self.blob_stores.insert(
+                            id.to_string(),
+                            BlobStore::from(db.clone()).with_compression(compression),
+                        );
+                        self.lookup_stores.insert(id.to_string(), db.into());
                     }
                 }
                 "composite-blob" => {
@@ -237,12 +262,7 @@ impl Stores {
                     {
                         let store = BlobStore {
                             backend: crate::BlobBackend::Composite(db.into()),
-                            compression: config
-                                .property_or_default::<CompressionAlgo>(
-                                    ("store", id.as_str(), "compression"),
-                                    "none",
-                                )
-                                .unwrap_or(CompressionAlgo::None),
+                            compression,
                         };
                         self.blob_stores.insert(id, store);
                     }
@@ -344,5 +364,28 @@ impl Stores {
                 });
             }
         }
+    }
+}
+
+trait IsActiveStore {
+    fn is_active_store(&self, id: &str) -> bool;
+}
+
+impl IsActiveStore for Config {
+    fn is_active_store(&self, id: &str) -> bool {
+        for key in [
+            "storage.data",
+            "storage.blob",
+            "storage.lookup",
+            "storage.fts",
+        ] {
+            if let Some(store_id) = self.value(key) {
+                if store_id == id {
+                    return true;
+                }
+            }
+        }
+
+        false
     }
 }
