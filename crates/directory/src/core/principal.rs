@@ -14,7 +14,7 @@ use serde::{
 use store::U64_LEN;
 
 use crate::{
-    backend::internal::{PrincipalField, PrincipalValue},
+    backend::internal::{PrincipalField, PrincipalUpdate, PrincipalValue},
     Permission, Principal, Type, ROLE_ADMIN,
 };
 
@@ -47,9 +47,13 @@ impl Principal {
         self.get_int(PrincipalField::Quota).unwrap_or_default()
     }
 
+    // SPDX-SnippetBegin
+    // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+    // SPDX-License-Identifier: LicenseRef-SEL
     pub fn tenant(&self) -> Option<u32> {
         self.get_int(PrincipalField::Tenant).map(|v| v as u32)
     }
+    // SPDX-SnippetEnd
 
     pub fn description(&self) -> Option<&str> {
         self.get_str(PrincipalField::Description)
@@ -363,6 +367,65 @@ impl Principal {
         }
     }
 
+    pub fn update_external(&mut self, mut external: Principal) -> Vec<PrincipalUpdate> {
+        let mut updates = Vec::new();
+        if let Some(name) = external.take_str(PrincipalField::Description) {
+            if self.get_str(PrincipalField::Description) != Some(name.as_str()) {
+                updates.push(PrincipalUpdate::set(
+                    PrincipalField::Description,
+                    PrincipalValue::String(name.clone()),
+                ));
+                self.set(PrincipalField::Description, name);
+            }
+        }
+
+        for field in [PrincipalField::Secrets, PrincipalField::Emails] {
+            if let Some(secrets) = external.take_str_array(field).filter(|s| !s.is_empty()) {
+                if self.get_str_array(field) != Some(secrets.as_ref()) {
+                    updates.push(PrincipalUpdate::set(
+                        field,
+                        PrincipalValue::StringList(secrets.clone()),
+                    ));
+                    self.set(field, secrets);
+                }
+            }
+        }
+
+        if let Some(quota) = external.take_int(PrincipalField::Quota) {
+            if self.get_int(PrincipalField::Quota) != Some(quota) {
+                updates.push(PrincipalUpdate::set(
+                    PrincipalField::Quota,
+                    PrincipalValue::Integer(quota),
+                ));
+                self.set(PrincipalField::Quota, quota);
+            }
+        }
+
+        // Add external members
+        if let Some(member_of) = external
+            .take_int_array(PrincipalField::MemberOf)
+            .filter(|s| !s.is_empty())
+        {
+            self.set(PrincipalField::MemberOf, member_of);
+        }
+
+        // If the principal has no roles, take the ones from the external principal
+        if let Some(member_of) = external
+            .take_int_array(PrincipalField::Roles)
+            .filter(|s| !s.is_empty())
+        {
+            if self
+                .get_int_array(PrincipalField::Roles)
+                .filter(|s| !s.is_empty())
+                .is_none()
+            {
+                self.set(PrincipalField::Roles, member_of);
+            }
+        }
+
+        updates
+    }
+
     pub fn fallback_admin(fallback_pass: impl Into<String>) -> Self {
         Principal {
             id: u32::MAX,
@@ -608,6 +671,8 @@ impl serde::Serialize for Principal {
     }
 }
 
+const MAX_STRING_LEN: usize = 512;
+
 impl<'de> serde::Deserialize<'de> for PrincipalValue {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -647,14 +712,22 @@ impl<'de> serde::Deserialize<'de> for PrincipalValue {
             where
                 E: de::Error,
             {
-                Ok(PrincipalValue::String(value))
+                if value.len() <= MAX_STRING_LEN {
+                    Ok(PrincipalValue::String(value))
+                } else {
+                    Err(serde::de::Error::custom("string too long"))
+                }
             }
 
-            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
             where
                 E: de::Error,
             {
-                Ok(PrincipalValue::String(v.to_string()))
+                if value.len() <= MAX_STRING_LEN {
+                    Ok(PrincipalValue::String(value.to_string()))
+                } else {
+                    Err(serde::de::Error::custom("string too long"))
+                }
             }
 
             fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
@@ -666,7 +739,13 @@ impl<'de> serde::Deserialize<'de> for PrincipalValue {
 
                 while let Some(value) = seq.next_element::<StringOrU64>()? {
                     match value {
-                        StringOrU64::String(s) => vec_string.push(s),
+                        StringOrU64::String(s) => {
+                            if s.len() <= MAX_STRING_LEN {
+                                vec_string.push(s);
+                            } else {
+                                return Err(serde::de::Error::custom("string too long"));
+                            }
+                        }
                         StringOrU64::U64(u) => vec_u64.push(u),
                     }
                 }
@@ -720,12 +799,24 @@ impl<'de> serde::Deserialize<'de> for Principal {
                         })?;
 
                     let value = match key {
-                        PrincipalField::Name => PrincipalValue::String(map.next_value()?),
+                        PrincipalField::Name => {
+                            PrincipalValue::String(map.next_value::<String>().and_then(|v| {
+                                if v.len() <= MAX_STRING_LEN {
+                                    Ok(v)
+                                } else {
+                                    Err(serde::de::Error::custom("string too long"))
+                                }
+                            })?)
+                        }
                         PrincipalField::Description
                         | PrincipalField::Tenant
                         | PrincipalField::Picture => {
                             if let Some(v) = map.next_value::<Option<String>>()? {
-                                PrincipalValue::String(v)
+                                if v.len() <= MAX_STRING_LEN {
+                                    PrincipalValue::String(v)
+                                } else {
+                                    return Err(serde::de::Error::custom("string too long"));
+                                }
                             } else {
                                 continue;
                             }
@@ -798,7 +889,22 @@ impl<'de> serde::Deserialize<'de> for StringOrU64 {
             where
                 E: de::Error,
             {
-                Ok(StringOrU64::String(value.to_string()))
+                if value.len() <= MAX_STRING_LEN {
+                    Ok(StringOrU64::String(value.to_string()))
+                } else {
+                    Err(serde::de::Error::custom("string too long"))
+                }
+            }
+
+            fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                if v.len() <= MAX_STRING_LEN {
+                    Ok(StringOrU64::String(v))
+                } else {
+                    Err(serde::de::Error::custom("string too long"))
+                }
             }
 
             fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
@@ -837,7 +943,22 @@ impl<'de> serde::Deserialize<'de> for StringOrMany {
             where
                 E: de::Error,
             {
-                Ok(StringOrMany::One(value.to_string()))
+                if value.len() <= MAX_STRING_LEN {
+                    Ok(StringOrMany::One(value.to_string()))
+                } else {
+                    Err(serde::de::Error::custom("string too long"))
+                }
+            }
+
+            fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                if v.len() <= MAX_STRING_LEN {
+                    Ok(StringOrMany::One(v))
+                } else {
+                    Err(serde::de::Error::custom("string too long"))
+                }
             }
 
             fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
@@ -960,6 +1081,10 @@ impl Permission {
         )
     }
 
+    // SPDX-SnippetBegin
+    // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+    // SPDX-License-Identifier: LicenseRef-SEL
+
     pub const fn is_tenant_admin_permission(&self) -> bool {
         matches!(
             self,
@@ -1011,4 +1136,6 @@ impl Permission {
                 | Permission::JmapPrincipalQuery
         ) || self.is_user_permission()
     }
+
+    // SPDX-SnippetEnd
 }

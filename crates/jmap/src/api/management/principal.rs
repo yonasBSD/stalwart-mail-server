@@ -10,7 +10,7 @@ use common::auth::AccessToken;
 use directory::{
     backend::internal::{
         lookup::DirectoryStore,
-        manage::{self, not_found, ManageDirectory},
+        manage::{self, not_found, ManageDirectory, UpdatePrincipal},
         PrincipalAction, PrincipalField, PrincipalUpdate, PrincipalValue, SpecialSecrets,
     },
     DirectoryInner, Permission, Principal, QueryBy, Type,
@@ -76,6 +76,10 @@ impl JMAP {
                     Type::Resource | Type::Location | Type::Other => Permission::PrincipalCreate,
                 })?;
 
+                // SPDX-SnippetBegin
+                // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+                // SPDX-License-Identifier: LicenseRef-SEL
+
                 #[cfg(feature = "enterprise")]
                 if (matches!(principal.typ(), Type::Tenant)
                     || principal.has_field(PrincipalField::Tenant))
@@ -83,6 +87,8 @@ impl JMAP {
                 {
                     return Err(manage::enterprise());
                 }
+
+                // SPDX-SnippetEnd
 
                 // Make sure the current directory supports updates
                 if matches!(principal.typ(), Type::Individual) {
@@ -161,6 +167,10 @@ impl JMAP {
                     })?;
                 }
 
+                // SPDX-SnippetBegin
+                // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+                // SPDX-License-Identifier: LicenseRef-SEL
+
                 let mut tenant = access_token.tenant.map(|t| t.id);
 
                 #[cfg(feature = "enterprise")]
@@ -181,6 +191,8 @@ impl JMAP {
                 } else if types.contains(&Type::Tenant) {
                     return Err(manage::enterprise());
                 }
+
+                // SPDX-SnippetEnd
 
                 let mut principals = self
                     .core
@@ -211,10 +223,16 @@ impl JMAP {
                     .map(|p| (p.id, p.typ))
                     .ok_or_else(|| not_found(name.to_string()))?;
 
+                // SPDX-SnippetBegin
+                // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+                // SPDX-License-Identifier: LicenseRef-SEL
+
                 #[cfg(feature = "enterprise")]
                 if matches!(typ, Type::Tenant) && !self.core.is_enterprise_edition() {
                     return Err(manage::enterprise());
                 }
+
+                // SPDX-SnippetEnd
 
                 match *method {
                     Method::GET => {
@@ -326,14 +344,13 @@ impl JMAP {
 
                         for change in &changes {
                             match change.field {
-                                PrincipalField::Name | PrincipalField::Emails => {
-                                    needs_assert = true;
-                                }
                                 PrincipalField::Secrets => {
                                     expire_session = true;
                                     needs_assert = true;
                                 }
-                                PrincipalField::Quota
+                                PrincipalField::Name
+                                | PrincipalField::Emails
+                                | PrincipalField::Quota
                                 | PrincipalField::UsedQuota
                                 | PrincipalField::Description
                                 | PrincipalField::Type
@@ -374,9 +391,9 @@ impl JMAP {
                             .storage
                             .data
                             .update_principal(
-                                QueryBy::Id(account_id),
-                                changes,
-                                access_token.tenant.map(|t| t.id),
+                                UpdatePrincipal::by_id(account_id)
+                                    .with_updates(changes)
+                                    .with_tenant(access_token.tenant.map(|t| t.id)),
                             )
                             .await?;
 
@@ -553,9 +570,9 @@ impl JMAP {
             .storage
             .data
             .update_principal(
-                QueryBy::Id(access_token.primary_id()),
-                actions,
-                access_token.tenant.map(|t| t.id),
+                UpdatePrincipal::by_id(access_token.primary_id())
+                    .with_updates(actions)
+                    .with_tenant(access_token.tenant.map(|t| t.id)),
             )
             .await?;
 
