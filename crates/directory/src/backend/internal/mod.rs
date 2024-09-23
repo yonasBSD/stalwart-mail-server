@@ -98,6 +98,7 @@ impl Deserialize for Principal {
     }
 }
 
+#[cfg(feature = "enterprise")]
 impl PrincipalInfo {
     // SPDX-SnippetBegin
     // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
@@ -111,6 +112,13 @@ impl PrincipalInfo {
     }
 
     // SPDX-SnippetEnd
+}
+
+#[cfg(not(feature = "enterprise"))]
+impl PrincipalInfo {
+    pub fn has_tenant_access(&self, _tenant_id: Option<u32>) -> bool {
+        true
+    }
 }
 
 impl Serialize for PrincipalInfo {
@@ -259,7 +267,10 @@ impl MigrateDirectory for Store {
                     account_id: u32::MAX,
                     collection: u8::MAX,
                     document_id: u32::MAX,
-                    class: ValueClass::Directory(DirectoryClass::UsedQuota(0)),
+                    class: ValueClass::Any(AnyClass {
+                        subspace: SUBSPACE_DIRECTORY,
+                        key: vec![4u8],
+                    }),
                 },
             ),
             |key, value| {
