@@ -21,14 +21,7 @@ pub enum OAuthStatus {
     Pending,
 }
 
-const DEVICE_CODE_LEN: usize = 40;
-const USER_CODE_LEN: usize = 8;
-const RANDOM_CODE_LEN: usize = 32;
-const CLIENT_ID_MAX_LEN: usize = 20;
-
 const MAX_POST_LEN: usize = 2048;
-
-const USER_CODE_ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // No 0, O, I, 1
 
 pub struct OAuth {
     pub key: String,
@@ -202,7 +195,7 @@ pub struct FormData {
 }
 
 impl FormData {
-    pub async fn from_request(
+    async fn from_request(
         req: &mut HttpRequest,
         max_len: usize,
         session_id: u64,
