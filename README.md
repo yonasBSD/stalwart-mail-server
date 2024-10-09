@@ -21,8 +21,6 @@
   <a href="https://mastodon.social/@stalwartlabs"><img src="https://img.shields.io/mastodon/follow/109929667531941122?style=flat-square&logo=mastodon&color=%236364ff&label=Follow%20on%20Mastodon" alt="Mastodon"></a>
   &nbsp;
   <a href="https://twitter.com/stalwartlabs"><img src="https://img.shields.io/twitter/follow/stalwartlabs?style=flat-square&logo=x&label=Follow%20on%20Twitter" alt="Twitter"></a>
-  &nbsp;
-  <a href="nostr:npub167hk2ermhky3pmudc3q0d2vnnhcesdgsrcqgywv447ls4xs5u89q5d6395"><img src="https://img.shields.io/nostr-band/followers/npub167hk2ermhky3pmudc3q0d2vnnhcesdgsrcqgywv447ls4xs5u89q5d6395?style=flat-square&logo=chatbot&label=Follow%20on%20Nostr" alt="Nostr"></a>
 </p>
 <p align="center">
   <a href="https://discord.gg/jtgtCNj66U"><img src="https://img.shields.io/discord/923615863037390889?label=Join%20Discord&logo=discord&style=flat-square" alt="Discord"></a>
@@ -71,7 +69,7 @@ Key features:
 - **Secure and robust**:
   - Encryption at rest with **S/MIME** or **OpenPGP**.
   - Automatic TLS certificate provisioning with [ACME](https://datatracker.ietf.org/doc/html/rfc8555) using `TLS-ALPN-01`, `DNS-01` or `HTTP-01` challenges.
-  - Automated blocking of hosts that perform brute-force attacks or scans (aka **fail2ban**).
+  - Automated blocking of IP addresses that attack, abuse or scan the server for exploits.
   - Rate limiting.
   - Security audited (read the [report](https://stalw.art/blog/security-audit)).
   - Memory safe (thanks to Rust).
