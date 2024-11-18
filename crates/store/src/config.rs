@@ -11,7 +11,7 @@ use utils::config::{cron::SimpleCron, utils::ParseValue, Config};
 use crate::{
     backend::fs::FsStore,
     write::purge::{PurgeSchedule, PurgeStore},
-    BlobStore, CompressionAlgo, FtsStore, LookupStore, QueryStore, Store, Stores,
+    BlobStore, CompressionAlgo, LookupStore, QueryStore, Store, Stores,
 };
 
 #[cfg(feature = "s3")]
@@ -37,6 +37,9 @@ use crate::backend::elastic::ElasticSearchStore;
 
 #[cfg(feature = "redis")]
 use crate::backend::redis::RedisStore;
+
+#[cfg(feature = "azure")]
+use crate::backend::azure::AzureStore;
 
 impl Stores {
     pub async fn parse_all(config: &mut Config) -> Self {
@@ -198,7 +201,7 @@ impl Stores {
                 "elasticsearch" => {
                     if let Some(db) = ElasticSearchStore::open(config, prefix)
                         .await
-                        .map(FtsStore::from)
+                        .map(crate::FtsStore::from)
                     {
                         self.fts_stores.insert(store_id, db);
                     }
@@ -215,6 +218,13 @@ impl Stores {
                 #[cfg(feature = "enterprise")]
                 "sql-read-replica" | "distributed-blob" => {
                     composite_stores.push((store_id, protocol));
+                }
+                #[cfg(feature = "azure")]
+                "azure" => {
+                    if let Some(db) = AzureStore::open(config, prefix).await.map(BlobStore::from) {
+                        self.blob_stores
+                            .insert(store_id, db.with_compression(compression_algo));
+                    }
                 }
                 unknown => {
                     config.new_parse_warning(
@@ -368,6 +378,7 @@ impl Stores {
     }
 }
 
+#[allow(dead_code)]
 trait IsActiveStore {
     fn is_active_store(&self, id: &str) -> bool;
 }
@@ -379,6 +390,8 @@ impl IsActiveStore for Config {
             "storage.blob",
             "storage.lookup",
             "storage.fts",
+            "tracing.history.store",
+            "metrics.history.store",
         ] {
             if let Some(store_id) = self.value(key) {
                 if store_id == id {

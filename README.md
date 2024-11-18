@@ -25,7 +25,7 @@
 <p align="center">
   <a href="https://discord.gg/jtgtCNj66U"><img src="https://img.shields.io/discord/923615863037390889?label=Join%20Discord&logo=discord&style=flat-square" alt="Discord"></a>
   &nbsp;
-  <a href="https://matrix.to/#/#stalwart:matrix.org"><img src="https://img.shields.io/matrix/stalwartmail%3Amatrix.org?label=Join%20Matrix&logo=matrix&style=flat-square" alt="Matrix"></a>
+  <a href="https://www.reddit.com/r/stalwartlabs/"><img src="https://img.shields.io/reddit/subreddit-subscribers/stalwartlabs?label=Follow%20%2Fr%2Fstalwartlabs&logo=reddit&style=flat-square" alt="Reddit"></a>
 </p>
 
 ## Features
@@ -58,7 +58,7 @@ Key features:
   - **Greylisting** to temporarily defer unknown senders.
   - **Spam traps** to set up decoy email addresses that catch and analyze spam.
 - **Flexible and scalable**:
-  - Pluggable storage backends with **RocksDB**, **FoundationDB**, **PostgreSQL**, **mySQL**, **SQLite**, **S3-Compatible**, **Redis** and **ElasticSearch** support.
+  - Pluggable storage backends with **RocksDB**, **FoundationDB**, **PostgreSQL**, **mySQL**, **SQLite**, **S3-Compatible**, **Azure**, **Redis** and **ElasticSearch** support.
   - **Clustering** support with node autodiscovery and partition-tolerant failure detection.
   - Full-text search available in 17 languages.
   - Sieve scripting language with support for all [registered extensions](https://www.iana.org/assignments/sieve-extensions/sieve-extensions.xhtml).
@@ -114,7 +114,7 @@ All documentation is available at [stalw.art/docs/get-started](https://stalw.art
 
 If you are having problems running Stalwart Mail Server, you found a bug or just have a question,
 do not hesitate to reach us on [GitHub Discussions](https://github.com/stalwartlabs/mail-server/discussions),
-[Reddit](https://www.reddit.com/r/stalwartlabs), [Discord](https://discord.gg/aVQr3jF8jd) or [Matrix](https://matrix.to/#/#stalwart:matrix.org).
+[Reddit](https://www.reddit.com/r/stalwartlabs) or [Discord](https://discord.gg/aVQr3jF8jd).
 Additionally you may purchase an [premium support](https://stalw.art/support) to obtain priority support from Stalwart Labs LLC.
 
 ## Sponsorship
@@ -123,7 +123,7 @@ Your support is crucial in helping us continue to improve the project, add new f
 
 These are some of our open-source sponsors:
 
-<!-- sponsors --><a href="https://github.com/kbjr"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;195127?u&#x3D;a11e7de49732184888781379e9282dc7eed55615&amp;v&#x3D;4" width="60px" alt="James Brumond" /></a><a href="https://github.com/EliRibble"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;2319207?u&#x3D;c755aec38204221af321ef3fd7293c4c812238af&amp;v&#x3D;4" width="60px" alt="Eli Ribble" /></a><a href="https://github.com/MailRoute"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;3912377?v&#x3D;4" width="60px" alt="MailRoute, Inc." /></a><a href="https://github.com/JAMflow-Cloud"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;165913352?v&#x3D;4" width="60px" alt="JAMflow Cloud" /></a><a href="https://github.com/starsong-consulting"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;166622226?v&#x3D;4" width="60px" alt="Starsong Consulting" /></a><a href="https://github.com/Vie-eco"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;174055717?v&#x3D;4" width="60px" alt="Vie.eco" /></a><a href="https://github.com/mingfu-design"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;88228402?v&#x3D;4" width="60px" alt="Ming Fu Design Ltd. 明孚設計有限公司" /></a><a href="https://github.com/GeekCloudPL"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;133183691?v&#x3D;4" width="60px" alt="GeekCloud Sp. z o.o." /></a><!-- sponsors -->
+<!-- sponsors --><a href="https://github.com/kbjr"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;195127?u&#x3D;a11e7de49732184888781379e9282dc7eed55615&amp;v&#x3D;4" width="60px" alt="James Brumond" /></a><a href="https://github.com/EliRibble"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;2319207?u&#x3D;c755aec38204221af321ef3fd7293c4c812238af&amp;v&#x3D;4" width="60px" alt="Eli Ribble" /></a><a href="https://github.com/MailRoute"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;3912377?v&#x3D;4" width="60px" alt="MailRoute, Inc." /></a><a href="https://github.com/JAMflow-Cloud"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;165913352?v&#x3D;4" width="60px" alt="JAMflow Cloud" /></a><a href="https://github.com/starsong-consulting"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;166622226?v&#x3D;4" width="60px" alt="Starsong Consulting" /></a><a href="https://github.com/Vie-eco"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;174055717?v&#x3D;4" width="60px" alt="Vie.eco" /></a><a href="https://github.com/mingfu-design"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;88228402?v&#x3D;4" width="60px" alt="Ming Fu Design Ltd. 明孚設計有限公司" /></a><a href="https://github.com/GeekCloudPL"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;133183691?v&#x3D;4" width="60px" alt="GeekCloud Sp. z o.o." /></a><a href="https://github.com/tamwuff"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;15096088?u&#x3D;461628347e171fd8795fa4d01b6992b88662fab7&amp;v&#x3D;4" width="60px" alt="Tamino" /></a><a href="https://github.com/Solaris17"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;2453047?u&#x3D;c253733560ce0eaeee178b64a5fd0ceb7dccbb23&amp;v&#x3D;4" width="60px" alt="David Smith" /></a><!-- sponsors -->
 
 <br/>If you would like to support our work, please consider [becoming a sponsor](https://opencollective.com/stalwart).
 
