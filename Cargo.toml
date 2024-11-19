@@ -61,3 +61,6 @@ incremental = false
 debug-assertions = false
 overflow-checks = false
 rpath = false
+
+[patch.crates-io]
+curve25519-dalek = { version = "*", git = "https://github.com/dalek-cryptography/curve25519-dalek.git", rev = "0cd099a9fb8ff9f6fedc8723d44dbb1c743e9d35" }
