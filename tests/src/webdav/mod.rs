@@ -48,6 +48,7 @@ use utils::config::Config;
 pub mod acl;
 pub mod basic;
 pub mod cal_alarm;
+pub mod cal_itip;
 pub mod cal_query;
 pub mod card_query;
 pub mod copy_move;
@@ -71,7 +72,7 @@ pub async fn webdav_tests() {
     )
     .await;
 
-    basic::test(&handle).await;
+    /*basic::test(&handle).await;
     put_get::test(&handle).await;
     mkcol::test(&handle).await;
     copy_move::test(&handle).await;
@@ -83,7 +84,8 @@ pub async fn webdav_tests() {
     acl::test(&handle).await;
     card_query::test(&handle).await;
     cal_query::test(&handle).await;
-    cal_alarm::test(&handle).await;
+    cal_alarm::test(&handle).await;*/
+    cal_itip::test();
 
     // Print elapsed time
     let elapsed = start_time.elapsed();

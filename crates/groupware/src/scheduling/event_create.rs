@@ -4,13 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{
-    icalendar::ICalendar,
-    scheduling::{
-        itip::itip_finalize, organizer::organizer_request_full, snapshot::itip_snapshot, ItipError,
-        ItipMessage,
-    },
+use crate::scheduling::{
+    ItipError, ItipMessage, itip::itip_finalize, organizer::organizer_request_full,
+    snapshot::itip_snapshot,
 };
+use calcard::icalendar::ICalendar;
 
 pub fn itip_create(
     ical: &mut ICalendar,
@@ -23,7 +21,7 @@ pub fn itip_create(
         Err(ItipError::NotOrganizer)
     } else {
         let mut sequences = Vec::new();
-        organizer_request_full(ical, itip, Some(&mut sequences), true).inspect(|_| {
+        organizer_request_full(ical, &itip, Some(&mut sequences), true).inspect(|_| {
             itip_finalize(ical, &sequences);
         })
     }

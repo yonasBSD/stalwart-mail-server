@@ -4,19 +4,17 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{
-    icalendar::{
-        ICalendar, ICalendarParameter, ICalendarProperty, ICalendarScheduleAgentValue,
-        ICalendarValue, Uri,
-    },
-    scheduling::{
-        Attendee, Email, InstanceId, ItipDateTime, ItipEntry, ItipEntryValue, ItipError,
-        ItipSnapshot, ItipSnapshots, Organizer, RecurrenceId,
-    },
+use crate::scheduling::{
+    Attendee, Email, InstanceId, ItipDateTime, ItipEntry, ItipEntryValue, ItipError, ItipSnapshot,
+    ItipSnapshots, Organizer, RecurrenceId,
 };
 use ahash::AHashMap;
+use calcard::icalendar::{
+    ICalendar, ICalendarParameter, ICalendarProperty, ICalendarScheduleAgentValue, ICalendarValue,
+    Uri,
+};
 
-pub(crate) fn itip_snapshot<'x, 'y>(
+pub fn itip_snapshot<'x, 'y>(
     ical: &'x ICalendar,
     account_emails: &'y [&'y str],
     force_add_client_scheduling: bool,
@@ -26,6 +24,7 @@ pub(crate) fn itip_snapshot<'x, 'y>(
     let mut components = AHashMap::new();
     let mut expect_object_type = None;
     let mut has_local_emails = false;
+    let mut has_scheduling_info = false;
     let mut tz_resolver = None;
 
     for (comp_id, comp) in ical.components.iter().enumerate() {
@@ -44,10 +43,16 @@ pub(crate) fn itip_snapshot<'x, 'y>(
                 }
                 _ => {}
             }
+            has_scheduling_info = true;
 
             let mut sched_comp = ItipSnapshot {
                 comp_id: comp_id as u16,
-                ..Default::default()
+                comp,
+                attendees: Default::default(),
+                dtstamp: Default::default(),
+                entries: Default::default(),
+                sequence: Default::default(),
+                request_status: Default::default(),
             };
             let mut instance_id = InstanceId::Main;
 
@@ -297,7 +302,7 @@ pub(crate) fn itip_snapshot<'x, 'y>(
             uid: uid.ok_or(ItipError::MissingUid)?,
             components,
         })
-    } else if !has_local_emails {
+    } else if has_scheduling_info {
         Err(ItipError::NotOrganizerNorAttendee)
     } else {
         Err(ItipError::NoSchedulingInfo)

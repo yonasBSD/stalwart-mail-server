@@ -4,25 +4,28 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{
-    common::PartialDateTime,
-    icalendar::{
-        ICalendar, ICalendarComponent, ICalendarMethod, ICalendarParameter,
-        ICalendarParticipationStatus, ICalendarProperty, ICalendarValue,
+use crate::scheduling::{
+    Email, InstanceId, ItipEntryValue, ItipError, ItipMessage, ItipSnapshot, ItipSnapshots,
+    itip::{
+        ItipExportAs, can_attendee_modify_property, itip_add_tz, itip_build_envelope,
+        itip_export_component,
     },
-    scheduling::{
-        itip::{itip_add_tz, itip_build_envelope, itip_export_component, ItipExportAs},
-        Email, InstanceId, ItipEntryValue, ItipError, ItipMessage, ItipSnapshot, ItipSnapshots,
-    },
+    organizer::organizer_request_full,
 };
 use ahash::AHashSet;
+use calcard::{
+    common::PartialDateTime,
+    icalendar::{
+        ICalendar, ICalendarComponent, ICalendarComponentType, ICalendarMethod, ICalendarParameter,
+        ICalendarParticipationStatus, ICalendarProperty, ICalendarValue,
+    },
+};
 
 pub(crate) fn attendee_handle_update(
-    old_ical: &ICalendar,
     new_ical: &ICalendar,
     old_itip: ItipSnapshots<'_>,
     new_itip: ItipSnapshots<'_>,
-) -> Result<ItipMessage, ItipError> {
+) -> Result<Vec<ItipMessage>, ItipError> {
     let dt_stamp = PartialDateTime::now();
     let mut message = ICalendar {
         components: Vec::with_capacity(2),
@@ -33,19 +36,22 @@ pub(crate) fn attendee_handle_update(
 
     let mut mail_from = None;
     let mut email_rcpt = AHashSet::new();
+    let mut new_delegates = AHashSet::new();
 
     for (instance_id, instance) in &new_itip.components {
         if let Some(old_instance) = old_itip.components.get(instance_id) {
             match (instance.local_attendee(), old_instance.local_attendee()) {
-                (Some(attendee), Some(old_attendee)) if attendee.email == old_attendee.email => {
+                (Some(local_attendee), Some(old_local_attendee))
+                    if local_attendee.email == old_local_attendee.email =>
+                {
                     // Check added fields
+                    let mut send_update = false;
                     for new_entry in instance.entries.difference(&old_instance.entries) {
                         match (new_entry.name, &new_entry.value) {
                             (ICalendarProperty::Exdate, ItipEntryValue::DateTime(date))
                                 if instance_id == &InstanceId::Main =>
                             {
                                 if let Some((mut cancel_comp, attendee_email)) = attendee_decline(
-                                    old_ical,
                                     instance_id,
                                     &old_itip,
                                     old_instance,
@@ -64,84 +70,124 @@ pub(crate) fn attendee_handle_update(
                                     mail_from = Some(&attendee_email.email);
                                 }
                             }
-                            (
-                                ICalendarProperty::Exdate
-                                | ICalendarProperty::Summary
-                                | ICalendarProperty::Description,
-                                _,
-                            ) => {}
                             _ => {
-                                // Adding these properties is not allowed
-                                return Err(ItipError::ChangeNotAllowed);
+                                // Changing these properties is not allowed
+                                if !can_attendee_modify_property(
+                                    &instance.comp.component_type,
+                                    new_entry.name,
+                                ) {
+                                    return Err(ItipError::CannotModifyProperty(
+                                        new_entry.name.clone(),
+                                    ));
+                                } else {
+                                    send_update = send_update
+                                        || (instance.comp.component_type
+                                            == ICalendarComponentType::VTodo
+                                            && matches!(
+                                                new_entry.name,
+                                                ICalendarProperty::Status
+                                                    | ICalendarProperty::PercentComplete
+                                                    | ICalendarProperty::Completed
+                                            ));
+                                }
                             }
                         }
                     }
 
                     // Send participation status update
-                    if attendee.is_server_scheduling
-                        && ((attendee.part_stat != old_attendee.part_stat)
-                            || attendee.force_send.is_some())
+                    if local_attendee.is_server_scheduling
+                        && ((local_attendee.part_stat != old_local_attendee.part_stat)
+                            || local_attendee.force_send.is_some()
+                            || send_update)
                     {
-                        // A new instance has been added
+                        // Build the attendee list
+                        let mut attendee_entry_uids = vec![local_attendee.entry_id];
+                        let old_delegates = old_instance
+                            .external_attendees()
+                            .filter(|a| a.is_delegated_from(old_local_attendee))
+                            .map(|a| a.email.email.as_str())
+                            .collect::<AHashSet<_>>();
+                        for external_attendee in instance.external_attendees() {
+                            if external_attendee.is_delegated_from(local_attendee) {
+                                if external_attendee.send_invite_messages()
+                                    && !old_delegates
+                                        .contains(&external_attendee.email.email.as_str())
+                                {
+                                    new_delegates.insert(external_attendee.email.email.as_str());
+                                }
+                            } else if external_attendee.is_delegated_to(local_attendee) {
+                                if external_attendee.send_update_messages() {
+                                    email_rcpt.insert(external_attendee.email.email.as_str());
+                                }
+                            } else {
+                                continue;
+                            }
+                            attendee_entry_uids.push(external_attendee.entry_id);
+                        }
+
                         let comp_id = message.components.len() as u16;
                         message.components[0].component_ids.push(comp_id);
                         message.components.push(itip_export_component(
-                            &new_ical.components[instance.comp_id as usize],
+                            instance.comp,
                             new_itip.uid,
                             &dt_stamp,
                             instance.sequence.unwrap_or_default(),
-                            ItipExportAs::Attendee(
-                                instance
-                                    .attendee_delegates(attendee)
-                                    .chain([attendee])
-                                    .map(|a| a.entry_id)
-                                    .collect(),
-                            ),
+                            ItipExportAs::Attendee(attendee_entry_uids),
                         ));
-                        mail_from = Some(&attendee.email.email);
+                        mail_from = Some(&local_attendee.email.email);
                     }
 
                     // Check removed fields
                     for removed_entry in old_instance.entries.difference(&instance.entries) {
-                        if !matches!(
+                        if !can_attendee_modify_property(
+                            &instance.comp.component_type,
                             removed_entry.name,
-                            ICalendarProperty::Exdate
-                                | ICalendarProperty::Summary
-                                | ICalendarProperty::Description
                         ) {
                             // Removing these properties is not allowed
-                            return Err(ItipError::ChangeNotAllowed);
+                            return Err(ItipError::CannotModifyProperty(
+                                removed_entry.name.clone(),
+                            ));
                         }
                     }
                 }
                 _ => {
                     // Change in local attendee email is not allowed
-                    return Err(ItipError::ChangeNotAllowed);
+                    return Err(ItipError::CannotModifyAddress);
                 }
             }
         } else if let Some(local_attendee) = instance
             .local_attendee()
             .filter(|_| instance_id != &InstanceId::Main)
         {
+            let mut attendee_entry_uids = vec![local_attendee.entry_id];
+            for external_attendee in instance.external_attendees() {
+                if external_attendee.is_delegated_from(local_attendee) {
+                    if external_attendee.send_invite_messages() {
+                        new_delegates.insert(external_attendee.email.email.as_str());
+                    }
+                } else if external_attendee.is_delegated_to(local_attendee) {
+                    if external_attendee.send_update_messages() {
+                        email_rcpt.insert(external_attendee.email.email.as_str());
+                    }
+                } else {
+                    continue;
+                }
+                attendee_entry_uids.push(external_attendee.entry_id);
+            }
+
             // A new instance has been added
             let comp_id = message.components.len() as u16;
             message.components[0].component_ids.push(comp_id);
             message.components.push(itip_export_component(
-                &new_ical.components[instance.comp_id as usize],
+                instance.comp,
                 new_itip.uid,
                 &dt_stamp,
                 instance.sequence.unwrap_or_default(),
-                ItipExportAs::Attendee(
-                    instance
-                        .attendee_delegates(local_attendee)
-                        .chain([local_attendee])
-                        .map(|a| a.entry_id)
-                        .collect(),
-                ),
+                ItipExportAs::Attendee(attendee_entry_uids),
             ));
             mail_from = Some(&local_attendee.email.email);
         } else {
-            return Err(ItipError::ChangeNotAllowed);
+            return Err(ItipError::CannotModifyInstance);
         }
     }
 
@@ -150,7 +196,6 @@ pub(crate) fn attendee_handle_update(
             if instance_id != &InstanceId::Main && old_instance.has_local_attendee() {
                 // Send cancel message for removed instances
                 if let Some((cancel_comp, attendee_email)) = attendee_decline(
-                    old_ical,
                     instance_id,
                     &old_itip,
                     old_instance,
@@ -165,7 +210,7 @@ pub(crate) fn attendee_handle_update(
                 }
             } else {
                 // Removing instances is not allowed
-                return Err(ItipError::ChangeNotAllowed);
+                return Err(ItipError::CannotModifyInstance);
             }
         }
     }
@@ -176,27 +221,39 @@ pub(crate) fn attendee_handle_update(
         // Add timezones if needed
         itip_add_tz(&mut message, new_ical);
 
-        Ok(ItipMessage {
+        let mut responses = vec![ItipMessage {
             method: ICalendarMethod::Reply,
             from: from.to_string(),
             to: email_rcpt.into_iter().map(|e| e.to_string()).collect(),
             changed_properties: vec![],
             message,
-        })
+        }];
+
+        // Invite new delegates
+        if !new_delegates.is_empty() {
+            let from = from.to_string();
+            let new_delegates = new_delegates.into_iter().map(|e| e.to_string()).collect();
+            if let Ok(mut message) = organizer_request_full(new_ical, &new_itip, None, true) {
+                message.from = from;
+                message.to = new_delegates;
+                responses.push(message);
+            }
+        }
+
+        Ok(responses)
     } else {
         Err(ItipError::NothingToSend)
     }
 }
 
 pub(crate) fn attendee_decline<'x>(
-    ical: &'x ICalendar,
     instance_id: &'x InstanceId,
     itip: &'x ItipSnapshots<'x>,
     comp: &'x ItipSnapshot<'x>,
     dt_stamp: &'x PartialDateTime,
     email_rcpt: &mut AHashSet<&'x str>,
 ) -> Option<(ICalendarComponent, &'x Email)> {
-    let component = &ical.components[comp.comp_id as usize];
+    let component = comp.comp;
     let mut cancel_comp = ICalendarComponent {
         component_type: component.component_type.clone(),
         entries: Vec::with_capacity(5),

@@ -4,17 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::scheduling::{
+    InstanceId, ItipError, ItipMessage, ItipSnapshots, organizer::organizer_request_full,
+};
 use ahash::AHashSet;
-
-use crate::{
-    icalendar::{
-        ICalendar, ICalendarComponent, ICalendarComponentType, ICalendarEntry, ICalendarMethod,
-        ICalendarParameter, ICalendarParameterName, ICalendarProperty, ICalendarStatus,
-        ICalendarValue, Uri,
-    },
-    scheduling::{
-        organizer::organizer_request_full, InstanceId, ItipError, ItipMessage, ItipSnapshots,
-    },
+use calcard::icalendar::{
+    ICalendar, ICalendarComponent, ICalendarComponentType, ICalendarEntry, ICalendarMethod,
+    ICalendarParameter, ICalendarParameterName, ICalendarProperty, ICalendarStatus, ICalendarValue,
+    Uri,
 };
 
 #[derive(Debug)]
@@ -72,168 +69,10 @@ pub fn itip_process_message(
         }
         match method {
             ICalendarMethod::Reply => {
-                for (instance_id, itip_snapshot) in &itip_snapshots.components {
-                    if let Some(snapshot) = snapshots.components.get(instance_id) {
-                        if let (Some(attendee), Some(updated_attendee)) = (
-                            snapshot.attendee_by_email(&sender),
-                            itip_snapshot.attendee_by_email(&sender),
-                        ) {
-                            let itip_component = &itip.components[itip_snapshot.comp_id as usize];
-                            let changed_part_stat =
-                                attendee.part_stat != updated_attendee.part_stat;
-                            let changed_rsvp = attendee.rsvp != updated_attendee.rsvp;
-                            let changed_delegated_to =
-                                attendee.delegated_to != updated_attendee.delegated_to;
-                            let has_request_status = !itip_snapshot.request_status.is_empty();
-
-                            if changed_part_stat
-                                || changed_rsvp
-                                || changed_delegated_to
-                                || has_request_status
-                            {
-                                // Update participant status
-                                let mut add_parameters = Vec::new();
-                                let mut remove_parameters = Vec::new();
-                                if changed_part_stat {
-                                    remove_parameters.push(ICalendarParameterName::Partstat);
-                                    if let Some(part_stat) = updated_attendee.part_stat {
-                                        add_parameters
-                                            .push(ICalendarParameter::Partstat(part_stat.clone()));
-                                    }
-                                }
-
-                                if changed_rsvp {
-                                    remove_parameters.push(ICalendarParameterName::Rsvp);
-                                    if let Some(rsvp) = updated_attendee.rsvp {
-                                        add_parameters.push(ICalendarParameter::Rsvp(rsvp));
-                                    }
-                                }
-
-                                if changed_delegated_to {
-                                    remove_parameters.push(ICalendarParameterName::DelegatedTo);
-                                    if !updated_attendee.delegated_to.is_empty() {
-                                        add_parameters.push(ICalendarParameter::DelegatedTo(
-                                            updated_attendee
-                                                .delegated_to
-                                                .iter()
-                                                .map(|email| Uri::Location(email.to_string()))
-                                                .collect::<Vec<_>>(),
-                                        ));
-                                    }
-                                }
-
-                                if has_request_status {
-                                    remove_parameters.push(ICalendarParameterName::ScheduleStatus);
-                                    add_parameters.push(ICalendarParameter::ScheduleStatus(
-                                        itip_snapshot.request_status.join(","),
-                                    ));
-                                }
-
-                                merge_actions.push(MergeAction::RemoveParameters {
-                                    component_id: snapshot.comp_id,
-                                    entry_id: attendee.entry_id,
-                                    parameters: remove_parameters,
-                                });
-                                merge_actions.push(MergeAction::AddParameters {
-                                    component_id: snapshot.comp_id,
-                                    entry_id: attendee.entry_id,
-                                    parameters: add_parameters,
-                                });
-
-                                // Add unknown delegated attendees
-                                for delegated_to in &updated_attendee.delegated_to {
-                                    if snapshot.attendee_by_email(&delegated_to.email).is_none() {
-                                        if let Some(delegated_attendee) =
-                                            itip_snapshot.attendee_by_email(&delegated_to.email)
-                                        {
-                                            merge_actions.push(MergeAction::AddEntries {
-                                                component_id: snapshot.comp_id,
-                                                entries: vec![itip_component.entries
-                                                    [delegated_attendee.entry_id as usize]
-                                                    .clone()],
-                                            });
-                                        }
-                                    }
-                                }
-                            }
-
-                            // Add changed properties for VTODO
-                            if ical.components[snapshot.comp_id as usize].component_type
-                                == ICalendarComponentType::VTodo
-                            {
-                                let changed_entries = itip_snapshot
-                                    .entries
-                                    .symmetric_difference(&snapshot.entries)
-                                    .filter(|entry| {
-                                        matches!(
-                                            entry.name,
-                                            ICalendarProperty::PercentComplete
-                                                | ICalendarProperty::Status
-                                                | ICalendarProperty::Completed
-                                        )
-                                    })
-                                    .map(|entry| entry.name.clone())
-                                    .collect::<AHashSet<_>>();
-
-                                if !changed_entries.is_empty() {
-                                    merge_actions.push(MergeAction::AddEntries {
-                                        component_id: snapshot.comp_id,
-                                        entries: itip_component
-                                            .entries
-                                            .iter()
-                                            .filter(|entry| changed_entries.contains(&entry.name))
-                                            .cloned()
-                                            .collect(),
-                                    });
-                                    merge_actions.push(MergeAction::RemoveEntries {
-                                        component_id: snapshot.comp_id,
-                                        entries: changed_entries,
-                                    });
-                                }
-                            }
-                        } else {
-                            return Err(ItipError::SenderIsNotParticipant(sender.clone()));
-                        }
-                    } else if itip_snapshot.attendee_by_email(&sender).is_some() {
-                        // Add component
-                        let itip_component = &itip.components[itip_snapshot.comp_id as usize];
-                        let is_todo =
-                            itip_component.component_type == ICalendarComponentType::VTodo;
-                        merge_actions.push(MergeAction::AddComponent {
-                            component: ICalendarComponent {
-                                component_type: itip_component.component_type.clone(),
-                                entries: itip_component
-                                    .entries
-                                    .iter()
-                                    .filter(|entry| {
-                                        matches!(
-                                            entry.name,
-                                            ICalendarProperty::Organizer
-                                                | ICalendarProperty::Attendee
-                                                | ICalendarProperty::Uid
-                                                | ICalendarProperty::Dtstamp
-                                                | ICalendarProperty::Sequence
-                                                | ICalendarProperty::RecurrenceId
-                                        ) || (is_todo
-                                            && matches!(
-                                                entry.name,
-                                                ICalendarProperty::PercentComplete
-                                                    | ICalendarProperty::Status
-                                                    | ICalendarProperty::Completed
-                                            ))
-                                    })
-                                    .cloned()
-                                    .collect(),
-                                component_ids: vec![],
-                            },
-                        });
-                    } else {
-                        return Err(ItipError::SenderIsNotParticipant(sender.clone()));
-                    }
-                }
+                handle_reply(&snapshots, &itip_snapshots, &sender, &mut merge_actions)?;
             }
             ICalendarMethod::Refresh => {
-                return organizer_request_full(ical, snapshots, None, false).map(|mut message| {
+                return organizer_request_full(ical, &snapshots, None, false).map(|mut message| {
                     message.to = vec![sender];
                     MergeResult::Message(message)
                 });
@@ -241,7 +80,7 @@ pub fn itip_process_message(
             _ => return Err(ItipError::UnsupportedMethod(method.clone())),
         }
     } else {
-        // Handle organizer updates
+        // Handle organizer and attendees updates
         match method {
             ICalendarMethod::Request => {
                 let mut is_full_update = false;
@@ -270,18 +109,19 @@ pub fn itip_process_message(
                             changed_entries.insert(ICalendarProperty::Sequence);
 
                             if !changed_entries.is_empty() {
-                                merge_actions.push(MergeAction::AddEntries {
-                                    component_id: snapshot.comp_id,
-                                    entries: itip_component
-                                        .entries
-                                        .iter()
-                                        .filter(|entry| changed_entries.contains(&entry.name))
-                                        .cloned()
-                                        .collect(),
-                                });
+                                let entries = itip_component
+                                    .entries
+                                    .iter()
+                                    .filter(|entry| changed_entries.contains(&entry.name))
+                                    .cloned()
+                                    .collect();
                                 merge_actions.push(MergeAction::RemoveEntries {
                                     component_id: snapshot.comp_id,
                                     entries: changed_entries,
+                                });
+                                merge_actions.push(MergeAction::AddEntries {
+                                    component_id: snapshot.comp_id,
+                                    entries,
                                 });
                             }
                         } else {
@@ -339,13 +179,14 @@ pub fn itip_process_message(
                 }
             }
             ICalendarMethod::Cancel => {
+                let mut cancel_all_instances = false;
                 for (instance_id, itip_snapshot) in &itip_snapshots.components {
                     if let Some(snapshot) = snapshots.components.get(instance_id) {
                         if itip_snapshot.sequence.unwrap_or_default()
                             >= snapshot.sequence.unwrap_or_default()
                         {
                             // Cancel instance
-                            let itip_component = &itip.components[itip_snapshot.comp_id as usize];
+                            let itip_component = itip_snapshot.comp;
                             merge_actions.push(MergeAction::RemoveEntries {
                                 component_id: snapshot.comp_id,
                                 entries: [
@@ -379,11 +220,90 @@ pub fn itip_process_message(
                                     }])
                                     .collect(),
                             });
+                            cancel_all_instances =
+                                cancel_all_instances || instance_id == &InstanceId::Main;
                         } else {
                             return Err(ItipError::OutOfSequence);
                         }
+                    } else {
+                        let itip_component = itip_snapshot.comp;
+                        merge_actions.push(MergeAction::AddComponent {
+                            component: ICalendarComponent {
+                                component_type: itip_component.component_type.clone(),
+                                entries: itip_component
+                                    .entries
+                                    .iter()
+                                    .filter(|entry| {
+                                        !matches!(
+                                            entry.name,
+                                            ICalendarProperty::Status | ICalendarProperty::Other(_)
+                                        )
+                                    })
+                                    .cloned()
+                                    .chain([ICalendarEntry {
+                                        name: ICalendarProperty::Status,
+                                        params: vec![],
+                                        values: vec![ICalendarValue::Status(
+                                            ICalendarStatus::Cancelled,
+                                        )],
+                                    }])
+                                    .collect(),
+                                component_ids: vec![],
+                            },
+                        });
                     }
                 }
+
+                if cancel_all_instances {
+                    // Remove all instances
+                    let itip_main = itip_snapshots.components.get(&InstanceId::Main).unwrap();
+                    let itip_component = itip_main.comp;
+                    for (instance_id, snapshot) in &snapshots.components {
+                        if !itip_snapshots.components.contains_key(instance_id) {
+                            merge_actions.push(MergeAction::RemoveEntries {
+                                component_id: snapshot.comp_id,
+                                entries: [
+                                    ICalendarProperty::Organizer,
+                                    ICalendarProperty::Attendee,
+                                    ICalendarProperty::Status,
+                                ]
+                                .into_iter()
+                                .collect(),
+                            });
+                            merge_actions.push(MergeAction::AddEntries {
+                                component_id: snapshot.comp_id,
+                                entries: itip_component
+                                    .entries
+                                    .iter()
+                                    .filter(|entry| {
+                                        matches!(
+                                            entry.name,
+                                            ICalendarProperty::Organizer
+                                                | ICalendarProperty::Attendee
+                                        )
+                                    })
+                                    .cloned()
+                                    .chain([ICalendarEntry {
+                                        name: ICalendarProperty::Status,
+                                        params: vec![],
+                                        values: vec![ICalendarValue::Status(
+                                            ICalendarStatus::Cancelled,
+                                        )],
+                                    }])
+                                    .collect(),
+                            });
+                        }
+                    }
+                }
+            }
+            ICalendarMethod::Reply
+                if itip_snapshots.components.values().any(|snapshot| {
+                    snapshot.external_attendees().any(|a| {
+                        a.email.email == sender && a.delegated_from.iter().any(|a| a.is_local)
+                    })
+                }) =>
+            {
+                handle_reply(&snapshots, &itip_snapshots, &sender, &mut merge_actions)?;
             }
             _ => return Err(ItipError::UnsupportedMethod(method.clone())),
         }
@@ -396,9 +316,224 @@ pub fn itip_process_message(
     }
 }
 
-pub fn itip_merge_changes(ical: &mut ICalendar, changes: Vec<MergeAction>) {
-    let c = println!("Merging changes: {:?}", changes);
+pub fn itip_import_message(ical: &mut ICalendar) -> Result<(), ItipError> {
+    let todo = "use before insert";
+    let todo = "sender must not be organizer";
+    let mut expect_object_type = None;
+    for comp in ical.components.iter_mut() {
+        if comp.component_type.is_scheduling_object() {
+            match expect_object_type {
+                Some(expected) if expected != &comp.component_type => {
+                    return Err(ItipError::MultipleObjectTypes);
+                }
+                None => {
+                    expect_object_type = Some(&comp.component_type);
+                }
+                _ => {}
+            }
+        } else if comp.component_type == ICalendarComponentType::VCalendar {
+            comp.entries
+                .retain(|entry| !matches!(entry.name, ICalendarProperty::Method));
+        }
+    }
 
+    Ok(())
+}
+
+fn handle_reply(
+    snapshots: &ItipSnapshots<'_>,
+    itip_snapshots: &ItipSnapshots<'_>,
+    sender: &str,
+    merge_actions: &mut Vec<MergeAction>,
+) -> Result<(), ItipError> {
+    for (instance_id, itip_snapshot) in &itip_snapshots.components {
+        if let Some(snapshot) = snapshots.components.get(instance_id) {
+            if let (Some(attendee), Some(updated_attendee)) = (
+                snapshot.attendee_by_email(sender),
+                itip_snapshot.attendee_by_email(sender),
+            ) {
+                let itip_component = itip_snapshot.comp;
+                let changed_part_stat = attendee.part_stat != updated_attendee.part_stat;
+                let changed_rsvp = attendee.rsvp != updated_attendee.rsvp;
+                let changed_delegated_to = attendee.delegated_to != updated_attendee.delegated_to;
+                let has_request_status = !itip_snapshot.request_status.is_empty();
+
+                if changed_part_stat || changed_rsvp || changed_delegated_to || has_request_status {
+                    // Update participant status
+                    let mut add_parameters = Vec::new();
+                    let mut remove_parameters = Vec::new();
+                    if changed_part_stat {
+                        remove_parameters.push(ICalendarParameterName::Partstat);
+                        if let Some(part_stat) = updated_attendee.part_stat {
+                            add_parameters.push(ICalendarParameter::Partstat(part_stat.clone()));
+                        }
+                    }
+
+                    if changed_rsvp {
+                        remove_parameters.push(ICalendarParameterName::Rsvp);
+                        if let Some(rsvp) = updated_attendee.rsvp {
+                            add_parameters.push(ICalendarParameter::Rsvp(rsvp));
+                        }
+                    }
+
+                    if changed_delegated_to {
+                        remove_parameters.push(ICalendarParameterName::DelegatedTo);
+                        if !updated_attendee.delegated_to.is_empty() {
+                            add_parameters.push(ICalendarParameter::DelegatedTo(
+                                updated_attendee
+                                    .delegated_to
+                                    .iter()
+                                    .map(|email| Uri::Location(email.to_string()))
+                                    .collect::<Vec<_>>(),
+                            ));
+                        }
+                    }
+
+                    if has_request_status {
+                        remove_parameters.push(ICalendarParameterName::ScheduleStatus);
+                        add_parameters.push(ICalendarParameter::ScheduleStatus(
+                            itip_snapshot.request_status.join(","),
+                        ));
+                    }
+
+                    merge_actions.push(MergeAction::RemoveParameters {
+                        component_id: snapshot.comp_id,
+                        entry_id: attendee.entry_id,
+                        parameters: remove_parameters,
+                    });
+                    merge_actions.push(MergeAction::AddParameters {
+                        component_id: snapshot.comp_id,
+                        entry_id: attendee.entry_id,
+                        parameters: add_parameters,
+                    });
+
+                    // Add unknown delegated attendees
+                    for delegated_to in &updated_attendee.delegated_to {
+                        if let Some(itip_delegated) =
+                            itip_snapshot.attendee_by_email(&delegated_to.email)
+                        {
+                            if let Some(delegated) = snapshot.attendee_by_email(&delegated_to.email)
+                            {
+                                if delegated != itip_delegated {
+                                    merge_actions.push(MergeAction::RemoveParameters {
+                                        component_id: snapshot.comp_id,
+                                        entry_id: delegated.entry_id,
+                                        parameters: vec![
+                                            ICalendarParameterName::DelegatedTo,
+                                            ICalendarParameterName::DelegatedFrom,
+                                            ICalendarParameterName::Partstat,
+                                            ICalendarParameterName::Rsvp,
+                                            ICalendarParameterName::ScheduleStatus,
+                                            ICalendarParameterName::Role,
+                                        ],
+                                    });
+                                    merge_actions.push(MergeAction::AddParameters {
+                                        component_id: snapshot.comp_id,
+                                        entry_id: delegated.entry_id,
+                                        parameters: itip_component.entries
+                                            [itip_delegated.entry_id as usize]
+                                            .params
+                                            .iter()
+                                            .filter(|param| {
+                                                matches!(
+                                                    param,
+                                                    ICalendarParameter::DelegatedTo(_)
+                                                        | ICalendarParameter::DelegatedFrom(_)
+                                                        | ICalendarParameter::Partstat(_)
+                                                        | ICalendarParameter::Rsvp(_)
+                                                        | ICalendarParameter::ScheduleStatus(_)
+                                                        | ICalendarParameter::Role(_)
+                                                )
+                                            })
+                                            .cloned()
+                                            .collect(),
+                                    });
+                                }
+                            } else {
+                                merge_actions.push(MergeAction::AddEntries {
+                                    component_id: snapshot.comp_id,
+                                    entries: vec![
+                                        itip_component.entries[itip_delegated.entry_id as usize]
+                                            .clone(),
+                                    ],
+                                });
+                            }
+                        }
+                    }
+                }
+
+                // Add changed properties for VTODO
+                if snapshot.comp.component_type == ICalendarComponentType::VTodo {
+                    let mut remove_entries = AHashSet::new();
+                    let mut add_entries = Vec::new();
+
+                    for entry in itip_component.entries.iter() {
+                        if matches!(
+                            entry.name,
+                            ICalendarProperty::PercentComplete
+                                | ICalendarProperty::Status
+                                | ICalendarProperty::Completed
+                        ) {
+                            remove_entries.insert(entry.name.clone());
+                            add_entries.push(entry.clone());
+                        }
+                    }
+
+                    if !add_entries.is_empty() {
+                        merge_actions.push(MergeAction::RemoveEntries {
+                            component_id: snapshot.comp_id,
+                            entries: remove_entries,
+                        });
+                        merge_actions.push(MergeAction::AddEntries {
+                            component_id: snapshot.comp_id,
+                            entries: add_entries,
+                        });
+                    }
+                }
+            } else {
+                return Err(ItipError::SenderIsNotParticipant(sender.to_string()));
+            }
+        } else if itip_snapshot.attendee_by_email(sender).is_some() {
+            // Add component
+            let itip_component = itip_snapshot.comp;
+            let is_todo = itip_component.component_type == ICalendarComponentType::VTodo;
+            merge_actions.push(MergeAction::AddComponent {
+                component: ICalendarComponent {
+                    component_type: itip_component.component_type.clone(),
+                    entries: itip_component
+                        .entries
+                        .iter()
+                        .filter(|entry| {
+                            matches!(
+                                entry.name,
+                                ICalendarProperty::Organizer
+                                    | ICalendarProperty::Attendee
+                                    | ICalendarProperty::Uid
+                                    | ICalendarProperty::Dtstamp
+                                    | ICalendarProperty::Sequence
+                                    | ICalendarProperty::RecurrenceId
+                            ) || (is_todo
+                                && matches!(
+                                    entry.name,
+                                    ICalendarProperty::PercentComplete
+                                        | ICalendarProperty::Status
+                                        | ICalendarProperty::Completed
+                                ))
+                        })
+                        .cloned()
+                        .collect(),
+                    component_ids: vec![],
+                },
+            });
+        } else {
+            return Err(ItipError::SenderIsNotParticipant(sender.to_string()));
+        }
+    }
+
+    Ok(())
+}
+
+pub fn itip_merge_changes(ical: &mut ICalendar, changes: Vec<MergeAction>) {
     let mut remove_component_ids = Vec::new();
     for action in changes {
         match action {

@@ -4,19 +4,17 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{
-    icalendar::ICalendar,
-    scheduling::{
-        attendee::attendee_handle_update, event_cancel::itip_cancel, itip::itip_finalize,
-        organizer::organizer_handle_update, snapshot::itip_snapshot, ItipError, ItipMessage,
-    },
+use crate::scheduling::{
+    ItipError, ItipMessage, attendee::attendee_handle_update, event_cancel::itip_cancel,
+    itip::itip_finalize, organizer::organizer_handle_update, snapshot::itip_snapshot,
 };
+use calcard::icalendar::ICalendar;
 
 pub fn itip_update(
     ical: &mut ICalendar,
     old_ical: &mut ICalendar,
     account_emails: &[&str],
-) -> Result<ItipMessage, ItipError> {
+) -> Result<Vec<ItipMessage>, ItipError> {
     let old_itip = itip_snapshot(old_ical, account_emails, false)?;
     match itip_snapshot(ical, account_emails, false) {
         Ok(new_itip) => {
@@ -27,7 +25,7 @@ pub fn itip_update(
             } else if old_itip.organizer.email.is_local {
                 organizer_handle_update(old_ical, ical, old_itip, new_itip, &mut sequences)
             } else {
-                attendee_handle_update(old_ical, ical, old_itip, new_itip)
+                attendee_handle_update(ical, old_itip, new_itip)
             }
             .inspect(|_| {
                 itip_finalize(ical, &sequences);
@@ -41,9 +39,9 @@ pub fn itip_update(
                 | ItipError::OtherSchedulingAgent => {
                     if old_itip.organizer.email.is_local {
                         // RFC 6638 does not support replacing the organizer, so we cancel the event
-                        itip_cancel(old_ical, account_emails)
+                        itip_cancel(old_ical, account_emails).map(|message| vec![message])
                     } else {
-                        Err(ItipError::ChangeNotAllowed)
+                        Err(ItipError::CannotModifyAddress)
                     }
                 }
                 _ => Err(err),

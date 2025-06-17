@@ -4,17 +4,16 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{
+use calcard::{
     common::PartialDateTime,
     icalendar::{
         ICalendar, ICalendarComponent, ICalendarComponentType, ICalendarEntry, ICalendarMethod,
         ICalendarParameter, ICalendarParticipationStatus, ICalendarProperty, ICalendarValue,
     },
-    scheduling::ItipError,
 };
+use common::PROD_ID;
 
 pub(crate) fn itip_build_envelope(method: ICalendarMethod) -> ICalendarComponent {
-    let todo = "fix prodid";
     ICalendarComponent {
         component_type: ICalendarComponentType::VCalendar,
         entries: vec![
@@ -26,9 +25,7 @@ pub(crate) fn itip_build_envelope(method: ICalendarMethod) -> ICalendarComponent
             ICalendarEntry {
                 name: ICalendarProperty::Prodid,
                 params: vec![],
-                values: vec![ICalendarValue::Text(
-                    "-//Stalwart Labs LLC//Stalwart Server//EN".to_string(),
-                )],
+                values: vec![ICalendarValue::Text(PROD_ID.to_string())],
             },
             ICalendarEntry {
                 name: ICalendarProperty::Method,
@@ -52,6 +49,7 @@ pub(crate) fn itip_export_component(
     sequence: i64,
     export_as: ItipExportAs<'_>,
 ) -> ICalendarComponent {
+    let is_todo = component.component_type == ICalendarComponentType::VTodo;
     let mut comp = ICalendarComponent {
         component_type: component.component_type.clone(),
         entries: Vec::with_capacity(component.entries.len() + 1),
@@ -72,6 +70,7 @@ pub(crate) fn itip_export_component(
                         values: entry.values.clone(),
                     };
                     let mut has_partstat = false;
+                    let mut rsvp = true;
 
                     for entry in &entry.params {
                         match entry {
@@ -79,14 +78,22 @@ pub(crate) fn itip_export_component(
                             | ICalendarParameter::ScheduleAgent(_)
                             | ICalendarParameter::ScheduleForceSend(_) => {}
                             _ => {
-                                has_partstat = has_partstat
-                                    || matches!(entry, ICalendarParameter::Partstat(_));
+                                match entry {
+                                    ICalendarParameter::Rsvp(false) => {
+                                        rsvp = false;
+                                    }
+                                    ICalendarParameter::Partstat(_) => {
+                                        has_partstat = true;
+                                    }
+                                    _ => {}
+                                }
+
                                 new_entry.params.push(entry.clone())
                             }
                         }
                     }
 
-                    if !has_partstat && entry.name == ICalendarProperty::Attendee {
+                    if !has_partstat && rsvp && entry.name == ICalendarProperty::Attendee {
                         new_entry
                             .params
                             .push(ICalendarParameter::Partstat((*partstat).clone()));
@@ -125,6 +132,13 @@ pub(crate) fn itip_export_component(
             _ => {
                 if matches!(export_as, ItipExportAs::Organizer(_))
                     || matches!(entry.name, ICalendarProperty::RecurrenceId)
+                    || (is_todo
+                        && matches!(
+                            entry.name,
+                            ICalendarProperty::Status
+                                | ICalendarProperty::PercentComplete
+                                | ICalendarProperty::Completed
+                        ))
                 {
                     comp.entries.push(entry.clone());
                 }
@@ -184,28 +198,6 @@ pub(crate) fn itip_finalize(ical: &mut ICalendar, scheduling_object_ids: &[u16])
     }
 }
 
-pub fn itip_import_message(ical: &mut ICalendar) -> Result<(), ItipError> {
-    let mut expect_object_type = None;
-    for comp in ical.components.iter_mut() {
-        if comp.component_type.is_scheduling_object() {
-            match expect_object_type {
-                Some(expected) if expected != &comp.component_type => {
-                    return Err(ItipError::MultipleObjectTypes);
-                }
-                None => {
-                    expect_object_type = Some(&comp.component_type);
-                }
-                _ => {}
-            }
-        } else if comp.component_type == ICalendarComponentType::VCalendar {
-            comp.entries
-                .retain(|entry| !matches!(entry.name, ICalendarProperty::Method));
-        }
-    }
-
-    Ok(())
-}
-
 pub(crate) fn itip_add_tz(message: &mut ICalendar, ical: &ICalendar) {
     let mut has_timezones = false;
 
@@ -221,5 +213,34 @@ pub(crate) fn itip_add_tz(message: &mut ICalendar, ical: &ICalendar) {
     }) && !has_timezones
     {
         message.copy_timezones(ical);
+    }
+}
+
+#[inline]
+pub(crate) fn can_attendee_modify_property(
+    component_type: &ICalendarComponentType,
+    property: &ICalendarProperty,
+) -> bool {
+    match component_type {
+        ICalendarComponentType::VEvent | ICalendarComponentType::VJournal => {
+            matches!(
+                property,
+                ICalendarProperty::Exdate
+                    | ICalendarProperty::Summary
+                    | ICalendarProperty::Description
+                    | ICalendarProperty::Comment
+            )
+        }
+        ICalendarComponentType::VTodo => matches!(
+            property,
+            ICalendarProperty::Exdate
+                | ICalendarProperty::Summary
+                | ICalendarProperty::Description
+                | ICalendarProperty::Status
+                | ICalendarProperty::PercentComplete
+                | ICalendarProperty::Completed
+                | ICalendarProperty::Comment
+        ),
+        _ => false,
     }
 }

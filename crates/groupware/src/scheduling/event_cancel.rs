@@ -4,20 +4,21 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{
+use crate::scheduling::{
+    InstanceId, ItipError, ItipMessage, ItipSnapshots,
+    attendee::attendee_decline,
+    itip::{itip_add_tz, itip_build_envelope, itip_finalize},
+    snapshot::itip_snapshot,
+};
+use ahash::AHashSet;
+use calcard::{
     common::PartialDateTime,
     icalendar::{
         ICalendar, ICalendarComponent, ICalendarComponentType, ICalendarMethod, ICalendarProperty,
-        ICalendarValue,
-    },
-    scheduling::{
-        attendee::attendee_decline,
-        itip::{itip_add_tz, itip_build_envelope, itip_finalize},
-        snapshot::itip_snapshot,
-        Email, InstanceId, ItipError, ItipMessage, ItipSnapshot, ItipSnapshots,
+        ICalendarStatus, ICalendarValue,
     },
 };
-use ahash::AHashSet;
+use std::fmt::Display;
 
 pub fn itip_cancel(
     ical: &mut ICalendar,
@@ -43,7 +44,7 @@ pub fn itip_cancel(
         let mut increment_sequences = Vec::new();
         let mut sequence = 0;
         for (instance_id, comp) in &itip.components {
-            component_type = &ical.components[comp.comp_id as usize].component_type;
+            component_type = &comp.comp.component_type;
             for attendee in &comp.attendees {
                 if attendee.send_update_messages() {
                     recipients.insert(attendee.email.email.clone());
@@ -64,7 +65,7 @@ pub fn itip_cancel(
                 &itip,
                 sequence,
                 dt_stamp,
-                cancel_guests,
+                cancel_guests.iter(),
             ));
             let message = ItipMessage {
                 method: ICalendarMethod::Cancel,
@@ -91,7 +92,7 @@ pub fn itip_cancel(
         let mut email_rcpt = AHashSet::new();
         for (instance_id, comp) in &itip.components {
             if let Some((cancel_comp, attendee_email)) =
-                attendee_decline(ical, instance_id, &itip, comp, &dt_stamp, &mut email_rcpt)
+                attendee_decline(instance_id, &itip, comp, &dt_stamp, &mut email_rcpt)
             {
                 // Add cancel component
                 let comp_id = message.components.len() as u16;
@@ -123,54 +124,25 @@ pub fn itip_cancel(
     }
 }
 
-pub(crate) fn cancel_component<'x>(
-    ical: &'x ICalendar,
-    itip: &'x ItipSnapshots<'x>,
-    comp: &'x ItipSnapshot<'x>,
-    sequence: i64,
-    dt_stamp: PartialDateTime,
-    recipients: &mut AHashSet<&'x str>,
-) -> Option<ICalendarComponent> {
-    let component_type = &ical.components[comp.comp_id as usize].component_type;
-    let mut cancel_guests = AHashSet::new();
-    let mut has_recipients = false;
-
-    for attendee in &comp.attendees {
-        if attendee.send_update_messages() {
-            recipients.insert(attendee.email.email.as_str());
-            has_recipients = true;
-        }
-        cancel_guests.insert(&attendee.email);
-    }
-
-    if has_recipients && component_type != &ICalendarComponentType::VFreebusy {
-        Some(build_cancel_component(
-            component_type.clone(),
-            itip,
-            sequence,
-            dt_stamp,
-            cancel_guests,
-        ))
-    } else {
-        None
-    }
-}
-
-fn build_cancel_component(
+pub(crate) fn build_cancel_component<T, I>(
     component_type: ICalendarComponentType,
     itip: &ItipSnapshots<'_>,
     sequence: i64,
     dt_stamp: PartialDateTime,
-    cancel_guests: AHashSet<&Email>,
-) -> ICalendarComponent {
+    cancel_guests: T,
+) -> ICalendarComponent
+where
+    T: Iterator<Item = I>,
+    I: Display,
+{
     let mut cancel_comp = ICalendarComponent {
         component_type,
-        entries: Vec::with_capacity(cancel_guests.len() + 5),
+        entries: Vec::with_capacity(7),
         component_ids: vec![],
     };
     cancel_comp.add_property(
-        ICalendarProperty::Method,
-        ICalendarValue::Method(ICalendarMethod::Cancel),
+        ICalendarProperty::Status,
+        ICalendarValue::Status(ICalendarStatus::Cancelled),
     );
     cancel_comp.add_dtstamp(dt_stamp);
     cancel_comp.add_sequence(sequence);
