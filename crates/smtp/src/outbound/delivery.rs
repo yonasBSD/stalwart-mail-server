@@ -1380,7 +1380,7 @@ impl Message {
                         Delivery(DeliveryEvent::Failed),
                         SpanId = self.span_id,
                         Domain = domain.domain.clone(),
-                        Reason = "Queue rate limit exceeded.",
+                        Reason = "Message expired without any delivery attempts made.",
                     );
 
                     for rcpt in &mut self.recipients {
@@ -1390,8 +1390,9 @@ impl Message {
                         }
                     }
 
-                    domain.status =
-                        Status::PermanentFailure(Error::Io("Queue rate limit exceeded.".into()));
+                    domain.status = Status::PermanentFailure(Error::Io(
+                        "Message expired without any delivery attempts made.".into(),
+                    ));
                 }
                 Status::Completed(_) | Status::PermanentFailure(_) => (),
                 _ => {
