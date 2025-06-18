@@ -60,6 +60,15 @@ impl HttpResponse {
         }
     }
 
+    pub fn with_schedule_tag_opt(mut self, tag: Option<u32>) -> Self {
+        if let Some(tag) = tag {
+            self.builder = self.builder.header("Schedule-Tag", format!("\"{tag}\""));
+            self
+        } else {
+            self
+        }
+    }
+
     pub fn with_last_modified(mut self, last_modified: String) -> Self {
         self.builder = self.builder.header(header::LAST_MODIFIED, last_modified);
         self

@@ -30,6 +30,10 @@ pub struct GroupwareConfig {
     pub alarms_from_name: String,
     pub alarms_from_email: Option<String>,
     pub alarms_template: Template<CalendarTemplateVariable>,
+    pub itip_enabled: bool,
+    pub itip_auto_add: bool,
+    pub itip_inbound_max_ical_size: usize,
+    pub itip_outbound_max_recipients: usize,
 
     // Addressbook settings
     pub max_vcard_size: usize,
@@ -123,6 +127,18 @@ impl GroupwareConfig {
                 "/../../resources/email-templates/calendar-alarm.html.min"
             )))
             .expect("Failed to parse calendar template"),
+            itip_enabled: config
+                .property("calendar.scheduling.enabled")
+                .unwrap_or(true),
+            itip_auto_add: config
+                .property("calendar.scheduling.inbound.auto-add")
+                .unwrap_or(false),
+            itip_inbound_max_ical_size: config
+                .property("calendar.scheduling.inbound.max-size")
+                .unwrap_or(512 * 1024),
+            itip_outbound_max_recipients: config
+                .property("calendar.scheduling.outbound.max-recipients")
+                .unwrap_or(100),
         }
     }
 }

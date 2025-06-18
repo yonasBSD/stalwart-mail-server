@@ -177,6 +177,26 @@ impl Display for Privilege {
             Privilege::Unbind => "<D:privilege><D:unbind/></D:privilege>".fmt(f),
             Privilege::All => "<D:privilege><D:all/></D:privilege>".fmt(f),
             Privilege::ReadFreeBusy => "<D:privilege><A:read-free-busy/></D:privilege>".fmt(f),
+            Privilege::ScheduleDeliver => "<D:privilege><A:schedule-deliver/></D:privilege>".fmt(f),
+            Privilege::ScheduleDeliverInvite => {
+                "<D:privilege><A:schedule-deliver-invite/></D:privilege>".fmt(f)
+            }
+            Privilege::ScheduleDeliverReply => {
+                "<D:privilege><A:schedule-deliver-reply/></D:privilege>".fmt(f)
+            }
+            Privilege::ScheduleQueryFreeBusy => {
+                "<D:privilege><A:schedule-query-freebusy/></D:privilege>".fmt(f)
+            }
+            Privilege::ScheduleSend => "<D:privilege><A:schedule-send/></D:privilege>".fmt(f),
+            Privilege::ScheduleSendInvite => {
+                "<D:privilege><A:schedule-send-invite/></D:privilege>".fmt(f)
+            }
+            Privilege::ScheduleSendReply => {
+                "<D:privilege><A:schedule-send-reply/></D:privilege>".fmt(f)
+            }
+            Privilege::ScheduleSendFreeBusy => {
+                "<D:privilege><A:schedule-send-freebusy/></D:privilege>".fmt(f)
+            }
         }
     }
 }

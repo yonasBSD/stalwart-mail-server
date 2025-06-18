@@ -375,6 +375,8 @@ pub enum Permission {
     DavCalFreeBusyQuery,
 
     CalendarAlarms,
+    CalendarSchedulingSend,
+    CalendarSchedulingReceive,
     // WARNING: add new ids at the end (TODO: use static ids)
 }
 

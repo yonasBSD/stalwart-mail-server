@@ -98,6 +98,9 @@ pub enum CalDavProperty {
     CalendarData(CalendarData),
     TimezoneServiceSet,
     TimezoneId,
+    ScheduleDefaultCalendarURL,
+    ScheduleTag,
+    ScheduleCalendarTransp,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -111,6 +114,10 @@ pub enum PrincipalProperty {
     CalendarHomeSet,
     AddressbookHomeSet,
     PrincipalAddress,
+    CalendarUserAddressSet,
+    CalendarUserType,
+    ScheduleInboxURL,
+    ScheduleOutboxURL,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -205,6 +212,8 @@ pub enum ResourceType {
     Principal,
     AddressBook,
     Calendar,
+    ScheduleInbox,
+    ScheduleOutbox,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -263,6 +272,14 @@ pub enum Privilege {
     Unbind,
     All,
     ReadFreeBusy,
+    ScheduleDeliver,
+    ScheduleDeliverInvite,
+    ScheduleDeliverReply,
+    ScheduleQueryFreeBusy,
+    ScheduleSend,
+    ScheduleSendInvite,
+    ScheduleSendReply,
+    ScheduleSendFreeBusy,
 }
 
 impl Privilege {

@@ -339,9 +339,43 @@ impl DavAclHandler for Server {
                     Privilege::WriteAcl => {
                         acls.insert(Acl::Administer);
                     }
-                    Privilege::ReadFreeBusy => {
+                    Privilege::ReadFreeBusy
+                    | Privilege::ScheduleQueryFreeBusy
+                    | Privilege::ScheduleSendFreeBusy => {
                         if collection == Collection::Calendar {
-                            acls.insert(Acl::ReadFreeBusy);
+                            acls.insert(Acl::SchedulingReadFreeBusy);
+                        } else {
+                            return Err(DavError::Condition(DavErrorCondition::new(
+                                StatusCode::FORBIDDEN,
+                                BaseCondition::NotSupportedPrivilege,
+                            )));
+                        }
+                    }
+                    Privilege::ScheduleDeliver | Privilege::ScheduleSend => {
+                        if collection == Collection::Calendar {
+                            acls.insert(Acl::SchedulingReadFreeBusy);
+                            acls.insert(Acl::SchedulingInvite);
+                            acls.insert(Acl::SchedulingReply);
+                        } else {
+                            return Err(DavError::Condition(DavErrorCondition::new(
+                                StatusCode::FORBIDDEN,
+                                BaseCondition::NotSupportedPrivilege,
+                            )));
+                        }
+                    }
+                    Privilege::ScheduleDeliverInvite | Privilege::ScheduleSendInvite => {
+                        if collection == Collection::Calendar {
+                            acls.insert(Acl::SchedulingInvite);
+                        } else {
+                            return Err(DavError::Condition(DavErrorCondition::new(
+                                StatusCode::FORBIDDEN,
+                                BaseCondition::NotSupportedPrivilege,
+                            )));
+                        }
+                    }
+                    Privilege::ScheduleDeliverReply | Privilege::ScheduleSendReply => {
+                        if collection == Collection::Calendar {
+                            acls.insert(Acl::SchedulingReply);
                         } else {
                             return Err(DavError::Condition(DavErrorCondition::new(
                                 StatusCode::FORBIDDEN,
@@ -524,7 +558,7 @@ pub(crate) fn current_user_privilege_set(acl_bitmap: Bitmap<Acl>) -> Vec<Privile
                 acls.insert(Privilege::ReadAcl);
                 acls.insert(Privilege::WriteAcl);
             }
-            Acl::ReadFreeBusy => {
+            Acl::SchedulingReadFreeBusy => {
                 acls.insert(Privilege::ReadFreeBusy);
             }
             _ => {}

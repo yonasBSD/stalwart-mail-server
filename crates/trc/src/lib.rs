@@ -988,6 +988,10 @@ pub enum CalendarEvent {
     AlarmSkipped,
     AlarmRecipientOverride,
     AlarmFailed,
+    SchedulingError,
+    ItipMessageSent,
+    ItipMessageReceived,
+    ItipMessageError,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

@@ -16,24 +16,28 @@ use calcard::icalendar::{
 
 pub fn itip_snapshot<'x, 'y>(
     ical: &'x ICalendar,
-    account_emails: &'y [&'y str],
+    account_emails: &'y [String],
     force_add_client_scheduling: bool,
 ) -> Result<ItipSnapshots<'x>, ItipError> {
+    if !ical.components.iter().any(|comp| {
+        comp.component_type.is_scheduling_object()
+            && comp
+                .entries
+                .iter()
+                .any(|e| matches!(e.name, ICalendarProperty::Organizer))
+    }) {
+        return Err(ItipError::NoSchedulingInfo);
+    }
+
     let mut organizer: Option<Organizer<'x>> = None;
     let mut uid: Option<&'x str> = None;
     let mut components = AHashMap::new();
     let mut expect_object_type = None;
     let mut has_local_emails = false;
-    let mut has_scheduling_info = false;
     let mut tz_resolver = None;
 
     for (comp_id, comp) in ical.components.iter().enumerate() {
-        if comp.component_type.is_scheduling_object()
-            && comp
-                .entries
-                .iter()
-                .any(|e| matches!(e.name, ICalendarProperty::Organizer))
-        {
+        if comp.component_type.is_scheduling_object() {
             match expect_object_type {
                 Some(expected) if expected != &comp.component_type => {
                     return Err(ItipError::MultipleObjectTypes);
@@ -43,7 +47,6 @@ pub fn itip_snapshot<'x, 'y>(
                 }
                 _ => {}
             }
-            has_scheduling_info = true;
 
             let mut sched_comp = ItipSnapshot {
                 comp_id: comp_id as u16,
@@ -296,16 +299,14 @@ pub fn itip_snapshot<'x, 'y>(
         }
     }
 
-    if !components.is_empty() && has_local_emails {
+    if has_local_emails {
         Ok(ItipSnapshots {
             organizer: organizer.ok_or(ItipError::NoSchedulingInfo)?,
             uid: uid.ok_or(ItipError::MissingUid)?,
             components,
         })
-    } else if has_scheduling_info {
-        Err(ItipError::NotOrganizerNorAttendee)
     } else {
-        Err(ItipError::NoSchedulingInfo)
+        Err(ItipError::NotOrganizerNorAttendee)
     }
 }
 

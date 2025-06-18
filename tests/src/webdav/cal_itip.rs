@@ -138,13 +138,15 @@ pub fn test() {
                         .entry(name.to_string())
                     {
                         Entry::Occupied(mut entry) => {
-                            last_itip = Some(itip_update(&mut ical, entry.get_mut(), &[account]));
+                            last_itip = Some(itip_update(
+                                &mut ical,
+                                entry.get_mut(),
+                                &[account.to_string()],
+                            ));
                             entry.insert(ical);
                         }
                         Entry::Vacant(entry) => {
-                            last_itip = Some(
-                                itip_create(&mut ical, &[account]).map(|message| vec![message]),
-                            );
+                            last_itip = Some(itip_create(&mut ical, &[account.to_string()]));
                             entry.insert(ical);
                         }
                     }
@@ -196,9 +198,10 @@ pub fn test() {
                         .as_str();
                     let store = store.get_mut(account).expect("Account not found in store");
 
-                    if let Some(mut ical) = store.remove(name) {
-                        last_itip =
-                            Some(itip_cancel(&mut ical, &[account]).map(|message| vec![message]));
+                    if let Some(ical) = store.remove(name) {
+                        last_itip = Some(
+                            itip_cancel(&ical, &[account.to_string()]).map(|message| vec![message]),
+                        );
                     } else {
                         panic!(
                             "ICalendar not found for account: {}, name: {}",
@@ -242,7 +245,7 @@ pub fn test() {
                                 for rcpt in &message.to {
                                     let result = match itip_snapshot(
                                         &message.message,
-                                        &[rcpt.as_str()],
+                                        &[rcpt.to_string()],
                                         false,
                                     ) {
                                         Ok(itip_snapshots) => {
@@ -255,7 +258,7 @@ pub fn test() {
                                                     let ical = entry.get_mut();
                                                     let snapshots = itip_snapshot(
                                                         ical,
-                                                        &[rcpt.as_str()],
+                                                        &[rcpt.to_string()],
                                                         false,
                                                     )
                                                     .expect("Failed to create iTIP snapshot");
@@ -335,6 +338,7 @@ pub fn test() {
                     let mut commands = command.parameters.iter();
                     last_itip = Some(Ok(vec![ItipMessage {
                         method: ICalendarMethod::Request,
+                        from_organizer: false,
                         from: commands
                             .next()
                             .expect("From parameter is required")
@@ -359,7 +363,7 @@ trait ItipMessageExt {
     fn to_string(&self, map: &mut AHashMap<PartialDateTime, usize>) -> String;
 }
 
-impl ItipMessageExt for ItipMessage {
+impl ItipMessageExt for ItipMessage<ICalendar> {
     fn to_string(&self, map: &mut AHashMap<PartialDateTime, usize>) -> String {
         use std::fmt::Write;
         let mut f = String::new();

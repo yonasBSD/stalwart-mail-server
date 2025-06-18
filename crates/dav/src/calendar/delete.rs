@@ -14,6 +14,7 @@ use crate::{
 };
 use common::{Server, auth::AccessToken, sharing::EffectiveAcl};
 use dav_proto::RequestHeaders;
+use directory::Permission;
 use groupware::{
     DestroyArchive,
     cache::GroupwareCache,
@@ -62,6 +63,10 @@ impl CalendarDeleteRequestHandler for Server {
             .by_path(delete_path)
             .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
         let document_id = delete_resource.document_id();
+        let send_itip = self.core.groupware.itip_enabled
+            && !headers.no_schedule_reply
+            && !access_token.emails.is_empty()
+            && access_token.has_permission(Permission::CalendarSchedulingSend);
 
         // Fetch entry
         let mut batch = BatchBuilder::new();
@@ -117,6 +122,7 @@ impl CalendarDeleteRequestHandler for Server {
                         .map(|r| r.document_id())
                         .collect::<Vec<_>>(),
                     resources.format_resource(delete_resource).into(),
+                    send_itip,
                     &mut batch,
                 )
                 .await
@@ -153,21 +159,29 @@ impl CalendarDeleteRequestHandler for Server {
             )
             .await?;
 
+            // Validate schedule tag
+            let event = event_
+                .to_unarchived::<CalendarEvent>()
+                .caused_by(trc::location!())?;
+            if headers.if_schedule_tag.is_some()
+                && event.inner.schedule_tag.as_ref().map(|t| t.to_native())
+                    != headers.if_schedule_tag
+            {
+                return Err(DavError::Code(StatusCode::PRECONDITION_FAILED));
+            }
+
             // Delete event
-            DestroyArchive(
-                event_
-                    .to_unarchived::<CalendarEvent>()
-                    .caused_by(trc::location!())?,
-            )
-            .delete(
-                access_token,
-                account_id,
-                document_id,
-                calendar_id,
-                resources.format_resource(delete_resource).into(),
-                &mut batch,
-            )
-            .caused_by(trc::location!())?;
+            DestroyArchive(event)
+                .delete(
+                    access_token,
+                    account_id,
+                    document_id,
+                    calendar_id,
+                    resources.format_resource(delete_resource).into(),
+                    send_itip,
+                    &mut batch,
+                )
+                .caused_by(trc::location!())?;
         }
 
         self.commit_batch(batch).await.caused_by(trc::location!())?;

@@ -247,6 +247,10 @@ impl Permission {
             Permission::DavCalMultiGet => "Retrieve multiple calendar entries in a single request",
             Permission::DavCalFreeBusyQuery => "Query free/busy time information for scheduling",
             Permission::CalendarAlarms => "Receive calendar alarms via e-mail",
+            Permission::CalendarSchedulingSend => "Send calendar scheduling requests via e-mail",
+            Permission::CalendarSchedulingReceive => {
+                "Receive calendar scheduling requests via e-mail"
+            }
         }
     }
 }

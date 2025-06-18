@@ -109,6 +109,7 @@ pub(crate) async fn migrate_calendar_events(server: &Server) -> trc::Result<()> 
                         size: event.size,
                         created: event.created,
                         modified: event.modified,
+                        schedule_tag: None,
                     };
                     let mut batch = BatchBuilder::new();
                     batch

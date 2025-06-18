@@ -209,6 +209,10 @@ pub enum TaskQueueClass {
         event_id: u16,
         alarm_id: u16,
     },
+    SendItip {
+        due: u64,
+        is_payload: bool,
+    },
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]

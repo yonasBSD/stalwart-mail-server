@@ -42,6 +42,8 @@ pub struct RequestHeaders<'x> {
     pub destination: Option<&'x str>,
     pub lock_token: Option<&'x str>,
     pub max_vcard_version: Option<VCardVersion>,
+    pub no_schedule_reply: bool,
+    pub if_schedule_tag: Option<u32>,
     pub overwrite_fail: bool,
     pub no_timezones: bool,
     pub ret: Return,

@@ -77,7 +77,11 @@ impl CalendarFreebusyRequestHandler for Server {
         // Obtain shared ids
         let shared_ids = if !access_token.is_member(account_id) {
             resources
-                .shared_containers(access_token, [Acl::ReadItems, Acl::ReadFreeBusy], false)
+                .shared_containers(
+                    access_token,
+                    [Acl::ReadItems, Acl::SchedulingReadFreeBusy],
+                    false,
+                )
                 .into()
         } else {
             None

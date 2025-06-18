@@ -537,11 +537,15 @@ impl EventType {
             },
             EventType::WebDav(_) => Level::Debug,
             EventType::Calendar(event) => match event {
-                CalendarEvent::AlarmSent => Level::Info,
+                CalendarEvent::ItipMessageSent
+                | CalendarEvent::ItipMessageReceived
+                | CalendarEvent::AlarmSent => Level::Info,
                 CalendarEvent::AlarmFailed => Level::Warn,
                 CalendarEvent::RuleExpansionError
                 | CalendarEvent::AlarmSkipped
-                | CalendarEvent::AlarmRecipientOverride => Level::Debug,
+                | CalendarEvent::AlarmRecipientOverride
+                | CalendarEvent::SchedulingError
+                | CalendarEvent::ItipMessageError => Level::Debug,
             },
         }
     }

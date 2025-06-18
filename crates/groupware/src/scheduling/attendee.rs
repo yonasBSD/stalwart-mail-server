@@ -25,7 +25,7 @@ pub(crate) fn attendee_handle_update(
     new_ical: &ICalendar,
     old_itip: ItipSnapshots<'_>,
     new_itip: ItipSnapshots<'_>,
-) -> Result<Vec<ItipMessage>, ItipError> {
+) -> Result<Vec<ItipMessage<ICalendar>>, ItipError> {
     let dt_stamp = PartialDateTime::now();
     let mut message = ICalendar {
         components: Vec::with_capacity(2),
@@ -224,6 +224,7 @@ pub(crate) fn attendee_handle_update(
         let mut responses = vec![ItipMessage {
             method: ICalendarMethod::Reply,
             from: from.to_string(),
+            from_organizer: false,
             to: email_rcpt.into_iter().map(|e| e.to_string()).collect(),
             changed_properties: vec![],
             message,
@@ -232,11 +233,17 @@ pub(crate) fn attendee_handle_update(
         // Invite new delegates
         if !new_delegates.is_empty() {
             let from = from.to_string();
-            let new_delegates = new_delegates.into_iter().map(|e| e.to_string()).collect();
-            if let Ok(mut message) = organizer_request_full(new_ical, &new_itip, None, true) {
-                message.from = from;
-                message.to = new_delegates;
-                responses.push(message);
+            let new_delegates = new_delegates
+                .into_iter()
+                .map(|e| e.to_string())
+                .collect::<Vec<_>>();
+            if let Ok(messages_) = organizer_request_full(new_ical, &new_itip, None, true) {
+                for mut message in messages_ {
+                    message.from = from.clone();
+                    message.to = new_delegates.clone();
+                    message.from_organizer = false;
+                    responses.push(message);
+                }
             }
         }
 

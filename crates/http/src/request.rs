@@ -235,7 +235,7 @@ impl ParseHttp for Server {
                             "DAV",
                             concat!(
                                 "1, 2, 3, access-control, extended-mkcol, calendar-access, ",
-                                "calendar-no-timezone, addressbook"
+                                "calendar-auto-schedule, calendar-no-timezone, addressbook"
                             ),
                         )
                         .with_header(

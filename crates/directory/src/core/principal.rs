@@ -1408,6 +1408,8 @@ impl Permission {
                 | Permission::DavCalMultiGet
                 | Permission::DavCalFreeBusyQuery
                 | Permission::CalendarAlarms
+                | Permission::CalendarSchedulingSend
+                | Permission::CalendarSchedulingReceive
         )
     }
 

@@ -118,6 +118,25 @@ impl Display for CalCondition {
             }
             CalCondition::MaxInstances => write!(f, "<A:max-instances/>"),
             CalCondition::MaxAttendeesPerInstance => write!(f, "<A:max-attendees-per-instance/>"),
+            CalCondition::UniqueSchedulingObjectResource(href) => write!(
+                f,
+                "<A:unique-scheduling-object-resource>{href}</A:unique-scheduling-object-resource>"
+            ),
+            CalCondition::SameOrganizerInAllComponents => {
+                write!(f, "<A:same-organizer-in-all-components/>")
+            }
+            CalCondition::AllowedOrganizerObjectChange => {
+                write!(f, "<A:allowed-organizer-scheduling-object-change/>")
+            }
+            CalCondition::AllowedAttendeeObjectChange => {
+                write!(f, "<A:allowed-attendee-scheduling-object-change/>")
+            }
+            CalCondition::DefaultCalendarNeeded => write!(f, "<A:default-calendar-needed/>"),
+            CalCondition::ValidScheduleDefaultCalendarUrl => {
+                write!(f, "<A:valid-schedule-default-calendar-URL/>")
+            }
+            CalCondition::ValidSchedulingMessage => write!(f, "<A:valid-scheduling-message/>"),
+            CalCondition::ValidOrganizer => write!(f, "<A:valid-organizer/>"),
         }
     }
 }

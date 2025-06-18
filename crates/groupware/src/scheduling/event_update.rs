@@ -12,9 +12,9 @@ use calcard::icalendar::ICalendar;
 
 pub fn itip_update(
     ical: &mut ICalendar,
-    old_ical: &mut ICalendar,
-    account_emails: &[&str],
-) -> Result<Vec<ItipMessage>, ItipError> {
+    old_ical: &ICalendar,
+    account_emails: &[String],
+) -> Result<Vec<ItipMessage<ICalendar>>, ItipError> {
     let old_itip = itip_snapshot(old_ical, account_emails, false)?;
     match itip_snapshot(ical, account_emails, false) {
         Ok(new_itip) => {

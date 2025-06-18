@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::fmt::Display;
+use std::{borrow::Cow, fmt::Display};
 
 use calcard::{
     icalendar::{ICalendarComponentType, ICalendarParameterName, ICalendarProperty},
@@ -92,6 +92,16 @@ pub struct Prop(pub List<DavPropertyValue>);
 pub struct PropResponse {
     pub namespaces: Namespaces,
     pub properties: List<DavPropertyValue>,
+}
+
+pub struct ScheduleResponse {
+    pub items: List<ScheduleResponseItem>,
+}
+
+pub struct ScheduleResponseItem {
+    pub recipient: Href,
+    pub request_status: Cow<'static, str>,
+    pub calendar_data: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -237,6 +247,14 @@ pub enum CalCondition {
     MaxResourceSize(u32),
     MaxInstances,
     MaxAttendeesPerInstance,
+    UniqueSchedulingObjectResource(Href),
+    SameOrganizerInAllComponents,
+    AllowedOrganizerObjectChange,
+    AllowedAttendeeObjectChange,
+    DefaultCalendarNeeded,
+    ValidScheduleDefaultCalendarUrl,
+    ValidSchedulingMessage,
+    ValidOrganizer,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -338,6 +356,14 @@ impl CalCondition {
             CalCondition::MaxResourceSize(_) => "MaxResourceSize",
             CalCondition::MaxInstances => "MaxInstances",
             CalCondition::MaxAttendeesPerInstance => "MaxAttendeesPerInstance",
+            CalCondition::UniqueSchedulingObjectResource(_) => "UniqueSchedulingObjectResource",
+            CalCondition::SameOrganizerInAllComponents => "SameOrganizerInAllComponents",
+            CalCondition::AllowedOrganizerObjectChange => "AllowedOrganizerObjectChange",
+            CalCondition::AllowedAttendeeObjectChange => "AllowedAttendeeObjectChange",
+            CalCondition::DefaultCalendarNeeded => "DefaultCalendarNeeded",
+            CalCondition::ValidScheduleDefaultCalendarUrl => "ValidScheduleDefaultCalendarUrl",
+            CalCondition::ValidSchedulingMessage => "ValidSchedulingMessage",
+            CalCondition::ValidOrganizer => "ValidOrganizer",
         }
     }
 }

@@ -8,12 +8,13 @@ use ahash::{AHashMap, AHashSet};
 use calcard::{
     common::PartialDateTime,
     icalendar::{
-        ICalendar, ICalendarComponent, ICalendarDuration, ICalendarEntry, ICalendarMethod,
-        ICalendarParameter, ICalendarParticipationRole, ICalendarParticipationStatus,
-        ICalendarPeriod, ICalendarProperty, ICalendarRecurrenceRule,
-        ICalendarScheduleForceSendValue, ICalendarStatus, ICalendarUserTypes, ICalendarValue, Uri,
+        ICalendarComponent, ICalendarDuration, ICalendarEntry, ICalendarMethod, ICalendarParameter,
+        ICalendarParticipationRole, ICalendarParticipationStatus, ICalendarPeriod,
+        ICalendarProperty, ICalendarRecurrenceRule, ICalendarScheduleForceSendValue,
+        ICalendarStatus, ICalendarUserTypes, ICalendarValue, Uri,
     },
 };
+use dav_proto::schema::response::CalCondition;
 use std::{fmt::Display, hash::Hash};
 
 pub mod attendee;
@@ -134,12 +135,19 @@ pub enum ItipError {
     UnsupportedMethod(ICalendarMethod),
 }
 
-pub struct ItipMessage {
+#[derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize)]
+pub struct ItipMessage<T> {
     pub method: ICalendarMethod,
     pub from: String,
+    pub from_organizer: bool,
     pub to: Vec<String>,
     pub changed_properties: Vec<ICalendarProperty>,
-    pub message: ICalendar,
+    pub message: T,
+}
+
+#[derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize)]
+pub struct ItipMessages {
+    pub messages: Vec<ItipMessage<String>>,
 }
 
 impl ItipSnapshot<'_> {
@@ -195,15 +203,15 @@ impl Attendee<'_> {
 }
 
 impl Email {
-    pub fn new(email: &str, local_addresses: &[&str]) -> Option<Self> {
+    pub fn new(email: &str, local_addresses: &[String]) -> Option<Self> {
         email.contains('@').then(|| {
             let email = email.trim().trim_start_matches("mailto:").to_lowercase();
-            let is_local = local_addresses.contains(&email.as_str());
+            let is_local = local_addresses.contains(&email);
             Email { email, is_local }
         })
     }
 
-    pub fn from_uri(uri: &Uri, local_addresses: &[&str]) -> Option<Self> {
+    pub fn from_uri(uri: &Uri, local_addresses: &[String]) -> Option<Self> {
         if let Uri::Location(uri) = uri {
             Email::new(uri.as_str(), local_addresses)
         } else {
@@ -295,6 +303,78 @@ impl ItipDateTime<'_> {
                 .map(|tz_id| vec![ICalendarParameter::Tzid(tz_id.to_string())])
                 .unwrap_or_default(),
             values: vec![ICalendarValue::PartialDateTime(Box::new(self.date.clone()))],
+        }
+    }
+}
+
+impl ItipError {
+    pub fn failed_precondition(&self) -> Option<CalCondition> {
+        match self {
+            ItipError::NoSchedulingInfo
+            | ItipError::OtherSchedulingAgent
+            | ItipError::NotOrganizer
+            | ItipError::NotOrganizerNorAttendee
+            | ItipError::NothingToSend => None,
+            ItipError::MultipleOrganizer => Some(CalCondition::SameOrganizerInAllComponents),
+            ItipError::SenderIsOrganizer
+            | ItipError::SenderIsNotParticipant(_)
+            | ItipError::OrganizerMismatch => Some(CalCondition::ValidOrganizer),
+            ItipError::CannotModifyProperty(_)
+            | ItipError::CannotModifyInstance
+            | ItipError::CannotModifyAddress => Some(CalCondition::AllowedAttendeeObjectChange),
+            ItipError::MissingUid
+            | ItipError::MultipleUid
+            | ItipError::MultipleObjectTypes
+            | ItipError::MultipleObjectInstances
+            | ItipError::MissingMethod
+            | ItipError::InvalidComponentType
+            | ItipError::OutOfSequence
+            | ItipError::UnknownParticipant(_)
+            | ItipError::UnsupportedMethod(_) => Some(CalCondition::ValidSchedulingMessage),
+        }
+    }
+}
+
+impl Display for ItipError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ItipError::NoSchedulingInfo => write!(f, "No scheduling information found"),
+            ItipError::OtherSchedulingAgent => write!(f, "Other scheduling agent"),
+            ItipError::NotOrganizer => write!(f, "Not the organizer of the event"),
+            ItipError::NotOrganizerNorAttendee => write!(f, "Not an organizer or attendee"),
+            ItipError::NothingToSend => write!(f, "No iTIP messages to send"),
+            ItipError::MissingUid => write!(f, "Missing UID in iCalendar object"),
+            ItipError::MultipleUid => write!(f, "Multiple UIDs found in iCalendar object"),
+            ItipError::MultipleOrganizer => {
+                write!(f, "Multiple organizers found in iCalendar object")
+            }
+            ItipError::MultipleObjectTypes => {
+                write!(f, "Multiple object types found in iCalendar object")
+            }
+            ItipError::MultipleObjectInstances => {
+                write!(f, "Multiple object instances found in iCalendar object")
+            }
+            ItipError::CannotModifyProperty(prop) => {
+                write!(f, "Cannot modify property {}", prop.as_str())
+            }
+            ItipError::CannotModifyInstance => write!(f, "Cannot modify instance of the event"),
+            ItipError::CannotModifyAddress => write!(f, "Cannot modify address of the event"),
+            ItipError::OrganizerMismatch => write!(f, "Organizer mismatch in iCalendar object"),
+            ItipError::MissingMethod => write!(f, "Missing method in the iTIP message"),
+            ItipError::InvalidComponentType => {
+                write!(f, "Invalid component type in iCalendar object")
+            }
+            ItipError::OutOfSequence => write!(f, "Old sequence number found"),
+            ItipError::SenderIsOrganizer => write!(f, "Sender is the organizer of the event"),
+            ItipError::SenderIsNotParticipant(participant) => {
+                write!(f, "Sender {participant:?} is not a participant")
+            }
+            ItipError::UnknownParticipant(participant) => {
+                write!(f, "Unknown participant: {}", participant)
+            }
+            ItipError::UnsupportedMethod(method) => {
+                write!(f, "Unsupported method: {}", method.as_str())
+            }
         }
     }
 }

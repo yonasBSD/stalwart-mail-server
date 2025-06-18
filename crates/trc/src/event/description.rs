@@ -1895,6 +1895,10 @@ impl CalendarEvent {
             CalendarEvent::AlarmSkipped => "Calendar alarm skipped",
             CalendarEvent::AlarmRecipientOverride => "Calendar alarm recipient overriden",
             CalendarEvent::AlarmFailed => "Calendar alarm could not be sent",
+            CalendarEvent::SchedulingError => "Calendar scheduling error",
+            CalendarEvent::ItipMessageSent => "Calendar iTIP message sent",
+            CalendarEvent::ItipMessageReceived => "Calendar iTIP message received",
+            CalendarEvent::ItipMessageError => "Incoming calendar iTIP message error",
         }
     }
 
@@ -1907,6 +1911,14 @@ impl CalendarEvent {
             CalendarEvent::AlarmSkipped => "A calendar alarm was skipped",
             CalendarEvent::AlarmRecipientOverride => "A calendar alarm recipient was overridden",
             CalendarEvent::AlarmFailed => "A calendar alarm could not be sent to the recipient",
+            CalendarEvent::SchedulingError => {
+                "An error occurred processing the calendar scheduling request"
+            }
+            CalendarEvent::ItipMessageSent => "A calendar iTIP message has been sent",
+            CalendarEvent::ItipMessageReceived => "A calendar iTIP/iMIP message has been received",
+            CalendarEvent::ItipMessageError => {
+                "An error occurred while processing an incoming iTIP/iMIP message"
+            }
         }
     }
 }

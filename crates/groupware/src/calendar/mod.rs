@@ -76,6 +76,7 @@ pub struct CalendarEvent {
     pub size: u32,
     pub created: i64,
     pub modified: i64,
+    pub schedule_tag: Option<u32>,
 }
 
 #[derive(
@@ -153,13 +154,13 @@ impl TryFrom<Acl> for CalendarRight {
 
     fn try_from(value: Acl) -> Result<Self, Self::Error> {
         match value {
-            Acl::ReadFreeBusy => Ok(CalendarRight::ReadFreeBusy),
+            Acl::SchedulingReadFreeBusy => Ok(CalendarRight::ReadFreeBusy),
             Acl::ReadItems => Ok(CalendarRight::ReadItems),
             Acl::Modify => Ok(CalendarRight::WriteAll),
             Acl::ModifyItemsOwn => Ok(CalendarRight::WriteOwn),
             Acl::ModifyPrivateProperties => Ok(CalendarRight::UpdatePrivate),
-            Acl::RSVP => Ok(CalendarRight::RSVP),
-            Acl::Share => Ok(CalendarRight::Share),
+            Acl::SchedulingReply => Ok(CalendarRight::RSVP),
+            Acl::Administer => Ok(CalendarRight::Share),
             Acl::Delete => Ok(CalendarRight::Delete),
             _ => Err(value),
         }
@@ -169,13 +170,13 @@ impl TryFrom<Acl> for CalendarRight {
 impl From<CalendarRight> for Acl {
     fn from(value: CalendarRight) -> Self {
         match value {
-            CalendarRight::ReadFreeBusy => Acl::ReadFreeBusy,
+            CalendarRight::ReadFreeBusy => Acl::SchedulingReadFreeBusy,
             CalendarRight::ReadItems => Acl::ReadItems,
             CalendarRight::WriteAll => Acl::Modify,
             CalendarRight::WriteOwn => Acl::ModifyItemsOwn,
             CalendarRight::UpdatePrivate => Acl::ModifyPrivateProperties,
-            CalendarRight::RSVP => Acl::RSVP,
-            CalendarRight::Share => Acl::Share,
+            CalendarRight::RSVP => Acl::SchedulingReply,
+            CalendarRight::Share => Acl::Administer,
             CalendarRight::Delete => Acl::Delete,
         }
     }

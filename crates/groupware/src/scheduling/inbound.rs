@@ -44,7 +44,7 @@ pub enum MergeAction {
 
 pub enum MergeResult {
     Actions(Vec<MergeAction>),
-    Message(ItipMessage),
+    Message(ItipMessage<ICalendar>),
     None,
 }
 
@@ -72,10 +72,18 @@ pub fn itip_process_message(
                 handle_reply(&snapshots, &itip_snapshots, &sender, &mut merge_actions)?;
             }
             ICalendarMethod::Refresh => {
-                return organizer_request_full(ical, &snapshots, None, false).map(|mut message| {
-                    message.to = vec![sender];
-                    MergeResult::Message(message)
-                });
+                return organizer_request_full(ical, &snapshots, None, false).and_then(
+                    |messages| {
+                        messages
+                            .into_iter()
+                            .next()
+                            .map(|mut message| {
+                                message.to = vec![sender];
+                                MergeResult::Message(message)
+                            })
+                            .ok_or(ItipError::NothingToSend)
+                    },
+                );
             }
             _ => return Err(ItipError::UnsupportedMethod(method.clone())),
         }

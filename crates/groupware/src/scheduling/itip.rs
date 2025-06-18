@@ -12,6 +12,13 @@ use calcard::{
     },
 };
 use common::PROD_ID;
+use store::{
+    Serialize,
+    write::{Archiver, BatchBuilder, TaskQueueClass, ValueClass, now},
+};
+use trc::AddContext;
+
+use crate::scheduling::{ItipMessage, ItipMessages};
 
 pub(crate) fn itip_build_envelope(method: ICalendarMethod) -> ICalendarComponent {
     ICalendarComponent {
@@ -242,5 +249,48 @@ pub(crate) fn can_attendee_modify_property(
                 | ICalendarProperty::Comment
         ),
         _ => false,
+    }
+}
+
+impl ItipMessages {
+    pub fn new(messages: Vec<ItipMessage<ICalendar>>) -> Self {
+        ItipMessages {
+            messages: messages.into_iter().map(|m| m.into()).collect(),
+        }
+    }
+
+    pub fn queue(self, batch: &mut BatchBuilder) -> trc::Result<()> {
+        let due = now();
+        batch.set(
+            ValueClass::TaskQueue(TaskQueueClass::SendItip {
+                due,
+                is_payload: false,
+            }),
+            vec![],
+        );
+        batch.set(
+            ValueClass::TaskQueue(TaskQueueClass::SendItip {
+                due,
+                is_payload: true,
+            }),
+            Archiver::new(self)
+                .serialize()
+                .caused_by(trc::location!())?,
+        );
+
+        Ok(())
+    }
+}
+
+impl From<ItipMessage<ICalendar>> for ItipMessage<String> {
+    fn from(message: ItipMessage<ICalendar>) -> Self {
+        ItipMessage {
+            method: message.method,
+            from: message.from,
+            from_organizer: message.from_organizer,
+            to: message.to,
+            changed_properties: message.changed_properties,
+            message: message.message.to_string(),
+        }
     }
 }

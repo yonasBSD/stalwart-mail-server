@@ -211,11 +211,20 @@ impl ExpandAlarm for ICalendarComponent {
                     };
                 }
                 ICalendarProperty::Action => {
-                    is_email_alert = entry
-                        .values
-                        .first()
-                        .and_then(|v| v.as_text())
-                        .is_some_and(|v| v.eq_ignore_ascii_case("email"));
+                    is_email_alert = is_email_alert
+                        || entry
+                            .values
+                            .first()
+                            .and_then(|v| v.as_text())
+                            .is_some_and(|v| v.eq_ignore_ascii_case("email"));
+                }
+                ICalendarProperty::Summary | ICalendarProperty::Description => {
+                    is_email_alert = is_email_alert
+                        || entry
+                            .values
+                            .first()
+                            .and_then(|v| v.as_text())
+                            .is_some_and(|v| v.contains("@email"));
                 }
                 _ => {}
             }

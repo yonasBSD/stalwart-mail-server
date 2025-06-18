@@ -7,7 +7,7 @@
 use crate::scheduling::{
     InstanceId, ItipError, ItipMessage, ItipSnapshots,
     attendee::attendee_decline,
-    itip::{itip_add_tz, itip_build_envelope, itip_finalize},
+    itip::{itip_add_tz, itip_build_envelope},
     snapshot::itip_snapshot,
 };
 use ahash::AHashSet;
@@ -21,9 +21,9 @@ use calcard::{
 use std::fmt::Display;
 
 pub fn itip_cancel(
-    ical: &mut ICalendar,
-    account_emails: &[&str],
-) -> Result<ItipMessage, ItipError> {
+    ical: &ICalendar,
+    account_emails: &[String],
+) -> Result<ItipMessage<ICalendar>, ItipError> {
     // Prepare iTIP message
     let itip = itip_snapshot(ical, account_emails, false)?;
     let dt_stamp = PartialDateTime::now();
@@ -41,7 +41,6 @@ pub fn itip_cancel(
         let mut recipients = AHashSet::new();
         let mut cancel_guests = AHashSet::new();
         let mut component_type = &ICalendarComponentType::VEvent;
-        let mut increment_sequences = Vec::new();
         let mut sequence = 0;
         for (instance_id, comp) in &itip.components {
             component_type = &comp.comp.component_type;
@@ -53,7 +52,6 @@ pub fn itip_cancel(
             }
 
             // Increment sequence if needed
-            increment_sequences.push(comp.comp_id);
             if instance_id == &InstanceId::Main {
                 sequence = comp.sequence.unwrap_or_default() + 1;
             }
@@ -67,17 +65,15 @@ pub fn itip_cancel(
                 dt_stamp,
                 cancel_guests.iter(),
             ));
-            let message = ItipMessage {
+
+            Ok(ItipMessage {
                 method: ICalendarMethod::Cancel,
                 from: itip.organizer.email.email,
+                from_organizer: true,
                 to: recipients.into_iter().collect(),
                 changed_properties: vec![],
                 message,
-            };
-
-            itip_finalize(ical, &increment_sequences);
-
-            Ok(message)
+            })
         } else {
             Err(ItipError::NothingToSend)
         }
@@ -107,17 +103,15 @@ pub fn itip_cancel(
             itip_add_tz(&mut message, ical);
 
             email_rcpt.insert(&itip.organizer.email.email);
-            let message = ItipMessage {
+
+            Ok(ItipMessage {
                 method: ICalendarMethod::Reply,
                 from: from.to_string(),
+                from_organizer: false,
                 to: email_rcpt.into_iter().map(|e| e.to_string()).collect(),
                 changed_properties: vec![],
                 message,
-            };
-
-            itip_finalize(ical, &[]);
-
-            Ok(message)
+            })
         } else {
             Err(ItipError::NothingToSend)
         }

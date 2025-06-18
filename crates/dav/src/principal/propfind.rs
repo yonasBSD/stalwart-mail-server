@@ -17,10 +17,10 @@ use dav_proto::schema::{
     response::{Href, MultiStatus, PropStat, Response},
 };
 use directory::{QueryBy, backend::internal::manage::ManageDirectory};
+use groupware::RFC_3986;
 use groupware::cache::GroupwareCache;
 use hyper::StatusCode;
 use jmap_proto::types::collection::Collection;
-use groupware::RFC_3986;
 use trc::AddContext;
 
 use crate::{
@@ -287,6 +287,12 @@ impl PrincipalPropFind for Server {
                             fields_not_found.push(DavPropertyValue::empty(property.clone()));
                             response.set_namespace(Namespace::CardDav);
                         }
+                        PrincipalProperty::CalendarUserAddressSet => {
+                            let todo = "implement";
+                        }
+                        PrincipalProperty::CalendarUserType => todo!(),
+                        PrincipalProperty::ScheduleInboxURL => todo!(),
+                        PrincipalProperty::ScheduleOutboxURL => todo!(),
                     },
                     _ => {
                         response.set_namespace(property.namespace());

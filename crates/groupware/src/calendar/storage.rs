@@ -4,7 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{DavResourceName, DestroyArchive, RFC_3986};
+use crate::{
+    DavResourceName, DestroyArchive, RFC_3986,
+    scheduling::{ItipMessages, event_cancel::itip_cancel},
+};
 use calcard::common::timezone::Tz;
 use common::{Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
 use jmap_proto::types::collection::{Collection, VanishedCollection};
@@ -153,6 +156,7 @@ impl DestroyArchive<Archive<&ArchivedCalendar>> {
         document_id: u32,
         children_ids: Vec<u32>,
         delete_path: Option<String>,
+        send_itip: bool,
         batch: &mut BatchBuilder,
     ) -> trc::Result<()> {
         // Process deletions
@@ -173,6 +177,7 @@ impl DestroyArchive<Archive<&ArchivedCalendar>> {
                     document_id,
                     calendar_id,
                     None,
+                    send_itip,
                     batch,
                 )?;
             }
@@ -211,6 +216,7 @@ impl DestroyArchive<Archive<&ArchivedCalendar>> {
 }
 
 impl DestroyArchive<Archive<&ArchivedCalendarEvent>> {
+    #[allow(clippy::too_many_arguments)]
     pub fn delete(
         self,
         access_token: &AccessToken,
@@ -218,6 +224,7 @@ impl DestroyArchive<Archive<&ArchivedCalendarEvent>> {
         document_id: u32,
         calendar_id: u32,
         delete_path: Option<String>,
+        send_itip: bool,
         batch: &mut BatchBuilder,
     ) -> trc::Result<()> {
         let event = self.0;
@@ -253,6 +260,21 @@ impl DestroyArchive<Archive<&ArchivedCalendarEvent>> {
                 // Remove next alarm if it exists
                 if let Some(next_alarm) = event.inner.data.next_alarm(now() as i64, Tz::Floating) {
                     next_alarm.delete_task(batch);
+                }
+
+                // Scheduling
+                if send_itip && event.inner.schedule_tag.is_some() {
+                    let event = event
+                        .deserialize::<CalendarEvent>()
+                        .caused_by(trc::location!())?;
+
+                    if let Ok(messages) =
+                        itip_cancel(&event.data.event, access_token.emails.as_slice())
+                    {
+                        ItipMessages::new(vec![messages])
+                            .queue(batch)
+                            .caused_by(trc::location!())?;
+                    }
                 }
 
                 batch

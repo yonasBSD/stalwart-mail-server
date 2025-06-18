@@ -25,7 +25,7 @@ pub(crate) fn organizer_handle_update(
     old_itip: ItipSnapshots<'_>,
     new_itip: ItipSnapshots<'_>,
     increment_sequences: &mut Vec<u16>,
-) -> Result<Vec<ItipMessage>, ItipError> {
+) -> Result<Vec<ItipMessage<ICalendar>>, ItipError> {
     let mut changed_instances: Vec<(&InstanceId, &str, &ICalendarMethod)> = Vec::new();
     let mut increment_sequence = false;
     let mut changed_properties = AHashSet::new();
@@ -179,9 +179,11 @@ pub(crate) fn organizer_handle_update(
             increment_sequence.then_some(increment_sequences),
             false,
         ) {
-            Ok(mut message) => {
-                message.changed_properties = changed_properties.clone();
-                messages.push(message);
+            Ok(messages_) => {
+                for mut message in messages_ {
+                    message.changed_properties = changed_properties.clone();
+                    messages.push(message);
+                }
             }
             Err(err) => {
                 if send_partial_update.is_empty() {
@@ -279,6 +281,7 @@ pub(crate) fn organizer_handle_update(
             messages.push(ItipMessage {
                 method: method.clone(),
                 from: itip.organizer.email.email.clone(),
+                from_organizer: true,
                 to: emails.into_iter().map(|e| e.to_string()).collect(),
                 changed_properties: if method == &ICalendarMethod::Request {
                     changed_properties.clone()
@@ -298,7 +301,7 @@ pub(crate) fn organizer_request_full(
     itip: &ItipSnapshots<'_>,
     mut increment_sequence: Option<&mut Vec<u16>>,
     is_first_request: bool,
-) -> Result<ItipMessage, ItipError> {
+) -> Result<Vec<ItipMessage<ICalendar>>, ItipError> {
     // Prepare iTIP message
     let dt_stamp = PartialDateTime::now();
     let mut message = ICalendar {
@@ -310,6 +313,11 @@ pub(crate) fn organizer_request_full(
     let mut copy_components = AHashSet::new();
 
     for comp in itip.components.values() {
+        // Skip private components
+        if comp.attendees.is_empty() {
+            continue;
+        }
+
         // Prepare component for iTIP
         let sequence = if let Some(increment_sequence) = &mut increment_sequence {
             increment_sequence.push(comp.comp_id);
@@ -366,13 +374,14 @@ pub(crate) fn organizer_request_full(
     message.components[0].component_ids.sort_unstable();
 
     if !recipients.is_empty() {
-        Ok(ItipMessage {
+        Ok(vec![ItipMessage {
             method: ICalendarMethod::Request,
             from: itip.organizer.email.email.clone(),
+            from_organizer: true,
             to: recipients.into_iter().map(|e| e.to_string()).collect(),
             changed_properties: vec![],
             message,
-        })
+        }])
     } else {
         Err(ItipError::NothingToSend)
     }
