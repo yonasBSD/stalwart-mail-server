@@ -4,16 +4,16 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::task_manager::imip::SendImipTask;
 use alarm::SendAlarmTask;
 use bayes::BayesTrainTask;
+use common::IPC_CHANNEL_BUFFER;
 use common::config::server::ServerProtocol;
 use common::listener::limiter::ConcurrencyLimiter;
 use common::listener::{ServerInstance, TcpAcceptor};
-use common::{IPC_CHANNEL_BUFFER, LONG_1Y_SLUMBER};
 use common::{Inner, KV_LOCK_TASK, Server, core::BuildServer};
 use fts::FtsIndexTask;
 use groupware::calendar::alarm::CalendarAlarm;
-use jmap_proto::types::collection::Collection;
 use std::collections::hash_map::Entry;
 use std::future::Future;
 use std::time::Duration;
@@ -37,6 +37,7 @@ use utils::{BLOB_HASH_LEN, BlobHash};
 pub mod alarm;
 pub mod bayes;
 pub mod fts;
+pub mod imip;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Task {
@@ -51,16 +52,19 @@ pub enum TaskAction {
     Index { hash: BlobHash },
     BayesTrain { hash: BlobHash, learn_spam: bool },
     SendAlarm { alarm: CalendarAlarm },
+    SendImip,
 }
 
-const FTS_LOCK_EXPIRY: u64 = 60 * 5;
-const BAYES_LOCK_EXPIRY: u64 = 60 * 30;
-const ALARM_EXPIRY: u64 = 60 * 2;
+const FTS_LOCK_EXPIRY: u64 = 60 * 5; // 5 minutes
+const BAYES_LOCK_EXPIRY: u64 = 60 * 30; // 30 minutes
+const ALARM_EXPIRY: u64 = 60 * 2; // 2 minutes
+const QUEUE_REFRESH_INTERVAL: u64 = 60 * 5; // 5 minutes
 
 pub(crate) struct TaskManagerIpc {
     tx_fts: mpsc::Sender<Task>,
     tx_bayes: mpsc::Sender<Task>,
     tx_alarm: mpsc::Sender<Task>,
+    tx_imip: mpsc::Sender<Task>,
     locked: AHashMap<Vec<u8>, Locked>,
     revision: u64,
 }
@@ -75,6 +79,7 @@ pub fn spawn_task_manager(inner: Arc<Inner>) {
     let (tx_index_1, rx_index_1) = mpsc::channel::<Task>(IPC_CHANNEL_BUFFER);
     let (tx_index_2, rx_index_2) = mpsc::channel::<Task>(IPC_CHANNEL_BUFFER);
     let (tx_index_3, rx_index_3) = mpsc::channel::<Task>(IPC_CHANNEL_BUFFER);
+    let (tx_index_4, rx_index_4) = mpsc::channel::<Task>(IPC_CHANNEL_BUFFER);
 
     // Create dummy server instance for alarms
     let server_instance = Arc::new(ServerInstance {
@@ -87,7 +92,7 @@ pub fn spawn_task_manager(inner: Arc<Inner>) {
         span_id_gen: Arc::new(SnowflakeIdGenerator::new()),
     });
 
-    for mut rx_index in [rx_index_1, rx_index_2, rx_index_3] {
+    for mut rx_index in [rx_index_1, rx_index_2, rx_index_3, rx_index_4] {
         let inner = inner.clone();
         let server_instance = server_instance.clone();
 
@@ -110,24 +115,27 @@ pub fn spawn_task_manager(inner: Arc<Inner>) {
                                 true
                             }
                         }
+                        TaskAction::SendImip => {
+                            if server.core.groupware.itip_enabled {
+                                server.send_imip(&task, server_instance.clone()).await
+                            } else {
+                                true
+                            }
+                        }
                     };
 
                     // Remove entry from queue
                     if success {
-                        if let Err(err) = server
-                            .core
-                            .storage
-                            .data
-                            .write(
-                                BatchBuilder::new()
-                                    .with_account_id(task.account_id)
-                                    .with_collection(Collection::Email)
-                                    .update_document(task.document_id)
-                                    .clear(task.value_class())
-                                    .build_all(),
-                            )
-                            .await
-                        {
+                        let mut batch = BatchBuilder::new();
+                        batch
+                            .with_account_id(task.account_id)
+                            .update_document(task.document_id);
+
+                        for value in task.value_classes() {
+                            batch.clear(value);
+                        }
+
+                        if let Err(err) = server.core.storage.data.write(batch.build_all()).await {
                             trc::error!(
                                 err.account_id(task.account_id)
                                     .document_id(task.document_id)
@@ -149,6 +157,7 @@ pub fn spawn_task_manager(inner: Arc<Inner>) {
             tx_fts: tx_index_1,
             tx_bayes: tx_index_2,
             tx_alarm: tx_index_3,
+            tx_imip: tx_index_4,
             locked: Default::default(),
             revision: 0,
         };
@@ -171,6 +180,7 @@ pub(crate) trait TaskQueueManager: Sync + Send {
 
 impl TaskQueueManager for Server {
     async fn process_tasks(&self, ipc: &mut TaskManagerIpc) -> Duration {
+        let now_timestamp = now();
         let from_key = ValueKey::<ValueClass> {
             account_id: 0,
             collection: 0,
@@ -185,14 +195,13 @@ impl TaskQueueManager for Server {
             collection: u8::MAX,
             document_id: u32::MAX,
             class: ValueClass::TaskQueue(TaskQueueClass::IndexEmail {
-                due: u64::MAX,
+                due: now_timestamp + QUEUE_REFRESH_INTERVAL,
                 hash: BlobHash::default(),
             }),
         };
 
         // Retrieve tasks pending to be processed
         let mut tasks = Vec::new();
-        let now_timestamp = now();
         let now = Instant::now();
         let mut next_event = None;
         ipc.revision += 1;
@@ -258,6 +267,7 @@ impl TaskQueueManager for Server {
                 TaskAction::Index { .. } => &ipc.tx_fts,
                 TaskAction::BayesTrain { .. } => &ipc.tx_bayes,
                 TaskAction::SendAlarm { .. } => &ipc.tx_alarm,
+                TaskAction::SendImip => &ipc.tx_imip,
             };
             if tx.send(event).await.is_err() {
                 trc::event!(
@@ -272,9 +282,9 @@ impl TaskQueueManager for Server {
         let now = Instant::now();
         ipc.locked
             .retain(|_, locked| locked.expires > now && locked.revision == ipc.revision);
-        next_event.map_or(LONG_1Y_SLUMBER, |timestamp| {
-            Duration::from_secs(timestamp.saturating_sub(store::write::now()))
-        })
+        Duration::from_secs(next_event.map_or(QUEUE_REFRESH_INTERVAL, |timestamp| {
+            timestamp.saturating_sub(store::write::now())
+        }))
     }
 
     async fn try_lock_task(&self, event: &Task) -> bool {
@@ -346,6 +356,12 @@ impl Task {
                 .write_leb128(self.account_id)
                 .write_leb128(self.document_id)
                 .finalize(),
+            TaskAction::SendImip => KeySerializer::new((U32_LEN * 2) + U64_LEN + 1)
+                .write(3u8)
+                .write(self.due)
+                .write_leb128(self.account_id)
+                .write_leb128(self.document_id)
+                .finalize(),
         }
     }
 
@@ -353,27 +369,41 @@ impl Task {
         match self.action {
             TaskAction::Index { .. } => FTS_LOCK_EXPIRY,
             TaskAction::BayesTrain { .. } => BAYES_LOCK_EXPIRY,
-            TaskAction::SendAlarm { .. } => ALARM_EXPIRY,
+            TaskAction::SendAlarm { .. } | TaskAction::SendImip => ALARM_EXPIRY,
         }
     }
 
-    fn value_class(&self) -> ValueClass {
-        ValueClass::TaskQueue(match &self.action {
-            TaskAction::Index { hash } => TaskQueueClass::IndexEmail {
-                hash: hash.clone(),
-                due: self.due,
-            },
-            TaskAction::BayesTrain { hash, learn_spam } => TaskQueueClass::BayesTrain {
-                hash: hash.clone(),
-                due: self.due,
-                learn_spam: *learn_spam,
-            },
-            TaskAction::SendAlarm { alarm } => TaskQueueClass::SendAlarm {
-                event_id: alarm.event_id,
-                alarm_id: alarm.alarm_id,
-                due: self.due,
-            },
-        })
+    fn value_classes(&self) -> impl Iterator<Item = ValueClass> {
+        [
+            Some(ValueClass::TaskQueue(match &self.action {
+                TaskAction::Index { hash } => TaskQueueClass::IndexEmail {
+                    hash: hash.clone(),
+                    due: self.due,
+                },
+                TaskAction::BayesTrain { hash, learn_spam } => TaskQueueClass::BayesTrain {
+                    hash: hash.clone(),
+                    due: self.due,
+                    learn_spam: *learn_spam,
+                },
+                TaskAction::SendAlarm { alarm } => TaskQueueClass::SendAlarm {
+                    event_id: alarm.event_id,
+                    alarm_id: alarm.alarm_id,
+                    due: self.due,
+                },
+                TaskAction::SendImip => TaskQueueClass::SendImip {
+                    due: self.due,
+                    is_payload: false,
+                },
+            })),
+            (matches!(self.action, TaskAction::SendImip)).then_some(ValueClass::TaskQueue(
+                TaskQueueClass::SendImip {
+                    due: self.due,
+                    is_payload: true,
+                },
+            )),
+        ]
+        .into_iter()
+        .flatten()
     }
 
     fn deserialize(key: &[u8], value: &[u8]) -> trc::Result<Self> {
@@ -423,6 +453,7 @@ impl Task {
                         alarm_time: 0,
                     },
                 },
+                Some(4) => TaskAction::SendImip,
                 _ => return Err(trc::Error::corrupted_key(key, None, trc::location!())),
             },
         })

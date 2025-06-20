@@ -47,7 +47,7 @@ impl Server {
         }
 
         // Include password hash if expiration is over 1 hour
-        let password_hash = if expiry_in > 3600 {
+        let password_hash = if !matches!(grant_type, GrantType::Rsvp) && expiry_in > 3600 {
             self.password_hash(account_id)
                 .await
                 .caused_by(trc::location!())?
@@ -156,7 +156,7 @@ impl Server {
         }
 
         // Obtain password hash
-        let password_hash = if expiry - issued_at > 3600 {
+        let password_hash = if !matches!(grant_type, GrantType::Rsvp) && expiry - issued_at > 3600 {
             self.password_hash(account_id)
                 .await
                 .map_err(|err| trc::AuthEvent::Error.into_err().ctx(trc::Key::Details, err))?

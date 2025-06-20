@@ -6,6 +6,7 @@
 
 use crate::{
     DavResourceName, DestroyArchive, RFC_3986,
+    calendar::{ArchivedCalendarScheduling, CalendarScheduling},
     scheduling::{ItipMessages, event_cancel::itip_cancel},
 };
 use calcard::common::timezone::Tz;
@@ -143,6 +144,34 @@ impl Calendar {
                     .with_tenant_id(access_token),
             )
             .map(|b| b.commit_point())
+    }
+}
+
+impl CalendarScheduling {
+    pub fn insert<'x>(
+        self,
+        access_token: &AccessToken,
+        account_id: u32,
+        document_id: u32,
+        batch: &'x mut BatchBuilder,
+    ) -> trc::Result<&'x mut BatchBuilder> {
+        // Build event
+        let mut event = self;
+        let now = now() as i64;
+        event.modified = now;
+        event.created = now;
+
+        // Prepare write batch
+        batch
+            .with_account_id(account_id)
+            .with_collection(Collection::CalendarScheduling)
+            .create_document(document_id)
+            .custom(
+                ObjectIndexBuilder::<(), _>::new()
+                    .with_changes(event)
+                    .with_tenant_id(access_token),
+            )
+            .map(|batch| batch.commit_point())
     }
 }
 
@@ -292,6 +321,32 @@ impl DestroyArchive<Archive<&ArchivedCalendarEvent>> {
 
             batch.commit_point();
         }
+
+        Ok(())
+    }
+}
+
+impl DestroyArchive<Archive<&ArchivedCalendarScheduling>> {
+    #[allow(clippy::too_many_arguments)]
+    pub fn delete(
+        self,
+        access_token: &AccessToken,
+        account_id: u32,
+        document_id: u32,
+        batch: &mut BatchBuilder,
+    ) -> trc::Result<()> {
+        // Delete event
+        batch
+            .with_account_id(account_id)
+            .with_collection(Collection::CalendarScheduling)
+            .delete_document(document_id)
+            .custom(
+                ObjectIndexBuilder::<_, ()>::new()
+                    .with_tenant_id(access_token)
+                    .with_current(self.0),
+            )
+            .caused_by(trc::location!())?
+            .commit_point();
 
         Ok(())
     }

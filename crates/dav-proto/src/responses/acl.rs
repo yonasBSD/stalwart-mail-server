@@ -63,6 +63,100 @@ impl SupportedPrivilege {
         }
         self
     }
+
+    pub fn all_privileges(is_calendar: bool) -> SupportedPrivilege {
+        SupportedPrivilege::new(Privilege::All, "Any operation")
+            .with_abstract()
+            .with_supported_privilege(
+                SupportedPrivilege::new(Privilege::Read, "Read objects").with_supported_privilege(
+                    SupportedPrivilege::new(
+                        Privilege::ReadCurrentUserPrivilegeSet,
+                        "Read current user privileges",
+                    ),
+                ),
+            )
+            .with_supported_privilege(
+                SupportedPrivilege::new(Privilege::Write, "Write objects")
+                    .with_supported_privilege(SupportedPrivilege::new(
+                        Privilege::WriteProperties,
+                        "Write properties",
+                    ))
+                    .with_supported_privilege(SupportedPrivilege::new(
+                        Privilege::WriteContent,
+                        "Write object contents",
+                    ))
+                    .with_supported_privilege(SupportedPrivilege::new(
+                        Privilege::Bind,
+                        "Add resources to a collection",
+                    ))
+                    .with_supported_privilege(SupportedPrivilege::new(
+                        Privilege::Unbind,
+                        "Remove resources from a collection",
+                    ))
+                    .with_supported_privilege(SupportedPrivilege::new(
+                        Privilege::Unlock,
+                        "Unlock resources",
+                    )),
+            )
+            .with_supported_privilege(SupportedPrivilege::new(Privilege::ReadAcl, "Read ACL"))
+            .with_supported_privilege(SupportedPrivilege::new(Privilege::WriteAcl, "Write ACL"))
+            .with_opt_supported_privilege((is_calendar).then(|| {
+                SupportedPrivilege::new(Privilege::ReadFreeBusy, "Read free/busy information")
+            }))
+    }
+
+    pub fn all_scheduling_privileges(is_inbox: bool) -> SupportedPrivilege {
+        let privilege = SupportedPrivilege::new(Privilege::All, "Any operation")
+            .with_abstract()
+            .with_supported_privilege(
+                SupportedPrivilege::new(Privilege::Read, "Read objects").with_supported_privilege(
+                    SupportedPrivilege::new(
+                        Privilege::ReadCurrentUserPrivilegeSet,
+                        "Read current user privileges",
+                    ),
+                ),
+            );
+
+        if is_inbox {
+            privilege.with_supported_privilege(
+                SupportedPrivilege::new(
+                    Privilege::ScheduleDeliver,
+                    "Deliver calendar scheduling messages",
+                )
+                .with_supported_privilege(SupportedPrivilege::new(
+                    Privilege::ScheduleDeliverInvite,
+                    "Deliver calendar scheduling invites",
+                ))
+                .with_supported_privilege(SupportedPrivilege::new(
+                    Privilege::ScheduleDeliverReply,
+                    "Deliver calendar scheduling replies",
+                ))
+                .with_supported_privilege(SupportedPrivilege::new(
+                    Privilege::ScheduleQueryFreeBusy,
+                    "Query free/busy information",
+                )),
+            )
+        } else {
+            privilege.with_supported_privilege(
+                SupportedPrivilege::new(
+                    Privilege::ScheduleSend,
+                    "Send calendar scheduling messages",
+                )
+                .with_supported_privilege(SupportedPrivilege::new(
+                    Privilege::ScheduleSendInvite,
+                    "Send calendar scheduling invites",
+                ))
+                .with_supported_privilege(SupportedPrivilege::new(
+                    Privilege::ScheduleSendReply,
+                    "Send calendar scheduling replies",
+                ))
+                .with_supported_privilege(SupportedPrivilege::new(
+                    Privilege::ScheduleSendFreeBusy,
+                    "Send free/busy information",
+                )),
+            )
+        }
+    }
 }
 
 impl Display for Ace {

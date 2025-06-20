@@ -209,7 +209,7 @@ pub enum TaskQueueClass {
         event_id: u16,
         alarm_id: u16,
     },
-    SendItip {
+    SendImip {
         due: u64,
         is_payload: bool,
     },

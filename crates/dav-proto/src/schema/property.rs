@@ -315,6 +315,41 @@ impl Privilege {
             ]
         }
     }
+
+    pub fn scheduling(is_inbox: bool, is_owner: bool) -> Vec<Privilege> {
+        let mut privileges = if is_inbox {
+            vec![
+                Privilege::Read,
+                Privilege::ReadCurrentUserPrivilegeSet,
+                Privilege::ScheduleDeliver,
+                Privilege::ScheduleDeliverInvite,
+                Privilege::ScheduleDeliverReply,
+                Privilege::ScheduleQueryFreeBusy,
+            ]
+        } else {
+            vec![
+                Privilege::Read,
+                Privilege::ReadCurrentUserPrivilegeSet,
+                Privilege::ScheduleSend,
+                Privilege::ScheduleSendInvite,
+                Privilege::ScheduleSendReply,
+                Privilege::ScheduleSendFreeBusy,
+            ]
+        };
+
+        if is_owner {
+            privileges.extend([
+                Privilege::All,
+                Privilege::Write,
+                Privilege::WriteProperties,
+                Privilege::WriteContent,
+                Privilege::ReadAcl,
+                Privilege::WriteAcl,
+            ]);
+        }
+
+        privileges
+    }
 }
 
 impl From<DavProperty> for DavPropertyValue {

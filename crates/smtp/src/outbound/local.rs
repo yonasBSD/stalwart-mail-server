@@ -11,8 +11,8 @@ use trc::SieveEvent;
 
 use crate::{
     queue::{
-        DomainPart, Error, ErrorDetails, HostResponse, Message, MessageSource, RCPT_STATUS_CHANGED,
-        Recipient, Status, quota::HasQueueQuota, spool::SmtpSpool,
+        DMARC_AUTHENTICATED, DomainPart, Error, ErrorDetails, HostResponse, Message, MessageSource,
+        RCPT_STATUS_CHANGED, Recipient, Status, quota::HasQueueQuota, spool::SmtpSpool,
     },
     reporting::SmtpReporting,
 };
@@ -45,6 +45,7 @@ impl Message {
         let delivery_result = server
             .deliver_message(IngestMessage {
                 sender_address: self.return_path_lcase.clone(),
+                sender_authenticated: self.flags & DMARC_AUTHENTICATED != 0,
                 recipients: recipient_addresses,
                 message_blob: self.blob_hash.clone(),
                 message_size: self.size,

@@ -21,6 +21,7 @@ pub enum DavResourceName {
     Cal,
     File,
     Principal,
+    Scheduling,
 }
 
 pub const RFC_3986: &AsciiSet = &CONTROLS
@@ -63,6 +64,7 @@ impl DavResourceName {
             "cal" => DavResourceName::Cal,
             "file" => DavResourceName::File,
             "pal" => DavResourceName::Principal,
+            "itip" => DavResourceName::Scheduling,
         )
     }
 
@@ -72,6 +74,7 @@ impl DavResourceName {
             DavResourceName::Cal => "/dav/cal",
             DavResourceName::File => "/dav/file",
             DavResourceName::Principal => "/dav/pal",
+            DavResourceName::Scheduling => "/dav/itip",
         }
     }
 
@@ -81,6 +84,7 @@ impl DavResourceName {
             DavResourceName::Cal => "/dav/cal/",
             DavResourceName::File => "/dav/file/",
             DavResourceName::Principal => "/dav/pal/",
+            DavResourceName::Scheduling => "/dav/itip/",
         }
     }
 
@@ -90,6 +94,7 @@ impl DavResourceName {
             DavResourceName::Cal => "CalDAV",
             DavResourceName::File => "WebDAV",
             DavResourceName::Principal => "Principal",
+            DavResourceName::Scheduling => "Scheduling",
         }
     }
 }
@@ -101,6 +106,7 @@ impl From<DavResourceName> for Collection {
             DavResourceName::Cal => Collection::Calendar,
             DavResourceName::File => Collection::FileNode,
             DavResourceName::Principal => Collection::Principal,
+            DavResourceName::Scheduling => Collection::CalendarScheduling,
         }
     }
 }
@@ -112,6 +118,7 @@ impl From<Collection> for DavResourceName {
             Collection::Calendar => DavResourceName::Cal,
             Collection::FileNode => DavResourceName::File,
             Collection::Principal => DavResourceName::Principal,
+            Collection::CalendarScheduling => DavResourceName::Scheduling,
             _ => unreachable!(),
         }
     }

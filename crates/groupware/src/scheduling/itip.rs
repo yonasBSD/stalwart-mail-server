@@ -262,14 +262,14 @@ impl ItipMessages {
     pub fn queue(self, batch: &mut BatchBuilder) -> trc::Result<()> {
         let due = now();
         batch.set(
-            ValueClass::TaskQueue(TaskQueueClass::SendItip {
+            ValueClass::TaskQueue(TaskQueueClass::SendImip {
                 due,
                 is_payload: false,
             }),
             vec![],
         );
         batch.set(
-            ValueClass::TaskQueue(TaskQueueClass::SendItip {
+            ValueClass::TaskQueue(TaskQueueClass::SendImip {
                 due,
                 is_payload: true,
             }),

@@ -19,7 +19,6 @@ use groupware::{DavResourceName, RFC_3986};
 use hyper::{Method, StatusCode};
 use std::borrow::Cow;
 use store::ahash::AHashMap;
-
 pub(crate) type Result<T> = std::result::Result<T, DavError>;
 
 #[derive(Debug, Clone, Copy)]
@@ -77,6 +76,7 @@ pub(crate) enum DavError {
 struct DavErrorCondition {
     pub code: StatusCode,
     pub condition: Condition,
+    pub details: Option<String>,
 }
 
 impl From<DavErrorCondition> for DavError {
@@ -90,6 +90,7 @@ impl From<Condition> for DavErrorCondition {
         DavErrorCondition {
             code: StatusCode::CONFLICT,
             condition: value,
+            details: None,
         }
     }
 }
@@ -99,7 +100,13 @@ impl DavErrorCondition {
         DavErrorCondition {
             code,
             condition: condition.into(),
+            details: None,
         }
+    }
+
+    pub fn with_details(mut self, details: impl Into<String>) -> Self {
+        self.details = Some(details.into());
+        self
     }
 }
 

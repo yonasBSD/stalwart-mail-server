@@ -310,7 +310,35 @@ pub fn itip_snapshot<'x, 'y>(
     }
 }
 
+impl ItipSnapshots<'_> {
+    pub fn sender_is_organizer_or_attendee(&self, email: &str) -> bool {
+        self.organizer.email.email == email
+            || self.components.values().any(|snapshot| {
+                snapshot
+                    .attendees
+                    .iter()
+                    .any(|attendee| attendee.email.email == email)
+            })
+    }
+}
+
 impl ItipSnapshot<'_> {
+    pub fn has_local_attendee(&self) -> bool {
+        self.attendees
+            .iter()
+            .any(|attendee| attendee.email.is_local)
+    }
+
+    pub fn local_attendee(&self) -> Option<&Attendee<'_>> {
+        self.attendees
+            .iter()
+            .find(|attendee| attendee.email.is_local)
+    }
+
+    pub fn external_attendees(&self) -> impl Iterator<Item = &Attendee<'_>> + '_ {
+        self.attendees.iter().filter(|item| !item.email.is_local)
+    }
+
     pub fn attendee_by_email(&self, email: &str) -> Option<&Attendee<'_>> {
         self.attendees
             .iter()

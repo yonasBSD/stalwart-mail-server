@@ -361,3 +361,11 @@ impl PropertyUpdate {
         !self.set.is_empty() || !self.remove.is_empty()
     }
 }
+
+impl FreeBusyQuery {
+    pub fn new(start: i64, end: i64) -> Self {
+        FreeBusyQuery {
+            range: Some(TimeRange { start, end }),
+        }
+    }
+}

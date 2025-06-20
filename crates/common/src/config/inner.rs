@@ -131,6 +131,13 @@ impl Caches {
                 (std::mem::size_of::<DavResources>() + (500 * std::mem::size_of::<DavResource>()))
                     as u64,
             ),
+            scheduling: Cache::from_config(
+                config,
+                "events",
+                MB_1,
+                (std::mem::size_of::<DavResources>() + (500 * std::mem::size_of::<DavResource>()))
+                    as u64,
+            ),
             bayes: CacheWithTtl::from_config(
                 config,
                 "bayes",

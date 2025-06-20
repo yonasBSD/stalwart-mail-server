@@ -11,6 +11,7 @@ pub mod get;
 pub mod mkcol;
 pub mod proppatch;
 pub mod query;
+pub mod scheduling;
 pub mod update;
 
 use crate::{DavError, DavErrorCondition};

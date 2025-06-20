@@ -122,6 +122,7 @@ pub struct Recipient {
 }
 
 pub const FROM_REPORT: u64 = 1 << 32;
+pub const DMARC_AUTHENTICATED: u64 = 2 << 32;
 
 pub const RCPT_DSN_SENT: u64 = 1 << 32;
 pub const RCPT_STATUS_CHANGED: u64 = 2 << 32;

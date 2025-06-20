@@ -556,3 +556,12 @@ impl<T> From<Value<'static>> for Archive<T> {
         unimplemented!()
     }
 }
+
+impl Default for Archive<AlignedBytes> {
+    fn default() -> Self {
+        Archive {
+            version: ArchiveVersion::Unversioned,
+            inner: AlignedBytes::Aligned(AlignedVec::new()),
+        }
+    }
+}

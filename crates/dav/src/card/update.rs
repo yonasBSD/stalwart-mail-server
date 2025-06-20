@@ -74,19 +74,25 @@ impl CardUpdateRequestHandler for Server {
             )));
         }
         let vcard_raw = std::str::from_utf8(&bytes).map_err(|_| {
-            DavError::Condition(DavErrorCondition::new(
-                StatusCode::PRECONDITION_FAILED,
-                CardCondition::SupportedAddressData,
-            ))
+            DavError::Condition(
+                DavErrorCondition::new(
+                    StatusCode::PRECONDITION_FAILED,
+                    CardCondition::SupportedAddressData,
+                )
+                .with_details("The request body is not valid UTF-8."),
+            )
         })?;
 
         let vcard = match Parser::new(vcard_raw).strict().entry() {
             Entry::VCard(vcard) => vcard,
             _ => {
-                return Err(DavError::Condition(DavErrorCondition::new(
-                    StatusCode::PRECONDITION_FAILED,
-                    CardCondition::SupportedAddressData,
-                )));
+                return Err(DavError::Condition(
+                    DavErrorCondition::new(
+                        StatusCode::PRECONDITION_FAILED,
+                        CardCondition::SupportedAddressData,
+                    )
+                    .with_details("Failed to parse vCard data."),
+                ));
             }
         };
 

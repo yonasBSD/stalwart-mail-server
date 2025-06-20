@@ -544,7 +544,6 @@ impl EventType {
                 CalendarEvent::RuleExpansionError
                 | CalendarEvent::AlarmSkipped
                 | CalendarEvent::AlarmRecipientOverride
-                | CalendarEvent::SchedulingError
                 | CalendarEvent::ItipMessageError => Level::Debug,
             },
         }

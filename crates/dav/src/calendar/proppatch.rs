@@ -4,8 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::str::FromStr;
-
 use crate::{
     DavError, DavMethod, PropStatBuilder,
     common::{
@@ -35,6 +33,7 @@ use jmap_proto::types::{
     acl::Acl,
     collection::{Collection, SyncCollection},
 };
+use std::str::FromStr;
 use store::write::BatchBuilder;
 use trc::AddContext;
 

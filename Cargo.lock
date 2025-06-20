@@ -2235,6 +2235,7 @@ dependencies = [
  "common",
  "compact_str",
  "directory",
+ "groupware",
  "hashify",
  "jmap_proto",
  "mail-builder",

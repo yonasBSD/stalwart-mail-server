@@ -6,9 +6,12 @@
 
 use crate::{
     parser::{tokenizer::Tokenizer, DavParser, RawElement, Token},
-    schema::request::{
-        ArchivedDeadElementTag, ArchivedDeadProperty, ArchivedDeadPropertyTag, DeadElementTag,
-        DeadProperty, DeadPropertyTag,
+    schema::{
+        request::{
+            ArchivedDeadElementTag, ArchivedDeadProperty, ArchivedDeadPropertyTag, DeadElementTag,
+            DeadProperty, DeadPropertyTag,
+        },
+        Namespace,
     },
 };
 
@@ -56,6 +59,16 @@ impl DavParser for DeadProperty {
 }
 
 impl DeadProperty {
+    pub fn single_with_ns(namespace: Namespace, name: &str) -> Self {
+        DeadProperty(vec![
+            DeadPropertyTag::ElementStart(DeadElementTag {
+                name: format!("{}:{name}", namespace.prefix()),
+                attrs: None,
+            }),
+            DeadPropertyTag::ElementEnd,
+        ])
+    }
+
     pub fn remove_element(&mut self, element: &DeadElementTag) {
         let mut depth = 0;
         let mut remove = false;

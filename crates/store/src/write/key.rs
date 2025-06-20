@@ -308,7 +308,7 @@ impl ValueClass {
                     .write(document_id)
                     .write(*event_id)
                     .write(*alarm_id),
-                TaskQueueClass::SendItip { due, is_payload } => {
+                TaskQueueClass::SendImip { due, is_payload } => {
                     if !*is_payload {
                         serializer
                             .write(*due)
@@ -597,7 +597,7 @@ impl ValueClass {
                     (BLOB_HASH_LEN + U64_LEN * 2) + 1
                 }
                 TaskQueueClass::SendAlarm { .. } => U64_LEN + (U32_LEN * 3) + 1,
-                TaskQueueClass::SendItip { is_payload, .. } => {
+                TaskQueueClass::SendImip { is_payload, .. } => {
                     if *is_payload {
                         (U64_LEN * 2) + (U32_LEN * 2) + 1
                     } else {

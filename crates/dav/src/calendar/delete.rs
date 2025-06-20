@@ -71,6 +71,21 @@ impl CalendarDeleteRequestHandler for Server {
         // Fetch entry
         let mut batch = BatchBuilder::new();
         if delete_resource.is_container() {
+            // Deleting the default calendar is not allowed
+            #[cfg(not(debug_assertions))]
+            if self
+                .core
+                .groupware
+                .default_calendar_name
+                .as_ref()
+                .is_some_and(|name| name == delete_path)
+            {
+                return Err(DavError::Condition(crate::DavErrorCondition::new(
+                    StatusCode::FORBIDDEN,
+                    dav_proto::schema::response::CalCondition::DefaultCalendarNeeded,
+                )));
+            }
+
             let calendar_ = self
                 .get_archive(account_id, Collection::Calendar, document_id)
                 .await

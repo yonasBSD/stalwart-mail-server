@@ -65,7 +65,7 @@ pub fn itip_process_message(
     if snapshots.organizer.email.is_local {
         // Handle attendee updates
         if snapshots.organizer.email.email == sender {
-            return Err(ItipError::SenderIsOrganizer);
+            return Err(ItipError::OrganizerIsLocalAddress);
         }
         match method {
             ICalendarMethod::Reply => {
@@ -325,8 +325,6 @@ pub fn itip_process_message(
 }
 
 pub fn itip_import_message(ical: &mut ICalendar) -> Result<(), ItipError> {
-    let todo = "use before insert";
-    let todo = "sender must not be organizer";
     let mut expect_object_type = None;
     for comp in ical.components.iter_mut() {
         if comp.component_type.is_scheduling_object() {
@@ -602,8 +600,6 @@ pub fn itip_merge_changes(ical: &mut ICalendar, changes: Vec<MergeAction>) {
 }
 
 fn itip_method(ical: &ICalendar) -> Result<&ICalendarMethod, ItipError> {
-    let todo = "validate max size of components before saving + max itip message size";
-    let todo2 = "make sure root is vcalendar and all components are of the same type";
     ical.components
         .first()
         .and_then(|comp| {

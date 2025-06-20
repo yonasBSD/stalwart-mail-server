@@ -5,6 +5,9 @@
  */
 
 #![warn(clippy::large_futures)]
+#![warn(clippy::cast_possible_truncation)]
+#![warn(clippy::cast_possible_wrap)]
+#![warn(clippy::cast_sign_loss)]
 
 use common::{config::server::ServerProtocol, core::BuildServer, manager::boot::BootManager};
 use http::HttpSessionManager;

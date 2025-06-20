@@ -59,7 +59,7 @@ pub struct ResponseDescription(pub String);
 #[repr(transparent)]
 pub struct SyncToken(pub String);
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(test, derive(serde::Serialize, serde::Deserialize))]
 #[repr(transparent)]
 pub struct Href(pub String);
@@ -94,10 +94,12 @@ pub struct PropResponse {
     pub properties: List<DavPropertyValue>,
 }
 
+#[derive(Default)]
 pub struct ScheduleResponse {
     pub items: List<ScheduleResponseItem>,
 }
 
+#[derive(Default)]
 pub struct ScheduleResponseItem {
     pub recipient: Href,
     pub request_status: Cow<'static, str>,

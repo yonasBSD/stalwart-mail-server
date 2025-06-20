@@ -988,7 +988,6 @@ pub enum CalendarEvent {
     AlarmSkipped,
     AlarmRecipientOverride,
     AlarmFailed,
-    SchedulingError,
     ItipMessageSent,
     ItipMessageReceived,
     ItipMessageError,

@@ -611,6 +611,7 @@ pub async fn test(params: &JMAPTest) {
         server
             .deliver_message(IngestMessage {
                 sender_address: "bill@foobar.org".to_string(),
+                sender_authenticated: true,
                 recipients: vec!["john@foobar.org".to_string()],
                 message_blob: message_blob.clone(),
                 message_size: TEST_MESSAGE.len() as u64,
@@ -649,6 +650,7 @@ pub async fn test(params: &JMAPTest) {
         server
             .deliver_message(IngestMessage {
                 sender_address: "bill@foobar.org".to_string(),
+                sender_authenticated: true,
                 recipients: vec!["john@foobar.org".to_string()],
                 message_blob: message_blob.clone(),
                 message_size: TEST_MESSAGE.len() as u64,
@@ -674,6 +676,7 @@ pub async fn test(params: &JMAPTest) {
         server
             .deliver_message(IngestMessage {
                 sender_address: "bill@foobar.org".to_string(),
+                sender_authenticated: true,
                 recipients: vec!["john@foobar.org".to_string()],
                 message_blob,
                 message_size: TEST_MESSAGE.len() as u64,

@@ -64,6 +64,21 @@ impl CalendarCopyMoveRequestHandler for Server {
         let from_resource = from_resources
             .by_path(from_resource_name)
             .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
+        #[cfg(not(debug_assertions))]
+        if is_move
+            && from_resource.is_container()
+            && self
+                .core
+                .groupware
+                .default_calendar_name
+                .as_ref()
+                .is_some_and(|name| name == from_resource_name)
+        {
+            return Err(DavError::Condition(crate::DavErrorCondition::new(
+                StatusCode::FORBIDDEN,
+                dav_proto::schema::response::CalCondition::DefaultCalendarNeeded,
+            )));
+        }
 
         // Validate ACL
         if !access_token.is_member(from_account_id)

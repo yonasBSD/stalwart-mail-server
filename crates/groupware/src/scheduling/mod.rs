@@ -129,10 +129,17 @@ pub enum ItipError {
     MissingMethod,
     InvalidComponentType,
     OutOfSequence,
-    SenderIsOrganizer,
+    OrganizerIsLocalAddress,
+    SenderIsNotOrganizerNorAttendee,
     SenderIsNotParticipant(String),
     UnknownParticipant(String),
     UnsupportedMethod(ICalendarMethod),
+    ICalendarParseError,
+    EventNotFound,
+    EventTooLarge,
+    QuotaExceeded,
+    NoDefaultCalendar,
+    AutoAddDisabled,
 }
 
 #[derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize)]
@@ -148,24 +155,6 @@ pub struct ItipMessage<T> {
 #[derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize)]
 pub struct ItipMessages {
     pub messages: Vec<ItipMessage<String>>,
-}
-
-impl ItipSnapshot<'_> {
-    pub fn has_local_attendee(&self) -> bool {
-        self.attendees
-            .iter()
-            .any(|attendee| attendee.email.is_local)
-    }
-
-    pub fn local_attendee(&self) -> Option<&Attendee<'_>> {
-        self.attendees
-            .iter()
-            .find(|attendee| attendee.email.is_local)
-    }
-
-    pub fn external_attendees(&self) -> impl Iterator<Item = &Attendee<'_>> + '_ {
-        self.attendees.iter().filter(|item| !item.email.is_local)
-    }
 }
 
 impl Attendee<'_> {
@@ -310,13 +299,8 @@ impl ItipDateTime<'_> {
 impl ItipError {
     pub fn failed_precondition(&self) -> Option<CalCondition> {
         match self {
-            ItipError::NoSchedulingInfo
-            | ItipError::OtherSchedulingAgent
-            | ItipError::NotOrganizer
-            | ItipError::NotOrganizerNorAttendee
-            | ItipError::NothingToSend => None,
             ItipError::MultipleOrganizer => Some(CalCondition::SameOrganizerInAllComponents),
-            ItipError::SenderIsOrganizer
+            ItipError::OrganizerIsLocalAddress
             | ItipError::SenderIsNotParticipant(_)
             | ItipError::OrganizerMismatch => Some(CalCondition::ValidOrganizer),
             ItipError::CannotModifyProperty(_)
@@ -331,6 +315,7 @@ impl ItipError {
             | ItipError::OutOfSequence
             | ItipError::UnknownParticipant(_)
             | ItipError::UnsupportedMethod(_) => Some(CalCondition::ValidSchedulingMessage),
+            _ => None,
         }
     }
 }
@@ -365,15 +350,34 @@ impl Display for ItipError {
                 write!(f, "Invalid component type in iCalendar object")
             }
             ItipError::OutOfSequence => write!(f, "Old sequence number found"),
-            ItipError::SenderIsOrganizer => write!(f, "Sender is the organizer of the event"),
+            ItipError::OrganizerIsLocalAddress => {
+                write!(
+                    f,
+                    "Organizer matches one of the recipient's account addresses"
+                )
+            }
             ItipError::SenderIsNotParticipant(participant) => {
                 write!(f, "Sender {participant:?} is not a participant")
+            }
+            ItipError::SenderIsNotOrganizerNorAttendee => {
+                write!(f, "Sender is neither organizer nor attendee")
             }
             ItipError::UnknownParticipant(participant) => {
                 write!(f, "Unknown participant: {}", participant)
             }
             ItipError::UnsupportedMethod(method) => {
                 write!(f, "Unsupported method: {}", method.as_str())
+            }
+            ItipError::ICalendarParseError => write!(f, "Failed to parse iCalendar object"),
+            ItipError::EventNotFound => write!(f, "Event found in index but not in database"),
+            ItipError::EventTooLarge => write!(
+                f,
+                "Applying the iTIP message would exceed the maximum event size"
+            ),
+            ItipError::QuotaExceeded => write!(f, "Quota exceeded"),
+            ItipError::NoDefaultCalendar => write!(f, "No default calendar found for the account"),
+            ItipError::AutoAddDisabled => {
+                write!(f, "Auto-adding events is disabled for this account")
             }
         }
     }

@@ -82,19 +82,25 @@ impl CalendarUpdateRequestHandler for Server {
             )));
         }
         let ical_raw = std::str::from_utf8(&bytes).map_err(|_| {
-            DavError::Condition(DavErrorCondition::new(
-                StatusCode::PRECONDITION_FAILED,
-                CalCondition::SupportedCalendarData,
-            ))
+            DavError::Condition(
+                DavErrorCondition::new(
+                    StatusCode::PRECONDITION_FAILED,
+                    CalCondition::SupportedCalendarData,
+                )
+                .with_details("Invalid UTF-8 in iCalendar data"),
+            )
         })?;
 
         let ical = match Parser::new(ical_raw).entry() {
             Entry::ICalendar(ical) => ical,
             _ => {
-                return Err(DavError::Condition(DavErrorCondition::new(
-                    StatusCode::PRECONDITION_FAILED,
-                    CalCondition::SupportedCalendarData,
-                )));
+                return Err(DavError::Condition(
+                    DavErrorCondition::new(
+                        StatusCode::PRECONDITION_FAILED,
+                        CalCondition::SupportedCalendarData,
+                    )
+                    .with_details("Failed to parse iCalendar data"),
+                ));
             }
         };
 
@@ -184,7 +190,8 @@ impl CalendarUpdateRequestHandler for Server {
             }
 
             // Obtain previous alarm
-            let prev_email_alarm = event.inner.data.next_alarm(now() as i64, Tz::Floating);
+            let now = now() as i64;
+            let prev_email_alarm = event.inner.data.next_alarm(now, Tz::Floating);
 
             // Build event
             let mut next_email_alarm = None;
@@ -205,6 +212,7 @@ impl CalendarUpdateRequestHandler for Server {
             if self.core.groupware.itip_enabled
                 && !access_token.emails.is_empty()
                 && access_token.has_permission(Permission::CalendarSchedulingSend)
+                && new_event.data.event_range_end() > now
             {
                 let result = if let Some(schedule_tag) = &mut new_event.schedule_tag {
                     *schedule_tag += 1;
@@ -232,17 +240,13 @@ impl CalendarUpdateRequestHandler for Server {
                     }
                     Err(err) => {
                         if let Some(failed_precondition) = err.failed_precondition() {
-                            trc::event!(
-                                Calendar(trc::CalendarEvent::SchedulingError),
-                                AccountId = account_id,
-                                DocumentId = document_id,
-                                Details = err.to_string(),
-                            );
-
-                            return Err(DavError::Condition(DavErrorCondition::new(
-                                StatusCode::PRECONDITION_FAILED,
-                                failed_precondition,
-                            )));
+                            return Err(DavError::Condition(
+                                DavErrorCondition::new(
+                                    StatusCode::PRECONDITION_FAILED,
+                                    failed_precondition,
+                                )
+                                .with_details(err.to_string()),
+                            ));
                         }
                     }
                 }
@@ -350,6 +354,7 @@ impl CalendarUpdateRequestHandler for Server {
             if self.core.groupware.itip_enabled
                 && !access_token.emails.is_empty()
                 && access_token.has_permission(Permission::CalendarSchedulingSend)
+                && event.data.event_range_end() > now() as i64
             {
                 match itip_create(&mut event.data.event, access_token.emails.as_slice()) {
                     Ok(messages) => {
@@ -367,16 +372,13 @@ impl CalendarUpdateRequestHandler for Server {
                     }
                     Err(err) => {
                         if let Some(failed_precondition) = err.failed_precondition() {
-                            trc::event!(
-                                Calendar(trc::CalendarEvent::SchedulingError),
-                                AccountId = account_id,
-                                Details = err.to_string(),
-                            );
-
-                            return Err(DavError::Condition(DavErrorCondition::new(
-                                StatusCode::PRECONDITION_FAILED,
-                                failed_precondition,
-                            )));
+                            return Err(DavError::Condition(
+                                DavErrorCondition::new(
+                                    StatusCode::PRECONDITION_FAILED,
+                                    failed_precondition,
+                                )
+                                .with_details(err.to_string()),
+                            ));
                         }
                     }
                 }
@@ -447,9 +449,12 @@ fn validate_ical(ical: &ICalendar) -> crate::Result<&str> {
     if uids.len() == 1 && types.iter().filter(|&&v| v == 0).count() == 4 {
         Ok(uids.iter().next().unwrap())
     } else {
-        Err(DavError::Condition(DavErrorCondition::new(
-            StatusCode::PRECONDITION_FAILED,
-            CalCondition::ValidCalendarObjectResource,
-        )))
+        Err(DavError::Condition(
+            DavErrorCondition::new(
+                StatusCode::PRECONDITION_FAILED,
+                CalCondition::ValidCalendarObjectResource,
+            )
+            .with_details("iCalendar must contain exactly one UID and same component types"),
+        ))
     }
 }

@@ -244,12 +244,13 @@ async fn test_multi_thread(params: &mut JMAPTest) {
                     .email_ingest(IngestEmail {
                         raw_message: message.contents(),
                         message: MessageParser::new().parse(message.contents()),
-                        resource: AccessToken::from_id(0).as_resource_token(),
+                        access_token: &AccessToken::from_id(0),
                         mailbox_ids: vec![mailbox_id],
                         keywords: vec![],
                         received_at: None,
                         source: IngestSource::Smtp {
                             deliver_to: "test@domain.org",
+                            is_sender_authenticated: true,
                         },
                         spam_classify: false,
                         spam_train: false,

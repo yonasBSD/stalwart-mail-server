@@ -8,6 +8,7 @@ pub mod alarm;
 pub mod dates;
 pub mod expand;
 pub mod index;
+pub mod itip;
 pub mod storage;
 
 use calcard::icalendar::ICalendar;
@@ -57,6 +58,9 @@ pub struct DefaultAlert {
     pub with_time: bool,
 }
 
+pub const SCHEDULE_INBOX_ID: u32 = u32::MAX - 1;
+pub const SCHEDULE_OUTBOX_ID: u32 = u32::MAX - 2;
+
 pub const EVENT_INVITE_SELF: u16 = 1;
 pub const EVENT_INVITE_OTHERS: u16 = 1 << 1;
 pub const EVENT_HIDE_ATTENDEES: u16 = 1 << 2;
@@ -77,6 +81,18 @@ pub struct CalendarEvent {
     pub created: i64,
     pub modified: i64,
     pub schedule_tag: Option<u32>,
+}
+
+#[derive(
+    rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
+)]
+pub struct CalendarScheduling {
+    pub itip: ICalendar,
+    pub event_id: Option<u32>,
+    pub flags: u16,
+    pub size: u32,
+    pub created: i64,
+    pub modified: i64,
 }
 
 #[derive(
