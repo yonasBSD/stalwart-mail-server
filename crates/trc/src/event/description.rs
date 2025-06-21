@@ -1897,7 +1897,7 @@ impl CalendarEvent {
             CalendarEvent::AlarmFailed => "Calendar alarm could not be sent",
             CalendarEvent::ItipMessageSent => "Calendar iTIP message sent",
             CalendarEvent::ItipMessageReceived => "Calendar iTIP message received",
-            CalendarEvent::ItipMessageError => "Incoming calendar iTIP message error",
+            CalendarEvent::ItipMessageError => "iTIP message error",
         }
     }
 
@@ -1913,7 +1913,7 @@ impl CalendarEvent {
             CalendarEvent::ItipMessageSent => "A calendar iTIP message has been sent",
             CalendarEvent::ItipMessageReceived => "A calendar iTIP/iMIP message has been received",
             CalendarEvent::ItipMessageError => {
-                "An error occurred while processing an incoming iTIP/iMIP message"
+                "An error occurred while processing an iTIP/iMIP message"
             }
         }
     }

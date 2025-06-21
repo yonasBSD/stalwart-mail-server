@@ -17,6 +17,7 @@ use calcard::{
     Entry, Parser,
     icalendar::{
         ICalendarComponentType, ICalendarEntry, ICalendarMethod, ICalendarProperty, ICalendarValue,
+        Uri,
     },
 };
 use common::{Server, auth::AccessToken};
@@ -289,10 +290,18 @@ impl CalendarSchedulingHandler for Server {
                     (ICalendarProperty::Uid, Some(ICalendarValue::Text(_))) => {
                         uid = Some(entry);
                     }
-                    (ICalendarProperty::Organizer, Some(ICalendarValue::Text(_))) => {
+                    (
+                        ICalendarProperty::Organizer,
+                        Some(ICalendarValue::Text(_) | ICalendarValue::Uri(Uri::Location(_))),
+                    ) => {
                         organizer = Some(entry);
                     }
-                    (ICalendarProperty::Attendee, Some(ICalendarValue::Text(value))) => {
+                    (
+                        ICalendarProperty::Attendee,
+                        Some(
+                            ICalendarValue::Text(value) | ICalendarValue::Uri(Uri::Location(value)),
+                        ),
+                    ) => {
                         if let Some(email) =
                             sanitize_email(value.strip_prefix("mailto:").unwrap_or(value.as_str()))
                         {

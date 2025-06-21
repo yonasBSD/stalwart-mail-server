@@ -1378,6 +1378,15 @@ impl PropFindRequestHandler for Server {
                                 DavValue::CData(ical),
                             ));
                         }
+                        (
+                            CalDavProperty::CalendarData(_),
+                            ArchivedResource::CalendarScheduling(event),
+                        ) => {
+                            fields.push(DavPropertyValue::new(
+                                property.clone(),
+                                DavValue::CData(event.inner.itip.to_string()),
+                            ));
+                        }
                         (CalDavProperty::ScheduleTag, ArchivedResource::CalendarEvent(event))
                             if event.inner.schedule_tag.is_some() =>
                         {
@@ -1406,7 +1415,7 @@ impl PropFindRequestHandler for Server {
                                 fields.push(DavPropertyValue::new(
                                     property.clone(),
                                     vec![Href(format!(
-                                        "{}/{}/{default_cal}",
+                                        "{}/{}/{default_cal}/",
                                         DavResourceName::Cal.base_path(),
                                         item.name.split('/').nth(3).unwrap_or_default()
                                     ))],

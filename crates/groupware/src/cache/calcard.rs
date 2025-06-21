@@ -228,7 +228,7 @@ pub(super) async fn build_scheduling_resources(
         cache.paths.insert(path);
         cache
             .resources
-            .push(resource_from_scheduling(document_id, false));
+            .push(resource_from_scheduling(document_id, is_container));
     }
 
     Ok(cache)
@@ -360,7 +360,7 @@ pub(super) fn path_from_scheduling(
         }
     } else {
         DavPath {
-            path: format!("inbox/{document_id}"),
+            path: format!("inbox/{document_id}.ics"),
             parent_id: Some(SCHEDULE_INBOX_ID),
             hierarchy_seq: 0,
             resource_idx,

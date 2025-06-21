@@ -162,6 +162,11 @@ impl CalendarUpdateRequestHandler for Server {
                 Err(e) => return Err(e),
             }
 
+            if ical == event.inner.data.event {
+                // No changes, return existing event
+                return Ok(HttpResponse::new(StatusCode::NO_CONTENT));
+            }
+
             // Validate quota
             let extra_bytes =
                 (bytes.len() as u64).saturating_sub(u32::from(event.inner.size) as u64);
@@ -214,8 +219,7 @@ impl CalendarUpdateRequestHandler for Server {
                 && access_token.has_permission(Permission::CalendarSchedulingSend)
                 && new_event.data.event_range_end() > now
             {
-                let result = if let Some(schedule_tag) = &mut new_event.schedule_tag {
-                    *schedule_tag += 1;
+                let result = if new_event.schedule_tag.is_some() {
                     itip_update(
                         &mut new_event.data.event,
                         &old_ical,
@@ -227,9 +231,25 @@ impl CalendarUpdateRequestHandler for Server {
 
                 match result {
                     Ok(messages) => {
-                        if messages.iter().map(|r| r.to.len()).sum::<usize>()
+                        let mut is_organizer = false;
+                        if messages
+                            .iter()
+                            .map(|r| {
+                                is_organizer = r.from_organizer;
+                                r.to.len()
+                            })
+                            .sum::<usize>()
                             < self.core.groupware.itip_outbound_max_recipients
                         {
+                            // Only update schedule tag if the user is the organizer
+                            if is_organizer {
+                                if let Some(schedule_tag) = &mut new_event.schedule_tag {
+                                    *schedule_tag += 1;
+                                } else {
+                                    new_event.schedule_tag = Some(1);
+                                }
+                            }
+
                             itip_messages = Some(ItipMessages::new(messages));
                         } else {
                             return Err(DavError::Condition(DavErrorCondition::new(
@@ -247,6 +267,11 @@ impl CalendarUpdateRequestHandler for Server {
                                 )
                                 .with_details(err.to_string()),
                             ));
+                        }
+
+                        // Event changed, but there are no iTIP messages to send
+                        if let Some(schedule_tag) = &mut new_event.schedule_tag {
+                            *schedule_tag += 1;
                         }
                     }
                 }

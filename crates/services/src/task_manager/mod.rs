@@ -331,10 +331,7 @@ impl TaskQueueManager for Server {
 impl Task {
     fn remove_lock(&self) -> bool {
         // Bayes locks are not removed to avoid constant retraining
-        matches!(
-            self.action,
-            TaskAction::Index { .. } | TaskAction::SendAlarm { .. }
-        )
+        !matches!(self.action, TaskAction::BayesTrain { .. })
     }
 
     fn lock_key(&self) -> Vec<u8> {

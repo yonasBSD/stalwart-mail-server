@@ -40,20 +40,23 @@ impl Server {
         expiry_in: u64,
     ) -> trc::Result<String> {
         // Build context
-        if client_id.len() > CLIENT_ID_MAX_LEN {
-            return Err(trc::AuthEvent::Error
-                .into_err()
-                .details("Client id too long"));
-        }
+        let mut password_hash = String::new();
 
-        // Include password hash if expiration is over 1 hour
-        let password_hash = if !matches!(grant_type, GrantType::Rsvp) && expiry_in > 3600 {
-            self.password_hash(account_id)
-                .await
-                .caused_by(trc::location!())?
-        } else {
-            "".into()
-        };
+        if !matches!(grant_type, GrantType::Rsvp) {
+            if client_id.len() > CLIENT_ID_MAX_LEN {
+                return Err(trc::AuthEvent::Error
+                    .into_err()
+                    .details("Client id too long"));
+            }
+
+            // Include password hash if expiration is over 1 hour
+            if expiry_in > 3600 {
+                password_hash = self
+                    .password_hash(account_id)
+                    .await
+                    .caused_by(trc::location!())?
+            }
+        }
 
         let key = &self.core.oauth.oauth_key;
         let context = format!(

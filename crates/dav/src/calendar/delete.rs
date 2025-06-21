@@ -201,6 +201,10 @@ impl CalendarDeleteRequestHandler for Server {
 
         self.commit_batch(batch).await.caused_by(trc::location!())?;
 
+        if send_itip {
+            self.notify_task_queue();
+        }
+
         Ok(HttpResponse::new(StatusCode::NO_CONTENT))
     }
 }

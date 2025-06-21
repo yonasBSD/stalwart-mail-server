@@ -336,10 +336,19 @@ impl EmailIngest for Server {
                                             )
                                             .await
                                         {
-                                            Ok(Some(message)) => {
-                                                itip_messages.push(message);
+                                            Ok(message) => {
+                                                if let Some(message) = message {
+                                                    itip_messages.push(message);
+                                                }
+                                                trc::event!(
+                                                    Calendar(
+                                                        trc::CalendarEvent::ItipMessageReceived
+                                                    ),
+                                                    SpanId = params.session_id,
+                                                    From = sender.to_string(),
+                                                    AccountId = account_id,
+                                                );
                                             }
-                                            Ok(None) => {}
                                             Err(ItipIngestError::Message(itip_error)) => {
                                                 match itip_error {
                                                     ItipError::NothingToSend
@@ -348,6 +357,7 @@ impl EmailIngest for Server {
                                                         trc::event!(
                                                             Calendar(trc::CalendarEvent::ItipMessageError),
                                                             SpanId = params.session_id,
+                                                            From = sender.to_string(),
                                                             AccountId = account_id,
                                                             Details = err.to_string(),
                                                         )
@@ -363,6 +373,11 @@ impl EmailIngest for Server {
                                     trc::event!(
                                         Calendar(trc::CalendarEvent::ItipMessageError),
                                         SpanId = params.session_id,
+                                        From = message
+                                            .from()
+                                            .and_then(|a| a.first())
+                                            .and_then(|a| a.address())
+                                            .map(|a| a.to_string()),
                                         AccountId = account_id,
                                         Details = "iMIP message too large",
                                         Limit = self.core.groupware.itip_inbound_max_ical_size,

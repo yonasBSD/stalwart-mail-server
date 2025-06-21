@@ -162,6 +162,54 @@ SEQUENCE:1
 END:VEVENT
 END:VCALENDAR
 
+# Writing the same event again should not send a new request
+> put a@example.com calsrv.example.com-873970198738777@example.com
+BEGIN:VCALENDAR
+PRODID:-//Example/ExampleCalendarClient//EN
+VERSION:2.0
+BEGIN:VEVENT
+ORGANIZER:mailto:a@example.com
+ATTENDEE;ROLE=CHAIR;PARTSTAT=ACCEPTED;CN=A:mailto:a@example.com
+ATTENDEE;RSVP=TRUE;CUTYPE=INDIVIDUAL;CN=B:mailto:d@example.com
+ATTENDEE;SCHEDULE-AGENT=CLIENT;RSVP=TRUE;CUTYPE=INDIVIDUAL;CN=B:mailto:b@example.com
+DTSTAMP:19970611T190000Z
+DTSTART:19970701T200000Z
+DTEND:19970701T2100000Z
+SUMMARY:Conference
+UID:calsrv.example.com-873970198738777@example.com
+SEQUENCE:0
+STATUS:CONFIRMED
+END:VEVENT
+END:VCALENDAR
+
+> expect
+NothingToSend
+
+# Adding a comment and a custom property should not send a new request
+> put a@example.com calsrv.example.com-873970198738777@example.com
+BEGIN:VCALENDAR
+PRODID:-//Example/ExampleCalendarClient//EN
+VERSION:2.0
+BEGIN:VEVENT
+ORGANIZER:mailto:a@example.com
+ATTENDEE;ROLE=CHAIR;PARTSTAT=ACCEPTED;CN=A:mailto:a@example.com
+ATTENDEE;RSVP=TRUE;CUTYPE=INDIVIDUAL;CN=B:mailto:d@example.com
+ATTENDEE;SCHEDULE-AGENT=CLIENT;RSVP=TRUE;CUTYPE=INDIVIDUAL;CN=B:mailto:b@example.com
+DTSTAMP:19970611T190000Z
+DTSTART:19970701T200000Z
+DTEND:19970701T2100000Z
+SUMMARY:Conference
+COMMENT:This is a comment
+X-EXAMPLE:This is an example
+UID:calsrv.example.com-873970198738777@example.com
+SEQUENCE:0
+STATUS:CONFIRMED
+END:VEVENT
+END:VCALENDAR
+
+> expect
+NothingToSend
+
 > reset
 
 # Multiple object types should be rejected

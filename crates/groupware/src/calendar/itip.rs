@@ -414,7 +414,7 @@ impl ItipIngest for Server {
 
                     let todo = "use templates";
                     Ok(format!(
-                        "RSVP response recorded: {}",
+                        "RSVP response recorded: {summary:?} {}",
                         rsvp.partstat.as_str()
                     ))
                 } else {

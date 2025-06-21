@@ -142,7 +142,7 @@ pub enum ItipError {
     AutoAddDisabled,
 }
 
-#[derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize)]
+#[derive(Debug, rkyv::Archive, rkyv::Deserialize, rkyv::Serialize)]
 pub struct ItipMessage<T> {
     pub method: ICalendarMethod,
     pub from: String,

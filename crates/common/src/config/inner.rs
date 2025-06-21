@@ -133,7 +133,7 @@ impl Caches {
             ),
             scheduling: Cache::from_config(
                 config,
-                "events",
+                "scheduling",
                 MB_1,
                 (std::mem::size_of::<DavResources>() + (500 * std::mem::size_of::<DavResource>()))
                     as u64,

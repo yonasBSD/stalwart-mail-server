@@ -18,7 +18,7 @@ use mail_builder::{
 };
 use smtp::core::{Session, SessionData};
 use smtp_proto::{MailFrom, RcptTo};
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use store::{
     ValueKey,
     write::{AlignedBytes, Archive, TaskQueueClass, ValueClass, now},
@@ -219,6 +219,7 @@ async fn send_imip(
                 }
 
                 // RCPT TO
+                session.params.rcpt_errors_wait = Duration::from_secs(0);
                 let _ = session
                     .handle_rcpt_to(RcptTo {
                         address: to.clone(),
