@@ -10,8 +10,8 @@ use super::{
     ArchivedCalendar, ArchivedCalendarEvent, ArchivedCalendarPreferences, ArchivedDefaultAlert,
     ArchivedTimezone, Calendar, CalendarEvent, CalendarPreferences, DefaultAlert, Timezone,
 };
-use common::IDX_UID;
 use common::storage::index::{IndexValue, IndexableAndSerializableObject, IndexableObject};
+use common::{IDX_CREATED, IDX_UID};
 use jmap_proto::types::{collection::SyncCollection, value::AclGrant};
 
 impl IndexableObject for Calendar {
@@ -119,6 +119,10 @@ impl IndexableObject for CalendarScheduling {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
         [
             IndexValue::Quota { used: self.size },
+            IndexValue::Index {
+                field: IDX_CREATED,
+                value: self.created.into(),
+            },
             IndexValue::LogItem {
                 sync_collection: SyncCollection::CalendarScheduling.into(),
                 prefix: None,
@@ -133,6 +137,10 @@ impl IndexableObject for &ArchivedCalendarScheduling {
         [
             IndexValue::Quota {
                 used: self.size.to_native(),
+            },
+            IndexValue::Index {
+                field: IDX_CREATED,
+                value: self.created.to_native().into(),
             },
             IndexValue::LogItem {
                 sync_collection: SyncCollection::CalendarScheduling.into(),

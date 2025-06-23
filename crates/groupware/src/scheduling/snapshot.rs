@@ -5,8 +5,8 @@
  */
 
 use crate::scheduling::{
-    Attendee, Email, InstanceId, ItipDateTime, ItipEntry, ItipEntryValue, ItipError, ItipSnapshot,
-    ItipSnapshots, Organizer, RecurrenceId,
+    Attendee, Email, InstanceId, ItipDateTime, ItipEntry, ItipEntryValue, ItipError, ItipField,
+    ItipParticipant, ItipSnapshot, ItipSnapshots, ItipTime, ItipValue, Organizer, RecurrenceId,
 };
 use ahash::AHashMap;
 use calcard::icalendar::{
@@ -72,6 +72,7 @@ pub fn itip_snapshot<'x, 'y>(
                                 entry_id: entry_id as u16,
                                 email,
                                 is_server_scheduling: true,
+                                name: None,
                                 force_send: None,
                             };
                             has_local_emails |= part.email.is_local;
@@ -84,6 +85,9 @@ pub fn itip_snapshot<'x, 'y>(
                                     }
                                     ICalendarParameter::ScheduleForceSend(force_send) => {
                                         part.force_send = Some(force_send);
+                                    }
+                                    ICalendarParameter::Cn(name) => {
+                                        part.name = Some(name.as_str());
                                     }
                                     _ => {}
                                 }
@@ -116,6 +120,7 @@ pub fn itip_snapshot<'x, 'y>(
                             let mut part = Attendee {
                                 entry_id: entry_id as u16,
                                 email,
+                                name: None,
                                 rsvp: None,
                                 is_server_scheduling: true,
                                 force_send: None,
@@ -162,6 +167,9 @@ pub fn itip_snapshot<'x, 'y>(
                                     }
                                     ICalendarParameter::SentBy(value) => {
                                         part.sent_by = Email::from_uri(value, account_emails);
+                                    }
+                                    ICalendarParameter::Cn(name) => {
+                                        part.name = Some(name.as_str());
                                     }
                                     _ => {}
                                 }
@@ -260,15 +268,15 @@ pub fn itip_snapshot<'x, 'y>(
                                     ItipEntryValue::Text(v.as_str())
                                 }
                                 ICalendarValue::PartialDateTime(date) => {
+                                    let tz = tz_resolver
+                                        .get_or_insert_with(|| ical.build_tz_resolver())
+                                        .resolve(tz_id);
                                     ItipEntryValue::DateTime(ItipDateTime {
                                         date: date.as_ref(),
                                         tz_id,
+                                        tz_code: tz.as_id(),
                                         timestamp: date
-                                            .to_date_time_with_tz(
-                                                tz_resolver
-                                                    .get_or_insert_with(|| ical.build_tz_resolver())
-                                                    .resolve(tz_id),
-                                            )
+                                            .to_date_time_with_tz(tz)
                                             .map(|dt| dt.timestamp())
                                             .unwrap_or_else(|| {
                                                 date.to_timestamp().unwrap_or_default()
@@ -320,6 +328,15 @@ impl ItipSnapshots<'_> {
                     .any(|attendee| attendee.email.email == email)
             })
     }
+
+    pub fn main_instance(&self) -> Option<&ItipSnapshot<'_>> {
+        self.components.get(&InstanceId::Main)
+    }
+
+    pub fn main_instance_or_default(&self) -> &ItipSnapshot<'_> {
+        self.main_instance()
+            .unwrap_or_else(|| self.components.values().next().unwrap())
+    }
 }
 
 impl ItipSnapshot<'_> {
@@ -343,5 +360,86 @@ impl ItipSnapshot<'_> {
         self.attendees
             .iter()
             .find(|attendee| attendee.email.email == email)
+    }
+
+    pub fn build_summary(
+        &self,
+        include_guests: Option<&Organizer<'_>>,
+        skip_fields: &[ItipField],
+    ) -> Vec<ItipField> {
+        let mut fields = Vec::with_capacity(5);
+
+        for entry in &self.entries {
+            if matches!(
+                entry.name,
+                ICalendarProperty::Summary
+                    | ICalendarProperty::Description
+                    | ICalendarProperty::Dtstart
+                    | ICalendarProperty::Location
+                    | ICalendarProperty::Rrule
+            ) {
+                let value = match &entry.value {
+                    ItipEntryValue::DateTime(dt) => ItipValue::Time(ItipTime {
+                        start: dt.timestamp,
+                        tz_id: dt.tz_code,
+                    }),
+                    ItipEntryValue::RRule(rule) => ItipValue::Rrule(Box::new((*rule).clone())),
+                    ItipEntryValue::Text(value) => ItipValue::Text(value.to_string()),
+                    _ => continue,
+                };
+                let field = ItipField {
+                    name: entry.name.clone(),
+                    value,
+                };
+
+                if !skip_fields.contains(&field) {
+                    fields.push(field);
+                }
+            }
+        }
+
+        if let Some(organizer) = include_guests {
+            let mut attendees = Vec::with_capacity(self.attendees.len());
+            for attendee in &self.attendees {
+                if attendee.email.email != organizer.email.email {
+                    attendees.push(ItipParticipant {
+                        email: attendee.email.email.to_string(),
+                        name: attendee.name.map(|n| n.to_string()),
+                        is_organizer: false,
+                    });
+                }
+            }
+            attendees.push(ItipParticipant {
+                email: organizer.email.email.to_string(),
+                name: organizer.name.map(|n| n.to_string()),
+                is_organizer: true,
+            });
+            attendees.sort_by(|a, b| {
+                if a.is_organizer && !b.is_organizer {
+                    std::cmp::Ordering::Less
+                } else if !a.is_organizer && b.is_organizer {
+                    std::cmp::Ordering::Greater
+                } else if let (Some(a_name), Some(b_name)) = (a.name.as_deref(), b.name.as_deref())
+                {
+                    match a_name.cmp(b_name) {
+                        std::cmp::Ordering::Equal => a.email.cmp(&b.email),
+                        ord => ord,
+                    }
+                } else {
+                    a.email.cmp(&b.email)
+                }
+            });
+
+            let field = ItipField {
+                name: ICalendarProperty::Attendee,
+                value: ItipValue::Participants(attendees),
+            };
+
+            if !skip_fields.contains(&field) {
+                fields.push(field);
+            }
+        }
+
+        fields
     }
 }

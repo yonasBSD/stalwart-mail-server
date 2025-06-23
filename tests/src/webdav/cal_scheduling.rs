@@ -4,18 +4,32 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use super::WebDavTest;
 use crate::{
     jmap::mailbox::destroy_all_mailboxes_for_account,
     webdav::{DummyWebDavClient, prop::ALL_DAV_PROPERTIES},
 };
-
-use super::WebDavTest;
+use calcard::{
+    common::timezone::Tz,
+    icalendar::{
+        ICalendarDay, ICalendarFrequency, ICalendarMethod, ICalendarParticipationStatus,
+        ICalendarProperty, ICalendarRecurrenceRule, ICalendarWeekday,
+    },
+};
+use common::{Server, auth::AccessToken};
 use dav_proto::schema::property::{CalDavProperty, DavProperty, WebDavProperty};
 use email::cache::MessageCacheFetch;
-use groupware::cache::GroupwareCache;
+use groupware::{
+    cache::GroupwareCache,
+    scheduling::{
+        ArchivedItipSummary, ItipField, ItipParticipant, ItipSummary, ItipTime, ItipValue,
+    },
+};
 use hyper::StatusCode;
 use jmap_proto::types::collection::SyncCollection;
 use mail_parser::{DateTime, MessageParser};
+use services::task_manager::{Task, TaskAction, imip::build_itip_template};
+use std::str::FromStr;
 use store::write::now;
 
 pub async fn test(test: &WebDavTest) {
@@ -341,7 +355,7 @@ pub async fn test(test: &WebDavTest) {
         .body
         .unwrap();
     assert!(
-        response.contains("Lunch") && response.contains("ACCEPTED"),
+        response.contains("Lunch") && response.contains("RSVP has been recorded"),
         "failed for response: {response}"
     );
     let cals = fetch_icals(john_client).await;
@@ -576,6 +590,224 @@ async fn fetch_icals(client: &DummyWebDavClient) -> Vec<CalEntry> {
     }
 
     cals
+}
+
+pub async fn test_build_itip_templates(server: &Server) {
+    let dummy_access_token = AccessToken::from_id(0);
+    let dummy_task = Task {
+        account_id: 123,
+        document_id: 156,
+        due: 0,
+        action: TaskAction::SendImip,
+    };
+
+    for (idx, summary) in [
+        ItipSummary::Invite(vec![
+            ItipField {
+                name: ICalendarProperty::Summary,
+                value: ItipValue::Text("Lunch".to_string()),
+            },
+            ItipField {
+                name: ICalendarProperty::Description,
+                value: ItipValue::Text("Lunch at the cafe".to_string()),
+            },
+            ItipField {
+                name: ICalendarProperty::Location,
+                value: ItipValue::Text("Cafe Corner".to_string()),
+            },
+            ItipField {
+                name: ICalendarProperty::Dtstart,
+                value: ItipValue::Time(ItipTime {
+                    start: 1750616068,
+                    tz_id: Tz::from_str("New Zealand").unwrap().as_id(),
+                }),
+            },
+            ItipField {
+                name: ICalendarProperty::Attendee,
+                value: ItipValue::Participants(vec![
+                    ItipParticipant {
+                        email: "jdoe@domain.com".to_string(),
+                        name: Some("John Doe".to_string()),
+                        is_organizer: true,
+                    },
+                    ItipParticipant {
+                        email: "jane@domain.com".to_string(),
+                        name: Some("Jane Smith".to_string()),
+                        is_organizer: false,
+                    },
+                ]),
+            },
+        ]),
+        ItipSummary::Cancel(vec![
+            ItipField {
+                name: ICalendarProperty::Summary,
+                value: ItipValue::Text("Lunch".to_string()),
+            },
+            ItipField {
+                name: ICalendarProperty::Description,
+                value: ItipValue::Text("Lunch at the cafe".to_string()),
+            },
+            ItipField {
+                name: ICalendarProperty::Location,
+                value: ItipValue::Text("Cafe Corner".to_string()),
+            },
+            ItipField {
+                name: ICalendarProperty::Dtstart,
+                value: ItipValue::Time(ItipTime {
+                    start: 1750616068,
+                    tz_id: Tz::from_str("New Zealand").unwrap().as_id(),
+                }),
+            },
+        ]),
+        ItipSummary::Rsvp {
+            part_stat: ICalendarParticipationStatus::Accepted,
+            current: vec![
+                ItipField {
+                    name: ICalendarProperty::Summary,
+                    value: ItipValue::Text("Lunch".to_string()),
+                },
+                ItipField {
+                    name: ICalendarProperty::Description,
+                    value: ItipValue::Text("Lunch at the cafe".to_string()),
+                },
+                ItipField {
+                    name: ICalendarProperty::Location,
+                    value: ItipValue::Text("Cafe Corner".to_string()),
+                },
+                ItipField {
+                    name: ICalendarProperty::Dtstart,
+                    value: ItipValue::Time(ItipTime {
+                        start: 1750616068,
+                        tz_id: Tz::from_str("New Zealand").unwrap().as_id(),
+                    }),
+                },
+                ItipField {
+                    name: ICalendarProperty::Rrule,
+                    value: ItipValue::Rrule(Box::new(ICalendarRecurrenceRule {
+                        freq: ICalendarFrequency::Weekly,
+                        until: None,
+                        count: Some(2),
+                        interval: Some(3),
+                        bysecond: Default::default(),
+                        byday: vec![
+                            ICalendarDay {
+                                ordwk: None,
+                                weekday: ICalendarWeekday::Monday,
+                            },
+                            ICalendarDay {
+                                ordwk: None,
+                                weekday: ICalendarWeekday::Wednesday,
+                            },
+                        ],
+                        ..Default::default()
+                    })),
+                },
+            ],
+        },
+        ItipSummary::Rsvp {
+            part_stat: ICalendarParticipationStatus::Declined,
+            current: vec![
+                ItipField {
+                    name: ICalendarProperty::Summary,
+                    value: ItipValue::Text("Lunch".to_string()),
+                },
+                ItipField {
+                    name: ICalendarProperty::Description,
+                    value: ItipValue::Text("Lunch at the cafe".to_string()),
+                },
+                ItipField {
+                    name: ICalendarProperty::Location,
+                    value: ItipValue::Text("Cafe Corner".to_string()),
+                },
+                ItipField {
+                    name: ICalendarProperty::Dtstart,
+                    value: ItipValue::Time(ItipTime {
+                        start: 1750616068,
+                        tz_id: Tz::from_str("New Zealand").unwrap().as_id(),
+                    }),
+                },
+            ],
+        },
+        ItipSummary::Update {
+            method: ICalendarMethod::Request,
+            current: vec![
+                ItipField {
+                    name: ICalendarProperty::Summary,
+                    value: ItipValue::Text("Lunch".to_string()),
+                },
+                ItipField {
+                    name: ICalendarProperty::Description,
+                    value: ItipValue::Text("Lunch at the cafe".to_string()),
+                },
+                ItipField {
+                    name: ICalendarProperty::Location,
+                    value: ItipValue::Text("Cafe Corner".to_string()),
+                },
+                ItipField {
+                    name: ICalendarProperty::Dtstart,
+                    value: ItipValue::Time(ItipTime {
+                        start: 1750616068,
+                        tz_id: Tz::from_str("New Zealand").unwrap().as_id(),
+                    }),
+                },
+                ItipField {
+                    name: ICalendarProperty::Attendee,
+                    value: ItipValue::Participants(vec![
+                        ItipParticipant {
+                            email: "jdoe@domain.com".to_string(),
+                            name: Some("John Doe".to_string()),
+                            is_organizer: true,
+                        },
+                        ItipParticipant {
+                            email: "jane@domain.com".to_string(),
+                            name: Some("Jane Smith".to_string()),
+                            is_organizer: false,
+                        },
+                    ]),
+                },
+            ],
+            previous: vec![
+                ItipField {
+                    name: ICalendarProperty::Summary,
+                    value: ItipValue::Text("Dinner".to_string()),
+                },
+                ItipField {
+                    name: ICalendarProperty::Description,
+                    value: ItipValue::Text("Dinner at the cafe".to_string()),
+                },
+                ItipField {
+                    name: ICalendarProperty::Dtstart,
+                    value: ItipValue::Time(ItipTime {
+                        start: 1750916068,
+                        tz_id: Tz::from_str("New Zealand").unwrap().as_id(),
+                    }),
+                },
+            ],
+        },
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&summary)
+            .unwrap()
+            .to_vec();
+        let summary = rkyv::access::<ArchivedItipSummary, rkyv::rancor::Error>(&bytes).unwrap();
+
+        let html = build_itip_template(
+            server,
+            &dummy_access_token,
+            &dummy_task,
+            "john.doe@example.org",
+            "jane.smith@example.net",
+            summary,
+            "124",
+        )
+        .await;
+
+        println!("iTIP template {idx}: {}", html.subject);
+        std::fs::write(format!("itip_template_{idx}.html"), html.body)
+            .expect("Failed to write iTIP template to file");
+    }
 }
 
 const TEST_ITIP: &str = r#"BEGIN:VCALENDAR

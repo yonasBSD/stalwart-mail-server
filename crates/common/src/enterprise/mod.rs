@@ -42,7 +42,8 @@ pub struct Enterprise {
     pub ai_apis: AHashMap<String, Arc<AiApiConfig>>,
     pub spam_filter_llm: Option<SpamFilterLlmConfig>,
     pub template_calendar_alarm: Option<Template<CalendarTemplateVariable>>,
-    pub template_calendar_invite: Option<Template<CalendarTemplateVariable>>,
+    pub template_scheduling_email: Option<Template<CalendarTemplateVariable>>,
+    pub template_scheduling_web: Option<Template<CalendarTemplateVariable>>,
 }
 
 #[derive(Debug, Clone)]

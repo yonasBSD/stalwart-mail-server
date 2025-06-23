@@ -5,7 +5,7 @@
  */
 
 use crate::scheduling::{
-    InstanceId, ItipError, ItipMessage, ItipSnapshots,
+    InstanceId, ItipError, ItipMessage, ItipSnapshots, ItipSummary,
     attendee::attendee_decline,
     itip::{itip_add_tz, itip_build_envelope},
     snapshot::itip_snapshot,
@@ -14,8 +14,8 @@ use ahash::AHashSet;
 use calcard::{
     common::PartialDateTime,
     icalendar::{
-        ICalendar, ICalendarComponent, ICalendarComponentType, ICalendarMethod, ICalendarProperty,
-        ICalendarStatus, ICalendarValue,
+        ICalendar, ICalendarComponent, ICalendarComponentType, ICalendarMethod,
+        ICalendarParticipationStatus, ICalendarProperty, ICalendarStatus, ICalendarValue,
     },
 };
 use std::fmt::Display;
@@ -67,11 +67,12 @@ pub fn itip_cancel(
             ));
 
             Ok(ItipMessage {
-                method: ICalendarMethod::Cancel,
+                to: recipients.into_iter().collect(),
+                summary: ItipSummary::Cancel(
+                    itip.main_instance_or_default().build_summary(None, &[]),
+                ),
                 from: itip.organizer.email.email,
                 from_organizer: true,
-                to: recipients.into_iter().collect(),
-                changed_properties: vec![],
                 message,
             })
         } else {
@@ -105,11 +106,13 @@ pub fn itip_cancel(
             email_rcpt.insert(&itip.organizer.email.email);
 
             Ok(ItipMessage {
-                method: ICalendarMethod::Reply,
                 from: from.to_string(),
                 from_organizer: false,
                 to: email_rcpt.into_iter().map(|e| e.to_string()).collect(),
-                changed_properties: vec![],
+                summary: ItipSummary::Rsvp {
+                    part_stat: ICalendarParticipationStatus::Declined,
+                    current: itip.main_instance_or_default().build_summary(None, &[]),
+                },
                 message,
             })
         } else {

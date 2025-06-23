@@ -18,7 +18,7 @@ use store::{
 };
 use trc::AddContext;
 
-use crate::scheduling::{ItipMessage, ItipMessages};
+use crate::scheduling::{ArchivedItipSummary, ItipMessage, ItipMessages};
 
 pub(crate) fn itip_build_envelope(method: ICalendarMethod) -> ICalendarComponent {
     ICalendarComponent {
@@ -285,12 +285,22 @@ impl ItipMessages {
 impl From<ItipMessage<ICalendar>> for ItipMessage<String> {
     fn from(message: ItipMessage<ICalendar>) -> Self {
         ItipMessage {
-            method: message.method,
             from: message.from,
             from_organizer: message.from_organizer,
             to: message.to,
-            changed_properties: message.changed_properties,
+            summary: message.summary,
             message: message.message.to_string(),
+        }
+    }
+}
+
+impl ArchivedItipSummary {
+    pub fn method(&self) -> &str {
+        match self {
+            ArchivedItipSummary::Invite(_) => ICalendarMethod::Request.as_str(),
+            ArchivedItipSummary::Update { method, .. } => method.as_str(),
+            ArchivedItipSummary::Cancel(_) => ICalendarMethod::Cancel.as_str(),
+            ArchivedItipSummary::Rsvp { .. } => ICalendarMethod::Reply.as_str(),
         }
     }
 }

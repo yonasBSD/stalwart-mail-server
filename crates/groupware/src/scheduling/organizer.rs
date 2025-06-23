@@ -5,7 +5,7 @@
  */
 
 use crate::scheduling::{
-    InstanceId, ItipError, ItipMessage, ItipSnapshots,
+    InstanceId, ItipError, ItipMessage, ItipSnapshots, ItipSummary,
     event_cancel::build_cancel_component,
     itip::{ItipExportAs, itip_add_tz, itip_build_envelope, itip_export_component},
 };
@@ -169,9 +169,16 @@ pub(crate) fn organizer_handle_update(
         }
     }
 
+    // Build summary of changed properties
+    let new_summary = new_itip
+        .main_instance_or_default()
+        .build_summary(Some(&new_itip.organizer), &[]);
+    let old_summary = old_itip
+        .main_instance_or_default()
+        .build_summary(Some(&old_itip.organizer), &new_summary);
+
     // Prepare full updates
     let mut messages = Vec::new();
-    let changed_properties = changed_properties.into_iter().cloned().collect::<Vec<_>>();
     if !send_full_update.is_empty() {
         match organizer_request_full(
             new_ical,
@@ -181,7 +188,11 @@ pub(crate) fn organizer_handle_update(
         ) {
             Ok(messages_) => {
                 for mut message in messages_ {
-                    message.changed_properties = changed_properties.clone();
+                    message.summary = ItipSummary::Update {
+                        method: ICalendarMethod::Request,
+                        current: new_summary.clone(),
+                        previous: old_summary.clone(),
+                    };
                     messages.push(message);
                 }
             }
@@ -279,14 +290,26 @@ pub(crate) fn organizer_handle_update(
             itip_add_tz(&mut message, ical);
 
             messages.push(ItipMessage {
-                method: method.clone(),
                 from: itip.organizer.email.email.clone(),
                 from_organizer: true,
                 to: emails.into_iter().map(|e| e.to_string()).collect(),
-                changed_properties: if method == &ICalendarMethod::Request {
-                    changed_properties.clone()
+                summary: if method == &ICalendarMethod::Cancel {
+                    ItipSummary::Cancel(
+                        new_summary
+                            .iter()
+                            .chain(old_summary.iter())
+                            .map(|summary| (&summary.name, summary))
+                            .collect::<AHashMap<_, _>>()
+                            .into_values()
+                            .cloned()
+                            .collect(),
+                    )
                 } else {
-                    vec![]
+                    ItipSummary::Update {
+                        method: method.clone(),
+                        current: new_summary.clone(),
+                        previous: old_summary.clone(),
+                    }
                 },
                 message,
             });
@@ -375,11 +398,13 @@ pub(crate) fn organizer_request_full(
 
     if !recipients.is_empty() {
         Ok(vec![ItipMessage {
-            method: ICalendarMethod::Request,
             from: itip.organizer.email.email.clone(),
             from_organizer: true,
             to: recipients.into_iter().map(|e| e.to_string()).collect(),
-            changed_properties: vec![],
+            summary: ItipSummary::Invite(
+                itip.main_instance_or_default()
+                    .build_summary(Some(&itip.organizer), &[]),
+            ),
             message,
         }])
     } else {

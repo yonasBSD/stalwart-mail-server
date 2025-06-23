@@ -65,6 +65,7 @@ pub enum ItipEntryValue<'x> {
 pub struct ItipDateTime<'x> {
     pub date: &'x PartialDateTime,
     pub tz_id: Option<&'x str>,
+    pub tz_code: u16,
     pub timestamp: i64,
 }
 
@@ -85,6 +86,7 @@ pub struct RecurrenceId {
 pub struct Attendee<'x> {
     pub entry_id: u16,
     pub email: Email,
+    pub name: Option<&'x str>,
     pub part_stat: Option<&'x ICalendarParticipationStatus>,
     pub delegated_from: Vec<Email>,
     pub delegated_to: Vec<Email>,
@@ -100,6 +102,7 @@ pub struct Attendee<'x> {
 pub struct Organizer<'x> {
     pub entry_id: u16,
     pub email: Email,
+    pub name: Option<&'x str>,
     pub is_server_scheduling: bool,
     pub force_send: Option<&'x ICalendarScheduleForceSendValue>,
 }
@@ -144,12 +147,53 @@ pub enum ItipError {
 
 #[derive(Debug, rkyv::Archive, rkyv::Deserialize, rkyv::Serialize)]
 pub struct ItipMessage<T> {
-    pub method: ICalendarMethod,
     pub from: String,
     pub from_organizer: bool,
     pub to: Vec<String>,
-    pub changed_properties: Vec<ICalendarProperty>,
+    pub summary: ItipSummary,
     pub message: T,
+}
+
+#[derive(Debug, Clone, rkyv::Archive, rkyv::Deserialize, rkyv::Serialize)]
+pub enum ItipSummary {
+    Invite(Vec<ItipField>),
+    Update {
+        method: ICalendarMethod,
+        current: Vec<ItipField>,
+        previous: Vec<ItipField>,
+    },
+    Cancel(Vec<ItipField>),
+    Rsvp {
+        part_stat: ICalendarParticipationStatus,
+        current: Vec<ItipField>,
+    },
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, rkyv::Archive, rkyv::Deserialize, rkyv::Serialize)]
+pub struct ItipField {
+    pub name: ICalendarProperty,
+    pub value: ItipValue,
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, rkyv::Archive, rkyv::Deserialize, rkyv::Serialize)]
+pub enum ItipValue {
+    Text(String),
+    Time(ItipTime),
+    Rrule(Box<ICalendarRecurrenceRule>),
+    Participants(Vec<ItipParticipant>),
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, rkyv::Archive, rkyv::Deserialize, rkyv::Serialize)]
+pub struct ItipTime {
+    pub start: i64,
+    pub tz_id: u16,
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, rkyv::Archive, rkyv::Deserialize, rkyv::Serialize)]
+pub struct ItipParticipant {
+    pub email: String,
+    pub name: Option<String>,
+    pub is_organizer: bool,
 }
 
 #[derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize)]

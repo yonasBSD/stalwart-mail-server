@@ -10,11 +10,16 @@ use crate::{
     scheduling::{ItipMessages, event_cancel::itip_cancel},
 };
 use calcard::common::timezone::Tz;
-use common::{Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
+use common::{IDX_CREATED, Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
 use jmap_proto::types::collection::{Collection, VanishedCollection};
 use store::{
-    U16_LEN, U64_LEN,
-    write::{Archive, BatchBuilder, TaskQueueClass, ValueClass, key::KeySerializer, now},
+    IndexKey, IterateParams, SerializeInfallible, U16_LEN, U32_LEN, U64_LEN,
+    roaring::RoaringBitmap,
+    write::{
+        Archive, BatchBuilder, TaskQueueClass, ValueClass,
+        key::{DeserializeBigEndian, KeySerializer},
+        now,
+    },
 };
 use trc::AddContext;
 
@@ -22,6 +27,90 @@ use super::{
     ArchivedCalendar, ArchivedCalendarEvent, Calendar, CalendarEvent, CalendarPreferences,
     alarm::CalendarAlarm,
 };
+
+pub trait ItipAutoExpunge: Sync + Send {
+    fn itip_auto_expunge(
+        &self,
+        account_id: u32,
+        hold_period: u64,
+    ) -> impl Future<Output = trc::Result<()>> + Send;
+}
+
+impl ItipAutoExpunge for Server {
+    async fn itip_auto_expunge(&self, account_id: u32, hold_period: u64) -> trc::Result<()> {
+        // Filter messages by received date
+        let mut destroy_ids = RoaringBitmap::new();
+        self.store()
+            .iterate(
+                IterateParams::new(
+                    IndexKey {
+                        account_id,
+                        collection: Collection::CalendarScheduling.into(),
+                        document_id: 0,
+                        field: IDX_CREATED,
+                        key: 0u64.serialize(),
+                    },
+                    IndexKey {
+                        account_id,
+                        collection: Collection::CalendarScheduling.into(),
+                        document_id: u32::MAX,
+                        field: IDX_CREATED,
+                        key: now().saturating_sub(hold_period).serialize(),
+                    },
+                )
+                .no_values()
+                .ascending(),
+                |key, _| {
+                    destroy_ids.insert(
+                        key.deserialize_be_u32(key.len() - U32_LEN)
+                            .caused_by(trc::location!())?,
+                    );
+
+                    Ok(true)
+                },
+            )
+            .await
+            .caused_by(trc::location!())?;
+
+        if destroy_ids.is_empty() {
+            return Ok(());
+        }
+
+        trc::event!(
+            Purge(trc::PurgeEvent::AutoExpunge),
+            AccountId = account_id,
+            Collection = Collection::CalendarScheduling.as_str(),
+            Total = destroy_ids.len(),
+        );
+
+        // Tombstone messages
+        let mut batch = BatchBuilder::new();
+        let access_token = self
+            .get_access_token(account_id)
+            .await
+            .caused_by(trc::location!())?;
+
+        for document_id in destroy_ids {
+            // Fetch event
+            if let Some(event_) = self
+                .get_archive(account_id, Collection::CalendarScheduling, document_id)
+                .await
+                .caused_by(trc::location!())?
+            {
+                let event = event_
+                    .to_unarchived::<CalendarScheduling>()
+                    .caused_by(trc::location!())?;
+                DestroyArchive(event)
+                    .delete(&access_token, account_id, document_id, &mut batch)
+                    .caused_by(trc::location!())?;
+            }
+        }
+
+        self.commit_batch(batch).await.caused_by(trc::location!())?;
+
+        Ok(())
+    }
+}
 
 impl CalendarEvent {
     pub fn update<'x>(

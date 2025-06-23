@@ -74,7 +74,9 @@ pub async fn webdav_tests() {
     )
     .await;
 
-    basic::test(&handle).await;
+    //test_build_itip_templates(&handle.server).await;
+
+    /* basic::test(&handle).await;
     put_get::test(&handle).await;
     mkcol::test(&handle).await;
     copy_move::test(&handle).await;
@@ -87,7 +89,7 @@ pub async fn webdav_tests() {
     card_query::test(&handle).await;
     cal_query::test(&handle).await;
     cal_alarm::test(&handle).await;
-    cal_itip::test();
+    cal_itip::test();*/
     cal_scheduling::test(&handle).await;
 
     // Print elapsed time

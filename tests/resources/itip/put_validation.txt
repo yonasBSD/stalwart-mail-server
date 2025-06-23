@@ -140,7 +140,10 @@ END:VCALENDAR
 > expect
 from: a@example.com
 to: d@example.com
-changes: 
+summary: invite
+summary.attendee: Participants([ItipParticipant { email: "a@example.com", name: None, is_organizer: true }, ItipParticipant { email: "b@example.com", name: Some("B"), is_organizer: false }, ItipParticipant { email: "d@example.com", name: Some("B"), is_organizer: false }])
+summary.dtstart: Time(ItipTime { start: 867787200, tz_id: 32768 })
+summary.summary: Text("Conference")
 BEGIN:VCALENDAR
 METHOD:REQUEST
 PRODID:-//Stalwart Labs LLC//Stalwart Server//EN

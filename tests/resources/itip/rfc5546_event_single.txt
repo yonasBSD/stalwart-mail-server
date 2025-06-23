@@ -26,7 +26,10 @@ END:VCALENDAR
 > expect
 from: a@example.com
 to: b@example.com, c@example.com, d@example.com
-changes: 
+summary: invite
+summary.attendee: Participants([ItipParticipant { email: "a@example.com", name: None, is_organizer: true }, ItipParticipant { email: "b@example.com", name: Some("B"), is_organizer: false }, ItipParticipant { email: "c@example.com", name: Some("C"), is_organizer: false }, ItipParticipant { email: "conf_big@example.com", name: None, is_organizer: false }, ItipParticipant { email: "d@example.com", name: Some("Hal"), is_organizer: false }, ItipParticipant { email: "e@example.com", name: None, is_organizer: false }])
+summary.dtstart: Time(ItipTime { start: 867787200, tz_id: 32768 })
+summary.summary: Text("Conference")
 BEGIN:VCALENDAR
 METHOD:REQUEST
 PRODID:-//Stalwart Labs LLC//Stalwart Server//EN
@@ -110,7 +113,10 @@ END:VCALENDAR
 > expect
 from: b@example.com
 to: a@example.com
-changes: 
+summary: rsvp ACCEPTED
+summary.attendee: Participants([ItipParticipant { email: "a@example.com", name: None, is_organizer: true }, ItipParticipant { email: "b@example.com", name: Some("B"), is_organizer: false }, ItipParticipant { email: "c@example.com", name: Some("C"), is_organizer: false }, ItipParticipant { email: "conf_big@example.com", name: None, is_organizer: false }, ItipParticipant { email: "d@example.com", name: Some("Hal"), is_organizer: false }, ItipParticipant { email: "e@example.com", name: None, is_organizer: false }])
+summary.dtstart: Time(ItipTime { start: 867787200, tz_id: 32768 })
+summary.summary: Text("Conference")
 BEGIN:VCALENDAR
 METHOD:REPLY
 PRODID:-//Stalwart Labs LLC//Stalwart Server//EN
@@ -179,7 +185,13 @@ END:VCALENDAR
 > expect
 from: a@example.com
 to: b@example.com, c@example.com, d@example.com
-changes: ATTENDEE, DTEND, DTSTART, SUMMARY
+summary: update REQUEST
+summary.attendee: Participants([ItipParticipant { email: "a@example.com", name: None, is_organizer: true }, ItipParticipant { email: "b@example.com", name: None, is_organizer: false }, ItipParticipant { email: "c@example.com", name: None, is_organizer: false }, ItipParticipant { email: "conf@example.com", name: None, is_organizer: false }, ItipParticipant { email: "d@example.com", name: Some("Hal"), is_organizer: false }, ItipParticipant { email: "e@example.com", name: None, is_organizer: false }])
+summary.dtstart: Time(ItipTime { start: 867780000, tz_id: 32768 })
+summary.summary: Text("Phone Conference")
+~summary.attendee: Participants([ItipParticipant { email: "a@example.com", name: None, is_organizer: true }, ItipParticipant { email: "b@example.com", name: Some("B"), is_organizer: false }, ItipParticipant { email: "c@example.com", name: Some("C"), is_organizer: false }, ItipParticipant { email: "conf_big@example.com", name: None, is_organizer: false }, ItipParticipant { email: "d@example.com", name: Some("Hal"), is_organizer: false }, ItipParticipant { email: "e@example.com", name: None, is_organizer: false }])
+~summary.dtstart: Time(ItipTime { start: 867787200, tz_id: 32768 })
+~summary.summary: Text("Conference")
 BEGIN:VCALENDAR
 METHOD:REQUEST
 PRODID:-//Stalwart Labs LLC//Stalwart Server//EN
@@ -262,7 +274,10 @@ END:VCALENDAR
 > expect
 from: c@example.com
 to: a@example.com
-changes: 
+summary: rsvp DELEGATED
+summary.attendee: Participants([ItipParticipant { email: "a@example.com", name: None, is_organizer: true }, ItipParticipant { email: "b@example.com", name: None, is_organizer: false }, ItipParticipant { email: "c@example.com", name: None, is_organizer: false }, ItipParticipant { email: "conf@example.com", name: None, is_organizer: false }, ItipParticipant { email: "d@example.com", name: Some("Hal"), is_organizer: false }, ItipParticipant { email: "e@example.com", name: None, is_organizer: false }])
+summary.dtstart: Time(ItipTime { start: 867780000, tz_id: 32768 })
+summary.summary: Text("Phone Conference")
 BEGIN:VCALENDAR
 METHOD:REPLY
 PRODID:-//Stalwart Labs LLC//Stalwart Server//EN
@@ -282,7 +297,10 @@ END:VCALENDAR
 ================================
 from: c@example.com
 to: e@example.com
-changes: 
+summary: invite
+summary.attendee: Participants([ItipParticipant { email: "a@example.com", name: None, is_organizer: true }, ItipParticipant { email: "b@example.com", name: None, is_organizer: false }, ItipParticipant { email: "c@example.com", name: None, is_organizer: false }, ItipParticipant { email: "conf@example.com", name: None, is_organizer: false }, ItipParticipant { email: "d@example.com", name: Some("Hal"), is_organizer: false }, ItipParticipant { email: "e@example.com", name: None, is_organizer: false }])
+summary.dtstart: Time(ItipTime { start: 867780000, tz_id: 32768 })
+summary.summary: Text("Phone Conference")
 BEGIN:VCALENDAR
 METHOD:REQUEST
 PRODID:-//Stalwart Labs LLC//Stalwart Server//EN
@@ -392,7 +410,10 @@ END:VCALENDAR
 > expect
 from: e@example.com
 to: a@example.com, c@example.com
-changes: 
+summary: rsvp ACCEPTED
+summary.attendee: Participants([ItipParticipant { email: "a@example.com", name: None, is_organizer: true }, ItipParticipant { email: "b@example.com", name: None, is_organizer: false }, ItipParticipant { email: "c@example.com", name: None, is_organizer: false }, ItipParticipant { email: "conf@example.com", name: None, is_organizer: false }, ItipParticipant { email: "d@example.com", name: Some("Hal"), is_organizer: false }, ItipParticipant { email: "e@example.com", name: None, is_organizer: false }])
+summary.dtstart: Time(ItipTime { start: 867780000, tz_id: 32768 })
+summary.summary: Text("Phone Conference")
 BEGIN:VCALENDAR
 METHOD:REPLY
 PRODID:-//Stalwart Labs LLC//Stalwart Server//EN
@@ -493,7 +514,10 @@ END:VCALENDAR
 > expect
 from: e@example.com
 to: a@example.com, c@example.com
-changes: 
+summary: rsvp DECLINED
+summary.attendee: Participants([ItipParticipant { email: "a@example.com", name: None, is_organizer: true }, ItipParticipant { email: "b@example.com", name: None, is_organizer: false }, ItipParticipant { email: "c@example.com", name: None, is_organizer: false }, ItipParticipant { email: "conf@example.com", name: None, is_organizer: false }, ItipParticipant { email: "d@example.com", name: Some("Hal"), is_organizer: false }, ItipParticipant { email: "e@example.com", name: None, is_organizer: false }])
+summary.dtstart: Time(ItipTime { start: 867780000, tz_id: 32768 })
+summary.summary: Text("Phone Conference")
 BEGIN:VCALENDAR
 METHOD:REPLY
 PRODID:-//Stalwart Labs LLC//Stalwart Server//EN
@@ -593,7 +617,11 @@ END:VCALENDAR
 > expect
 from: a@example.com
 to: c@example.com, d@example.com
-changes: ATTENDEE
+summary: update REQUEST
+summary.attendee: Participants([ItipParticipant { email: "a@example.com", name: None, is_organizer: true }, ItipParticipant { email: "c@example.com", name: None, is_organizer: false }, ItipParticipant { email: "conf@example.com", name: None, is_organizer: false }, ItipParticipant { email: "d@example.com", name: Some("Hal"), is_organizer: false }, ItipParticipant { email: "e@example.com", name: None, is_organizer: false }])
+summary.dtstart: Time(ItipTime { start: 867780000, tz_id: 32768 })
+summary.summary: Text("Phone Conference")
+~summary.attendee: Participants([ItipParticipant { email: "a@example.com", name: None, is_organizer: true }, ItipParticipant { email: "b@example.com", name: None, is_organizer: false }, ItipParticipant { email: "c@example.com", name: None, is_organizer: false }, ItipParticipant { email: "conf@example.com", name: None, is_organizer: false }, ItipParticipant { email: "d@example.com", name: Some("Hal"), is_organizer: false }, ItipParticipant { email: "e@example.com", name: None, is_organizer: false }])
 BEGIN:VCALENDAR
 METHOD:REQUEST
 PRODID:-//Stalwart Labs LLC//Stalwart Server//EN
@@ -620,7 +648,10 @@ END:VCALENDAR
 ================================
 from: a@example.com
 to: b@example.com
-changes: 
+summary: cancel
+summary.attendee: Participants([ItipParticipant { email: "a@example.com", name: None, is_organizer: true }, ItipParticipant { email: "b@example.com", name: None, is_organizer: false }, ItipParticipant { email: "c@example.com", name: None, is_organizer: false }, ItipParticipant { email: "conf@example.com", name: None, is_organizer: false }, ItipParticipant { email: "d@example.com", name: Some("Hal"), is_organizer: false }, ItipParticipant { email: "e@example.com", name: None, is_organizer: false }])
+summary.dtstart: Time(ItipTime { start: 867780000, tz_id: 32768 })
+summary.summary: Text("Phone Conference")
 BEGIN:VCALENDAR
 METHOD:CANCEL
 PRODID:-//Stalwart Labs LLC//Stalwart Server//EN
@@ -661,7 +692,9 @@ END:VCALENDAR
 > expect
 from: a@example.com
 to: c@example.com, d@example.com
-changes: 
+summary: cancel
+summary.dtstart: Time(ItipTime { start: 867780000, tz_id: 32768 })
+summary.summary: Text("Phone Conference")
 BEGIN:VCALENDAR
 METHOD:CANCEL
 PRODID:-//Stalwart Labs LLC//Stalwart Server//EN

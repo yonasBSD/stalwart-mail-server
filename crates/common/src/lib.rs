@@ -109,6 +109,7 @@ pub const KV_SIEVE_ID: u8 = 26;
 
 pub const IDX_UID: u8 = 0;
 pub const IDX_EMAIL: u8 = 1;
+pub const IDX_CREATED: u8 = 2;
 
 #[derive(Clone)]
 pub struct Server {

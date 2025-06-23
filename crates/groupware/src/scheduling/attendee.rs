@@ -6,6 +6,7 @@
 
 use crate::scheduling::{
     Email, InstanceId, ItipEntryValue, ItipError, ItipMessage, ItipSnapshot, ItipSnapshots,
+    ItipSummary,
     itip::{
         ItipExportAs, can_attendee_modify_property, itip_add_tz, itip_build_envelope,
         itip_export_component,
@@ -37,6 +38,7 @@ pub(crate) fn attendee_handle_update(
     let mut mail_from = None;
     let mut email_rcpt = AHashSet::new();
     let mut new_delegates = AHashSet::new();
+    let mut part_stat = &ICalendarParticipationStatus::NeedsAction;
 
     for (instance_id, instance) in &new_itip.components {
         if let Some(old_instance) = old_itip.components.get(instance_id) {
@@ -62,6 +64,7 @@ pub(crate) fn attendee_handle_update(
                                     cancel_comp
                                         .entries
                                         .push(date.to_entry(ICalendarProperty::RecurrenceId));
+                                    part_stat = &ICalendarParticipationStatus::Declined;
 
                                     // Add cancel component
                                     let comp_id = message.components.len() as u16;
@@ -101,6 +104,9 @@ pub(crate) fn attendee_handle_update(
                             || send_update)
                     {
                         // Build the attendee list
+                        if let Some(new_partstat) = local_attendee.part_stat {
+                            part_stat = new_partstat;
+                        }
                         let mut attendee_entry_uids = vec![local_attendee.entry_id];
                         let old_delegates = old_instance
                             .external_attendees()
@@ -222,11 +228,15 @@ pub(crate) fn attendee_handle_update(
         itip_add_tz(&mut message, new_ical);
 
         let mut responses = vec![ItipMessage {
-            method: ICalendarMethod::Reply,
             from: from.to_string(),
             from_organizer: false,
             to: email_rcpt.into_iter().map(|e| e.to_string()).collect(),
-            changed_properties: vec![],
+            summary: ItipSummary::Rsvp {
+                part_stat: part_stat.clone(),
+                current: new_itip
+                    .main_instance_or_default()
+                    .build_summary(Some(&new_itip.organizer), &[]),
+            },
             message,
         }];
 

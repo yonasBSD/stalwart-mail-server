@@ -40,7 +40,11 @@ END:VCALENDAR
 > expect
 from: cyrus@example.com
 to: bernard@example.net
-changes: 
+summary: invite
+summary.attendee: Participants([ItipParticipant { email: "cyrus@example.com", name: Some("Cyrus Daboo"), is_organizer: true }, ItipParticipant { email: "bernard@example.net", name: Some("Bernard Desruisseaux"), is_organizer: false }])
+summary.dtstart: Time(ItipTime { start: 1243882800, tz_id: 167 })
+summary.rrule: Rrule(ICalendarRecurrenceRule { freq: Daily, until: None, count: Some(5), interval: Some(1), bysecond: [], byminute: [], byhour: [], byday: [], bymonthday: [], byyearday: [], byweekno: [], bymonth: [], bysetpos: [], wkst: None })
+summary.summary: Text("Review Internet-Draft")
 BEGIN:VCALENDAR
 METHOD:REQUEST
 PRODID:-//Stalwart Labs LLC//Stalwart Server//EN
@@ -174,7 +178,11 @@ END:VCALENDAR
 > expect
 from: bernard@example.net
 to: cyrus@example.com
-changes: 
+summary: rsvp ACCEPTED
+summary.attendee: Participants([ItipParticipant { email: "cyrus@example.com", name: Some("Cyrus Daboo"), is_organizer: true }, ItipParticipant { email: "bernard@example.net", name: Some("Bernard Desruisseaux"), is_organizer: false }])
+summary.dtstart: Time(ItipTime { start: 1243882800, tz_id: 167 })
+summary.rrule: Rrule(ICalendarRecurrenceRule { freq: Daily, until: None, count: Some(5), interval: Some(1), bysecond: [], byminute: [], byhour: [], byday: [], bymonthday: [], byyearday: [], byweekno: [], bymonth: [], bysetpos: [], wkst: None })
+summary.summary: Text("Review Internet-Draft")
 BEGIN:VCALENDAR
 METHOD:REPLY
 PRODID:-//Stalwart Labs LLC//Stalwart Server//EN
@@ -322,7 +330,11 @@ END:VCALENDAR
 > expect
 from: bernard@example.net
 to: cyrus@example.com
-changes: 
+summary: rsvp DECLINED
+summary.attendee: Participants([ItipParticipant { email: "cyrus@example.com", name: Some("Cyrus Daboo"), is_organizer: true }, ItipParticipant { email: "bernard@example.net", name: Some("Bernard Desruisseaux"), is_organizer: false }])
+summary.dtstart: Time(ItipTime { start: 1243882800, tz_id: 167 })
+summary.rrule: Rrule(ICalendarRecurrenceRule { freq: Daily, until: None, count: Some(5), interval: Some(1), bysecond: [], byminute: [], byhour: [], byday: [], bymonthday: [], byyearday: [], byweekno: [], bymonth: [], bysetpos: [], wkst: None })
+summary.summary: Text("Review Internet-Draft")
 BEGIN:VCALENDAR
 METHOD:REPLY
 PRODID:-//Stalwart Labs LLC//Stalwart Server//EN

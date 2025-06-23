@@ -488,7 +488,17 @@ impl ParseHttp for Server {
                     && path.next().unwrap_or_default() == "rsvp"
                 {
                     return self
-                        .http_rsvp_handle(req.uri().query().unwrap_or_default())
+                        .http_rsvp_handle(
+                            req.uri().query().unwrap_or_default(),
+                            req.headers()
+                                .get(header::ACCEPT_LANGUAGE)
+                                .and_then(|v| v.to_str().ok())
+                                .map(|lang| {
+                                    let lang = lang.split_once(',').map_or(lang, |(l, _)| l);
+                                    lang.split_once(';').map_or(lang, |(l, _)| l)
+                                })
+                                .unwrap_or("en"),
+                        )
                         .await
                         .map(|response| {
                             HtmlResponse::new(response)

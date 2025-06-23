@@ -7,10 +7,10 @@
 use ahash::AHashMap;
 use calcard::{
     common::PartialDateTime,
-    icalendar::{ICalendar, ICalendarMethod, ICalendarProperty, ICalendarValue},
+    icalendar::{ICalendar, ICalendarProperty, ICalendarValue},
 };
 use groupware::scheduling::{
-    ItipMessage,
+    ItipMessage, ItipSummary,
     event_cancel::itip_cancel,
     event_create::itip_create,
     event_update::itip_update,
@@ -337,14 +337,13 @@ pub fn test() {
                 Command::Itip => {
                     let mut commands = command.parameters.iter();
                     last_itip = Some(Ok(vec![ItipMessage {
-                        method: ICalendarMethod::Request,
                         from_organizer: false,
                         from: commands
                             .next()
                             .expect("From parameter is required")
                             .to_string(),
                         to: commands.map(|s| s.to_string()).collect::<Vec<_>>(),
-                        changed_properties: vec![],
+                        summary: ItipSummary::Invite(vec![]),
                         message: ICalendar::parse(&command.payload)
                             .expect("Failed to parse iCalendar payload"),
                     }]))
@@ -369,15 +368,45 @@ impl ItipMessageExt for ItipMessage<ICalendar> {
         let mut f = String::new();
         let mut to = self.to.iter().map(|t| t.as_str()).collect::<Vec<_>>();
         to.sort_unstable();
-        let mut changed = self
-            .changed_properties
-            .iter()
-            .map(|p| p.as_str())
-            .collect::<Vec<_>>();
-        changed.sort_unstable();
         writeln!(&mut f, "from: {}", self.from).unwrap();
         writeln!(&mut f, "to: {}", to.join(", ")).unwrap();
-        writeln!(&mut f, "changes: {}", changed.join(", ")).unwrap();
+        write!(&mut f, "summary: ").unwrap();
+        let mut fields = Vec::new();
+        match &self.summary {
+            ItipSummary::Invite(itip_fields) => {
+                writeln!(&mut f, "invite").unwrap();
+                fields.push(itip_fields);
+            }
+            ItipSummary::Update {
+                method,
+                current,
+                previous,
+            } => {
+                writeln!(&mut f, "update {}", method.as_str()).unwrap();
+                fields.push(current);
+                fields.push(previous);
+            }
+            ItipSummary::Cancel(itip_fields) => {
+                writeln!(&mut f, "cancel").unwrap();
+                fields.push(itip_fields);
+            }
+            ItipSummary::Rsvp { part_stat, current } => {
+                writeln!(&mut f, "rsvp {}", part_stat.as_str()).unwrap();
+                fields.push(current);
+            }
+        }
+        for (pos, fields) in fields.into_iter().enumerate() {
+            let prefix = if pos > 0 { "~summary." } else { "summary." };
+            let mut fields = fields
+                .iter()
+                .map(|f| format!("{}: {:?}", f.name.as_str().to_lowercase(), f.value))
+                .collect::<Vec<_>>();
+            fields.sort_unstable();
+            for field in fields {
+                writeln!(&mut f, "{prefix}{}", field).unwrap();
+            }
+        }
+
         write!(&mut f, "{}", normalize_ical(self.message.clone(), map)).unwrap();
         f
     }

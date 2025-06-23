@@ -36,6 +36,8 @@ pub struct GroupwareConfig {
     pub itip_outbound_max_recipients: usize,
     pub itip_http_rsvp_url: Option<String>,
     pub itip_http_rsvp_expiration: u64,
+    pub itip_inbox_auto_expunge: Option<u64>,
+    pub itip_template: Template<CalendarTemplateVariable>,
 
     // Addressbook settings
     pub max_vcard_size: usize,
@@ -55,13 +57,18 @@ pub enum CalendarTemplateVariable {
     EventTitle,
     EventDescription,
     EventDetails,
+    Actions,
     ActionUrl,
     ActionName,
     AttendeesTitle,
     Attendees,
     Key,
+    Color,
+    Changed,
     Value,
     LogoCid,
+    OldValue,
+    Rsvp,
 }
 
 impl GroupwareConfig {
@@ -126,7 +133,7 @@ impl GroupwareConfig {
                 .map(|s| s.to_string()),
             alarms_template: Template::parse(include_str!(concat!(
                 env!("CARGO_MANIFEST_DIR"),
-                "/../../resources/email-templates/calendar-alarm.html.min"
+                "/../../resources/html-templates/calendar-alarm.html.min"
             )))
             .expect("Failed to parse calendar template"),
             itip_enabled: config
@@ -141,6 +148,13 @@ impl GroupwareConfig {
             itip_outbound_max_recipients: config
                 .property("calendar.scheduling.outbound.max-recipients")
                 .unwrap_or(100),
+            itip_inbox_auto_expunge: config
+                .property_or_default::<Option<Duration>>(
+                    "calendar.scheduling.inbox.auto-expunge",
+                    "30d",
+                )
+                .map(|d| d.map(|d| d.as_secs()))
+                .unwrap_or(Some(30 * 24 * 60 * 60)),
             itip_http_rsvp_url: if config
                 .property("calendar.scheduling.http-rsvp.enable")
                 .unwrap_or(true)
@@ -164,6 +178,11 @@ impl GroupwareConfig {
                 .property_or_default::<Duration>("calendar.scheduling.http-rsvp.expiration", "90d")
                 .map(|d| d.as_secs())
                 .unwrap_or(90 * 24 * 60 * 60),
+            itip_template: Template::parse(include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../resources/html-templates/calendar-invite.html.min"
+            )))
+            .expect("Failed to parse calendar template"),
         }
     }
 }
@@ -186,6 +205,11 @@ impl FromStr for CalendarTemplateVariable {
             "key" => Ok(CalendarTemplateVariable::Key),
             "value" => Ok(CalendarTemplateVariable::Value),
             "logo_cid" => Ok(CalendarTemplateVariable::LogoCid),
+            "actions" => Ok(CalendarTemplateVariable::Actions),
+            "changed" => Ok(CalendarTemplateVariable::Changed),
+            "old_value" => Ok(CalendarTemplateVariable::OldValue),
+            "rsvp" => Ok(CalendarTemplateVariable::Rsvp),
+            "color" => Ok(CalendarTemplateVariable::Color),
             _ => Err(format!("Unknown calendar template variable: {}", s)),
         }
     }

@@ -599,7 +599,7 @@ pub fn itip_merge_changes(ical: &mut ICalendar, changes: Vec<MergeAction>) {
     }
 }
 
-fn itip_method(ical: &ICalendar) -> Result<&ICalendarMethod, ItipError> {
+pub fn itip_method(ical: &ICalendar) -> Result<&ICalendarMethod, ItipError> {
     ical.components
         .first()
         .and_then(|comp| {

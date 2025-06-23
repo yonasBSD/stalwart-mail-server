@@ -10,20 +10,24 @@ use crate::{
     calendar::{CalendarEvent, CalendarEventData, CalendarScheduling},
     scheduling::{
         ItipError, ItipMessage,
-        inbound::{MergeResult, itip_import_message, itip_merge_changes, itip_process_message},
+        inbound::{
+            MergeResult, itip_import_message, itip_merge_changes, itip_method, itip_process_message,
+        },
         snapshot::itip_snapshot,
     },
 };
 use calcard::{
     common::timezone::Tz,
     icalendar::{
-        ICalendar, ICalendarComponentType, ICalendarParameter, ICalendarParticipationStatus,
-        ICalendarProperty,
+        ICalendar, ICalendarComponentType, ICalendarMethod, ICalendarParameter,
+        ICalendarParticipationStatus, ICalendarProperty,
     },
 };
 use common::{
     DavName, IDX_EMAIL, IDX_UID, Server,
     auth::{AccessToken, ResourceToken, oauth::GrantType},
+    config::groupware::CalendarTemplateVariable,
+    i18n,
 };
 use jmap_proto::types::collection::Collection;
 use store::{
@@ -32,7 +36,7 @@ use store::{
     write::{BatchBuilder, now},
 };
 use trc::AddContext;
-use utils::url_params::UrlParams;
+use utils::{template::Variables, url_params::UrlParams};
 
 pub enum ItipIngestError {
     Message(ItipError),
@@ -58,7 +62,11 @@ pub trait ItipIngest: Sync + Send {
         attendee: &str,
     ) -> impl Future<Output = Option<ItipRsvpUrl>> + Send;
 
-    fn http_rsvp_handle(&self, query: &str) -> impl Future<Output = trc::Result<String>> + Send;
+    fn http_rsvp_handle(
+        &self,
+        query: &str,
+        language: &str,
+    ) -> impl Future<Output = trc::Result<String>> + Send;
 }
 
 impl ItipIngest for Server {
@@ -222,6 +230,8 @@ impl ItipIngest for Server {
                     .is_empty()
             {
                 return Err(ItipIngestError::Message(ItipError::AutoAddDisabled));
+            } else if itip_method(&itip)? != &ICalendarMethod::Request {
+                return Err(ItipIngestError::Message(ItipError::EventNotFound));
             }
 
             // Import the iTIP message
@@ -333,8 +343,8 @@ impl ItipIngest for Server {
         }
     }
 
-    async fn http_rsvp_handle(&self, query: &str) -> trc::Result<String> {
-        if let Some(rsvp) = decode_rsvp_response(self, query).await {
+    async fn http_rsvp_handle(&self, query: &str, language: &str) -> trc::Result<String> {
+        let response = if let Some(rsvp) = decode_rsvp_response(self, query).await {
             if let Some(archive) = self
                 .get_archive(rsvp.account_id, Collection::CalendarEvent, rsvp.document_id)
                 .await
@@ -348,6 +358,8 @@ impl ItipIngest for Server {
                     .caused_by(trc::location!())?;
                 let mut did_change = false;
                 let mut summary = None;
+                let mut description = None;
+                let mut found_participant = false;
 
                 for component in &mut new_event.data.event.components {
                     if component.component_type.is_scheduling_object() {
@@ -380,10 +392,19 @@ impl ItipIngest for Server {
                                         .params
                                         .push(ICalendarParameter::Partstat(rsvp.partstat.clone()));
                                 }
+                                found_participant = true;
                                 did_change = true;
                             } else if summary.is_none() && entry.name == ICalendarProperty::Summary
                             {
                                 summary = entry
+                                    .values
+                                    .first()
+                                    .and_then(|v| v.as_text())
+                                    .map(|s| s.to_string());
+                            } else if description.is_none()
+                                && entry.name == ICalendarProperty::Description
+                            {
+                                description = entry
                                     .values
                                     .first()
                                     .and_then(|v| v.as_text())
@@ -411,21 +432,24 @@ impl ItipIngest for Server {
                         .caused_by(trc::location!())?;
 
                     self.commit_batch(batch).await.caused_by(trc::location!())?;
+                }
 
-                    let todo = "use templates";
-                    Ok(format!(
-                        "RSVP response recorded: {summary:?} {}",
-                        rsvp.partstat.as_str()
-                    ))
+                if found_participant {
+                    Response::Success {
+                        summary,
+                        description,
+                    }
                 } else {
-                    Ok("No changes made to the event".to_string())
+                    Response::NoLongerParticipant
                 }
             } else {
-                Ok("Event not found".to_string())
+                Response::EventNotFound
             }
         } else {
-            Ok("Invalid RSVP response".to_string())
-        }
+            Response::ParseError
+        };
+
+        Ok(render_response(self, response, language))
     }
 }
 
@@ -434,13 +458,11 @@ struct RsvpResponse {
     document_id: u32,
     attendee: String,
     partstat: ICalendarParticipationStatus,
-    lang: String,
 }
 
 async fn decode_rsvp_response(server: &Server, query: &str) -> Option<RsvpResponse> {
     let params = UrlParams::new(query.into());
     let token = params.get("i")?;
-    let language = params.get("l").unwrap_or("en");
     let method = params.get("m").and_then(|m| {
         hashify::tiny_map_ignore_case!(m.as_bytes(),
             "ACCEPTED" => ICalendarParticipationStatus::Accepted,
@@ -470,14 +492,117 @@ async fn decode_rsvp_response(server: &Server, query: &str) -> Option<RsvpRespon
         document_id,
         attendee,
         partstat: method,
-        lang: language.to_string(),
     }
     .into()
 }
 
+enum Response {
+    Success {
+        summary: Option<String>,
+        description: Option<String>,
+    },
+    EventNotFound,
+    ParseError,
+    NoLongerParticipant,
+}
+
+fn render_response(server: &Server, response: Response, language: &str) -> String {
+    #[cfg(feature = "enterprise")]
+    let template = server
+        .core
+        .enterprise
+        .as_ref()
+        .and_then(|e| e.template_scheduling_web.as_ref())
+        .unwrap_or(&server.core.groupware.itip_template);
+    #[cfg(not(feature = "enterprise"))]
+    let template = &server.core.groupware.itip_template;
+    let locale = i18n::locale_or_default(language);
+
+    let mut variables = Variables::new();
+
+    match response {
+        Response::Success {
+            summary,
+            description,
+        } => {
+            variables.insert_single(
+                CalendarTemplateVariable::PageTitle,
+                locale.calendar_rsvp_recorded.to_string(),
+            );
+            variables.insert_single(
+                CalendarTemplateVariable::Header,
+                locale.calendar_rsvp_recorded.to_string(),
+            );
+            variables.insert_block(
+                CalendarTemplateVariable::EventDetails,
+                [
+                    summary.map(|summary| {
+                        [
+                            (
+                                CalendarTemplateVariable::Key,
+                                locale.calendar_summary.to_string(),
+                            ),
+                            (CalendarTemplateVariable::Value, summary),
+                        ]
+                    }),
+                    description.map(|description| {
+                        [
+                            (
+                                CalendarTemplateVariable::Key,
+                                locale.calendar_description.to_string(),
+                            ),
+                            (CalendarTemplateVariable::Value, description),
+                        ]
+                    }),
+                ]
+                .into_iter()
+                .flatten(),
+            );
+
+            variables.insert_single(CalendarTemplateVariable::Color, "info".to_string());
+        }
+        Response::EventNotFound => {
+            variables.insert_single(
+                CalendarTemplateVariable::PageTitle,
+                locale.calendar_rsvp_failed.to_string(),
+            );
+            variables.insert_single(
+                CalendarTemplateVariable::Header,
+                locale.calendar_event_not_found.to_string(),
+            );
+            variables.insert_single(CalendarTemplateVariable::Color, "danger".to_string());
+        }
+        Response::ParseError => {
+            variables.insert_single(
+                CalendarTemplateVariable::PageTitle,
+                locale.calendar_rsvp_failed.to_string(),
+            );
+            variables.insert_single(
+                CalendarTemplateVariable::Header,
+                locale.calendar_invalid_rsvp.to_string(),
+            );
+            variables.insert_single(CalendarTemplateVariable::Color, "danger".to_string());
+        }
+        Response::NoLongerParticipant => {
+            variables.insert_single(
+                CalendarTemplateVariable::PageTitle,
+                locale.calendar_rsvp_failed.to_string(),
+            );
+            variables.insert_single(
+                CalendarTemplateVariable::Header,
+                locale.calendar_not_participant.to_string(),
+            );
+            variables.insert_single(CalendarTemplateVariable::Color, "warning".to_string());
+        }
+    }
+    variables.insert_single(CalendarTemplateVariable::LogoCid, "/logo.svg".to_string());
+
+    template.eval(&variables)
+}
+
 impl ItipRsvpUrl {
-    pub fn url(&self, partstat: &ICalendarParticipationStatus, language: &str) -> String {
-        format!("{}&m={}&l={}", self.0, partstat.as_str(), language)
+    pub fn url(&self, partstat: &ICalendarParticipationStatus) -> String {
+        format!("{}&m={}", self.0, partstat.as_str())
     }
 }
 

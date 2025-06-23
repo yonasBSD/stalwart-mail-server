@@ -41,10 +41,10 @@ pub mod imip;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Task {
-    account_id: u32,
-    document_id: u32,
-    due: u64,
-    action: TaskAction,
+    pub account_id: u32,
+    pub document_id: u32,
+    pub due: u64,
+    pub action: TaskAction,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
