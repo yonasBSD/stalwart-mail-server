@@ -301,6 +301,8 @@ impl PrincipalPropFind for Server {
                                 property.clone(),
                                 emails
                                     .iter()
+                                    .filter(|email| !email.starts_with("@"))
+                                    .take(1)
                                     .map(|email| Href(format!("mailto:{email}",)))
                                     .collect::<Vec<_>>(),
                             ));
