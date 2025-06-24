@@ -167,7 +167,6 @@ impl IdentityGet for Server {
 
         // Create identities
         let name = principal.description.unwrap_or(principal.name);
-        let has_many = num_emails > 1;
         let mut next_document_id = self
             .store()
             .assign_document_ids(account_id, Collection::Identity, num_emails as u64)
@@ -175,13 +174,11 @@ impl IdentityGet for Server {
             .caused_by(trc::location!())?;
         for email in &principal.emails {
             let email = sanitize_email(email).unwrap_or_default();
-            if email.is_empty() {
+            if email.is_empty() || email.starts_with('@') {
                 continue;
             }
             let name = if name.is_empty() {
                 email.clone()
-            } else if has_many {
-                format!("{} <{}>", name, email)
             } else {
                 name.clone()
             };
