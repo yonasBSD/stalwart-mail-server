@@ -288,30 +288,32 @@ impl PrincipalPropFind for Server {
                                     )
                                 };
 
-                            for account_id in access_token.all_ids_by_collection(collection) {
-                                let href = if account_id == access_token.primary_id() {
-                                    format!(
-                                        "{}/{}/",
-                                        resource_name.base_path(),
-                                        percent_encoding::utf8_percent_encode(
-                                            &access_token.name,
-                                            RFC_3986
-                                        ),
-                                    )
-                                } else {
-                                    let name = self
-                                        .store()
-                                        .get_principal_name(account_id)
-                                        .await
-                                        .caused_by(trc::location!())?
-                                        .unwrap_or_else(|| format!("_{account_id}"));
-                                    format!(
-                                        "{}/{}/",
-                                        resource_name.base_path(),
-                                        percent_encoding::utf8_percent_encode(&name, RFC_3986),
-                                    )
-                                };
-                                hrefs.push(Href(href));
+                            hrefs.push(Href(format!(
+                                "{}/{}/",
+                                resource_name.base_path(),
+                                percent_encoding::utf8_percent_encode(&name, RFC_3986),
+                            )));
+
+                            if account_id == access_token.primary_id() {
+                                for account_id in access_token.all_ids_by_collection(collection) {
+                                    if account_id != access_token.primary_id() {
+                                        let other_name = self
+                                            .store()
+                                            .get_principal_name(account_id)
+                                            .await
+                                            .caused_by(trc::location!())?
+                                            .unwrap_or_else(|| format!("_{account_id}"));
+
+                                        hrefs.push(Href(format!(
+                                            "{}/{}/",
+                                            resource_name.base_path(),
+                                            percent_encoding::utf8_percent_encode(
+                                                &other_name,
+                                                RFC_3986
+                                            ),
+                                        )));
+                                    }
+                                }
                             }
 
                             fields.push(DavPropertyValue::new(property.clone(), hrefs));

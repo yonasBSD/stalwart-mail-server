@@ -326,7 +326,7 @@ impl PropFindRequestHandler for Server {
                 collection_children = collection_container.child_collection().unwrap();
                 sync_collection = SyncCollection::from(collection_container);
 
-                match get(
+                get(
                     self,
                     access_token,
                     collection_container,
@@ -340,22 +340,6 @@ impl PropFindRequestHandler for Server {
                     &mut is_sync_limited,
                 )
                 .await?
-                {
-                    Some(paths) if paths.is_empty() && query.sync_type.is_none() => {
-                        response.add_response(
-                            Response::new_status([query.uri], StatusCode::NOT_FOUND)
-                                .with_response_description("No resources found"),
-                        );
-
-                        return Ok(HttpResponse::new(StatusCode::MULTI_STATUS)
-                            .with_xml_body(response.to_string()));
-                    }
-                    Some(paths) => paths,
-                    None => {
-                        return Ok(HttpResponse::new(StatusCode::MULTI_STATUS)
-                            .with_xml_body(response.to_string()));
-                    }
-                }
             }
             DavQueryResource::Multiget {
                 hrefs,
@@ -1137,14 +1121,13 @@ impl PropFindRequestHandler for Server {
                             .unwrap_or(self.core.groupware.max_results as u32)
                     )),
             );
-        } else if response.response.0.is_empty() && query.sync_type.is_none() {
-            response.add_response(
-                Response::new_status([query.uri], StatusCode::NOT_FOUND)
-                    .with_response_description("No resources found"),
-            );
         }
 
-        Ok(HttpResponse::new(StatusCode::MULTI_STATUS).with_xml_body(response.to_string()))
+        if !response.response.0.is_empty() || !query.sync_type.is_none() {
+            Ok(HttpResponse::new(StatusCode::MULTI_STATUS).with_xml_body(response.to_string()))
+        } else {
+            Ok(HttpResponse::new(StatusCode::NOT_FOUND))
+        }
     }
 
     async fn dav_quota(
@@ -1187,7 +1170,7 @@ async fn get(
     resource: UriResource<u32, Option<&str>>,
     limit: usize,
     is_sync_limited: &mut bool,
-) -> crate::Result<Option<Vec<PropFindItem>>> {
+) -> crate::Result<Vec<PropFindItem>> {
     let account_id = resource.account_id;
     let container_has_children = collection_children != collection_container;
     let resources = data
@@ -1371,27 +1354,25 @@ async fn get(
     }
 
     Ok(if let Some(resource) = resource.resource {
-        Some(
-            resources
-                .subtree_with_depth(resource, query.depth)
-                .filter(|item| {
-                    display_containers.as_ref().is_none_or(|containers| {
-                        if container_has_children {
-                            if item.is_container() {
-                                containers.contains(item.document_id())
-                            } else {
-                                display_children
-                                    .as_ref()
-                                    .is_some_and(|children| children.contains(item.document_id()))
-                            }
-                        } else {
+        resources
+            .subtree_with_depth(resource, query.depth)
+            .filter(|item| {
+                display_containers.as_ref().is_none_or(|containers| {
+                    if container_has_children {
+                        if item.is_container() {
                             containers.contains(item.document_id())
+                        } else {
+                            display_children
+                                .as_ref()
+                                .is_some_and(|children| children.contains(item.document_id()))
                         }
-                    }) && (!query.depth_no_root || item.path() != resource)
-                })
-                .map(|item| PropFindItem::new(resources.format_resource(item), account_id, item))
-                .collect::<Vec<_>>(),
-        )
+                    } else {
+                        containers.contains(item.document_id())
+                    }
+                }) && (!query.depth_no_root || item.path() != resource)
+            })
+            .map(|item| PropFindItem::new(resources.format_resource(item), account_id, item))
+            .collect::<Vec<_>>()
     } else {
         if !query.depth_no_root && query.sync_type.is_none_or_initial() {
             server
@@ -1406,31 +1387,27 @@ async fn get(
         }
 
         if query.depth != 0 {
-            Some(
-                resources
-                    .tree_with_depth(query.depth - 1)
-                    .filter(|item| {
-                        display_containers.as_ref().is_none_or(|containers| {
-                            if container_has_children {
-                                if item.is_container() {
-                                    containers.contains(item.document_id())
-                                } else {
-                                    display_children.as_ref().is_some_and(|children| {
-                                        children.contains(item.document_id())
-                                    })
-                                }
-                            } else {
+            resources
+                .tree_with_depth(query.depth - 1)
+                .filter(|item| {
+                    display_containers.as_ref().is_none_or(|containers| {
+                        if container_has_children {
+                            if item.is_container() {
                                 containers.contains(item.document_id())
+                            } else {
+                                display_children
+                                    .as_ref()
+                                    .is_some_and(|children| children.contains(item.document_id()))
                             }
-                        })
+                        } else {
+                            containers.contains(item.document_id())
+                        }
                     })
-                    .map(|item| {
-                        PropFindItem::new(resources.format_resource(item), account_id, item)
-                    })
-                    .collect::<Vec<_>>(),
-            )
+                })
+                .map(|item| PropFindItem::new(resources.format_resource(item), account_id, item))
+                .collect::<Vec<_>>()
         } else {
-            None
+            Vec::new()
         }
     })
 }

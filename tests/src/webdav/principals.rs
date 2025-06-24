@@ -16,6 +16,9 @@ pub async fn test(test: &WebDavTest) {
     let principal_path = format!("D:href:{}/", DavResourceName::Principal.base_path());
     let jane_principal_path = format!("D:href:{}/jane/", DavResourceName::Principal.base_path());
 
+    let path_support_card = format!("D:href:{}/support/", DavResourceName::Card.base_path());
+    let path_support_cal = format!("D:href:{}/support/", DavResourceName::Cal.base_path());
+
     // Test 1: PROPFIND on /dav/pal should return all principals
     let response = client
         .propfind(
@@ -52,16 +55,29 @@ pub async fn test(test: &WebDavTest) {
             .get(DavProperty::WebDav(WebDavProperty::Owner))
             .with_values([path_pal.as_str()])
             .with_status(StatusCode::OK);
-        props
-            .get(DavProperty::Principal(PrincipalProperty::CalendarHomeSet))
-            .with_values([path_cal.as_str()])
-            .with_status(StatusCode::OK);
-        props
-            .get(DavProperty::Principal(
-                PrincipalProperty::AddressbookHomeSet,
-            ))
-            .with_values([path_card.as_str()])
-            .with_status(StatusCode::OK);
+        if *account == "jane" {
+            props
+                .get(DavProperty::Principal(PrincipalProperty::CalendarHomeSet))
+                .with_values([path_cal.as_str(), path_support_cal.as_str()])
+                .with_status(StatusCode::OK);
+            props
+                .get(DavProperty::Principal(
+                    PrincipalProperty::AddressbookHomeSet,
+                ))
+                .with_values([path_card.as_str(), path_support_card.as_str()])
+                .with_status(StatusCode::OK);
+        } else {
+            props
+                .get(DavProperty::Principal(PrincipalProperty::CalendarHomeSet))
+                .with_values([path_cal.as_str()])
+                .with_status(StatusCode::OK);
+            props
+                .get(DavProperty::Principal(
+                    PrincipalProperty::AddressbookHomeSet,
+                ))
+                .with_values([path_card.as_str()])
+                .with_status(StatusCode::OK);
+        }
         props
             .get(DavProperty::WebDav(WebDavProperty::PrincipalCollectionSet))
             .with_values([principal_path.as_str()])
@@ -247,16 +263,29 @@ pub async fn test(test: &WebDavTest) {
                 .get(DavProperty::WebDav(WebDavProperty::Owner))
                 .with_values([path_pal.as_str()])
                 .with_status(StatusCode::OK);
-            props
-                .get(DavProperty::Principal(PrincipalProperty::CalendarHomeSet))
-                .with_values([path_cal.as_str()])
-                .with_status(StatusCode::OK);
-            props
-                .get(DavProperty::Principal(
-                    PrincipalProperty::AddressbookHomeSet,
-                ))
-                .with_values([path_card.as_str()])
-                .with_status(StatusCode::OK);
+            if *account == "jane" {
+                props
+                    .get(DavProperty::Principal(PrincipalProperty::CalendarHomeSet))
+                    .with_values([path_cal.as_str(), path_support_cal.as_str()])
+                    .with_status(StatusCode::OK);
+                props
+                    .get(DavProperty::Principal(
+                        PrincipalProperty::AddressbookHomeSet,
+                    ))
+                    .with_values([path_card.as_str(), path_support_card.as_str()])
+                    .with_status(StatusCode::OK);
+            } else {
+                props
+                    .get(DavProperty::Principal(PrincipalProperty::CalendarHomeSet))
+                    .with_values([path_cal.as_str()])
+                    .with_status(StatusCode::OK);
+                props
+                    .get(DavProperty::Principal(
+                        PrincipalProperty::AddressbookHomeSet,
+                    ))
+                    .with_values([path_card.as_str()])
+                    .with_status(StatusCode::OK);
+            }
             props
                 .get(DavProperty::WebDav(WebDavProperty::SyncToken))
                 .with_status(StatusCode::OK)
