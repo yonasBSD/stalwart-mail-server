@@ -75,6 +75,10 @@ pub(crate) enum DavQueryResource<'x> {
         parent_collection: Collection,
         items: Vec<PropFindItem>,
     },
+    Discovery {
+        parent_collection: Collection,
+        account_ids: Vec<u32>,
+    },
     #[default]
     None,
 }
@@ -296,6 +300,29 @@ impl<'x> DavQuery<'x> {
             sync_type: Default::default(),
             limit: Default::default(),
             max_vcard_version: headers.max_vcard_version,
+        }
+    }
+
+    pub fn discovery(
+        propfind: PropFind,
+        account_ids: Vec<u32>,
+        collection: Collection,
+        headers: &RequestHeaders<'x>,
+    ) -> Self {
+        Self {
+            resource: DavQueryResource::Discovery {
+                parent_collection: collection,
+                account_ids,
+            },
+            propfind,
+            depth: 0,
+            ret: headers.ret,
+            depth_no_root: headers.depth_no_root,
+            uri: headers.uri,
+            sync_type: Default::default(),
+            limit: Default::default(),
+            max_vcard_version: headers.max_vcard_version,
+            expand: false,
         }
     }
 

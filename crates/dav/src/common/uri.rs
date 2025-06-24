@@ -178,11 +178,11 @@ impl OwnedUri<'_> {
     }
 }
 
-impl<A, R> UriResource<A, R> {
+/*impl<A, R> UriResource<A, R> {
     pub fn collection_path(&self) -> &'static str {
         DavResourceName::from(self.collection).collection_path()
     }
-}
+}*/
 
 impl Urn {
     pub fn try_extract_sync_id(token: &str) -> Option<&str> {

@@ -17,6 +17,7 @@ pub struct GroupwareConfig {
     pub max_lock_timeout: u64,
     pub max_locks_per_user: usize,
     pub max_results: usize,
+    pub assisted_discovery: bool,
 
     // Calendar settings
     pub max_ical_size: usize,
@@ -81,6 +82,9 @@ impl GroupwareConfig {
                 .property_or_default::<Option<usize>>("dav.property.max-size.dead", "1024")
                 .unwrap_or(Some(1024)),
             live_property_size: config.property("dav.property.max-size.live").unwrap_or(250),
+            assisted_discovery: config
+                .property("dav.collection.assisted-discovery")
+                .unwrap_or(false),
             max_lock_timeout: config
                 .property::<Duration>("dav.lock.max-timeout")
                 .map(|d| d.as_secs())

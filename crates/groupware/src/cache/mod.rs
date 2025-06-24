@@ -44,18 +44,21 @@ pub trait GroupwareCache: Sync + Send {
         &self,
         access_token: &AccessToken,
         account_id: u32,
+        account_name: &str,
     ) -> impl Future<Output = trc::Result<Option<u32>>> + Send;
 
     fn create_default_calendar(
         &self,
         access_token: &AccessToken,
         account_id: u32,
+        account_name: &str,
     ) -> impl Future<Output = trc::Result<Option<u32>>> + Send;
 
     fn get_or_create_default_calendar(
         &self,
         access_token: &AccessToken,
         account_id: u32,
+        account_name: &str,
     ) -> impl Future<Output = trc::Result<Option<u32>>> + Send;
 
     fn cached_dav_resources(
@@ -337,6 +340,7 @@ impl GroupwareCache for Server {
         &self,
         access_token: &AccessToken,
         account_id: u32,
+        account_name: &str,
     ) -> trc::Result<Option<u32>> {
         if let Some(name) = &self.core.groupware.default_addressbook_name {
             let mut batch = BatchBuilder::new();
@@ -346,7 +350,12 @@ impl GroupwareCache for Server {
                 .await?;
             AddressBook {
                 name: name.clone(),
-                display_name: self.core.groupware.default_addressbook_display_name.clone(),
+                display_name: self
+                    .core
+                    .groupware
+                    .default_addressbook_display_name
+                    .as_ref()
+                    .map(|display| format!("{display} ({account_name})")),
                 is_default: true,
                 ..Default::default()
             }
@@ -362,6 +371,7 @@ impl GroupwareCache for Server {
         &self,
         access_token: &AccessToken,
         account_id: u32,
+        account_name: &str,
     ) -> trc::Result<Option<u32>> {
         if let Some(name) = &self.core.groupware.default_calendar_name {
             let mut batch = BatchBuilder::new();
@@ -377,8 +387,11 @@ impl GroupwareCache for Server {
                         .core
                         .groupware
                         .default_calendar_display_name
-                        .clone()
-                        .unwrap_or_else(|| name.clone()),
+                        .as_ref()
+                        .map_or_else(
+                            || name.clone(),
+                            |display| format!("{display} ({account_name})",),
+                        ),
                     ..Default::default()
                 }],
                 ..Default::default()
@@ -395,13 +408,17 @@ impl GroupwareCache for Server {
         &self,
         access_token: &AccessToken,
         account_id: u32,
+        account_name: &str,
     ) -> trc::Result<Option<u32>> {
         match self
             .get_document_ids(account_id, Collection::Calendar)
             .await
         {
             Ok(Some(ids)) if !ids.is_empty() => Ok(ids.iter().next()),
-            _ => self.create_default_calendar(access_token, account_id).await,
+            _ => {
+                self.create_default_calendar(access_token, account_id, account_name)
+                    .await
+            }
         }
     }
 

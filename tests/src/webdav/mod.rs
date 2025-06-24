@@ -62,48 +62,55 @@ pub mod prop;
 pub mod put_get;
 pub mod sync;
 
-#[tokio::test]
-pub async fn webdav_tests() {
-    // Prepare settings
-    let start_time = Instant::now();
-    let delete = true;
-    let handle = init_webdav_tests(
-        &std::env::var("STORE")
-            .expect("Missing store type. Try running `STORE=<store_type> cargo test`"),
-        delete,
-    )
-    .await;
-
+#[test]
+fn webdav_tests() {
     //test_build_itip_templates(&handle.server).await;
 
-    basic::test(&handle).await;
-    put_get::test(&handle).await;
-    mkcol::test(&handle).await;
-    copy_move::test(&handle).await;
-    prop::test(&handle).await;
-    multiget::test(&handle).await;
-    sync::test(&handle).await;
-    lock::test(&handle).await;
-    principals::test(&handle).await;
-    acl::test(&handle).await;
-    card_query::test(&handle).await;
-    cal_query::test(&handle).await;
-    cal_alarm::test(&handle).await;
-    cal_itip::test();
-    cal_scheduling::test(&handle).await;
+    tokio::runtime::Builder::new_multi_thread()
+        .thread_stack_size(8 * 1024 * 1024) // 8MB stack
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            // Prepare settings
+            let start_time = Instant::now();
+            let delete = true;
+            let handle = init_webdav_tests(
+                &std::env::var("STORE")
+                    .expect("Missing store type. Try running `STORE=<store_type> cargo test`"),
+                delete,
+            )
+            .await;
 
-    // Print elapsed time
-    let elapsed = start_time.elapsed();
-    println!(
-        "Elapsed: {}.{:03}s",
-        elapsed.as_secs(),
-        elapsed.subsec_millis()
-    );
+            basic::test(&handle).await;
+            put_get::test(&handle).await;
+            mkcol::test(&handle).await;
+            copy_move::test(&handle).await;
+            prop::test(&handle).await;
+            multiget::test(&handle).await;
+            sync::test(&handle).await;
+            lock::test(&handle).await;
+            principals::test(&handle).await;
+            acl::test(&handle).await;
+            card_query::test(&handle).await;
+            cal_query::test(&handle).await;
+            cal_alarm::test(&handle).await;
+            cal_itip::test();
+            cal_scheduling::test(&handle).await;
 
-    // Remove test data
-    if delete {
-        handle.temp_dir.delete();
-    }
+            // Print elapsed time
+            let elapsed = start_time.elapsed();
+            println!(
+                "Elapsed: {}.{:03}s",
+                elapsed.as_secs(),
+                elapsed.subsec_millis()
+            );
+
+            // Remove test data
+            if delete {
+                handle.temp_dir.delete();
+            }
+        });
 }
 
 #[allow(dead_code)]
@@ -1159,6 +1166,9 @@ minimum-interval = "1s"
 
 [calendar.scheduling.inbound]
 auto-add = true
+
+[dav.collection]
+assisted-discovery = false
 
 [store."auth"]
 type = "sqlite"

@@ -131,11 +131,13 @@ impl PropFindRequestHandler for Server {
             Depth::Zero => false,
             Depth::Infinity => match resource.collection {
                 Collection::Principal => true,
-                Collection::Calendar | Collection::AddressBook | Collection::CalendarScheduling
-                    if resource.account_id.is_some() && resource.resource.is_some() =>
+                Collection::Calendar | Collection::AddressBook
+                    if self.core.groupware.assisted_discovery
+                        || (resource.account_id.is_some() && resource.resource.is_some()) =>
                 {
                     true
                 }
+                Collection::CalendarScheduling if resource.account_id.is_some() => true,
                 _ => {
                     return Err(DavErrorCondition::new(
                         StatusCode::FORBIDDEN,
@@ -210,122 +212,45 @@ impl PropFindRequestHandler for Server {
                 }
                 _ => unreachable!(),
             }
+        } else if (self.core.groupware.assisted_discovery
+            || matches!(headers.depth, Depth::Infinity))
+            && matches!(
+                resource.collection,
+                Collection::Calendar | Collection::AddressBook
+            )
+        {
+            // Assisted collection discovery
+
+            // Validate permissions
+            access_token.assert_has_permission(match resource.collection {
+                Collection::Calendar => Permission::DavCalPropFind,
+                Collection::AddressBook => Permission::DavCardPropFind,
+                _ => unreachable!(),
+            })?;
+
+            self.handle_dav_query(
+                access_token,
+                DavQuery::discovery(
+                    request,
+                    access_token
+                        .all_ids_by_collection(resource.collection)
+                        .collect(),
+                    resource.collection,
+                    headers,
+                ),
+            )
+            .await
         } else {
             let mut response = MultiStatus::new(Vec::with_capacity(16));
 
             // Add container info
             if !headers.depth_no_root {
-                let properties = match &request {
-                    PropFind::PropName => {
-                        response.add_response(Response::new_propstat(
-                            resource.collection_path(),
-                            vec![PropStat::new_list(vec![
-                                DavPropertyValue::empty(DavProperty::WebDav(
-                                    WebDavProperty::ResourceType,
-                                )),
-                                DavPropertyValue::empty(DavProperty::WebDav(
-                                    WebDavProperty::CurrentUserPrincipal,
-                                )),
-                                DavPropertyValue::empty(DavProperty::WebDav(
-                                    WebDavProperty::SupportedReportSet,
-                                )),
-                            ])],
-                        ));
-                        &[]
-                    }
-                    PropFind::AllProp(_) => [
-                        DavProperty::WebDav(WebDavProperty::ResourceType),
-                        DavProperty::WebDav(WebDavProperty::CurrentUserPrincipal),
-                        DavProperty::WebDav(WebDavProperty::SupportedReportSet),
-                    ]
-                    .as_slice(),
-                    PropFind::Prop(items) => items,
-                };
-
-                if !matches!(request, PropFind::PropName) {
-                    let mut fields = Vec::with_capacity(properties.len());
-                    let mut fields_not_found = Vec::new();
-
-                    for prop in properties {
-                        match &prop {
-                            DavProperty::WebDav(WebDavProperty::ResourceType) => {
-                                fields.push(DavPropertyValue::new(
-                                    prop.clone(),
-                                    vec![ResourceType::Collection],
-                                ));
-                            }
-                            DavProperty::WebDav(WebDavProperty::CurrentUserPrincipal) => {
-                                fields.push(DavPropertyValue::new(
-                                    prop.clone(),
-                                    vec![access_token.current_user_principal()],
-                                ));
-                            }
-                            DavProperty::Principal(PrincipalProperty::CalendarHomeSet) => {
-                                fields.push(DavPropertyValue::new(
-                                    prop.clone(),
-                                    vec![Href(format!(
-                                        "{}/{}/",
-                                        DavResourceName::Cal.base_path(),
-                                        percent_encoding::utf8_percent_encode(
-                                            &access_token.name,
-                                            RFC_3986
-                                        ),
-                                    ))],
-                                ));
-                                response.set_namespace(Namespace::CalDav);
-                            }
-                            DavProperty::Principal(PrincipalProperty::AddressbookHomeSet) => {
-                                fields.push(DavPropertyValue::new(
-                                    prop.clone(),
-                                    vec![Href(format!(
-                                        "{}/{}/",
-                                        DavResourceName::Card.base_path(),
-                                        percent_encoding::utf8_percent_encode(
-                                            &access_token.name,
-                                            RFC_3986
-                                        ),
-                                    ))],
-                                ));
-                                response.set_namespace(Namespace::CardDav);
-                            }
-                            DavProperty::WebDav(WebDavProperty::SupportedReportSet) => {
-                                let reports = match resource.collection {
-                                    Collection::Principal => ReportSet::principal(),
-                                    Collection::Calendar | Collection::CalendarEvent => {
-                                        ReportSet::calendar()
-                                    }
-                                    Collection::AddressBook | Collection::ContactCard => {
-                                        ReportSet::addressbook()
-                                    }
-                                    _ => ReportSet::file(),
-                                };
-
-                                fields.push(DavPropertyValue::new(prop.clone(), reports));
-                            }
-                            _ => {
-                                response.set_namespace(prop.namespace());
-                                fields_not_found.push(DavPropertyValue::empty(prop.clone()));
-                            }
-                        }
-                    }
-
-                    let mut prop_stat = Vec::with_capacity(2);
-
-                    if !fields.is_empty() {
-                        prop_stat.push(PropStat::new_list(fields));
-                    }
-
-                    if !fields_not_found.is_empty() {
-                        prop_stat.push(
-                            PropStat::new_list(fields_not_found).with_status(StatusCode::NOT_FOUND),
-                        );
-                    }
-
-                    response.add_response(Response::new_propstat(
-                        resource.collection_path(),
-                        prop_stat,
-                    ));
-                }
+                add_base_collection_response(
+                    &request,
+                    resource.collection,
+                    access_token,
+                    &mut response,
+                );
             }
 
             if return_children {
@@ -388,7 +313,6 @@ impl PropFindRequestHandler for Server {
         let collection_container;
         let collection_children;
         let sync_collection;
-        let mut paths;
         let mut query_filter = None;
         let mut limit = std::cmp::min(
             query.limit.unwrap_or(u32::MAX) as usize,
@@ -396,378 +320,109 @@ impl PropFindRequestHandler for Server {
         );
         let mut is_sync_limited = false;
 
-        //let c = println!("handling DAV query {query:#?}");
-
-        match std::mem::take(&mut query.resource) {
+        let paths = match std::mem::take(&mut query.resource) {
             DavQueryResource::Uri(resource) => {
-                let account_id = resource.account_id;
                 collection_container = resource.collection;
                 collection_children = collection_container.child_collection().unwrap();
                 sync_collection = SyncCollection::from(collection_container);
-                let container_has_children = collection_children != collection_container;
-                let resources = data
-                    .resources(self, access_token, account_id, sync_collection)
-                    .await
-                    .caused_by(trc::location!())?;
-                response.set_namespace(collection_container.namespace());
 
-                // Obtain document ids
-                let mut display_containers = if !access_token.is_member(account_id) {
-                    resources
-                        .shared_containers(
-                            access_token,
-                            [if container_has_children {
-                                Acl::ReadItems
-                            } else {
-                                Acl::Read
-                            }],
-                            true,
-                        )
-                        .into()
-                } else {
-                    None
-                };
-                let mut display_children = display_containers
-                    .as_ref()
-                    .filter(|_| container_has_children)
-                    .map(|containers| {
-                        RoaringBitmap::from_iter(resources.resources.iter().filter_map(|r| {
-                            if r.child_names()
-                                .is_some_and(|n| n.iter().any(|n| containers.contains(n.parent_id)))
-                            {
-                                Some(r.document_id)
-                            } else {
-                                None
-                            }
-                        }))
-                    });
+                match get(
+                    self,
+                    access_token,
+                    collection_container,
+                    collection_children,
+                    sync_collection,
+                    &query,
+                    &mut data,
+                    &mut response,
+                    resource,
+                    limit,
+                    &mut is_sync_limited,
+                )
+                .await?
+                {
+                    Some(paths) if paths.is_empty() && query.sync_type.is_none() => {
+                        response.add_response(
+                            Response::new_status([query.uri], StatusCode::NOT_FOUND)
+                                .with_response_description("No resources found"),
+                        );
 
-                // Filter by changelog
-                match query.sync_type {
-                    SyncType::From { id, seq } => {
-                        let changes = self
-                            .store()
-                            .changes(account_id, sync_collection, Query::Since(id))
-                            .await
-                            .caused_by(trc::location!())?;
-                        let mut vanished: Vec<String> = Vec::new();
-
-                        // Merge changes
-                        let mut total_changes = 0;
-                        let mut maybe_has_vanished = false;
-                        if container_has_children {
-                            let mut container_changes = RoaringBitmap::new();
-                            let mut item_changes = RoaringBitmap::new();
-
-                            for change in changes.changes {
-                                match change {
-                                    Change::InsertItem(id) => {
-                                        item_changes.insert(id as u32);
-                                    }
-                                    Change::UpdateItem(id) => {
-                                        maybe_has_vanished = true;
-                                        item_changes.insert(id as u32);
-                                    }
-                                    Change::InsertContainer(id) => {
-                                        container_changes.insert(id as u32);
-                                    }
-                                    Change::UpdateContainer(id) => {
-                                        maybe_has_vanished = true;
-                                        container_changes.insert(id as u32);
-                                    }
-                                    Change::DeleteContainer(_) | Change::DeleteItem(_) => {
-                                        maybe_has_vanished = true;
-                                    }
-                                    Change::UpdateContainerProperty(_) => (),
-                                }
-                            }
-
-                            for (document_ids, changes) in [
-                                (&mut display_containers, container_changes),
-                                (&mut display_children, item_changes),
-                            ] {
-                                if let Some(document_ids) = document_ids {
-                                    *document_ids &= changes;
-                                    total_changes += document_ids.len() as usize;
-                                } else {
-                                    total_changes += changes.len() as usize;
-                                    *document_ids = Some(changes);
-                                }
-                            }
-                        } else {
-                            let changes = RoaringBitmap::from_iter(
-                                changes.changes.iter().filter_map(|change| match change {
-                                    Change::InsertItem(id) | Change::InsertContainer(id) => {
-                                        Some(*id as u32)
-                                    }
-                                    Change::UpdateItem(id) | Change::UpdateContainer(id) => {
-                                        maybe_has_vanished = true;
-                                        Some(*id as u32)
-                                    }
-                                    Change::DeleteContainer(_) | Change::DeleteItem(_) => {
-                                        maybe_has_vanished = true;
-                                        None
-                                    }
-                                    _ => None,
-                                }),
-                            );
-                            if let Some(document_ids) = &mut display_containers {
-                                *document_ids &= changes;
-                                total_changes += document_ids.len() as usize;
-                            } else {
-                                total_changes += changes.len() as usize;
-                                display_containers = Some(changes);
-                            }
-                        }
-
-                        if maybe_has_vanished {
-                            if let Some(vanished_collection) = sync_collection.vanished_collection()
-                            {
-                                vanished = self
-                                    .store()
-                                    .vanished(account_id, vanished_collection, Query::Since(id))
-                                    .await
-                                    .caused_by(trc::location!())?;
-                                total_changes += vanished.len();
-                            }
-                        }
-
-                        // Truncate changes
-                        if total_changes > limit {
-                            let mut offset = limit * seq as usize;
-                            let mut total_changes = 0;
-
-                            // Add vanished items to response
-                            for item in vanished {
-                                if offset > 0 {
-                                    offset -= 1;
-                                } else if total_changes < limit {
-                                    response.add_response(Response::new_status(
-                                        [item],
-                                        StatusCode::NOT_FOUND,
-                                    ));
-                                    total_changes += 1;
-                                } else {
-                                    is_sync_limited = true;
-                                }
-                            }
-
-                            // Add items to document set
-                            for document_ids in [&mut display_containers, &mut display_children]
-                                .into_iter()
-                                .flatten()
-                            {
-                                let mut new_document_ids = RoaringBitmap::new();
-                                for id in document_ids.iter() {
-                                    if offset > 0 {
-                                        offset -= 1;
-                                    } else if total_changes < limit {
-                                        new_document_ids.insert(id);
-                                        total_changes += 1;
-                                    } else {
-                                        is_sync_limited = true;
-                                    }
-                                }
-                                *document_ids = new_document_ids;
-                            }
-
-                            if is_sync_limited {
-                                response.set_sync_token(Urn::Sync { id, seq: seq + 1 }.to_string());
-                            }
-                        } else {
-                            // Add vanished items to response
-                            for item in vanished {
-                                response.add_response(Response::new_status(
-                                    [item],
-                                    StatusCode::NOT_FOUND,
-                                ));
-                            }
-                        }
-
-                        if !is_sync_limited {
-                            response.set_sync_token(resources.sync_token());
-                        }
-                    }
-                    SyncType::Initial => {
-                        response.set_sync_token(resources.sync_token());
-                    }
-                    SyncType::None => (),
-                }
-
-                paths = if let Some(resource) = resource.resource {
-                    resources
-                        .subtree_with_depth(resource, query.depth)
-                        .filter(|item| {
-                            display_containers.as_ref().is_none_or(|containers| {
-                                if container_has_children {
-                                    if item.is_container() {
-                                        containers.contains(item.document_id())
-                                    } else {
-                                        display_children.as_ref().is_some_and(|children| {
-                                            children.contains(item.document_id())
-                                        })
-                                    }
-                                } else {
-                                    containers.contains(item.document_id())
-                                }
-                            }) && (!query.depth_no_root || item.path() != resource)
-                        })
-                        .map(|item| {
-                            PropFindItem::new(resources.format_resource(item), account_id, item)
-                        })
-                        .collect::<Vec<_>>()
-                } else {
-                    if !query.depth_no_root && query.sync_type.is_none_or_initial() {
-                        self.prepare_principal_propfind_response(
-                            access_token,
-                            collection_container,
-                            [account_id].into_iter(),
-                            &query.propfind,
-                            &mut response,
-                        )
-                        .await?;
-                    }
-
-                    if query.depth == 0 {
                         return Ok(HttpResponse::new(StatusCode::MULTI_STATUS)
                             .with_xml_body(response.to_string()));
                     }
-
-                    resources
-                        .tree_with_depth(query.depth - 1)
-                        .filter(|item| {
-                            display_containers.as_ref().is_none_or(|containers| {
-                                if container_has_children {
-                                    if item.is_container() {
-                                        containers.contains(item.document_id())
-                                    } else {
-                                        display_children.as_ref().is_some_and(|children| {
-                                            children.contains(item.document_id())
-                                        })
-                                    }
-                                } else {
-                                    containers.contains(item.document_id())
-                                }
-                            })
-                        })
-                        .map(|item| {
-                            PropFindItem::new(resources.format_resource(item), account_id, item)
-                        })
-                        .collect::<Vec<_>>()
-                };
-
-                if paths.is_empty() && query.sync_type.is_none() {
-                    response.add_response(
-                        Response::new_status([query.uri], StatusCode::NOT_FOUND)
-                            .with_response_description("No resources found"),
-                    );
-
-                    return Ok(HttpResponse::new(StatusCode::MULTI_STATUS)
-                        .with_xml_body(response.to_string()));
+                    Some(paths) => paths,
+                    None => {
+                        return Ok(HttpResponse::new(StatusCode::MULTI_STATUS)
+                            .with_xml_body(response.to_string()));
+                    }
                 }
             }
             DavQueryResource::Multiget {
                 hrefs,
                 parent_collection,
             } => {
-                paths = Vec::with_capacity(hrefs.len());
-                let mut shared_folders_by_account: AHashMap<u32, Arc<RoaringBitmap>> =
-                    AHashMap::with_capacity(3);
                 collection_container = parent_collection;
                 collection_children = collection_container.child_collection().unwrap();
                 sync_collection = SyncCollection::from(collection_container);
                 response.set_namespace(collection_container.namespace());
 
-                for item in hrefs {
-                    let resource = match self
-                        .validate_uri(access_token, &item)
-                        .await
-                        .and_then(|r| r.into_owned_uri())
-                    {
-                        Ok(resource) => resource,
-                        Err(DavError::Code(code)) => {
-                            response.add_response(Response::new_status([item], code));
-                            continue;
-                        }
-                        Err(err) => {
-                            return Err(err);
-                        }
-                    };
-
-                    let account_id = resource.account_id;
-                    let resources = data
-                        .resources(self, access_token, account_id, sync_collection)
-                        .await
-                        .caused_by(trc::location!())?;
-
-                    let document_ids = if !access_token.is_member(account_id) {
-                        if let Some(document_ids) = shared_folders_by_account.get(&account_id) {
-                            document_ids.clone().into()
-                        } else {
-                            let document_ids = Arc::new(resources.shared_containers(
-                                access_token,
-                                [if collection_children == collection_container {
-                                    Acl::ReadItems
-                                } else {
-                                    Acl::Read
-                                }],
-                                true,
-                            ));
-                            shared_folders_by_account.insert(account_id, document_ids.clone());
-                            document_ids.into()
-                        }
-                    } else {
-                        None
-                    };
-
-                    if let Some(resource) =
-                        resource.resource.and_then(|name| resources.by_path(name))
-                    {
-                        if !resource.is_container() {
-                            if document_ids
-                                .as_ref()
-                                .is_none_or(|docs| docs.contains(resource.document_id()))
-                            {
-                                paths.push(PropFindItem::new(
-                                    resources.format_resource(resource),
-                                    account_id,
-                                    resource,
-                                ));
-                            } else {
-                                response.add_response(
-                                    Response::new_status([item], StatusCode::FORBIDDEN)
-                                        .with_response_description(
-                                            "Not enough permissions to access this shared resource",
-                                        ),
-                                );
-                            }
-                        } else {
-                            response.add_response(
-                                Response::new_status([item], StatusCode::FORBIDDEN)
-                                    .with_response_description(
-                                        "Multiget not allowed for collections",
-                                    ),
-                            );
-                        }
-                    } else {
-                        response.add_response(Response::new_status([item], StatusCode::NOT_FOUND));
-                    }
-                }
+                multiget(
+                    self,
+                    access_token,
+                    collection_container,
+                    collection_children,
+                    sync_collection,
+                    &mut data,
+                    &mut response,
+                    hrefs,
+                )
+                .await?
             }
             DavQueryResource::Query {
                 filter,
                 parent_collection,
                 items,
             } => {
-                paths = items;
                 query_filter = Some(filter);
                 collection_container = parent_collection;
                 collection_children = collection_container.child_collection().unwrap();
                 sync_collection = SyncCollection::from(collection_container);
                 response.set_namespace(collection_container.namespace());
+                items
+            }
+            DavQueryResource::Discovery {
+                parent_collection,
+                account_ids,
+            } => {
+                collection_container = parent_collection;
+                collection_children = collection_container.child_collection().unwrap();
+                sync_collection = SyncCollection::from(collection_container);
+                response.set_namespace(collection_container.namespace());
+
+                // Add container info
+                if !query.depth_no_root {
+                    add_base_collection_response(
+                        &query.propfind,
+                        parent_collection,
+                        access_token,
+                        &mut response,
+                    );
+                }
+
+                discover_root_paths(
+                    self,
+                    access_token,
+                    collection_container,
+                    sync_collection,
+                    &query,
+                    &mut data,
+                    &mut response,
+                    account_ids,
+                )
+                .await?
             }
             DavQueryResource::None => unreachable!(),
-        }
+        };
 
         let mut skip_not_found = query.expand;
         let properties = match &query.propfind {
@@ -1519,6 +1174,408 @@ impl PropFindRequestHandler for Server {
         })
     }
 }
+#[allow(clippy::too_many_arguments)]
+async fn get(
+    server: &Server,
+    access_token: &AccessToken,
+    collection_container: Collection,
+    collection_children: Collection,
+    sync_collection: SyncCollection,
+    query: &DavQuery<'_>,
+    data: &mut PropFindData,
+    response: &mut MultiStatus,
+    resource: UriResource<u32, Option<&str>>,
+    limit: usize,
+    is_sync_limited: &mut bool,
+) -> crate::Result<Option<Vec<PropFindItem>>> {
+    let account_id = resource.account_id;
+    let container_has_children = collection_children != collection_container;
+    let resources = data
+        .resources(server, access_token, account_id, sync_collection)
+        .await
+        .caused_by(trc::location!())?;
+    response.set_namespace(collection_container.namespace());
+
+    // Obtain document ids
+    let mut display_containers = if !access_token.is_member(account_id) {
+        resources
+            .shared_containers(
+                access_token,
+                [if container_has_children {
+                    Acl::ReadItems
+                } else {
+                    Acl::Read
+                }],
+                true,
+            )
+            .into()
+    } else {
+        None
+    };
+    let mut display_children = display_containers
+        .as_ref()
+        .filter(|_| container_has_children)
+        .map(|containers| {
+            RoaringBitmap::from_iter(resources.resources.iter().filter_map(|r| {
+                if r.child_names()
+                    .is_some_and(|n| n.iter().any(|n| containers.contains(n.parent_id)))
+                {
+                    Some(r.document_id)
+                } else {
+                    None
+                }
+            }))
+        });
+
+    // Filter by changelog
+    match query.sync_type {
+        SyncType::From { id, seq } => {
+            let changes = server
+                .store()
+                .changes(account_id, sync_collection, Query::Since(id))
+                .await
+                .caused_by(trc::location!())?;
+            let mut vanished: Vec<String> = Vec::new();
+
+            // Merge changes
+            let mut total_changes = 0;
+            let mut maybe_has_vanished = false;
+            if container_has_children {
+                let mut container_changes = RoaringBitmap::new();
+                let mut item_changes = RoaringBitmap::new();
+
+                for change in changes.changes {
+                    match change {
+                        Change::InsertItem(id) => {
+                            item_changes.insert(id as u32);
+                        }
+                        Change::UpdateItem(id) => {
+                            maybe_has_vanished = true;
+                            item_changes.insert(id as u32);
+                        }
+                        Change::InsertContainer(id) => {
+                            container_changes.insert(id as u32);
+                        }
+                        Change::UpdateContainer(id) => {
+                            maybe_has_vanished = true;
+                            container_changes.insert(id as u32);
+                        }
+                        Change::DeleteContainer(_) | Change::DeleteItem(_) => {
+                            maybe_has_vanished = true;
+                        }
+                        Change::UpdateContainerProperty(_) => (),
+                    }
+                }
+
+                for (document_ids, changes) in [
+                    (&mut display_containers, container_changes),
+                    (&mut display_children, item_changes),
+                ] {
+                    if let Some(document_ids) = document_ids {
+                        *document_ids &= changes;
+                        total_changes += document_ids.len() as usize;
+                    } else {
+                        total_changes += changes.len() as usize;
+                        *document_ids = Some(changes);
+                    }
+                }
+            } else {
+                let changes = RoaringBitmap::from_iter(changes.changes.iter().filter_map(
+                    |change| match change {
+                        Change::InsertItem(id) | Change::InsertContainer(id) => Some(*id as u32),
+                        Change::UpdateItem(id) | Change::UpdateContainer(id) => {
+                            maybe_has_vanished = true;
+                            Some(*id as u32)
+                        }
+                        Change::DeleteContainer(_) | Change::DeleteItem(_) => {
+                            maybe_has_vanished = true;
+                            None
+                        }
+                        _ => None,
+                    },
+                ));
+                if let Some(document_ids) = &mut display_containers {
+                    *document_ids &= changes;
+                    total_changes += document_ids.len() as usize;
+                } else {
+                    total_changes += changes.len() as usize;
+                    display_containers = Some(changes);
+                }
+            }
+
+            if maybe_has_vanished {
+                if let Some(vanished_collection) = sync_collection.vanished_collection() {
+                    vanished = server
+                        .store()
+                        .vanished(account_id, vanished_collection, Query::Since(id))
+                        .await
+                        .caused_by(trc::location!())?;
+                    total_changes += vanished.len();
+                }
+            }
+
+            // Truncate changes
+            if total_changes > limit {
+                let mut offset = limit * seq as usize;
+                let mut total_changes = 0;
+
+                // Add vanished items to response
+                for item in vanished {
+                    if offset > 0 {
+                        offset -= 1;
+                    } else if total_changes < limit {
+                        response.add_response(Response::new_status([item], StatusCode::NOT_FOUND));
+                        total_changes += 1;
+                    } else {
+                        *is_sync_limited = true;
+                    }
+                }
+
+                // Add items to document set
+                for document_ids in [&mut display_containers, &mut display_children]
+                    .into_iter()
+                    .flatten()
+                {
+                    let mut new_document_ids = RoaringBitmap::new();
+                    for id in document_ids.iter() {
+                        if offset > 0 {
+                            offset -= 1;
+                        } else if total_changes < limit {
+                            new_document_ids.insert(id);
+                            total_changes += 1;
+                        } else {
+                            *is_sync_limited = true;
+                        }
+                    }
+                    *document_ids = new_document_ids;
+                }
+
+                if *is_sync_limited {
+                    response.set_sync_token(Urn::Sync { id, seq: seq + 1 }.to_string());
+                }
+            } else {
+                // Add vanished items to response
+                for item in vanished {
+                    response.add_response(Response::new_status([item], StatusCode::NOT_FOUND));
+                }
+            }
+
+            if !*is_sync_limited {
+                response.set_sync_token(resources.sync_token());
+            }
+        }
+        SyncType::Initial => {
+            response.set_sync_token(resources.sync_token());
+        }
+        SyncType::None => (),
+    }
+
+    Ok(if let Some(resource) = resource.resource {
+        Some(
+            resources
+                .subtree_with_depth(resource, query.depth)
+                .filter(|item| {
+                    display_containers.as_ref().is_none_or(|containers| {
+                        if container_has_children {
+                            if item.is_container() {
+                                containers.contains(item.document_id())
+                            } else {
+                                display_children
+                                    .as_ref()
+                                    .is_some_and(|children| children.contains(item.document_id()))
+                            }
+                        } else {
+                            containers.contains(item.document_id())
+                        }
+                    }) && (!query.depth_no_root || item.path() != resource)
+                })
+                .map(|item| PropFindItem::new(resources.format_resource(item), account_id, item))
+                .collect::<Vec<_>>(),
+        )
+    } else {
+        if !query.depth_no_root && query.sync_type.is_none_or_initial() {
+            server
+                .prepare_principal_propfind_response(
+                    access_token,
+                    collection_container,
+                    [account_id].into_iter(),
+                    &query.propfind,
+                    response,
+                )
+                .await?;
+        }
+
+        if query.depth != 0 {
+            Some(
+                resources
+                    .tree_with_depth(query.depth - 1)
+                    .filter(|item| {
+                        display_containers.as_ref().is_none_or(|containers| {
+                            if container_has_children {
+                                if item.is_container() {
+                                    containers.contains(item.document_id())
+                                } else {
+                                    display_children.as_ref().is_some_and(|children| {
+                                        children.contains(item.document_id())
+                                    })
+                                }
+                            } else {
+                                containers.contains(item.document_id())
+                            }
+                        })
+                    })
+                    .map(|item| {
+                        PropFindItem::new(resources.format_resource(item), account_id, item)
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        } else {
+            None
+        }
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn multiget(
+    server: &Server,
+    access_token: &AccessToken,
+    collection_container: Collection,
+    collection_children: Collection,
+    sync_collection: SyncCollection,
+    data: &mut PropFindData,
+    response: &mut MultiStatus,
+    hrefs: Vec<String>,
+) -> crate::Result<Vec<PropFindItem>> {
+    let mut paths = Vec::with_capacity(hrefs.len() * 2);
+    let mut shared_folders_by_account: AHashMap<u32, Arc<RoaringBitmap>> =
+        AHashMap::with_capacity(3);
+
+    for item in hrefs {
+        let resource = match server
+            .validate_uri(access_token, &item)
+            .await
+            .and_then(|r| r.into_owned_uri())
+        {
+            Ok(resource) => resource,
+            Err(DavError::Code(code)) => {
+                response.add_response(Response::new_status([item], code));
+                continue;
+            }
+            Err(err) => {
+                return Err(err);
+            }
+        };
+
+        let account_id = resource.account_id;
+        let resources = data
+            .resources(server, access_token, account_id, sync_collection)
+            .await
+            .caused_by(trc::location!())?;
+
+        let document_ids = if !access_token.is_member(account_id) {
+            if let Some(document_ids) = shared_folders_by_account.get(&account_id) {
+                document_ids.clone().into()
+            } else {
+                let document_ids = Arc::new(resources.shared_containers(
+                    access_token,
+                    [if collection_children == collection_container {
+                        Acl::ReadItems
+                    } else {
+                        Acl::Read
+                    }],
+                    true,
+                ));
+                shared_folders_by_account.insert(account_id, document_ids.clone());
+                document_ids.into()
+            }
+        } else {
+            None
+        };
+
+        if let Some(resource) = resource.resource.and_then(|name| resources.by_path(name)) {
+            if !resource.is_container() {
+                if document_ids
+                    .as_ref()
+                    .is_none_or(|docs| docs.contains(resource.document_id()))
+                {
+                    paths.push(PropFindItem::new(
+                        resources.format_resource(resource),
+                        account_id,
+                        resource,
+                    ));
+                } else {
+                    response.add_response(
+                        Response::new_status([item], StatusCode::FORBIDDEN)
+                            .with_response_description(
+                                "Not enough permissions to access this shared resource",
+                            ),
+                    );
+                }
+            } else {
+                response.add_response(
+                    Response::new_status([item], StatusCode::FORBIDDEN)
+                        .with_response_description("Multiget not allowed for collections"),
+                );
+            }
+        } else {
+            response.add_response(Response::new_status([item], StatusCode::NOT_FOUND));
+        }
+    }
+
+    Ok(paths)
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn discover_root_paths(
+    server: &Server,
+    access_token: &AccessToken,
+    collection_container: Collection,
+    sync_collection: SyncCollection,
+    query: &DavQuery<'_>,
+    data: &mut PropFindData,
+    response: &mut MultiStatus,
+    account_ids: Vec<u32>,
+) -> crate::Result<Vec<PropFindItem>> {
+    let mut paths = Vec::with_capacity(account_ids.len() * 2);
+
+    for account_id in account_ids {
+        let resources = data
+            .resources(server, access_token, account_id, sync_collection)
+            .await
+            .caused_by(trc::location!())?;
+        server
+            .prepare_principal_propfind_response(
+                access_token,
+                collection_container,
+                [account_id].into_iter(),
+                &query.propfind,
+                response,
+            )
+            .await?;
+
+        // Obtain document ids
+        let display_containers = if !access_token.is_member(account_id) {
+            resources
+                .shared_containers(access_token, [Acl::ReadItems], true)
+                .into()
+        } else {
+            None
+        };
+        paths.extend(
+            resources
+                .tree_with_depth(0)
+                .filter(|item| {
+                    item.is_container()
+                        && display_containers
+                            .as_ref()
+                            .is_none_or(|containers| containers.contains(item.document_id()))
+                })
+                .map(|item| PropFindItem::new(resources.format_resource(item), account_id, item)),
+        );
+    }
+
+    Ok(paths)
+}
 
 impl PropFindItem {
     pub fn new(name: String, account_id: u32, resource: DavResourcePath<'_>) -> Self {
@@ -1643,4 +1700,107 @@ impl SyncTokenUrn for DavResources {
         }
         .to_string()
     }
+}
+
+fn add_base_collection_response(
+    request: &PropFind,
+    collection: Collection,
+    access_token: &AccessToken,
+    response: &mut MultiStatus,
+) {
+    let properties = match request {
+        PropFind::PropName => {
+            response.add_response(Response::new_propstat(
+                DavResourceName::from(collection).collection_path(),
+                vec![PropStat::new_list(vec![
+                    DavPropertyValue::empty(DavProperty::WebDav(WebDavProperty::ResourceType)),
+                    DavPropertyValue::empty(DavProperty::WebDav(
+                        WebDavProperty::CurrentUserPrincipal,
+                    )),
+                    DavPropertyValue::empty(DavProperty::WebDav(
+                        WebDavProperty::SupportedReportSet,
+                    )),
+                ])],
+            ));
+            return;
+        }
+        PropFind::AllProp(_) => [
+            DavProperty::WebDav(WebDavProperty::ResourceType),
+            DavProperty::WebDav(WebDavProperty::CurrentUserPrincipal),
+            DavProperty::WebDav(WebDavProperty::SupportedReportSet),
+        ]
+        .as_slice(),
+        PropFind::Prop(items) => items,
+    };
+
+    let mut fields = Vec::with_capacity(properties.len());
+    let mut fields_not_found = Vec::new();
+
+    for prop in properties {
+        match &prop {
+            DavProperty::WebDav(WebDavProperty::ResourceType) => {
+                fields.push(DavPropertyValue::new(
+                    prop.clone(),
+                    vec![ResourceType::Collection],
+                ));
+            }
+            DavProperty::WebDav(WebDavProperty::CurrentUserPrincipal) => {
+                fields.push(DavPropertyValue::new(
+                    prop.clone(),
+                    vec![access_token.current_user_principal()],
+                ));
+            }
+            DavProperty::Principal(PrincipalProperty::CalendarHomeSet) => {
+                fields.push(DavPropertyValue::new(
+                    prop.clone(),
+                    vec![Href(format!(
+                        "{}/{}/",
+                        DavResourceName::Cal.base_path(),
+                        percent_encoding::utf8_percent_encode(&access_token.name, RFC_3986),
+                    ))],
+                ));
+                response.set_namespace(Namespace::CalDav);
+            }
+            DavProperty::Principal(PrincipalProperty::AddressbookHomeSet) => {
+                fields.push(DavPropertyValue::new(
+                    prop.clone(),
+                    vec![Href(format!(
+                        "{}/{}/",
+                        DavResourceName::Card.base_path(),
+                        percent_encoding::utf8_percent_encode(&access_token.name, RFC_3986),
+                    ))],
+                ));
+                response.set_namespace(Namespace::CardDav);
+            }
+            DavProperty::WebDav(WebDavProperty::SupportedReportSet) => {
+                let reports = match collection {
+                    Collection::Principal => ReportSet::principal(),
+                    Collection::Calendar | Collection::CalendarEvent => ReportSet::calendar(),
+                    Collection::AddressBook | Collection::ContactCard => ReportSet::addressbook(),
+                    _ => ReportSet::file(),
+                };
+
+                fields.push(DavPropertyValue::new(prop.clone(), reports));
+            }
+            _ => {
+                response.set_namespace(prop.namespace());
+                fields_not_found.push(DavPropertyValue::empty(prop.clone()));
+            }
+        }
+    }
+
+    let mut prop_stat = Vec::with_capacity(2);
+
+    if !fields.is_empty() {
+        prop_stat.push(PropStat::new_list(fields));
+    }
+
+    if !fields_not_found.is_empty() {
+        prop_stat.push(PropStat::new_list(fields_not_found).with_status(StatusCode::NOT_FOUND));
+    }
+
+    response.add_response(Response::new_propstat(
+        DavResourceName::from(collection).collection_path(),
+        prop_stat,
+    ));
 }

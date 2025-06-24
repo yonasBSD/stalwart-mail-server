@@ -53,14 +53,20 @@ pub(super) async fn build_calcard_resources(
         .await
         .caused_by(trc::location!())?
         .unwrap_or_default();
+    let name = server
+        .store()
+        .get_principal_name(account_id)
+        .await
+        .caused_by(trc::location!())?
+        .unwrap_or_else(|| format!("_{account_id}"));
     if container_ids.is_empty() {
         if is_calendar {
             server
-                .create_default_calendar(access_token, account_id)
+                .create_default_calendar(access_token, account_id, &name)
                 .await?;
         } else {
             server
-                .create_default_addressbook(access_token, account_id)
+                .create_default_addressbook(access_token, account_id, &name)
                 .await?;
         }
         last_change_id = server
@@ -83,13 +89,6 @@ pub(super) async fn build_calcard_resources(
         .await
         .caused_by(trc::location!())?
         .unwrap_or_default();
-
-    let name = server
-        .store()
-        .get_principal_name(account_id)
-        .await
-        .caused_by(trc::location!())?
-        .unwrap_or_else(|| format!("_{account_id}"));
 
     let mut cache = DavResources {
         base_path: format!(

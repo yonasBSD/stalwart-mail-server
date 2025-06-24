@@ -249,7 +249,7 @@ impl ItipIngest for Server {
 
             // Obtain parent calendar
             let Some(parent_id) = self
-                .get_or_create_default_calendar(access_token, account_id)
+                .get_or_create_default_calendar(access_token, account_id, &access_token.name)
                 .await
                 .caused_by(trc::location!())?
             else {
