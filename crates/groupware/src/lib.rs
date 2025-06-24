@@ -6,7 +6,7 @@
 
 use calcard::common::timezone::Tz;
 use common::DavResources;
-use jmap_proto::types::collection::Collection;
+use jmap_proto::types::collection::{Collection, SyncCollection};
 use percent_encoding::{AsciiSet, CONTROLS};
 
 pub mod cache;
@@ -119,6 +119,18 @@ impl From<Collection> for DavResourceName {
             Collection::FileNode => DavResourceName::File,
             Collection::Principal => DavResourceName::Principal,
             Collection::CalendarScheduling => DavResourceName::Scheduling,
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl From<SyncCollection> for DavResourceName {
+    fn from(value: SyncCollection) -> Self {
+        match value {
+            SyncCollection::AddressBook => DavResourceName::Card,
+            SyncCollection::Calendar => DavResourceName::Cal,
+            SyncCollection::FileNode => DavResourceName::File,
+            SyncCollection::CalendarScheduling => DavResourceName::Scheduling,
             _ => unreachable!(),
         }
     }
