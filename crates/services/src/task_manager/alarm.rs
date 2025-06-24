@@ -11,7 +11,7 @@ use calcard::{
 };
 use chrono::{DateTime, Locale};
 use common::{
-    DEFAULT_LOGO, Server,
+    DEFAULT_LOGO_BASE64, Server,
     auth::AccessToken,
     config::groupware::CalendarTemplateVariable,
     i18n,
@@ -136,11 +136,20 @@ async fn send_alarm(
             None
         }
     };
-    let (logo_content_type, logo_contents) = if let Some(logo) = &logo {
-        (logo.content_type.as_ref(), logo.contents.as_slice())
+    let logo = if let Some(logo) = &logo {
+        MimePart::new(
+            ContentType::new(logo.content_type.as_ref()),
+            BodyPart::Binary(logo.contents.as_slice().into()),
+        )
     } else {
-        ("image/svg+xml", DEFAULT_LOGO.as_bytes())
-    };
+        MimePart::new(
+            ContentType::new("image/png"),
+            BodyPart::Binary(DEFAULT_LOGO_BASE64.as_bytes().into()),
+        )
+        .transfer_encoding("base64")
+    }
+    .inline()
+    .cid(&logo_cid);
 
     // Build message
     let mail_from = if let Some(from_email) = &server.core.groupware.alarms_from_email {
@@ -158,7 +167,7 @@ async fn send_alarm(
         .header("Reply-To", HeaderType::Text(account_main_email.into()))
         .subject(tpl.subject)
         .body(MimePart::new(
-            ContentType::new("multipart/mixed"),
+            ContentType::new("multipart/related"),
             BodyPart::Multipart(vec![
                 MimePart::new(
                     ContentType::new("multipart/alternative"),
@@ -173,12 +182,7 @@ async fn send_alarm(
                         ),
                     ]),
                 ),
-                MimePart::new(
-                    ContentType::new(logo_content_type),
-                    BodyPart::Binary(logo_contents.into()),
-                )
-                .inline()
-                .cid(&logo_cid),
+                logo,
             ]),
         ))
         .write_to_vec()

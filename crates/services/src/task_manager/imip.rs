@@ -15,7 +15,7 @@ use calcard::{
 };
 use chrono::{DateTime, Locale};
 use common::{
-    DEFAULT_LOGO, Server,
+    DEFAULT_LOGO_BASE64, Server,
     auth::AccessToken,
     config::groupware::CalendarTemplateVariable,
     i18n,
@@ -124,12 +124,21 @@ async fn send_imip(
             None
         }
     };
-    let (logo_content_type, logo_contents) = if let Some(logo) = &logo {
-        (logo.content_type.as_ref(), logo.contents.as_slice())
-    } else {
-        ("image/svg+xml", DEFAULT_LOGO.as_bytes())
-    };
     let logo_cid = format!("logo.{}@{sender_domain}", now());
+    let logo = if let Some(logo) = &logo {
+        MimePart::new(
+            ContentType::new(logo.content_type.as_ref()),
+            BodyPart::Binary(logo.contents.as_slice().into()),
+        )
+    } else {
+        MimePart::new(
+            ContentType::new("image/png"),
+            BodyPart::Binary(DEFAULT_LOGO_BASE64.as_bytes().into()),
+        )
+        .transfer_encoding("base64")
+    }
+    .inline()
+    .cid(&logo_cid);
 
     for itip_message in imip.messages.iter() {
         for recipient in itip_message.to.iter() {
@@ -148,7 +157,13 @@ async fn send_imip(
 
             // Build message
             let message = MessageBuilder::new()
-                .from((access_token.name.as_str(), itip_message.from.as_str()))
+                .from((
+                    access_token
+                        .description
+                        .as_deref()
+                        .unwrap_or(access_token.name.as_str()),
+                    itip_message.from.as_str(),
+                ))
                 .to(recipient.as_str())
                 .header("Auto-Submitted", HeaderType::Text("auto-generated".into()))
                 .header(
@@ -160,16 +175,22 @@ async fn send_imip(
                     ContentType::new("multipart/mixed"),
                     BodyPart::Multipart(vec![
                         MimePart::new(
-                            ContentType::new("multipart/alternative"),
+                            ContentType::new("multipart/related"),
                             BodyPart::Multipart(vec![
                                 MimePart::new(
-                                    ContentType::new("text/plain"),
-                                    BodyPart::Text(txt_body.into()),
+                                    ContentType::new("multipart/alternative"),
+                                    BodyPart::Multipart(vec![
+                                        MimePart::new(
+                                            ContentType::new("text/plain"),
+                                            BodyPart::Text(txt_body.into()),
+                                        ),
+                                        MimePart::new(
+                                            ContentType::new("text/html"),
+                                            BodyPart::Text(tpl.body.as_str().into()),
+                                        ),
+                                    ]),
                                 ),
-                                MimePart::new(
-                                    ContentType::new("text/html"),
-                                    BodyPart::Text(tpl.body.as_str().into()),
-                                ),
+                                logo.clone(),
                             ]),
                         ),
                         MimePart::new(
@@ -179,12 +200,6 @@ async fn send_imip(
                             BodyPart::Text(itip_message.message.as_str().into()),
                         )
                         .attachment("event.ics"),
-                        MimePart::new(
-                            ContentType::new(logo_content_type),
-                            BodyPart::Binary(logo_contents.into()),
-                        )
-                        .inline()
-                        .cid(logo_cid.as_str()),
                     ]),
                 ))
                 .write_to_vec()

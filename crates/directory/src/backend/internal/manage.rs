@@ -1149,13 +1149,21 @@ impl ManageDirectory for Store {
                 }
                 (
                     PrincipalAction::Set,
-                    PrincipalField::Description | PrincipalField::Picture,
+                    PrincipalField::Description,
                     PrincipalValue::String(value),
                 ) => {
                     if !value.is_empty() {
                         principal.description = Some(value);
                     } else {
                         principal.description = None;
+                    }
+                }
+                (PrincipalAction::Set, PrincipalField::Picture, PrincipalValue::String(value)) => {
+                    principal
+                        .data
+                        .retain(|v| !matches!(v, PrincipalData::Picture(_)));
+                    if !value.is_empty() {
+                        principal.data.push(PrincipalData::Picture(value));
                     }
                 }
                 (PrincipalAction::Set, PrincipalField::Quota, PrincipalValue::Integer(quota))
