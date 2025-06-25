@@ -3,24 +3,26 @@ use std::env;
 use std::fs;
 use std::path::Path;
 
+const YAML_CONTENT: &str = include_str!("../../resources/locales/i18n.yml");
+
 fn main() {
     let out_dir = env::var("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("locales.rs");
 
     // Read the YAML file
-    let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
+    /*let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let repo_root = Path::new(&manifest_dir).parent().unwrap().parent().unwrap();
     let yaml_path = repo_root.join("resources/locales/i18n.yml");
     let yaml_content =
-        fs::read_to_string(&yaml_path).unwrap_or_else(|_| panic!("Failed to read {yaml_path:?}"));
+        fs::read_to_string(&yaml_path).unwrap_or_else(|_| panic!("Failed to read {yaml_path:?}"));*/
 
-    let locales = parse_yaml(&yaml_content);
+    let locales = parse_yaml(YAML_CONTENT);
 
     let generated_code = generate_locale_code(&locales);
 
     fs::write(&dest_path, generated_code).expect("Failed to write generated locales.");
 
-    println!("cargo:rerun-if-changed={}", yaml_path.display());
+    println!("cargo:rerun-if-changed=../../resources/locales/i18n.yml");
 }
 
 fn parse_yaml(content: &str) -> HashMap<String, HashMap<String, String>> {
