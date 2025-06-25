@@ -376,12 +376,16 @@ impl DestroyArchive<Archive<&ArchivedCalendarEvent>> {
                 batch.delete_document(document_id);
 
                 // Remove next alarm if it exists
-                if let Some(next_alarm) = event.inner.data.next_alarm(now() as i64, Tz::Floating) {
+                let now = now() as i64;
+                if let Some(next_alarm) = event.inner.data.next_alarm(now, Tz::Floating) {
                     next_alarm.delete_task(batch);
                 }
 
                 // Scheduling
-                if send_itip && event.inner.schedule_tag.is_some() {
+                if send_itip
+                    && event.inner.schedule_tag.is_some()
+                    && event.inner.data.event_range_end() > now
+                {
                     let event = event
                         .deserialize::<CalendarEvent>()
                         .caused_by(trc::location!())?;

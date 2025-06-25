@@ -348,7 +348,6 @@ impl PropFindRequestHandler for Server {
                 collection_container = parent_collection;
                 collection_children = collection_container.child_collection().unwrap();
                 sync_collection = SyncCollection::from(collection_container);
-                response.set_namespace(collection_container.namespace());
 
                 multiget(
                     self,
@@ -371,7 +370,7 @@ impl PropFindRequestHandler for Server {
                 collection_container = parent_collection;
                 collection_children = collection_container.child_collection().unwrap();
                 sync_collection = SyncCollection::from(collection_container);
-                response.set_namespace(collection_container.namespace());
+
                 items
             }
             DavQueryResource::Discovery {
@@ -381,7 +380,6 @@ impl PropFindRequestHandler for Server {
                 collection_container = parent_collection;
                 collection_children = collection_container.child_collection().unwrap();
                 sync_collection = SyncCollection::from(collection_container);
-                response.set_namespace(collection_container.namespace());
 
                 // Add container info
                 if !query.depth_no_root {
@@ -407,6 +405,7 @@ impl PropFindRequestHandler for Server {
             }
             DavQueryResource::None => unreachable!(),
         };
+        response.set_namespace(collection_container.namespace());
 
         let mut skip_not_found = query.expand;
         let properties = match &query.propfind {
