@@ -1363,6 +1363,10 @@ impl Message {
                         SpanId = self.span_id,
                         Domain = domain.domain.clone(),
                         Reason = from_error_status(&domain.status),
+                        Details = trc::Value::Timestamp(now),
+                        Expires = trc::Value::Timestamp(domain.expires),
+                        NextRetry = trc::Value::Timestamp(domain.retry.due),
+                        NextDsn = trc::Value::Timestamp(domain.notify.due),
                     );
 
                     for rcpt in &mut self.recipients {
@@ -1381,6 +1385,10 @@ impl Message {
                         SpanId = self.span_id,
                         Domain = domain.domain.clone(),
                         Reason = "Message expired without any delivery attempts made.",
+                        Details = trc::Value::Timestamp(now),
+                        Expires = trc::Value::Timestamp(domain.expires),
+                        NextRetry = trc::Value::Timestamp(domain.retry.due),
+                        NextDsn = trc::Value::Timestamp(domain.notify.due),
                     );
 
                     for rcpt in &mut self.recipients {
