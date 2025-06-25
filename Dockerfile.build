@@ -46,6 +46,7 @@ RUN cargo chef prepare --recipe-path recipe.json
 FROM base AS builder
 WORKDIR /app
 COPY --from=planner /app/recipe.json recipe.json
+COPY resources/ resources/
 ARG TARGET
 ARG BUILD_ENV
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
