@@ -1095,7 +1095,8 @@ impl<'de> serde::Deserialize<'de> for PrincipalSet {
                         }
                         PrincipalField::Description
                         | PrincipalField::Tenant
-                        | PrincipalField::Picture => {
+                        | PrincipalField::Picture
+                        | PrincipalField::Locale => {
                             if let Some(v) = map.next_value::<Option<String>>()? {
                                 if v.len() <= MAX_STRING_LEN {
                                     PrincipalValue::String(v)

@@ -588,7 +588,8 @@ impl PrincipalManager for Server {
                                 | PrincipalField::Members
                                 | PrincipalField::Lists
                                 | PrincipalField::Urls
-                                | PrincipalField::ExternalMembers => (),
+                                | PrincipalField::ExternalMembers
+                                | PrincipalField::Locale => (),
                                 PrincipalField::Tenant => {
                                     // Tenants are not allowed to change their tenantId
                                     if access_token.tenant.is_some() {

@@ -671,7 +671,13 @@ impl EventType {
                 | TelemetryEvent::PrometheusExporterError
                 | TelemetryEvent::JournalError,
             ) => true,
-            EventType::Calendar(CalendarEvent::AlarmSent | CalendarEvent::AlarmFailed) => true,
+            EventType::Calendar(
+                CalendarEvent::AlarmSent
+                | CalendarEvent::AlarmFailed
+                | CalendarEvent::ItipMessageReceived
+                | CalendarEvent::ItipMessageSent
+                | CalendarEvent::ItipMessageError,
+            ) => true,
             _ => false,
         }
     }

@@ -378,6 +378,9 @@ impl ManageDirectory for Store {
         if let Some(picture) = principal_set.take_str(PrincipalField::Picture) {
             principal_create.data.push(PrincipalData::Picture(picture));
         }
+        if let Some(picture) = principal_set.take_str(PrincipalField::Locale) {
+            principal_create.data.push(PrincipalData::Locale(picture));
+        }
         if let Some(urls) = principal_set.take_str_array(PrincipalField::Urls) {
             principal_create.data.push(PrincipalData::Urls(urls));
         }
@@ -1164,6 +1167,14 @@ impl ManageDirectory for Store {
                         .retain(|v| !matches!(v, PrincipalData::Picture(_)));
                     if !value.is_empty() {
                         principal.data.push(PrincipalData::Picture(value));
+                    }
+                }
+                (PrincipalAction::Set, PrincipalField::Locale, PrincipalValue::String(value)) => {
+                    principal
+                        .data
+                        .retain(|v| !matches!(v, PrincipalData::Locale(_)));
+                    if !value.is_empty() {
+                        principal.data.push(PrincipalData::Locale(value));
                     }
                 }
                 (PrincipalAction::Set, PrincipalField::Quota, PrincipalValue::Integer(quota))
@@ -2190,6 +2201,11 @@ impl ManageDirectory for Store {
                 PrincipalData::Picture(compact_string) => {
                     if fields.is_empty() || fields.contains(&PrincipalField::Picture) {
                         result.set(PrincipalField::Picture, compact_string);
+                    }
+                }
+                PrincipalData::Locale(compact_string) => {
+                    if fields.is_empty() || fields.contains(&PrincipalField::Locale) {
+                        result.set(PrincipalField::Locale, compact_string);
                     }
                 }
                 PrincipalData::ExternalMembers(compact_strings) => {
