@@ -1380,27 +1380,33 @@ impl Message {
                         std::mem::replace(&mut domain.status, Status::Scheduled).into_permanent();
                 }
                 Status::Scheduled if domain.expires <= now => {
+                    let mut had_attempts = false;
+                    for rcpt in &mut self.recipients {
+                        if rcpt.domain_idx == idx as u32 {
+                            had_attempts |= !matches!(rcpt.status, Status::Scheduled);
+                            rcpt.status = std::mem::replace(&mut rcpt.status, Status::Scheduled)
+                                .into_permanent();
+                        }
+                    }
+
+                    let reason = if had_attempts {
+                        "Message delivery failed."
+                    } else {
+                        "Message expired without any delivery attempts made."
+                    };
+
                     trc::event!(
                         Delivery(DeliveryEvent::Failed),
                         SpanId = self.span_id,
                         Domain = domain.domain.clone(),
-                        Reason = "Message expired without any delivery attempts made.",
+                        Reason = reason,
                         Details = trc::Value::Timestamp(now),
                         Expires = trc::Value::Timestamp(domain.expires),
                         NextRetry = trc::Value::Timestamp(domain.retry.due),
                         NextDsn = trc::Value::Timestamp(domain.notify.due),
                     );
 
-                    for rcpt in &mut self.recipients {
-                        if rcpt.domain_idx == idx as u32 {
-                            rcpt.status = std::mem::replace(&mut rcpt.status, Status::Scheduled)
-                                .into_permanent();
-                        }
-                    }
-
-                    domain.status = Status::PermanentFailure(Error::Io(
-                        "Message expired without any delivery attempts made.".into(),
-                    ));
+                    domain.status = Status::PermanentFailure(Error::Io(reason.into()));
                 }
                 Status::Completed(_) | Status::PermanentFailure(_) => (),
                 _ => {
