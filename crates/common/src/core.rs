@@ -752,6 +752,14 @@ impl Server {
             .await
             .caused_by(trc::location!())
     }
+
+    #[cfg(not(feature = "enterprise"))]
+    pub async fn logo_resource(
+        &self,
+        _: &str,
+    ) -> trc::Result<Option<crate::manager::webadmin::Resource<Vec<u8>>>> {
+        Ok(None)
+    }
 }
 
 pub trait BuildServer {
