@@ -136,7 +136,7 @@ impl JmapConfig {
         {
             match SpecialUse::parse_value(&key) {
                 Ok(SpecialUse::Shared) => {
-                    if let Some(value) = config.value(&key) {
+                    if let Some(value) = config.value(("email.folders", key.as_str(), "name")) {
                         shared_folder = value.to_string();
                     }
                 }
