@@ -574,10 +574,8 @@ impl PrincipalManager for Server {
                         // Validate changes
                         for change in &changes {
                             match change.field {
-                                PrincipalField::Secrets => {
-                                    self.assert_supported_directory(false)?;
-                                }
-                                PrincipalField::Name
+                                PrincipalField::Secrets
+                                | PrincipalField::Name
                                 | PrincipalField::Emails
                                 | PrincipalField::Quota
                                 | PrincipalField::UsedQuota
