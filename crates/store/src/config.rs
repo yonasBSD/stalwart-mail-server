@@ -35,12 +35,8 @@ impl Stores {
         let is_reload = !self.stores.is_empty();
         #[cfg(feature = "enterprise")]
         let mut composite_stores = Vec::new();
-        let store_ids = config
-            .sub_keys("store", ".type")
-            .map(|id| id.to_string())
-            .collect::<Vec<_>>();
 
-        for store_id in store_ids {
+        for store_id in config.sub_keys("store", ".type") {
             let id = store_id.as_str();
             // Parse store
             #[cfg(feature = "test_mode")]

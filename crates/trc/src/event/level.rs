@@ -162,7 +162,7 @@ impl EventType {
                 | SmtpEvent::UnsupportedParameter
                 | SmtpEvent::SyntaxError
                 | SmtpEvent::Error => Level::Debug,
-                SmtpEvent::MissingLocalHostname | SmtpEvent::RemoteIdNotFound => Level::Warn,
+                SmtpEvent::MissingLocalHostname | SmtpEvent::IdNotFound => Level::Warn,
                 SmtpEvent::ConcurrencyLimitExceeded
                 | SmtpEvent::TransferLimitExceeded
                 | SmtpEvent::RateLimitExceeded

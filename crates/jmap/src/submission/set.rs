@@ -4,14 +4,13 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{collections::HashMap, sync::Arc, time::Duration};
-
+use crate::blob::download::BlobDownload;
 use common::{
     Server,
+    config::smtp::queue::QueueName,
     listener::{ServerInstance, stream::NullIo},
     storage::index::ObjectIndexBuilder,
 };
-
 use email::{
     identity::Identity,
     message::metadata::MessageMetadata,
@@ -41,12 +40,11 @@ use smtp::{
     queue::spool::SmtpSpool,
 };
 use smtp_proto::{MailFrom, RcptTo, request::parser::Rfc5321Parser};
+use std::future::Future;
+use std::{collections::HashMap, sync::Arc, time::Duration};
 use store::write::{BatchBuilder, now};
 use trc::AddContext;
 use utils::{BlobHash, map::vec_map::VecMap, sanitize_email};
-
-use crate::blob::download::BlobDownload;
-use std::future::Future;
 
 pub trait EmailSubmissionSet: Sync + Send {
     fn email_submission_set(
@@ -166,10 +164,11 @@ impl EmailSubmissionSet for Server {
 
             match undo_status {
                 Some(undo_status) if undo_status == "canceled" => {
-                    if let Some(queue_message) = self.read_message(queue_id).await {
+                    if let Some(queue_message) =
+                        self.read_message(queue_id, QueueName::default()).await
+                    {
                         // Delete message from queue
-                        let message_due = queue_message.next_event().unwrap_or_default();
-                        queue_message.remove(self, message_due).await;
+                        queue_message.remove(self, None).await;
 
                         // Update record
                         let mut new_submission = submission.inner.clone();

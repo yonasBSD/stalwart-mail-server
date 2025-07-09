@@ -11,7 +11,10 @@ use crate::smtp::{
     inbound::TestMessage,
     session::{TestSession, VerifyResponse},
 };
-use common::{config::server::ServerProtocol, ipc::QueueEvent};
+use common::{
+    config::{server::ServerProtocol, smtp::queue::QueueName},
+    ipc::QueueEvent,
+};
 use smtp::queue::spool::SmtpSpool;
 use store::write::now;
 
@@ -27,9 +30,11 @@ dsn = true
 ";
 
 const LOCAL: &str = r#"
-[queue.outbound]
-next-hop = [{if = "rcpt_domain = 'foobar.org'", then = "'lmtp'"},
-            {else = false}]
+[queue.strategy]
+gateway = [{if = "rcpt_domain = 'foobar.org'", then = "'lmtp'"},
+            {else = "'mx'"}]
+schedule = [{if = "rcpt_domain = 'foobar.org'", then = "'foobar'"},
+            {else = "'default'"}]
 
 [session.rcpt]
 relay = true
@@ -38,23 +43,30 @@ max-recipients = 100
 [session.extensions]
 dsn = true
 
-[queue.schedule]
+[queue.schedule.default]
 retry = "1s"
-notify = [{if = "rcpt_domain = 'foobar.org'", then = "[1s, 2s]"},
-          {else = [1s]}]
-expire = [{if = "rcpt_domain = 'foobar.org'", then = "4s"},
-          {else = "5s"}]
+notify = "1s"
+expire = "5s"
+queue-name = "default"
 
-[queue.outbound.timeouts]
+[queue.schedule.foobar]
+retry = "1s"
+notify = ["1s", "2s"]
+expire = "4s"
+queue-name = "default"
+
+[queue.connection.default.timeout]
+connect = "1s"
 data = "50ms"
 
-[remote.lmtp]
+[queue.gateway.lmtp]
+type = "relay"
 address = lmtp.foobar.org
 port = 9924
 protocol = 'lmtp'
 concurrency = 5
 
-[remote.lmtp.tls]
+[queue.gateway.lmtp.tls]
 implicit = true
 allow-invalid-certs = true
 "#;
@@ -122,9 +134,12 @@ async fn lmtp_delivery() {
                 tokio::time::sleep(Duration::from_secs(event.due - now)).await;
             }
 
-            let message = core.read_message(event.queue_id).await.unwrap();
-            if message.return_path.is_empty() {
-                message.clone().remove(&core, event.due).await;
+            let message = core
+                .read_message(event.queue_id, QueueName::default())
+                .await
+                .unwrap();
+            if message.message.return_path.is_empty() {
+                message.clone().remove(&core, event.due.into()).await;
                 dsn.push(message);
             } else {
                 event.try_deliver(core.clone());
@@ -173,6 +188,7 @@ async fn lmtp_delivery() {
             .queue_receiver
             .expect_message()
             .await
+            .message
             .recipients
             .into_iter()
             .map(|r| r.address)

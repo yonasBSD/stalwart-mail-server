@@ -152,7 +152,7 @@ async fn init_webdav_tests(store_id: &str, delete_if_exists: bool) -> WebDavTest
     let cache = Caches::parse(&mut config);
 
     let store = core.storage.data.clone();
-    let (ipc, mut ipc_rxs) = build_ipc(&mut config, false);
+    let (ipc, mut ipc_rxs) = build_ipc(false);
     let inner = Arc::new(Inner {
         shared_core: core.into_shared(),
         data,
@@ -1065,21 +1065,12 @@ directory = "'{STORE}'"
 total = 5
 wait = "1ms"
 
-[queue]
-path = "{TMP}"
-hash = 64
-
-[report]
-path = "{TMP}"
-hash = 64
-
 [resolver]
 type = "system"
 
-[queue.outbound]
-next-hop = [ { if = "rcpt_domain == 'example.com'", then = "'local'" }, 
-            { if = "contains(['remote.org', 'foobar.com', 'test.com', 'other_domain.com'], rcpt_domain)", then = "'mock-smtp'" },
-            { else = false } ]
+[queue.strategy]
+gateway = [ { if = "rcpt_domain == 'example.com'", then = "'local'" }, 
+            { else = "'mx'" } ]
 
 [session.data.add-headers]
 delivered-to = false

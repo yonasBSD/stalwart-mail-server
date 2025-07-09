@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::store::TempDir;
 use ahash::AHashSet;
 use common::{Core, manager::backup::BackupParams};
 use jmap_proto::types::{
@@ -19,8 +20,6 @@ use store::{
     *,
 };
 use utils::BlobHash;
-
-use crate::store::TempDir;
 
 pub async fn test(db: Store) {
     let mut core = Core::default();
@@ -164,6 +163,7 @@ pub async fn test(db: Store) {
             ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
                 due: rand::random(),
                 queue_id: rand::random(),
+                queue_name: rand::random(),
             })),
             random_bytes(idx),
         );

@@ -4,13 +4,18 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::queue::DomainPart;
+use super::{
+    ArchivedMessage, ArchivedStatus, Message, MessageSource, QueueEnvelope, QueueId, QueuedMessage,
+    QuotaKey, Recipient, Schedule, Status,
+};
+use crate::queue::{DomainPart, MessageWrapper};
+use common::config::smtp::queue::{QueueExpiry, QueueName};
 use common::ipc::QueueEvent;
 use common::{KV_LOCK_QUEUE_MESSAGE, Server};
-
 use std::borrow::Cow;
 use std::future::Future;
-use std::time::{Duration, SystemTime};
+use std::net::{IpAddr, Ipv4Addr};
+use std::time::SystemTime;
 use store::write::key::DeserializeBigEndian;
 use store::write::{
     AlignedBytes, Archive, Archiver, BatchBuilder, BlobOp, QueueClass, ValueClass, now,
@@ -18,11 +23,6 @@ use store::write::{
 use store::{IterateParams, Serialize, SerializeInfallible, U64_LEN, ValueKey};
 use trc::ServerEvent;
 use utils::BlobHash;
-
-use super::{
-    ArchivedMessage, ArchivedStatus, Domain, Message, MessageSource, QueueEnvelope, QueueId,
-    QueuedMessage, QuotaKey, Recipient, Schedule, Status,
-};
 
 pub const LOCK_EXPIRY: u64 = 300;
 pub const QUEUE_REFRESH: u64 = 300;
@@ -34,7 +34,7 @@ pub trait SmtpSpool: Sync + Send {
         return_path_lcase: impl Into<String>,
         return_path_domain: impl Into<String>,
         span_id: u64,
-    ) -> Message;
+    ) -> MessageWrapper;
 
     fn next_event(&self) -> impl Future<Output = Vec<QueuedMessage>> + Send;
 
@@ -42,7 +42,11 @@ pub trait SmtpSpool: Sync + Send {
 
     fn unlock_event(&self, queue_id: QueueId) -> impl Future<Output = ()> + Send;
 
-    fn read_message(&self, id: QueueId) -> impl Future<Output = Option<Message>> + Send;
+    fn read_message(
+        &self,
+        id: QueueId,
+        queue_name: QueueName,
+    ) -> impl Future<Output = Option<MessageWrapper>> + Send;
 
     fn read_message_archive(
         &self,
@@ -57,25 +61,30 @@ impl SmtpSpool for Server {
         return_path_lcase: impl Into<String>,
         return_path_domain: impl Into<String>,
         span_id: u64,
-    ) -> Message {
+    ) -> MessageWrapper {
         let created = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs());
-        Message {
+
+        MessageWrapper {
             queue_id: self.inner.data.queue_id_gen.generate(),
+            queue_name: QueueName::default(),
             span_id,
-            created,
-            return_path: return_path.into(),
-            return_path_lcase: return_path_lcase.into(),
-            return_path_domain: return_path_domain.into(),
-            recipients: Vec::with_capacity(1),
-            domains: Vec::with_capacity(1),
-            flags: 0,
-            env_id: None,
-            priority: 0,
-            size: 0,
-            blob_hash: Default::default(),
-            quota_keys: Vec::new(),
+            message: Message {
+                created,
+                return_path: return_path.into(),
+                return_path_lcase: return_path_lcase.into(),
+                return_path_domain: return_path_domain.into(),
+                recipients: Vec::with_capacity(1),
+                flags: 0,
+                env_id: None,
+                priority: 0,
+                size: 0,
+                blob_hash: Default::default(),
+                quota_keys: Vec::new(),
+                received_from_ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
+                received_via_port: 0,
+            },
         }
     }
 
@@ -85,12 +94,14 @@ impl SmtpSpool for Server {
             store::write::QueueEvent {
                 due: 0,
                 queue_id: 0,
+                queue_name: [0; 8],
             },
         )));
         let to_key = ValueKey::from(ValueClass::Queue(QueueClass::MessageEvent(
             store::write::QueueEvent {
                 due: now + QUEUE_REFRESH,
                 queue_id: u64::MAX,
+                queue_name: [u8::MAX; 8],
             },
         )));
 
@@ -103,8 +114,15 @@ impl SmtpSpool for Server {
                 |key, _| {
                     let due = key.deserialize_be_u64(0)?;
                     let queue_id = key.deserialize_be_u64(U64_LEN)?;
+                    let queue_name =
+                        QueueName::from_bytes(key.get(U64_LEN + U64_LEN..).unwrap_or_default())
+                            .unwrap_or_default();
 
-                    events.push(QueuedMessage { due, queue_id });
+                    events.push(QueuedMessage {
+                        due,
+                        queue_id,
+                        queue_name,
+                    });
 
                     Ok(due <= now)
                 },
@@ -156,12 +174,24 @@ impl SmtpSpool for Server {
         }
     }
 
-    async fn read_message(&self, id: QueueId) -> Option<Message> {
-        match self.read_message_archive(id).await.and_then(|a| match a {
-            Some(a) => a.deserialize::<Message>().map(Some),
-            None => Ok(None),
-        }) {
-            Ok(Some(message)) => Some(message),
+    async fn read_message(
+        &self,
+        queue_id: QueueId,
+        queue_name: QueueName,
+    ) -> Option<MessageWrapper> {
+        match self
+            .read_message_archive(queue_id)
+            .await
+            .and_then(|a| match a {
+                Some(a) => a.deserialize::<Message>().map(Some),
+                None => Ok(None),
+            }) {
+            Ok(Some(message)) => Some(MessageWrapper {
+                queue_id,
+                queue_name,
+                span_id: 0,
+                message,
+            }),
             Ok(None) => None,
             Err(err) => {
                 trc::error!(
@@ -186,7 +216,7 @@ impl SmtpSpool for Server {
     }
 }
 
-impl Message {
+impl MessageWrapper {
     pub async fn queue(
         mut self,
         raw_headers: Option<&[u8]>,
@@ -204,11 +234,11 @@ impl Message {
         } else {
             raw_message.into()
         };
-        self.blob_hash = BlobHash::generate(message.as_ref());
+        self.message.blob_hash = BlobHash::generate(message.as_ref());
 
         // Generate id
-        if self.size == 0 {
-            self.size = message.len() as u64;
+        if self.message.size == 0 {
+            self.message.size = message.len() as u64;
         }
 
         // Reserve and write blob
@@ -216,7 +246,7 @@ impl Message {
         let reserve_until = now() + 120;
         batch.set(
             BlobOp::Reserve {
-                hash: self.blob_hash.clone(),
+                hash: self.message.blob_hash.clone(),
                 until: reserve_until,
             },
             0u32.serialize(),
@@ -232,7 +262,7 @@ impl Message {
         }
         if let Err(err) = server
             .blob_store()
-            .put_blob(self.blob_hash.as_slice(), message.as_ref())
+            .put_blob(self.message.blob_hash.as_slice(), message.as_ref())
             .await
         {
             trc::error!(
@@ -254,27 +284,31 @@ impl Message {
             }),
             SpanId = session_id,
             QueueId = self.queue_id,
-            From = if !self.return_path.is_empty() {
-                trc::Value::String(self.return_path.as_str().into())
+            From = if !self.message.return_path.is_empty() {
+                trc::Value::String(self.message.return_path.as_str().into())
             } else {
                 trc::Value::String("<>".into())
             },
             To = self
+                .message
                 .recipients
                 .iter()
                 .map(|r| trc::Value::String(r.address_lcase.as_str().into()))
                 .collect::<Vec<_>>(),
-            Size = self.size,
-            NextRetry = trc::Value::Timestamp(self.next_delivery_event()),
-            NextDsn = trc::Value::Timestamp(self.next_dsn()),
-            Expires = trc::Value::Timestamp(self.expires()),
+            Size = self.message.size,
+            NextRetry = self
+                .message
+                .next_delivery_event(None)
+                .map(trc::Value::Timestamp),
+            NextDsn = self.message.next_dsn(None).map(trc::Value::Timestamp),
+            Expires = self.message.expires(None).map(trc::Value::Timestamp),
         );
 
         // Write message to queue
         let mut batch = BatchBuilder::new();
 
         // Reserve quotas
-        for quota_key in &self.quota_keys {
+        for quota_key in &self.message.quota_keys {
             match quota_key {
                 QuotaKey::Count { key, .. } => {
                     batch.add(ValueClass::Queue(QueueClass::QuotaCount(key.clone())), 1);
@@ -282,39 +316,44 @@ impl Message {
                 QuotaKey::Size { key, .. } => {
                     batch.add(
                         ValueClass::Queue(QueueClass::QuotaSize(key.clone())),
-                        self.size as i64,
+                        self.message.size as i64,
                     );
                 }
             }
         }
-        batch
-            .set(
+
+        for (queue_name, due) in self.message.next_events() {
+            batch.set(
                 ValueClass::Queue(QueueClass::MessageEvent(store::write::QueueEvent {
-                    due: self.next_event().unwrap_or_default(),
+                    due,
                     queue_id: self.queue_id,
+                    queue_name: queue_name.into_inner(),
                 })),
-                0u64.serialize(),
-            )
+                Vec::new(),
+            );
+        }
+
+        batch
             .clear(BlobOp::Reserve {
-                hash: self.blob_hash.clone(),
+                hash: self.message.blob_hash.clone(),
                 until: reserve_until,
             })
             .set(
                 BlobOp::LinkId {
-                    hash: self.blob_hash.clone(),
+                    hash: self.message.blob_hash.clone(),
                     id: self.queue_id,
                 },
                 vec![],
             )
             .set(
                 BlobOp::Commit {
-                    hash: self.blob_hash.clone(),
+                    hash: self.message.blob_hash.clone(),
                 },
                 vec![],
             )
             .set(
                 ValueClass::Queue(QueueClass::Message(self.queue_id)),
-                match Archiver::new(self).serialize() {
+                match Archiver::new(self.message).serialize() {
                     Ok(data) => data,
                     Err(err) => {
                         trc::error!(
@@ -361,92 +400,77 @@ impl Message {
         &mut self,
         rcpt: impl Into<String>,
         rcpt_lcase: impl Into<String>,
-        rcpt_domain: impl Into<String>,
         server: &Server,
     ) {
-        let rcpt_domain = rcpt_domain.into();
-        let domain_idx =
-            if let Some(idx) = self.domains.iter().position(|d| d.domain == rcpt_domain) {
-                idx
-            } else {
-                let idx = self.domains.len();
-
-                self.domains.push(Domain {
-                    domain: rcpt_domain,
-                    retry: Schedule::now(),
-                    notify: Schedule::now(),
-                    expires: 0,
-                    status: Status::Scheduled,
-                });
-
-                let expires = server
-                    .eval_if(
-                        &server.core.smtp.queue.expire,
-                        &QueueEnvelope::new(self, idx),
-                        self.span_id,
-                    )
-                    .await
-                    .unwrap_or_else(|| Duration::from_secs(5 * 86400));
-
-                // Update expiration
-                let domain = self.domains.last_mut().unwrap();
-                domain.notify = Schedule::later(expires + Duration::from_secs(10));
-                domain.expires = now() + expires.as_secs();
-
-                idx
-            };
-        self.recipients.push(Recipient {
-            domain_idx: domain_idx as u32,
+        // Resolve queue
+        let idx = self.message.recipients.len();
+        self.message.recipients.push(Recipient {
             address: rcpt.into(),
             address_lcase: rcpt_lcase.into(),
             status: Status::Scheduled,
             flags: 0,
             orcpt: None,
+            retry: Schedule::now(),
+            notify: Schedule::now(),
+            expires: QueueExpiry::Count(0),
+            queue: QueueName::default(),
         });
+        let queue = server.get_queue_or_default(
+            &server
+                .eval_if::<String, _>(
+                    &server.core.smtp.queue.queue,
+                    &QueueEnvelope::new_rcpt(&self.message, idx),
+                    self.span_id,
+                )
+                .await
+                .unwrap_or_else(|| "default".to_string()),
+            self.span_id,
+        );
+
+        // Update expiration
+        let now = now();
+        let recipient = self.message.recipients.last_mut().unwrap();
+        recipient.notify = Schedule::later(queue.notify.first().copied().unwrap_or(86400) + now);
+        recipient.expires = queue.expiry;
+        recipient.queue = queue.virtual_queue;
     }
 
     pub async fn add_recipient(&mut self, rcpt: impl Into<String>, server: &Server) {
         let rcpt = rcpt.into();
         let rcpt_lcase = rcpt.to_lowercase();
-        let rcpt_domain = rcpt_lcase.domain_part().to_string();
-        self.add_recipient_parts(rcpt, rcpt_lcase, rcpt_domain, server)
-            .await;
+        self.add_recipient_parts(rcpt, rcpt_lcase, server).await;
     }
 
-    pub async fn save_changes(
-        mut self,
-        server: &Server,
-        prev_event: Option<u64>,
-        next_event: Option<u64>,
-    ) -> bool {
-        debug_assert!(prev_event.is_some() == next_event.is_some());
-
+    pub async fn save_changes(mut self, server: &Server, prev_event: Option<u64>) -> bool {
         // Release quota for completed deliveries
         let mut batch = BatchBuilder::new();
         self.release_quota(&mut batch);
 
         // Update message queue
-        if let (Some(prev_event), Some(next_event)) = (prev_event, next_event) {
-            batch
-                .clear(ValueClass::Queue(QueueClass::MessageEvent(
-                    store::write::QueueEvent {
-                        due: prev_event,
-                        queue_id: self.queue_id,
-                    },
-                )))
-                .set(
-                    ValueClass::Queue(QueueClass::MessageEvent(store::write::QueueEvent {
-                        due: next_event,
-                        queue_id: self.queue_id,
-                    })),
-                    0u64.serialize(),
-                );
+        if let Some(prev_event) = prev_event {
+            batch.clear(ValueClass::Queue(QueueClass::MessageEvent(
+                store::write::QueueEvent {
+                    due: prev_event,
+                    queue_id: self.queue_id,
+                    queue_name: self.queue_name.into_inner(),
+                },
+            )));
+        }
+        for (queue_name, due) in self.message.next_events() {
+            batch.set(
+                ValueClass::Queue(QueueClass::MessageEvent(store::write::QueueEvent {
+                    due,
+                    queue_id: self.queue_id,
+                    queue_name: queue_name.into_inner(),
+                })),
+                Vec::new(),
+            );
         }
 
         let span_id = self.span_id;
         batch.set(
             ValueClass::Queue(QueueClass::Message(self.queue_id)),
-            match Archiver::new(self).serialize() {
+            match Archiver::new(self.message).serialize() {
                 Ok(data) => data,
                 Err(err) => {
                     trc::error!(
@@ -471,11 +495,31 @@ impl Message {
         }
     }
 
-    pub async fn remove(self, server: &Server, prev_event: u64) -> bool {
+    pub async fn remove(self, server: &Server, prev_event: Option<u64>) -> bool {
         let mut batch = BatchBuilder::new();
 
+        if let Some(prev_event) = prev_event {
+            batch.clear(ValueClass::Queue(QueueClass::MessageEvent(
+                store::write::QueueEvent {
+                    due: prev_event,
+                    queue_id: self.queue_id,
+                    queue_name: self.queue_name.into_inner(),
+                },
+            )));
+        } else {
+            for (queue_name, due) in self.message.next_events() {
+                batch.clear(ValueClass::Queue(QueueClass::MessageEvent(
+                    store::write::QueueEvent {
+                        due,
+                        queue_id: self.queue_id,
+                        queue_name: queue_name.into_inner(),
+                    },
+                )));
+            }
+        }
+
         // Release all quotas
-        for quota_key in self.quota_keys {
+        for quota_key in self.message.quota_keys {
             match quota_key {
                 QuotaKey::Count { key, .. } => {
                     batch.add(ValueClass::Queue(QueueClass::QuotaCount(key)), -1);
@@ -483,7 +527,7 @@ impl Message {
                 QuotaKey::Size { key, .. } => {
                     batch.add(
                         ValueClass::Queue(QueueClass::QuotaSize(key)),
-                        -(self.size as i64),
+                        -(self.message.size as i64),
                     );
                 }
             }
@@ -491,15 +535,9 @@ impl Message {
 
         batch
             .clear(BlobOp::LinkId {
-                hash: self.blob_hash.clone(),
+                hash: self.message.blob_hash.clone(),
                 id: self.queue_id,
             })
-            .clear(ValueClass::Queue(QueueClass::MessageEvent(
-                store::write::QueueEvent {
-                    due: prev_event,
-                    queue_id: self.queue_id,
-                },
-            )))
             .clear(ValueClass::Queue(QueueClass::Message(self.queue_id)));
 
         if let Err(err) = server.store().write(batch.build_all()).await {
@@ -515,30 +553,33 @@ impl Message {
     }
 
     pub fn has_domain(&self, domains: &[String]) -> bool {
-        self.domains.iter().any(|d| domains.contains(&d.domain))
-            || self
-                .return_path
-                .rsplit_once('@')
-                .is_some_and(|(_, domain)| domains.iter().any(|dd| dd == domain))
+        self.message.recipients.iter().any(|r| {
+            let domain = r.address_lcase.domain_part();
+            domains.iter().any(|dd| dd == domain)
+        }) || self
+            .message
+            .return_path
+            .rsplit_once('@')
+            .is_some_and(|(_, domain)| domains.iter().any(|dd| dd == domain))
     }
 }
 
 impl ArchivedMessage {
     pub fn has_domain(&self, domains: &[String]) -> bool {
-        self.domains
-            .iter()
-            .any(|d| domains.iter().any(|dd| dd == d.domain.as_str()))
-            || self
-                .return_path
-                .rsplit_once('@')
-                .is_some_and(|(_, domain)| domains.iter().any(|dd| dd == domain))
+        self.recipients.iter().any(|r| {
+            let domain = r.address_lcase.domain_part();
+            domains.iter().any(|dd| dd == domain)
+        }) || self
+            .return_path
+            .rsplit_once('@')
+            .is_some_and(|(_, domain)| domains.iter().any(|dd| dd == domain))
     }
 
     pub fn next_delivery_event(&self) -> u64 {
         let mut next_delivery = now();
 
-        for (pos, domain) in self
-            .domains
+        for (pos, rcpt) in self
+            .recipients
             .iter()
             .filter(|d| {
                 matches!(
@@ -548,8 +589,8 @@ impl ArchivedMessage {
             })
             .enumerate()
         {
-            if pos == 0 || domain.retry.due < next_delivery {
-                next_delivery = domain.retry.due.into();
+            if pos == 0 || rcpt.retry.due < next_delivery {
+                next_delivery = rcpt.retry.due.into();
             }
         }
 

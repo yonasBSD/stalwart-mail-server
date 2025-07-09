@@ -28,11 +28,7 @@ impl MemoryDirectory {
             domains: Default::default(),
         };
 
-        for lookup_id in config
-            .sub_keys((prefix.as_str(), "principals"), ".name")
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>()
-        {
+        for lookup_id in config.sub_keys((prefix.as_str(), "principals"), ".name") {
             let lookup_id = lookup_id.as_str();
             let name = config
                 .value_require((prefix.as_str(), "principals", lookup_id, "name"))?

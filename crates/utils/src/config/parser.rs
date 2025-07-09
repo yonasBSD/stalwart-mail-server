@@ -582,13 +582,10 @@ mod tests {
         );
 
         assert_eq!(
-            config.sub_keys("sets.strings", "").collect::<Vec<_>>(),
+            config.sub_keys("sets.strings", ""),
             vec!["green", "red", "yellow"]
         );
 
-        assert_eq!(
-            config.sub_keys("sets", ".red").collect::<Vec<_>>(),
-            vec!["string", "strings"]
-        );
+        assert_eq!(config.sub_keys("sets", ".red"), vec!["string", "strings"]);
     }
 }

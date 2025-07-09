@@ -4,37 +4,34 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{
-    net::{IpAddr, Ipv4Addr},
-    path::PathBuf,
-    sync::Arc,
+use super::{
+    WEBADMIN_KEY,
+    backup::BackupParams,
+    config::{ConfigManager, Patterns},
+    console::store_console,
 };
-
-use arc_swap::ArcSwap;
-use pwhash::sha512_crypt;
-use store::{
-    Stores,
-    rand::{Rng, distr::Alphanumeric, rng},
-};
-use tokio::sync::{Notify, Semaphore, mpsc};
-use utils::{
-    Semver, UnwrapFailure,
-    config::{Config, ConfigKey},
-    failed,
-};
-
 use crate::{
     Caches, Core, Data, IPC_CHANNEL_BUFFER, Inner, Ipc,
     config::{network::AsnGeoLookupConfig, server::Listeners, telemetry::Telemetry},
     core::BuildServer,
     ipc::{BroadcastEvent, HousekeeperEvent, QueueEvent, ReportingEvent, StateEvent},
 };
-
-use super::{
-    WEBADMIN_KEY,
-    backup::BackupParams,
-    config::{ConfigManager, Patterns},
-    console::store_console,
+use arc_swap::ArcSwap;
+use pwhash::sha512_crypt;
+use std::{
+    net::{IpAddr, Ipv4Addr},
+    path::PathBuf,
+    sync::Arc,
+};
+use store::{
+    Stores,
+    rand::{Rng, distr::Alphanumeric, rng},
+};
+use tokio::sync::{Notify, mpsc};
+use utils::{
+    Semver, UnwrapFailure,
+    config::{Config, ConfigKey},
+    failed,
 };
 
 pub struct BootManager {
@@ -429,7 +426,7 @@ impl BootManager {
                     core.network.asn_geo_lookup,
                     AsnGeoLookupConfig::Resource { .. }
                 );
-                let (ipc, ipc_rxs) = build_ipc(&mut config, !core.storage.pubsub.is_none());
+                let (ipc, ipc_rxs) = build_ipc(!core.storage.pubsub.is_none());
                 let inner = Arc::new(Inner {
                     shared_core: ArcSwap::from_pointee(core),
                     data,
@@ -492,7 +489,7 @@ impl BootManager {
     }
 }
 
-pub fn build_ipc(config: &mut Config, has_pubsub: bool) -> (Ipc, IpcReceivers) {
+pub fn build_ipc(has_pubsub: bool) -> (Ipc, IpcReceivers) {
     // Build ipc receivers
     let (state_tx, state_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
     let (housekeeper_tx, housekeeper_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
@@ -507,12 +504,6 @@ pub fn build_ipc(config: &mut Config, has_pubsub: bool) -> (Ipc, IpcReceivers) {
             report_tx,
             broadcast_tx: has_pubsub.then_some(broadcast_tx),
             task_tx: Arc::new(Notify::new()),
-            local_delivery_sm: Arc::new(Semaphore::new(
-                config
-                    .property_or_default::<usize>("queue.threads.local", "10")
-                    .unwrap_or(10)
-                    .max(1),
-            )),
         },
         IpcReceivers {
             state_rx: Some(state_rx),

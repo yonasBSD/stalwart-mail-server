@@ -256,6 +256,10 @@ async fn restore_file(store: Store, blob_store: BlobStore, path: &Path) {
                                         queue_id: key
                                             .deserialize_be_u64(1 + U64_LEN)
                                             .expect("Failed to deserialize queue message id"),
+                                        queue_name: key
+                                            .get(1 + U64_LEN + U64_LEN..)
+                                            .and_then(|bytes| bytes.try_into().ok())
+                                            .unwrap_or_default(),
                                     })),
                                     value,
                                 );

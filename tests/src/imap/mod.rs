@@ -170,7 +170,7 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
     let cache = Caches::parse(&mut config);
 
     let store = core.storage.data.clone();
-    let (ipc, mut ipc_rxs) = build_ipc(&mut config, false);
+    let (ipc, mut ipc_rxs) = build_ipc(false);
     let inner = Arc::new(Inner {
         shared_core: core.into_shared(),
         data,
@@ -678,17 +678,18 @@ hash = 64
 [resolver]
 type = "system"
 
-[queue.outbound]
-next-hop = [ { if = "rcpt_domain == 'example.com'", then = "'local'" }, 
+[queue.strategy]
+gateway = [ { if = "rcpt_domain == 'example.com'", then = "'local'" }, 
              { if = "contains(['remote.org', 'foobar.com', 'test.com', 'other_domain.com'], rcpt_domain)", then = "'mock-smtp'" },
-             { else = false } ]
+             { else = "'mx'" } ]
 
-[remote."mock-smtp"]
+[queue.gateway."mock-smtp"]
+type = "relay"
 address = "localhost"
 port = 9999
 protocol = "smtp"
 
-[remote."mock-smtp".tls]
+[queue.gateway."mock-smtp".tls]
 enable = false
 allow-invalid-certs = true
 

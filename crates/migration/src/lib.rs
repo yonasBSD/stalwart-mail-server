@@ -57,6 +57,9 @@ pub async fn try_migrate(server: &Server) -> trc::Result<()> {
         return Ok(());
     }
 
+    let todo =
+        "migrate queue + new LegacyRecipient with domain_idx u32 / size u64 + migrate error enum";
+
     match server
         .store()
         .get_value::<u32>(AnyKey {

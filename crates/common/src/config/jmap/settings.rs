@@ -129,11 +129,7 @@ impl JmapConfig {
         // Parse default folders
         let mut default_folders = Vec::new();
         let mut shared_folder = "Shared Folders".to_string();
-        for key in config
-            .sub_keys("email.folders", ".name")
-            .map(|v| v.to_string())
-            .collect::<Vec<_>>()
-        {
+        for key in config.sub_keys("email.folders", ".name") {
             match SpecialUse::parse_value(&key) {
                 Ok(SpecialUse::Shared) => {
                     if let Some(value) = config.value(("email.folders", key.as_str(), "name")) {

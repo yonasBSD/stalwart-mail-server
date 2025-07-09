@@ -33,11 +33,7 @@ impl Directories {
     ) -> Self {
         let mut directories = AHashMap::new();
 
-        for id in config
-            .sub_keys("directory", ".type")
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>()
-        {
+        for id in config.sub_keys("directory", ".type") {
             // Parse directory
             let id = id.as_str();
             #[cfg(feature = "test_mode")]

@@ -48,11 +48,7 @@ impl AcmeProviders {
         let mut providers = AHashMap::new();
 
         // Parse ACME providers
-        'outer: for acme_id in config
-            .sub_keys("acme", ".directory")
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>()
-        {
+        'outer: for acme_id in config.sub_keys("acme", ".directory") {
             let acme_id = acme_id.as_str();
             let directory = config
                 .value(("acme", acme_id, "directory"))
@@ -269,11 +265,7 @@ pub(crate) fn parse_certificates(
     subject_names: &mut AHashSet<String>,
 ) {
     // Parse certificates
-    for cert_id in config
-        .sub_keys("certificate", ".cert")
-        .map(|s| s.to_string())
-        .collect::<Vec<_>>()
-    {
+    for cert_id in config.sub_keys("certificate", ".cert") {
         let cert_id = cert_id.as_str();
         let key_cert = ("certificate", cert_id, "cert");
         let key_pk = ("certificate", cert_id, "private-key");

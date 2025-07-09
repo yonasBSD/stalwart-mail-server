@@ -25,7 +25,7 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use crate::{
     core::Session,
     inbound::DkimSign,
-    queue::{DomainPart, FROM_REPORT, Message, MessageSource, spool::SmtpSpool},
+    queue::{DomainPart, FROM_REPORT, MessageSource, MessageWrapper, spool::SmtpSpool},
 };
 
 pub mod analysis;
@@ -101,7 +101,7 @@ pub trait SmtpReporting: Sync + Send {
 
     fn sign_message(
         &self,
-        message: &mut Message,
+        message: &mut MessageWrapper,
         config: &IfBlock,
         bytes: &[u8],
     ) -> impl Future<Output = Option<Vec<u8>>> + Send;
@@ -149,7 +149,7 @@ impl SmtpReporting for Server {
         }
 
         // Queue message
-        message.flags |= FROM_REPORT;
+        message.message.flags |= FROM_REPORT;
         message
             .queue(
                 signature.as_deref(),
@@ -215,12 +215,12 @@ impl SmtpReporting for Server {
 
     async fn sign_message(
         &self,
-        message: &mut Message,
+        message: &mut MessageWrapper,
         config: &IfBlock,
         bytes: &[u8],
     ) -> Option<Vec<u8>> {
         let signers = self
-            .eval_if::<Vec<String>, _>(config, message, message.span_id)
+            .eval_if::<Vec<String>, _>(config, &message.message, message.span_id)
             .await
             .unwrap_or_default();
         if !signers.is_empty() {

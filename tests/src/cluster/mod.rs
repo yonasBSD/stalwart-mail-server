@@ -176,7 +176,7 @@ async fn build_server(mut config: Config, stores: Stores) -> (Server, watch::Sen
         .enable_enterprise();
     let data = Data::parse(&mut config);
     let cache = Caches::parse(&mut config);
-    let (ipc, mut ipc_rxs) = build_ipc(&mut config, true);
+    let (ipc, mut ipc_rxs) = build_ipc(true);
     let inner = Arc::new(Inner {
         shared_core: core.into_shared(),
         data,
@@ -290,10 +290,9 @@ directory = "'{STORE}'"
 [resolver]
 type = "system"
 
-[queue.outbound]
-next-hop = [ { if = "rcpt_domain == 'example.com'", then = "'local'" }, 
-             { if = "contains(['remote.org', 'foobar.com', 'test.com', 'other_domain.com'], rcpt_domain)", then = "'mock-smtp'" },
-             { else = false } ]
+[queue.strategy]
+gateway = [ { if = "rcpt_domain == 'example.com'", then = "'local'" }, 
+             { else = "'mx'" } ]
 
 [store."foundationdb"]
 type = "foundationdb"

@@ -374,9 +374,10 @@ impl ValueClass {
             },
             ValueClass::Queue(queue) => match queue {
                 QueueClass::Message(queue_id) => serializer.write(*queue_id),
-                QueueClass::MessageEvent(event) => {
-                    serializer.write(event.due).write(event.queue_id)
-                }
+                QueueClass::MessageEvent(event) => serializer
+                    .write(event.due)
+                    .write(event.queue_id)
+                    .write(event.queue_name.as_slice()),
                 QueueClass::DmarcReportHeader(event) => serializer
                     .write(0u8)
                     .write(event.due)
@@ -607,7 +608,7 @@ impl ValueClass {
             },
             ValueClass::Queue(q) => match q {
                 QueueClass::Message(_) => U64_LEN,
-                QueueClass::MessageEvent(_) => U64_LEN * 2,
+                QueueClass::MessageEvent(_) => U64_LEN * 3,
                 QueueClass::DmarcReportEvent(event) | QueueClass::TlsReportEvent(event) => {
                     event.domain.len() + U64_LEN * 3
                 }

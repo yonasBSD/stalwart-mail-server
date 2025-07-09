@@ -4,26 +4,26 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{
-    sync::{Arc, atomic::Ordering},
-    time::{Duration, Instant},
-};
-
-use ahash::{AHashMap, AHashSet};
-use common::{
-    Inner,
-    core::BuildServer,
-    ipc::{QueueEvent, QueueEventStatus},
-    listener::limiter::ConcurrencyLimiter,
-};
-use rand::seq::SliceRandom;
-use store::write::now;
-use tokio::sync::mpsc;
-
 use super::{
     Message, QueueId, Status,
     spool::{QUEUE_REFRESH, SmtpSpool},
 };
+use crate::queue::Recipient;
+use ahash::AHashMap;
+use common::{
+    Inner,
+    config::smtp::queue::{QueueExpiry, QueueName},
+    core::BuildServer,
+    ipc::{QueueEvent, QueueEventStatus},
+};
+use rand::seq::SliceRandom;
+use std::{
+    collections::hash_map::Entry,
+    sync::{Arc, atomic::Ordering},
+    time::{Duration, Instant},
+};
+use store::write::now;
+use tokio::sync::mpsc;
 
 pub struct Queue {
     pub core: Arc<Inner>,
@@ -35,13 +35,7 @@ pub struct Queue {
 #[derive(Debug)]
 pub enum OnHold {
     InFlight,
-    ConcurrencyLimited {
-        limiters: Vec<ConcurrencyLimiter>,
-        next_due: Option<u64>,
-    },
-    Locked {
-        until: u64,
-    },
+    Locked { until: u64 },
 }
 
 impl SpawnQueue for mpsc::Receiver<QueueEvent> {
@@ -122,7 +116,8 @@ impl Queue {
                 if refresh_queue || self.next_wake_up <= Instant::now() {
                     // If the number of in-flight messages is greater than the maximum allowed, skip the queue
                     let server = self.core.build_server();
-                    let max_in_flight = server.core.smtp.queue.max_threads;
+                    let todo = "fix + implement virtual queues";
+                    let max_in_flight = 4; //server.core.smtp.queue.max_threads;
                     has_back_pressure = in_flight_count >= max_in_flight;
                     if has_back_pressure {
                         self.next_wake_up = Instant::now() + Duration::from_secs(QUEUE_REFRESH);
@@ -138,11 +133,10 @@ impl Queue {
                                 Details = self
                                     .on_hold
                                     .values()
-                                    .fold([0, 0, 0], |mut acc, v| {
+                                    .fold([0, 0], |mut acc, v| {
                                         match v {
                                             OnHold::InFlight => acc[0] += 1,
-                                            OnHold::ConcurrencyLimited { .. } => acc[1] += 1,
-                                            OnHold::Locked { .. } => acc[2] += 1,
+                                            OnHold::Locked { .. } => acc[1] += 1,
                                         }
                                         acc
                                     })
@@ -180,13 +174,10 @@ impl Queue {
                                         Details = self
                                             .on_hold
                                             .values()
-                                            .fold([0, 0, 0], |mut acc, v| {
+                                            .fold([0, 0], |mut acc, v| {
                                                 match v {
                                                     OnHold::InFlight => acc[0] += 1,
-                                                    OnHold::ConcurrencyLimited { .. } => {
-                                                        acc[1] += 1
-                                                    }
-                                                    OnHold::Locked { .. } => acc[2] += 1,
+                                                    OnHold::Locked { .. } => acc[1] += 1,
                                                 }
                                                 acc
                                             })
@@ -208,14 +199,6 @@ impl Queue {
                                             if due_in < next_wake_up {
                                                 next_wake_up = due_in;
                                             }
-                                            continue;
-                                        }
-                                    }
-                                    OnHold::ConcurrencyLimited { limiters, next_due } => {
-                                        if !(limiters.iter().any(|l| {
-                                            l.concurrent.load(Ordering::Relaxed) < l.max_concurrent
-                                        }) || next_due.is_some_and(|due| due <= now))
-                                        {
                                             continue;
                                         }
                                     }
@@ -243,17 +226,10 @@ impl Queue {
                         next_cleanup = now + CLEANUP_INTERVAL;
 
                         if !self.on_hold.is_empty() {
-                            let active_queue_ids = queue_events
-                                .into_iter()
-                                .map(|e| e.queue_id)
-                                .collect::<AHashSet<_>>();
                             let now = store::write::now();
                             self.on_hold.retain(|queue_id, status| match status {
                                 OnHold::InFlight => true,
                                 OnHold::Locked { until } => *until > now,
-                                OnHold::ConcurrencyLimited { .. } => {
-                                    active_queue_ids.contains(queue_id)
-                                }
                             });
                         }
                     }
@@ -269,111 +245,161 @@ impl Queue {
 }
 
 impl Message {
-    pub fn next_event(&self) -> Option<u64> {
-        let mut next_event = now();
-        let mut has_events = false;
+    pub fn next_event(&self, queue: Option<QueueName>) -> Option<u64> {
+        let mut next_event = None;
 
-        for domain in &self.domains {
-            if matches!(
-                domain.status,
-                Status::Scheduled | Status::TemporaryFailure(_)
-            ) {
-                if !has_events || domain.retry.due < next_event {
-                    next_event = domain.retry.due;
-                    has_events = true;
+        for rcpt in &self.recipients {
+            if matches!(rcpt.status, Status::Scheduled | Status::TemporaryFailure(_))
+                && queue.is_none_or(|q| rcpt.queue == q)
+            {
+                let mut earlier_event = std::cmp::min(rcpt.retry.due, rcpt.notify.due);
+
+                if let Some(expires) = rcpt.expiration_time(self.created) {
+                    earlier_event = std::cmp::min(earlier_event, expires);
                 }
-                if domain.notify.due < next_event {
-                    next_event = domain.notify.due;
-                }
-                if domain.expires < next_event {
-                    next_event = domain.expires;
+
+                if let Some(next_event) = &mut next_event {
+                    if earlier_event < *next_event {
+                        *next_event = earlier_event;
+                    }
+                } else {
+                    next_event = Some(earlier_event);
                 }
             }
         }
 
-        if has_events { next_event.into() } else { None }
+        next_event
     }
 
-    pub fn next_delivery_event(&self) -> u64 {
-        let mut next_delivery = now();
+    pub fn next_delivery_event(&self, queue: Option<QueueName>) -> Option<u64> {
+        let mut next_delivery = None;
 
-        for (pos, domain) in self
-            .domains
-            .iter()
-            .filter(|d| matches!(d.status, Status::Scheduled | Status::TemporaryFailure(_)))
-            .enumerate()
-        {
-            if pos == 0 || domain.retry.due < next_delivery {
-                next_delivery = domain.retry.due;
+        for rcpt in self.recipients.iter().filter(|rcpt| {
+            matches!(rcpt.status, Status::Scheduled | Status::TemporaryFailure(_))
+                && queue.is_none_or(|q| rcpt.queue == q)
+        }) {
+            if let Some(next_delivery) = &mut next_delivery {
+                if rcpt.retry.due < *next_delivery {
+                    *next_delivery = rcpt.retry.due;
+                }
+            } else {
+                next_delivery = Some(rcpt.retry.due);
             }
         }
 
         next_delivery
     }
 
-    pub fn next_dsn(&self) -> u64 {
-        let mut next_dsn = now();
+    pub fn next_dsn(&self, queue: Option<QueueName>) -> Option<u64> {
+        let mut next_dsn = None;
 
-        for (pos, domain) in self
-            .domains
-            .iter()
-            .filter(|d| matches!(d.status, Status::Scheduled | Status::TemporaryFailure(_)))
-            .enumerate()
-        {
-            if pos == 0 || domain.notify.due < next_dsn {
-                next_dsn = domain.notify.due;
+        for rcpt in self.recipients.iter().filter(|rcpt| {
+            matches!(rcpt.status, Status::Scheduled | Status::TemporaryFailure(_))
+                && queue.is_none_or(|q| rcpt.queue == q)
+        }) {
+            if let Some(next_dsn) = &mut next_dsn {
+                if rcpt.notify.due < *next_dsn {
+                    *next_dsn = rcpt.notify.due;
+                }
+            } else {
+                next_dsn = Some(rcpt.notify.due);
             }
         }
 
         next_dsn
     }
 
-    pub fn expires(&self) -> u64 {
-        let mut expires = now();
+    pub fn expires(&self, queue: Option<QueueName>) -> Option<u64> {
+        let mut expires = None;
 
-        for (pos, domain) in self
-            .domains
-            .iter()
-            .filter(|d| matches!(d.status, Status::Scheduled | Status::TemporaryFailure(_)))
-            .enumerate()
-        {
-            if pos == 0 || domain.expires < expires {
-                expires = domain.expires;
+        for rcpt in self.recipients.iter().filter(|d| {
+            matches!(d.status, Status::Scheduled | Status::TemporaryFailure(_))
+                && queue.is_none_or(|q| d.queue == q)
+        }) {
+            if let Some(rcpt_expires) = rcpt.expiration_time(self.created) {
+                if let Some(expires) = &mut expires {
+                    if rcpt_expires > *expires {
+                        *expires = rcpt_expires;
+                    }
+                } else {
+                    expires = Some(rcpt_expires)
+                }
             }
         }
 
         expires
     }
 
-    pub fn next_event_after(&self, instant: u64) -> Option<u64> {
+    pub fn next_event_after(&self, queue: Option<QueueName>, instant: u64) -> Option<u64> {
         let mut next_event = None;
 
-        for domain in &self.domains {
-            if matches!(
-                domain.status,
-                Status::Scheduled | Status::TemporaryFailure(_)
-            ) {
-                if domain.retry.due > instant
-                    && next_event.as_ref().is_none_or(|ne| domain.retry.due.lt(ne))
+        for rcpt in &self.recipients {
+            if matches!(rcpt.status, Status::Scheduled | Status::TemporaryFailure(_))
+                && queue.is_none_or(|q| rcpt.queue == q)
+            {
+                if rcpt.retry.due > instant
+                    && next_event.as_ref().is_none_or(|ne| rcpt.retry.due.lt(ne))
                 {
-                    next_event = domain.retry.due.into();
+                    next_event = rcpt.retry.due.into();
                 }
-                if domain.notify.due > instant
-                    && next_event
-                        .as_ref()
-                        .is_none_or(|ne| domain.notify.due.lt(ne))
+                if rcpt.notify.due > instant
+                    && next_event.as_ref().is_none_or(|ne| rcpt.notify.due.lt(ne))
                 {
-                    next_event = domain.notify.due.into();
+                    next_event = rcpt.notify.due.into();
                 }
-                if domain.expires > instant
-                    && next_event.as_ref().is_none_or(|ne| domain.expires.lt(ne))
-                {
-                    next_event = domain.expires.into();
+                if let Some(expires) = rcpt.expiration_time(self.created) {
+                    if expires > instant && next_event.as_ref().is_none_or(|ne| expires.lt(ne)) {
+                        next_event = expires.into();
+                    }
                 }
             }
         }
 
         next_event
+    }
+
+    pub fn next_events(&self) -> AHashMap<QueueName, u64> {
+        let mut next_events = AHashMap::new();
+
+        for rcpt in &self.recipients {
+            if matches!(rcpt.status, Status::Scheduled | Status::TemporaryFailure(_)) {
+                let mut earlier_event = std::cmp::min(rcpt.retry.due, rcpt.notify.due);
+
+                if let Some(expires) = rcpt.expiration_time(self.created) {
+                    earlier_event = std::cmp::min(earlier_event, expires);
+                }
+
+                match next_events.entry(rcpt.queue) {
+                    Entry::Occupied(mut entry) => {
+                        let entry = entry.get_mut();
+                        if earlier_event < *entry {
+                            *entry = earlier_event;
+                        }
+                    }
+                    Entry::Vacant(entry) => {
+                        entry.insert(earlier_event);
+                    }
+                }
+            }
+        }
+
+        next_events
+    }
+}
+
+impl Recipient {
+    pub fn expiration_time(&self, created: u64) -> Option<u64> {
+        match self.expires {
+            QueueExpiry::Duration(time) => Some(created + time),
+            QueueExpiry::Count(_) => None,
+        }
+    }
+
+    pub fn is_expired(&self, created: u64, now: u64) -> bool {
+        match self.expires {
+            QueueExpiry::Duration(time) => created + time <= now,
+            QueueExpiry::Count(count) => self.retry.inner >= count,
+        }
     }
 }
 

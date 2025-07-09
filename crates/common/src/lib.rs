@@ -236,7 +236,6 @@ pub struct Ipc {
     pub queue_tx: mpsc::Sender<QueueEvent>,
     pub report_tx: mpsc::Sender<ReportingEvent>,
     pub broadcast_tx: Option<mpsc::Sender<BroadcastEvent>>,
-    pub local_delivery_sm: Arc<Semaphore>,
 }
 
 pub struct TlsConnectors {
@@ -484,7 +483,6 @@ impl Default for Ipc {
             queue_tx: mpsc::channel(IPC_CHANNEL_BUFFER).0,
             report_tx: mpsc::channel(IPC_CHANNEL_BUFFER).0,
             broadcast_tx: None,
-            local_delivery_sm: Arc::new(Semaphore::new(10)),
         }
     }
 }

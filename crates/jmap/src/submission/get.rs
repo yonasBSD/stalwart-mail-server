@@ -18,7 +18,7 @@ use jmap_proto::{
         value::{Object, Value},
     },
 };
-use smtp::queue::{ArchivedStatus, Message, spool::SmtpSpool};
+use smtp::queue::{ArchivedError, ArchivedErrorDetails, ArchivedStatus, Message, spool::SmtpSpool};
 use smtp_proto::ArchivedResponse;
 use std::future::Future;
 use store::rkyv::option::ArchivedOption;
@@ -121,7 +121,7 @@ impl EmailSubmissionGet for Server {
                                     }
                                     ArchivedStatus::TemporaryFailure(reply)
                                     | ArchivedStatus::PermanentFailure(reply) => {
-                                        format_archived_response(&reply.response)
+                                        format_archived_error_details(reply)
                                     }
                                     ArchivedStatus::Scheduled => "250 2.1.5 Queued".to_string(),
                                 },
@@ -231,4 +231,18 @@ fn format_archived_response(response: &ArchivedResponse<String>) -> String {
         response.esc[2],
         response.message.replace('\n', " "),
     )
+}
+
+fn format_archived_error_details(response: &ArchivedErrorDetails) -> String {
+    match &response.details {
+        ArchivedError::UnexpectedResponse(response) => format_archived_response(&response.response),
+        ArchivedError::DnsError(details)
+        | ArchivedError::Io(details)
+        | ArchivedError::ConnectionError(details)
+        | ArchivedError::TlsError(details)
+        | ArchivedError::DaneError(details)
+        | ArchivedError::MtaStsError(details) => details.to_string(),
+        ArchivedError::RateLimited => "Rate limited".to_string(),
+        ArchivedError::ConcurrencyLimited => "Concurrency limited".to_string(),
+    }
 }

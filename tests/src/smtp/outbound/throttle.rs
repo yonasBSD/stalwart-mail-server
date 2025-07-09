@@ -4,24 +4,25 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::smtp::{
+    DnsCache, TestSMTP,
+    inbound::TestQueueEvent,
+    queue::{build_rcpt, manager::new_message},
+    session::TestSession,
+};
+use mail_auth::MX;
+use smtp::queue::{Message, QueueEnvelope, throttle::IsAllowed};
 use std::{
     net::{IpAddr, Ipv4Addr},
     time::{Duration, Instant},
 };
-
-use mail_auth::MX;
 use store::write::now;
-
-use crate::smtp::{
-    DnsCache, TestSMTP, inbound::TestQueueEvent, queue::manager::new_message, session::TestSession,
-};
-use smtp::queue::{Domain, Message, QueueEnvelope, Schedule, Status, throttle::IsAllowed};
 
 const CONFIG: &str = r#"
 [session.rcpt]
 relay = true
 
-[queue.schedule]
+[queue.schedule.default]
 retry = "1h"
 notify = "1h"
 expire = "1h"
@@ -66,7 +67,7 @@ async fn throttle_outbound() {
     crate::enable_logging();
 
     // Build test message
-    let mut test_message = new_message(0);
+    let mut test_message = new_message(0).message;
     test_message.return_path_domain = "foobar.org".into();
 
     let mut local = TestSMTP::new("smtp_throttle_outbound", CONFIG).await;
@@ -124,13 +125,9 @@ async fn throttle_outbound() {
 
     // Expect concurrency throttle for recipient domain 'example.org'
     test_message.return_path_domain = "test.net".into();
-    test_message.domains.push(Domain {
-        domain: "example.org".into(),
-        retry: Schedule::now(),
-        notify: Schedule::now(),
-        expires: 0,
-        status: Status::Scheduled,
-    });
+    test_message
+        .recipients
+        .push(build_rcpt("test@example.org", 0, 0, 0));
     for t in &throttle.rcpt {
         core.is_allowed(t, &QueueEnvelope::test(&test_message, 0, ""), 0)
             .await
@@ -154,13 +151,9 @@ async fn throttle_outbound() {
     local.queue_receiver.read_event().await.assert_on_hold();*/
 
     // Expect rate limit throttle for recipient domain 'example.net'
-    test_message.domains.push(Domain {
-        domain: "example.net".into(),
-        retry: Schedule::now(),
-        notify: Schedule::now(),
-        expires: 0,
-        status: Status::Scheduled,
-    });
+    test_message
+        .recipients
+        .push(build_rcpt("test@example.net", 0, 0, 0));
     for t in &throttle.rcpt {
         core.is_allowed(t, &QueueEnvelope::test(&test_message, 1, ""), 0)
             .await
@@ -199,13 +192,10 @@ async fn throttle_outbound() {
         vec!["127.0.0.1".parse().unwrap()],
         Instant::now() + Duration::from_secs(10),
     );
-    test_message.domains.push(Domain {
-        domain: "test.org".into(),
-        retry: Schedule::now(),
-        notify: Schedule::now(),
-        expires: 0,
-        status: Status::Scheduled,
-    });
+    test_message
+        .recipients
+        .push(build_rcpt("test@test.org", 0, 0, 0));
+
     for t in &throttle.remote {
         core.is_allowed(t, &QueueEnvelope::test(&test_message, 2, "mx.test.org"), 0)
             .await
@@ -262,14 +252,13 @@ pub trait TestQueueEnvelope<'x> {
 }
 
 impl<'x> TestQueueEnvelope<'x> for QueueEnvelope<'x> {
-    fn test(message: &'x Message, current_domain: usize, mx: &'x str) -> Self {
+    fn test(message: &'x Message, current_rcpt: usize, mx: &'x str) -> Self {
         QueueEnvelope {
             message,
             mx,
             remote_ip: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
             local_ip: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
-            current_domain,
-            current_rcpt: 0,
+            current_rcpt,
         }
     }
 }

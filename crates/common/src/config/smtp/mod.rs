@@ -114,7 +114,8 @@ pub(crate) const SMTP_QUEUE_HOST_VARS: &[u32; 14] = &[
     V_QUEUE_LAST_STATUS,
     V_QUEUE_LAST_ERROR,
 ];
-pub(crate) const SMTP_QUEUE_RCPT_VARS: &[u32; 10] = &[
+pub(crate) const SMTP_QUEUE_RCPT_VARS: &[u32; 13] = &[
+    V_RECIPIENT,
     V_RECIPIENT_DOMAIN,
     V_RECIPIENTS,
     V_SENDER,
@@ -125,24 +126,13 @@ pub(crate) const SMTP_QUEUE_RCPT_VARS: &[u32; 10] = &[
     V_QUEUE_EXPIRES_IN,
     V_QUEUE_LAST_STATUS,
     V_QUEUE_LAST_ERROR,
+    V_REMOTE_IP,
+    V_LOCAL_PORT,
 ];
 pub(crate) const SMTP_QUEUE_SENDER_VARS: &[u32; 8] = &[
     V_SENDER,
     V_SENDER_DOMAIN,
     V_PRIORITY,
-    V_QUEUE_RETRY_NUM,
-    V_QUEUE_NOTIFY_NUM,
-    V_QUEUE_EXPIRES_IN,
-    V_QUEUE_LAST_STATUS,
-    V_QUEUE_LAST_ERROR,
-];
-pub(crate) const SMTP_QUEUE_MX_VARS: &[u32; 11] = &[
-    V_RECIPIENT_DOMAIN,
-    V_RECIPIENTS,
-    V_SENDER,
-    V_SENDER_DOMAIN,
-    V_PRIORITY,
-    V_MX,
     V_QUEUE_RETRY_NUM,
     V_QUEUE_NOTIFY_NUM,
     V_QUEUE_EXPIRES_IN,

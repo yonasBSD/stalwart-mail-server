@@ -11,6 +11,7 @@ use crate::{
         mailbox::destroy_all_mailboxes, test_account_login,
     },
 };
+use common::config::smtp::queue::QueueName;
 use email::mailbox::INBOX_ID;
 use jmap::blob::upload::DISABLE_UPLOAD_QUOTA;
 use jmap_client::{
@@ -360,10 +361,10 @@ pub async fn test(params: &mut JMAPTest) {
     }
     for event in server.next_event().await {
         server
-            .read_message(event.queue_id)
+            .read_message(event.queue_id, QueueName::default())
             .await
             .unwrap()
-            .remove(&server, event.due)
+            .remove(&server, event.due.into())
             .await;
     }
     assert_is_empty(server).await;

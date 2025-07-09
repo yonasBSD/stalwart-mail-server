@@ -751,6 +751,7 @@ impl Core {
                                 class: ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
                                     due: 0,
                                     queue_id: 0,
+                                    queue_name: [0; 8],
                                 })),
                             },
                             ValueKey {
@@ -760,6 +761,7 @@ impl Core {
                                 class: ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
                                     due: u64::MAX,
                                     queue_id: u64::MAX,
+                                    queue_name: [u8::MAX; 8],
                                 })),
                             },
                         ),

@@ -766,7 +766,7 @@ impl EventType {
             EventType::Smtp(SmtpEvent::RcptToMissing) => 466,
             EventType::Smtp(SmtpEvent::RcptToRewritten) => 467,
             EventType::Smtp(SmtpEvent::RelayNotAllowed) => 468,
-            EventType::Smtp(SmtpEvent::RemoteIdNotFound) => 469,
+            EventType::Smtp(SmtpEvent::IdNotFound) => 469,
             EventType::Smtp(SmtpEvent::RequestTooLarge) => 470,
             EventType::Smtp(SmtpEvent::RequireTlsDisabled) => 471,
             EventType::Smtp(SmtpEvent::Rset) => 472,
@@ -1393,7 +1393,7 @@ impl EventType {
             466 => Some(EventType::Smtp(SmtpEvent::RcptToMissing)),
             467 => Some(EventType::Smtp(SmtpEvent::RcptToRewritten)),
             468 => Some(EventType::Smtp(SmtpEvent::RelayNotAllowed)),
-            469 => Some(EventType::Smtp(SmtpEvent::RemoteIdNotFound)),
+            469 => Some(EventType::Smtp(SmtpEvent::IdNotFound)),
             470 => Some(EventType::Smtp(SmtpEvent::RequestTooLarge)),
             471 => Some(EventType::Smtp(SmtpEvent::RequireTlsDisabled)),
             472 => Some(EventType::Smtp(SmtpEvent::Rset)),
@@ -1599,6 +1599,7 @@ impl Key {
             Key::ValidTo => 62,
             Key::Value => 63,
             Key::Version => 64,
+            Key::QueueName => 65,
         }
     }
 
@@ -1669,6 +1670,7 @@ impl Key {
             62 => Some(Key::ValidTo),
             63 => Some(Key::Value),
             64 => Some(Key::Version),
+            65 => Some(Key::QueueName),
             _ => None,
         }
     }

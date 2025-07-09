@@ -9,7 +9,7 @@ use crate::{
     core::{Session, SessionAddress, State},
     inbound::milter::Modification,
     queue::{
-        self, DMARC_AUTHENTICATED, Message, MessageSource, QueueEnvelope, Schedule,
+        self, DMARC_AUTHENTICATED, Message, MessageSource, MessageWrapper, QueueEnvelope, Schedule,
         quota::HasQueueQuota,
     },
     reporting::analysis::AnalyzeReport,
@@ -17,7 +17,11 @@ use crate::{
 };
 use common::{
     config::{
-        smtp::{auth::VerifyStrategy, session::Stage},
+        smtp::{
+            auth::VerifyStrategy,
+            queue::{QueueExpiry, QueueName},
+            session::Stage,
+        },
         spamfilter::SpamFilterAction,
     },
     listener::SessionStream,
@@ -37,9 +41,8 @@ use smtp_proto::{
 };
 use std::{
     borrow::Cow,
-    time::{Duration, Instant, SystemTime},
+    time::{Instant, SystemTime},
 };
-use store::write::now;
 use trc::SmtpEvent;
 use utils::config::Rate;
 
@@ -603,7 +606,7 @@ impl<T: SessionStream> Session<T> {
             .unwrap_or(true)
         {
             headers.extend_from_slice(b"Return-Path: <");
-            headers.extend_from_slice(message.return_path.as_bytes());
+            headers.extend_from_slice(message.message.return_path.as_bytes());
             headers.extend_from_slice(b">\r\n");
         }
 
@@ -656,7 +659,7 @@ impl<T: SessionStream> Session<T> {
         }
 
         // Update size
-        message.size = (raw_message.len() + headers.len()) as u64;
+        message.message.size = (raw_message.len() + headers.len()) as u64;
 
         // Verify queue quota
         if self.server.has_quota(&mut message).await {
@@ -672,7 +675,7 @@ impl<T: SessionStream> Session<T> {
             if self.is_authenticated()
                 || dmarc_result.is_some_and(|result| result == DmarcResult::Pass)
             {
-                message.flags |= DMARC_AUTHENTICATED;
+                message.message.flags |= DMARC_AUTHENTICATED;
             }
             if message
                 .queue(
@@ -703,115 +706,32 @@ impl<T: SessionStream> Session<T> {
         mut rcpt_to: Vec<SessionAddress>,
         queue_id: u64,
         span_id: u64,
-    ) -> Message {
+    ) -> MessageWrapper {
         // Build message
         let created = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs());
         let mut message = Message {
-            queue_id,
-            span_id,
             created,
             return_path: mail_from.address,
             return_path_lcase: mail_from.address_lcase,
             return_path_domain: mail_from.domain,
             recipients: Vec::with_capacity(rcpt_to.len()),
-            domains: Vec::with_capacity(3),
             flags: mail_from.flags,
             priority: self.data.priority,
             size: 0,
             env_id: mail_from.dsn_info,
             blob_hash: Default::default(),
             quota_keys: Vec::new(),
+            received_from_ip: self.data.remote_ip,
+            received_via_port: self.data.local_port,
         };
 
         // Add recipients
-        let future_release = Duration::from_secs(self.data.future_release);
+        let future_release = self.data.future_release;
         rcpt_to.sort_unstable();
         for rcpt in rcpt_to {
-            if message
-                .domains
-                .last()
-                .is_none_or(|d| d.domain != rcpt.domain)
-            {
-                let rcpt_idx = message.domains.len();
-                message.domains.push(queue::Domain {
-                    retry: Schedule::now(),
-                    notify: Schedule::now(),
-                    expires: 0,
-                    status: queue::Status::Scheduled,
-                    domain: rcpt.domain,
-                });
-
-                let envelope = QueueEnvelope::new(&message, rcpt_idx);
-
-                // Set next retry time
-                let retry = if self.data.future_release == 0 {
-                    queue::Schedule::now()
-                } else {
-                    queue::Schedule::later(future_release)
-                };
-
-                // Set expiration and notification times
-                let config = &self.server.core.smtp.queue;
-                let (num_intervals, next_notify) = self
-                    .server
-                    .eval_if::<Vec<Duration>, _>(&config.notify, &envelope, self.data.session_id)
-                    .await
-                    .and_then(|v| (v.len(), v.into_iter().next()?).into())
-                    .unwrap_or_else(|| (1, Duration::from_secs(86400)));
-                let (notify, expires) = if self.data.delivery_by == 0 {
-                    (
-                        queue::Schedule::later(future_release + next_notify),
-                        now()
-                            + future_release.as_secs()
-                            + self
-                                .server
-                                .eval_if(&config.expire, &envelope, self.data.session_id)
-                                .await
-                                .unwrap_or_else(|| Duration::from_secs(5 * 86400))
-                                .as_secs(),
-                    )
-                } else if (message.flags & MAIL_BY_RETURN) != 0 {
-                    (
-                        queue::Schedule::later(future_release + next_notify),
-                        now() + self.data.delivery_by as u64,
-                    )
-                } else {
-                    let expire = self
-                        .server
-                        .eval_if(&config.expire, &envelope, self.data.session_id)
-                        .await
-                        .unwrap_or_else(|| Duration::from_secs(5 * 86400));
-                    let expire_secs = expire.as_secs();
-                    let notify = if self.data.delivery_by.is_positive() {
-                        let notify_at = self.data.delivery_by as u64;
-                        if expire_secs > notify_at {
-                            Duration::from_secs(notify_at)
-                        } else {
-                            next_notify
-                        }
-                    } else {
-                        let notify_at = -self.data.delivery_by as u64;
-                        if expire_secs > notify_at {
-                            Duration::from_secs(expire_secs - notify_at)
-                        } else {
-                            next_notify
-                        }
-                    };
-                    let mut notify = queue::Schedule::later(future_release + notify);
-                    notify.inner = (num_intervals - 1) as u32; // Disable further notification attempts
-
-                    (notify, now() + expire_secs)
-                };
-
-                // Update domain
-                let domain = message.domains.last_mut().unwrap();
-                domain.retry = retry;
-                domain.notify = notify;
-                domain.expires = expires;
-            }
-
+            let rcpt_idx = message.recipients.len();
             message.recipients.push(queue::Recipient {
                 address: rcpt.address,
                 address_lcase: rcpt.address_lcase,
@@ -827,11 +747,98 @@ impl<T: SessionStream> Session<T> {
                 } else {
                     rcpt.flags | RCPT_NOTIFY_DELAY | RCPT_NOTIFY_FAILURE
                 },
-                domain_idx: (message.domains.len() - 1) as u32,
                 orcpt: rcpt.dsn_info,
+                retry: Schedule::now(),
+                notify: Schedule::now(),
+                expires: QueueExpiry::Count(0),
+                queue: QueueName::default(),
             });
+
+            let envelope = QueueEnvelope::new_rcpt(&message, rcpt_idx);
+
+            // Set next retry time
+            let retry = if self.data.future_release == 0 {
+                queue::Schedule::now()
+            } else {
+                queue::Schedule::later(future_release)
+            };
+
+            // Resolve queue
+            let queue = self.server.get_queue_or_default(
+                &self
+                    .server
+                    .eval_if::<String, _>(
+                        &self.server.core.smtp.queue.queue,
+                        &envelope,
+                        self.data.session_id,
+                    )
+                    .await
+                    .unwrap_or_else(|| "default".to_string()),
+                self.data.session_id,
+            );
+
+            // Set expiration and notification times
+            let num_intervals = std::cmp::max(queue.notify.len(), 1);
+            let next_notify = queue.notify.first().copied().unwrap_or(86400);
+            let (notify, expires) = if self.data.delivery_by == 0 {
+                (
+                    queue::Schedule::later(future_release + next_notify),
+                    match queue.expiry {
+                        QueueExpiry::Duration(time) => QueueExpiry::Duration(future_release + time),
+                        QueueExpiry::Count(count) => QueueExpiry::Count(count),
+                    },
+                )
+            } else if (message.flags & MAIL_BY_RETURN) != 0 {
+                (
+                    queue::Schedule::later(future_release + next_notify),
+                    QueueExpiry::Duration(self.data.delivery_by as u64),
+                )
+            } else {
+                let (notify, expires) = match queue.expiry {
+                    QueueExpiry::Duration(expire_secs) => (
+                        (if self.data.delivery_by.is_positive() {
+                            let notify_at = self.data.delivery_by as u64;
+                            if expire_secs > notify_at {
+                                notify_at
+                            } else {
+                                next_notify
+                            }
+                        } else {
+                            let notify_at = -self.data.delivery_by as u64;
+                            if expire_secs > notify_at {
+                                expire_secs - notify_at
+                            } else {
+                                next_notify
+                            }
+                        }),
+                        QueueExpiry::Duration(expire_secs),
+                    ),
+                    QueueExpiry::Count(_) => (
+                        next_notify,
+                        QueueExpiry::Duration(self.data.delivery_by.unsigned_abs()),
+                    ),
+                };
+
+                let mut notify = queue::Schedule::later(future_release + notify);
+                notify.inner = (num_intervals - 1) as u32; // Disable further notification attempts
+
+                (notify, expires)
+            };
+
+            // Update recipient
+            let recipient = message.recipients.last_mut().unwrap();
+            recipient.retry = retry;
+            recipient.notify = notify;
+            recipient.expires = expires;
+            recipient.queue = queue.virtual_queue;
         }
-        message
+
+        MessageWrapper {
+            queue_id,
+            queue_name: QueueName::default(),
+            span_id,
+            message,
+        }
     }
 
     pub async fn can_send_data(&mut self) -> Result<bool, ()> {

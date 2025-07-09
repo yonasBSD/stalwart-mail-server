@@ -4,16 +4,17 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use common::{
+    config::smtp::queue::{QueueExpiry, QueueName},
+    expr::{self, functions::ResolveVariable, *},
+};
+use compact_str::ToCompactString;
+use smtp_proto::{ArchivedResponse, Response};
 use std::{
     fmt::Display,
     net::{IpAddr, Ipv4Addr},
     time::{Duration, Instant, SystemTime},
 };
-
-use common::expr::{self, functions::ResolveVariable, *};
-
-use compact_str::ToCompactString;
-use smtp_proto::{ArchivedResponse, Response};
 use store::write::now;
 use utils::BlobHash;
 
@@ -34,7 +35,8 @@ pub struct Schedule<T> {
 #[derive(Debug, Clone, Copy)]
 pub struct QueuedMessage {
     pub due: u64,
-    pub queue_id: u64,
+    pub queue_id: QueueId,
+    pub queue_name: QueueName,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -48,15 +50,16 @@ pub enum MessageSource {
 
 #[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive, Debug, Clone, PartialEq, Eq)]
 pub struct Message {
-    pub queue_id: QueueId,
     pub created: u64,
     pub blob_hash: BlobHash,
+
+    pub received_from_ip: IpAddr,
+    pub received_via_port: u16,
 
     pub return_path: String,
     pub return_path_lcase: String,
     pub return_path_domain: String,
     pub recipients: Vec<Recipient>,
-    pub domains: Vec<Domain>,
 
     pub flags: u64,
     pub env_id: Option<String>,
@@ -64,9 +67,14 @@ pub struct Message {
 
     pub size: u64,
     pub quota_keys: Vec<QuotaKey>,
+}
 
-    #[rkyv(with = rkyv::with::Skip)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MessageWrapper {
+    pub queue_id: QueueId,
+    pub queue_name: QueueName,
     pub span_id: u64,
+    pub message: Message,
 }
 
 #[derive(
@@ -94,29 +102,16 @@ pub enum QuotaKey {
     Eq,
     serde::Deserialize,
 )]
-pub struct Domain {
-    pub domain: String,
-    pub retry: Schedule<u32>,
-    pub notify: Schedule<u32>,
-    pub expires: u64,
-    pub status: Status<(), Error>,
-}
-
-#[derive(
-    rkyv::Serialize,
-    rkyv::Deserialize,
-    rkyv::Archive,
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    serde::Deserialize,
-)]
 pub struct Recipient {
-    pub domain_idx: u32,
     pub address: String,
     pub address_lcase: String,
-    pub status: Status<HostResponse<String>, HostResponse<ErrorDetails>>,
+
+    pub retry: Schedule<u32>,
+    pub notify: Schedule<u32>,
+    pub expires: QueueExpiry,
+
+    pub queue: QueueName,
+    pub status: Status<HostResponse<String>, ErrorDetails>,
     pub flags: u64,
     pub orcpt: Option<String>,
 }
@@ -173,17 +168,34 @@ pub struct HostResponse<T> {
     rkyv::Deserialize,
     rkyv::Archive,
     serde::Deserialize,
+    Default,
 )]
 pub enum Error {
     DnsError(String),
-    UnexpectedResponse(HostResponse<ErrorDetails>),
-    ConnectionError(ErrorDetails),
-    TlsError(ErrorDetails),
-    DaneError(ErrorDetails),
+    UnexpectedResponse(UnexpectedResponse),
+    ConnectionError(String),
+    TlsError(String),
+    DaneError(String),
     MtaStsError(String),
     RateLimited,
+    #[default]
     ConcurrencyLimited,
     Io(String),
+}
+
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    rkyv::Archive,
+    serde::Deserialize,
+)]
+pub struct UnexpectedResponse {
+    pub command: String,
+    pub response: Response<String>,
 }
 
 #[derive(
@@ -199,7 +211,7 @@ pub enum Error {
 )]
 pub struct ErrorDetails {
     pub entity: String,
-    pub details: String,
+    pub details: Error,
 }
 
 impl<T> Ord for Schedule<T> {
@@ -230,9 +242,9 @@ impl<T: Default> Schedule<T> {
         }
     }
 
-    pub fn later(duration: Duration) -> Self {
+    pub fn later(duration: u64) -> Self {
         Schedule {
-            due: now() + duration.as_secs(),
+            due: now() + duration,
             inner: T::default(),
         }
     }
@@ -243,37 +255,22 @@ pub struct QueueEnvelope<'x> {
     pub mx: &'x str,
     pub remote_ip: IpAddr,
     pub local_ip: IpAddr,
-    pub current_domain: usize,
     pub current_rcpt: usize,
 }
 
 impl<'x> QueueEnvelope<'x> {
-    pub fn new(message: &'x Message, current_domain: usize) -> Self {
+    pub fn new_rcpt(message: &'x Message, current_rcpt: usize) -> Self {
         Self {
             message,
-            current_domain,
-            current_rcpt: 0,
-            mx: "",
-            remote_ip: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
-            local_ip: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
-        }
-    }
-
-    pub fn new_rcpt(message: &'x Message, current_domain: usize, current_rcpt: usize) -> Self {
-        Self {
-            message,
-            current_domain,
             current_rcpt,
             mx: "",
             remote_ip: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
             local_ip: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
         }
     }
-}
 
-impl<'x> QueueEnvelope<'x> {
-    fn current_domain(&self) -> Option<&'x Domain> {
-        self.message.domains.get(self.current_domain)
+    fn current_recipient(&self) -> Option<&'x Recipient> {
+        self.message.recipients.get(self.current_rcpt)
     }
 }
 
@@ -283,14 +280,12 @@ impl<'x> ResolveVariable for QueueEnvelope<'x> {
             V_SENDER => self.message.return_path_lcase.as_str().into(),
             V_SENDER_DOMAIN => self.message.return_path_domain.as_str().into(),
             V_RECIPIENT_DOMAIN => self
-                .current_domain()
-                .map(|d| d.domain.as_str())
+                .current_recipient()
+                .map(|d| d.address_lcase.domain_part())
                 .unwrap_or_default()
                 .into(),
             V_RECIPIENT => self
-                .message
-                .recipients
-                .get(self.current_rcpt)
+                .current_recipient()
                 .map(|r| r.address_lcase.as_str())
                 .unwrap_or_default()
                 .into(),
@@ -302,40 +297,47 @@ impl<'x> ResolveVariable for QueueEnvelope<'x> {
                 .collect::<Vec<_>>()
                 .into(),
             V_QUEUE_RETRY_NUM => self
-                .current_domain()
+                .current_recipient()
                 .map(|d| d.retry.inner)
                 .unwrap_or_default()
                 .into(),
             V_QUEUE_NOTIFY_NUM => self
-                .current_domain()
+                .current_recipient()
                 .map(|d| d.notify.inner)
                 .unwrap_or_default()
                 .into(),
             V_QUEUE_EXPIRES_IN => self
-                .current_domain()
-                .map(|d| d.expires.saturating_sub(now()))
+                .current_recipient()
+                .map(|d| match &d.expires {
+                    QueueExpiry::Duration(time) => {
+                        (*time + self.message.created).saturating_sub(now())
+                    }
+                    QueueExpiry::Count(count) => (*count) as u64,
+                })
                 .unwrap_or_default()
                 .into(),
             V_QUEUE_LAST_STATUS => self
-                .current_domain()
+                .current_recipient()
                 .map(|d| d.status.to_compact_string())
                 .unwrap_or_default()
                 .into(),
             V_QUEUE_LAST_ERROR => self
-                .current_domain()
+                .current_recipient()
                 .map(|d| match &d.status {
                     Status::Scheduled | Status::Completed(_) => "none",
-                    Status::TemporaryFailure(err) | Status::PermanentFailure(err) => match err {
-                        Error::DnsError(_) => "dns",
-                        Error::UnexpectedResponse(_) => "unexpected-reply",
-                        Error::ConnectionError(_) => "connection",
-                        Error::TlsError(_) => "tls",
-                        Error::DaneError(_) => "dane",
-                        Error::MtaStsError(_) => "mta-sts",
-                        Error::RateLimited => "rate",
-                        Error::ConcurrencyLimited => "concurrency",
-                        Error::Io(_) => "io",
-                    },
+                    Status::TemporaryFailure(err) | Status::PermanentFailure(err) => {
+                        match &err.details {
+                            Error::DnsError(_) => "dns",
+                            Error::UnexpectedResponse(_) => "unexpected-reply",
+                            Error::ConnectionError(_) => "connection",
+                            Error::TlsError(_) => "tls",
+                            Error::DaneError(_) => "dane",
+                            Error::MtaStsError(_) => "mta-sts",
+                            Error::RateLimited => "rate",
+                            Error::ConcurrencyLimited => "concurrency",
+                            Error::Io(_) => "io",
+                        }
+                    }
                 })
                 .unwrap_or_default()
                 .into(),
@@ -440,33 +442,21 @@ impl Display for Error {
             Error::UnexpectedResponse(response) => {
                 write!(
                     f,
-                    "Unexpected response from '{}': {}",
-                    response.hostname.entity, response.response
+                    "Unexpected response for {}: {}",
+                    response.command, response.response
                 )
             }
             Error::DnsError(err) => {
                 write!(f, "DNS lookup failed: {err}")
             }
             Error::ConnectionError(details) => {
-                write!(
-                    f,
-                    "Connection to '{}' failed: {}",
-                    details.entity, details.details
-                )
+                write!(f, "Connection failed: {details}",)
             }
             Error::TlsError(details) => {
-                write!(
-                    f,
-                    "TLS error from '{}': {}",
-                    details.entity, details.details
-                )
+                write!(f, "TLS error: {details}",)
             }
             Error::DaneError(details) => {
-                write!(
-                    f,
-                    "DANE failed to authenticate '{}': {}",
-                    details.entity, details.details
-                )
+                write!(f, "DANE authentication failure: {details}",)
             }
             Error::MtaStsError(details) => {
                 write!(f, "MTA-STS auth failed: {details}")
@@ -490,8 +480,8 @@ impl Display for ArchivedError {
             ArchivedError::UnexpectedResponse(response) => {
                 write!(
                     f,
-                    "Unexpected response from '{}': {}",
-                    response.hostname.entity,
+                    "Unexpected response for {}: {}",
+                    response.command,
                     response.response.to_string()
                 )
             }
@@ -499,25 +489,13 @@ impl Display for ArchivedError {
                 write!(f, "DNS lookup failed: {err}")
             }
             ArchivedError::ConnectionError(details) => {
-                write!(
-                    f,
-                    "Connection to '{}' failed: {}",
-                    details.entity, details.details
-                )
+                write!(f, "Connection failed: {details}",)
             }
             ArchivedError::TlsError(details) => {
-                write!(
-                    f,
-                    "TLS error from '{}': {}",
-                    details.entity, details.details
-                )
+                write!(f, "TLS error: {details}",)
             }
             ArchivedError::DaneError(details) => {
-                write!(
-                    f,
-                    "DANE failed to authenticate '{}': {}",
-                    details.entity, details.details
-                )
+                write!(f, "DANE authentication failure: {details}",)
             }
             ArchivedError::MtaStsError(details) => {
                 write!(f, "MTA-STS auth failed: {details}")
@@ -535,25 +513,24 @@ impl Display for ArchivedError {
     }
 }
 
-impl Display for Status<(), Error> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Status::Scheduled => write!(f, "Scheduled"),
-            Status::Completed(_) => write!(f, "Completed"),
-            Status::TemporaryFailure(err) => write!(f, "Temporary Failure: {err}"),
-            Status::PermanentFailure(err) => write!(f, "Permanent Failure: {err}"),
-        }
-    }
-}
-
-impl Display for Status<HostResponse<String>, HostResponse<ErrorDetails>> {
+impl Display for Status<HostResponse<String>, ErrorDetails> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Status::Scheduled => write!(f, "Scheduled"),
             Status::Completed(response) => write!(f, "Delivered: {}", response.response),
-            Status::TemporaryFailure(err) => write!(f, "Temporary Failure: {}", err.response),
-            Status::PermanentFailure(err) => write!(f, "Permanent Failure: {}", err.response),
+            Status::TemporaryFailure(err) => {
+                write!(f, "Temporary Failure for {}: {}", err.entity, err.details)
+            }
+            Status::PermanentFailure(err) => {
+                write!(f, "Permanent Failure for {}: {}", err.entity, err.details)
+            }
         }
+    }
+}
+
+impl Display for ArchivedErrorDetails {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Error for {}: {}", self.entity, self.details)
     }
 }
 

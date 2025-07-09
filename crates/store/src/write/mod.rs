@@ -277,6 +277,7 @@ pub enum TelemetryClass {
 pub struct QueueEvent {
     pub due: u64,
     pub queue_id: u64,
+    pub queue_name: [u8; 8],
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]

@@ -5,16 +5,21 @@
  */
 
 use crate::LegacyBincode;
-use common::Server;
-use smtp::queue::{
-    Domain, ErrorDetails, HostResponse, Message, QueueId, QuotaKey, Recipient, Status,
+use common::{
+    Server,
+    config::smtp::queue::{QueueExpiry, QueueName},
 };
+use smtp::queue::{
+    Error, ErrorDetails, HostResponse, Message, QueueId, QuotaKey, Recipient, Schedule, Status,
+    UnexpectedResponse,
+};
+use std::net::{IpAddr, Ipv4Addr};
 use store::{
     IterateParams, Serialize, U64_LEN, ValueKey,
     ahash::AHashSet,
     write::{
         AlignedBytes, Archive, Archiver, BatchBuilder, QueueClass, ValueClass,
-        key::DeserializeBigEndian,
+        key::DeserializeBigEndian, now,
     },
 };
 use trc::AddContext;
@@ -25,12 +30,14 @@ pub(crate) async fn migrate_queue(server: &Server) -> trc::Result<()> {
         store::write::QueueEvent {
             due: 0,
             queue_id: 0,
+            queue_name: [0; 8],
         },
     )));
     let to_key = ValueKey::from(ValueClass::Queue(QueueClass::MessageEvent(
         store::write::QueueEvent {
             due: u64::MAX,
             queue_id: u64::MAX,
+            queue_name: [u8::MAX; 8],
         },
     )));
 
@@ -74,39 +81,10 @@ pub(crate) async fn migrate_queue(server: &Server) -> trc::Result<()> {
             .await
         {
             Ok(Some(bincoded)) => {
-                let message = bincoded.inner;
-                let message = Message {
-                    queue_id: message.queue_id,
-                    created: message.created,
-                    blob_hash: message.blob_hash,
-                    return_path: message.return_path,
-                    return_path_lcase: message.return_path_lcase,
-                    return_path_domain: message.return_path_domain,
-                    recipients: message
-                        .recipients
-                        .into_iter()
-                        .map(|r| Recipient {
-                            domain_idx: r.domain_idx as u32,
-                            address: r.address,
-                            address_lcase: r.address_lcase,
-                            status: r.status,
-                            flags: r.flags,
-                            orcpt: r.orcpt,
-                        })
-                        .collect(),
-                    domains: message.domains,
-                    flags: message.flags,
-                    env_id: message.env_id,
-                    priority: message.priority,
-                    size: message.size as u64,
-                    quota_keys: message.quota_keys,
-                    span_id: message.span_id,
-                };
-
                 let mut batch = BatchBuilder::new();
                 batch.set(
                     ValueClass::Queue(QueueClass::Message(queue_id)),
-                    Archiver::new(message)
+                    Archiver::new(Message::from(bincoded.inner))
                         .serialize()
                         .caused_by(trc::location!())?,
                 );
@@ -145,6 +123,115 @@ pub(crate) async fn migrate_queue(server: &Server) -> trc::Result<()> {
     Ok(())
 }
 
+impl From<LegacyMessage> for Message {
+    fn from(message: LegacyMessage) -> Self {
+        let domains = message.domains;
+        Message {
+            created: message.created,
+            blob_hash: message.blob_hash,
+            return_path: message.return_path,
+            return_path_lcase: message.return_path_lcase,
+            return_path_domain: message.return_path_domain,
+            recipients: message
+                .recipients
+                .into_iter()
+                .map(|r| {
+                    let domain = &domains[r.domain_idx];
+                    Recipient {
+                        address: r.address,
+                        address_lcase: r.address_lcase,
+                        status: match r.status {
+                            Status::Scheduled => match &domain.status {
+                                Status::Scheduled | Status::Completed(_) => Status::Scheduled,
+                                Status::TemporaryFailure(err) => Status::TemporaryFailure(
+                                    migrate_legacy_error(&domain.domain, err),
+                                ),
+                                Status::PermanentFailure(err) => Status::PermanentFailure(
+                                    migrate_legacy_error(&domain.domain, err),
+                                ),
+                            },
+                            Status::Completed(details) => Status::Completed(details),
+                            Status::TemporaryFailure(err) => {
+                                Status::TemporaryFailure(migrate_host_response(err))
+                            }
+                            Status::PermanentFailure(err) => {
+                                Status::PermanentFailure(migrate_host_response(err))
+                            }
+                        },
+                        flags: r.flags,
+                        orcpt: r.orcpt,
+                        retry: domain.retry.clone(),
+                        notify: domain.notify.clone(),
+                        queue: QueueName::default(),
+                        expires: QueueExpiry::Duration(domain.expires.saturating_sub(now())),
+                    }
+                })
+                .collect(),
+            flags: message.flags,
+            env_id: message.env_id,
+            priority: message.priority,
+            size: message.size as u64,
+            quota_keys: message.quota_keys,
+            received_from_ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
+            received_via_port: 0,
+        }
+    }
+}
+
+fn migrate_legacy_error(domain: &str, err: &LegacyError) -> ErrorDetails {
+    match err {
+        LegacyError::DnsError(err) => ErrorDetails {
+            entity: domain.to_string(),
+            details: Error::DnsError(err.clone()),
+        },
+        LegacyError::UnexpectedResponse(err) => ErrorDetails {
+            entity: err.hostname.entity.to_string(),
+            details: Error::UnexpectedResponse(UnexpectedResponse {
+                command: err.hostname.details.clone(),
+                response: err.response.clone(),
+            }),
+        },
+        LegacyError::ConnectionError(err) => ErrorDetails {
+            entity: err.entity.to_string(),
+            details: Error::ConnectionError(err.details.clone()),
+        },
+        LegacyError::TlsError(err) => ErrorDetails {
+            entity: err.entity.to_string(),
+            details: Error::TlsError(err.details.clone()),
+        },
+        LegacyError::DaneError(err) => ErrorDetails {
+            entity: err.entity.to_string(),
+            details: Error::DaneError(err.details.clone()),
+        },
+        LegacyError::MtaStsError(err) => ErrorDetails {
+            entity: domain.to_string(),
+            details: Error::MtaStsError(err.clone()),
+        },
+        LegacyError::RateLimited => ErrorDetails {
+            entity: domain.to_string(),
+            details: Error::RateLimited,
+        },
+        LegacyError::ConcurrencyLimited => ErrorDetails {
+            entity: domain.to_string(),
+            details: Error::ConcurrencyLimited,
+        },
+        LegacyError::Io(err) => ErrorDetails {
+            entity: domain.to_string(),
+            details: Error::Io(err.clone()),
+        },
+    }
+}
+
+fn migrate_host_response(response: HostResponse<LegacyErrorDetails>) -> ErrorDetails {
+    ErrorDetails {
+        entity: response.hostname.entity,
+        details: Error::UnexpectedResponse(UnexpectedResponse {
+            command: response.hostname.details,
+            response: response.response,
+        }),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
 pub struct LegacyMessage {
     pub queue_id: QueueId,
@@ -155,7 +242,7 @@ pub struct LegacyMessage {
     pub return_path_lcase: String,
     pub return_path_domain: String,
     pub recipients: Vec<LegacyRecipient>,
-    pub domains: Vec<Domain>,
+    pub domains: Vec<LegacyDomain>,
 
     pub flags: u64,
     pub env_id: Option<String>,
@@ -173,7 +260,35 @@ pub struct LegacyRecipient {
     pub domain_idx: usize,
     pub address: String,
     pub address_lcase: String,
-    pub status: Status<HostResponse<String>, HostResponse<ErrorDetails>>,
+    pub status: Status<HostResponse<String>, HostResponse<LegacyErrorDetails>>,
     pub flags: u64,
     pub orcpt: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+pub struct LegacyDomain {
+    pub domain: String,
+    pub retry: Schedule<u32>,
+    pub notify: Schedule<u32>,
+    pub expires: u64,
+    pub status: Status<(), LegacyError>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+pub enum LegacyError {
+    DnsError(String),
+    UnexpectedResponse(HostResponse<LegacyErrorDetails>),
+    ConnectionError(LegacyErrorDetails),
+    TlsError(LegacyErrorDetails),
+    DaneError(LegacyErrorDetails),
+    MtaStsError(String),
+    RateLimited,
+    ConcurrencyLimited,
+    Io(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+pub struct LegacyErrorDetails {
+    pub entity: String,
+    pub details: String,
 }

@@ -12,7 +12,10 @@ use crate::smtp::{
     session::{TestSession, VerifyResponse},
 };
 use ahash::AHashSet;
-use common::ipc::{QueueEvent, QueueEventStatus};
+use common::{
+    config::smtp::queue::QueueName,
+    ipc::{QueueEvent, QueueEventStatus},
+};
 use smtp::queue::spool::SmtpSpool;
 use store::write::now;
 
@@ -27,12 +30,22 @@ relay = true
 deliver-by = "1h"
 future-release = "1h"
 
-[queue.schedule]
-retry = "[1s, 2s, 3s]"
-notify = [{if = "sender_domain = 'test.org'", then = "[1s, 2s]"},
-           {else = ['15h', '22h']}]
-expire = [{if = "sender_domain = 'test.org'", then = "6s"},
-          {else = '1d'}]
+[queue.schedule.sender-default]
+retry = ["1s", "2s", "3s"]
+notify = ["15h", "22h"]
+expire = "1d"
+queue-name = "default"
+
+[queue.schedule.sender-test]
+retry = ["1s", "2s", "3s"]
+notify = ["1s", "2s"]
+expire = "6s"
+#max-attempts = 3
+queue-name = "default"
+
+[queue.strategy]
+schedule = [{if = "sender_domain == 'test.org'", then = "'sender-test'"},
+           {else = "'sender-default'"}]
 "#;
 
 #[tokio::test]
@@ -59,9 +72,11 @@ async fn queue_retry() {
     // Expect a failed DSN
     attempt.try_deliver(core.clone());
     let message = qr.expect_message().await;
-    assert_eq!(message.return_path, "");
-    assert_eq!(message.domains.first().unwrap().domain, "test.org");
-    assert_eq!(message.recipients.first().unwrap().address, "john@test.org");
+    assert_eq!(message.message.return_path, "");
+    assert_eq!(
+        message.message.recipients.first().unwrap().address,
+        "john@test.org"
+    );
     message
         .read_lines(qr)
         .await
@@ -107,6 +122,7 @@ async fn queue_retry() {
         if events.is_empty() && in_fight.is_empty() {
             break;
         }
+
         for event in events {
             if in_fight.contains(&event.queue_id) {
                 continue;
@@ -115,9 +131,12 @@ async fn queue_retry() {
                 tokio::time::sleep(Duration::from_secs(event.due - now)).await;
             }
 
-            let message = core.read_message(event.queue_id).await.unwrap();
-            if message.return_path.is_empty() {
-                message.clone().remove(&core, event.due).await;
+            let message = core
+                .read_message(event.queue_id, QueueName::default())
+                .await
+                .unwrap();
+            if message.message.return_path.is_empty() {
+                message.clone().remove(&core, event.due.into()).await;
                 dsn.push(message);
             } else {
                 retries.push(event.due.saturating_sub(now));
@@ -178,9 +197,22 @@ async fn queue_retry() {
     let now_ = now();
     let message = qr.expect_message().await;
     assert!([59, 60].contains(&(qr.message_due(message.queue_id).await - now_)));
-    assert!([59, 60].contains(&(message.next_delivery_event() - now_)));
-    assert!([3599, 3600].contains(&(message.domains.first().unwrap().expires - now_)));
-    assert!([54059, 54060].contains(&(message.domains.first().unwrap().notify.due - now_)));
+    assert!([59, 60].contains(&(message.message.next_delivery_event(None).unwrap() - now_)));
+    assert!(
+        [3599, 3600].contains(
+            &(message
+                .message
+                .recipients
+                .first()
+                .unwrap()
+                .expiration_time(message.message.created)
+                .unwrap()
+                - now_)
+        )
+    );
+    assert!(
+        [54059, 54060].contains(&(message.message.recipients.first().unwrap().notify.due - now_))
+    );
 
     // Test DELIVERBY (NOTIFY)
     session
@@ -192,5 +224,7 @@ async fn queue_retry() {
         )
         .await;
     let schedule = qr.expect_message().await;
-    assert!([3599, 3600].contains(&(schedule.domains.first().unwrap().notify.due - now())));
+    assert!(
+        [3599, 3600].contains(&(schedule.message.recipients.first().unwrap().notify.due - now()))
+    );
 }

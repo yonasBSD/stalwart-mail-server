@@ -4,12 +4,16 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{future::Future, sync::atomic::Ordering};
-
+use super::FutureTimestamp;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use common::{Server, auth::AccessToken, ipc::QueueEvent};
-
+use common::{
+    Server,
+    auth::AccessToken,
+    config::smtp::queue::{ArchivedQueueExpiry, QueueExpiry, QueueName},
+    ipc::QueueEvent,
+};
 use directory::{Permission, Type, backend::internal::manage::ManageDirectory};
+use http_proto::{request::decode_path_element, *};
 use hyper::Method;
 use mail_auth::{
     dmarc::URI,
@@ -21,11 +25,12 @@ use serde::{Deserializer, Serializer};
 use serde_json::json;
 use smtp::{
     queue::{
-        self, ArchivedMessage, ArchivedStatus, DisplayArchivedResponse, ErrorDetails, HostResponse,
-        QueueId, Status, spool::SmtpSpool,
+        self, ArchivedMessage, ArchivedStatus, DisplayArchivedResponse, ErrorDetails, QueueId,
+        Status, spool::SmtpSpool,
     },
     reporting::{dmarc::DmarcReporting, tls::TlsReporting},
 };
+use std::{future::Future, sync::atomic::Ordering};
 use store::{
     Deserialize, IterateParams, ValueKey,
     write::{
@@ -35,48 +40,53 @@ use store::{
 use trc::AddContext;
 use utils::url_params::UrlParams;
 
-use super::FutureTimestamp;
-use http_proto::{request::decode_path_element, *};
-
 #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct Message {
     pub id: QueueId,
+
     pub return_path: String,
-    pub domains: Vec<Domain>,
+
+    pub recipients: Vec<Recipient>,
+
     #[serde(deserialize_with = "deserialize_datetime")]
     #[serde(serialize_with = "serialize_datetime")]
     pub created: DateTime,
+
     pub size: u64,
+
     #[serde(skip_serializing_if = "is_zero")]
     #[serde(default)]
     pub priority: i16,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub env_id: Option<String>,
+
     pub blob_hash: String,
-}
-
-#[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
-pub struct Domain {
-    pub name: String,
-    pub status: Status<String, String>,
-    pub recipients: Vec<Recipient>,
-
-    pub retry_num: u32,
-    #[serde(deserialize_with = "deserialize_maybe_datetime")]
-    #[serde(serialize_with = "serialize_maybe_datetime")]
-    pub next_retry: Option<DateTime>,
-    #[serde(deserialize_with = "deserialize_maybe_datetime")]
-    #[serde(serialize_with = "serialize_maybe_datetime")]
-    pub next_notify: Option<DateTime>,
-    #[serde(deserialize_with = "deserialize_datetime")]
-    #[serde(serialize_with = "serialize_datetime")]
-    pub expires: DateTime,
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct Recipient {
     pub address: String,
+
     pub status: Status<String, String>,
+
+    pub retry_num: u32,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "deserialize_maybe_datetime")]
+    #[serde(serialize_with = "serialize_maybe_datetime")]
+    pub next_retry: Option<DateTime>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "deserialize_maybe_datetime")]
+    #[serde(serialize_with = "serialize_maybe_datetime")]
+    pub next_notify: Option<DateTime>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "deserialize_maybe_datetime")]
+    #[serde(serialize_with = "serialize_maybe_datetime")]
+    pub expires: Option<DateTime>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub orcpt: Option<String>,
 }
@@ -194,14 +204,12 @@ impl QueueManagement for Server {
                 // Validate the access token
                 access_token.assert_has_permission(Permission::MessageQueueGet)?;
 
-                if let Some(message_) = self
-                    .read_message_archive(queue_id.parse().unwrap_or_default())
-                    .await?
-                {
+                let queue_id = queue_id.parse().unwrap_or_default();
+                if let Some(message_) = self.read_message_archive(queue_id).await? {
                     let message = message_.unarchive::<queue::Message>()?;
                     if message.is_tenant_domain(&tenant_domains) {
                         return Ok(JsonResponse::new(json!({
-                                "data": Message::from(message),
+                                "data": Message::from_archive(queue_id, message),
                         }))
                         .into_http_response());
                     }
@@ -223,28 +231,30 @@ impl QueueManagement for Server {
                     let server = self.clone();
                     tokio::spawn(async move {
                         for id in result.ids {
-                            if let Some(mut message) = server.read_message(id).await {
-                                let prev_event = message.next_event().unwrap_or_default();
+                            if let Some(mut message) =
+                                server.read_message(id, QueueName::default()).await
+                            {
                                 let mut has_changes = false;
 
-                                for domain in &mut message.domains {
+                                for recipient in &mut message.message.recipients {
                                     if matches!(
-                                        domain.status,
+                                        recipient.status,
                                         Status::Scheduled | Status::TemporaryFailure(_)
                                     ) {
-                                        domain.retry.due = time;
-                                        if domain.expires > time {
-                                            domain.expires = time + 10;
+                                        recipient.retry.due = time;
+                                        if recipient
+                                            .expiration_time(message.message.created)
+                                            .is_some_and(|expires| expires > time)
+                                        {
+                                            recipient.expires =
+                                                QueueExpiry::Count(recipient.retry.inner + 10);
                                         }
                                         has_changes = true;
                                     }
                                 }
 
                                 if has_changes {
-                                    let next_event = message.next_event().unwrap_or_default();
-                                    message
-                                        .save_changes(&server, prev_event.into(), next_event.into())
-                                        .await;
+                                    message.save_changes(&server, None).await;
                                 }
                             }
                         }
@@ -269,7 +279,7 @@ impl QueueManagement for Server {
                 let item = params.get("filter");
 
                 if let Some(mut message) = self
-                    .read_message(queue_id.parse().unwrap_or_default())
+                    .read_message(queue_id.parse().unwrap_or_default(), QueueName::default())
                     .await
                     .filter(|message| {
                         tenant_domains
@@ -277,30 +287,29 @@ impl QueueManagement for Server {
                             .is_none_or(|domains| message.has_domain(domains))
                     })
                 {
-                    let prev_event = message.next_event().unwrap_or_default();
                     let mut found = false;
 
-                    for domain in &mut message.domains {
+                    for recipient in &mut message.message.recipients {
                         if matches!(
-                            domain.status,
+                            recipient.status,
                             Status::Scheduled | Status::TemporaryFailure(_)
                         ) && item
                             .as_ref()
-                            .is_none_or(|item| domain.domain.contains(item))
+                            .is_none_or(|item| recipient.address_lcase.contains(item))
                         {
-                            domain.retry.due = time;
-                            if domain.expires > time {
-                                domain.expires = time + 10;
+                            recipient.retry.due = time;
+                            if recipient
+                                .expiration_time(message.message.created)
+                                .is_some_and(|expires| expires > time)
+                            {
+                                recipient.expires = QueueExpiry::Count(recipient.retry.inner + 10);
                             }
                             found = true;
                         }
                     }
 
                     if found {
-                        let next_event = message.next_event().unwrap_or_default();
-                        message
-                            .save_changes(self, prev_event.into(), next_event.into())
-                            .await;
+                        message.save_changes(self, None).await;
                         let _ = self.inner.ipc.queue_tx.send(QueueEvent::Refresh).await;
                     }
 
@@ -334,9 +343,10 @@ impl QueueManagement for Server {
                         }
 
                         for id in result.ids {
-                            if let Some(message) = server.read_message(id).await {
-                                let prev_event = message.next_event().unwrap_or_default();
-                                message.remove(&server, prev_event).await;
+                            if let Some(message) =
+                                server.read_message(id, QueueName::default()).await
+                            {
+                                message.remove(&server, None).await;
                             }
                         }
 
@@ -361,7 +371,7 @@ impl QueueManagement for Server {
                 access_token.assert_has_permission(Permission::MessageQueueDelete)?;
 
                 if let Some(mut message) = self
-                    .read_message(queue_id.parse().unwrap_or_default())
+                    .read_message(queue_id.parse().unwrap_or_default(), QueueName::default())
                     .await
                     .filter(|message| {
                         tenant_domains
@@ -370,68 +380,32 @@ impl QueueManagement for Server {
                     })
                 {
                     let mut found = false;
-                    let prev_event = message.next_event().unwrap_or_default();
-
                     if let Some(item) = params.get("filter") {
                         // Cancel delivery for all recipients that match
-                        for rcpt in &mut message.recipients {
+                        for rcpt in &mut message.message.recipients {
                             if rcpt.address_lcase.contains(item) {
-                                rcpt.status = Status::PermanentFailure(HostResponse {
-                                    hostname: ErrorDetails::default(),
-                                    response: smtp_proto::Response {
-                                        code: 0,
-                                        esc: [0, 0, 0],
-                                        message: "Delivery canceled.".to_string(),
-                                    },
+                                rcpt.status = Status::PermanentFailure(ErrorDetails {
+                                    entity: "localhost".to_string(),
+                                    details: queue::Error::Io("Delivery canceled.".to_string()),
                                 });
                                 found = true;
                             }
                         }
                         if found {
-                            // Mark as completed domains without any pending deliveries
-                            for (domain_idx, domain) in message.domains.iter_mut().enumerate() {
-                                if matches!(
-                                    domain.status,
-                                    Status::TemporaryFailure(_) | Status::Scheduled
-                                ) {
-                                    let mut total_rcpt = 0;
-                                    let mut total_completed = 0;
-
-                                    for rcpt in &message.recipients {
-                                        if rcpt.domain_idx == domain_idx as u32 {
-                                            total_rcpt += 1;
-                                            if matches!(
-                                                rcpt.status,
-                                                Status::PermanentFailure(_) | Status::Completed(_)
-                                            ) {
-                                                total_completed += 1;
-                                            }
-                                        }
-                                    }
-
-                                    if total_rcpt == total_completed {
-                                        domain.status = Status::Completed(());
-                                    }
-                                }
-                            }
-
                             // Delete message if there are no pending deliveries
-                            if message.domains.iter().any(|domain| {
+                            if message.message.recipients.iter().any(|recipient| {
                                 matches!(
-                                    domain.status,
+                                    recipient.status,
                                     Status::TemporaryFailure(_) | Status::Scheduled
                                 )
                             }) {
-                                let next_event = message.next_event().unwrap_or_default();
-                                message
-                                    .save_changes(self, next_event.into(), prev_event.into())
-                                    .await;
+                                message.save_changes(self, None).await;
                             } else {
-                                message.remove(self, prev_event).await;
+                                message.remove(self, None).await;
                             }
                         }
                     } else {
-                        message.remove(self, prev_event).await;
+                        message.remove(self, None).await;
                         found = true;
                     }
 
@@ -596,26 +570,27 @@ impl QueueManagement for Server {
     }
 }
 
-impl From<&ArchivedMessage> for Message {
-    fn from(message: &ArchivedMessage) -> Self {
+impl Message {
+    fn from_archive(id: u64, message: &ArchivedMessage) -> Self {
         let now = now();
 
         Message {
-            id: message.queue_id.into(),
+            id,
             return_path: message.return_path.to_string(),
             created: DateTime::from_timestamp(u64::from(message.created) as i64),
             size: message.size.into(),
             priority: message.priority.into(),
             env_id: message.env_id.as_ref().map(|id| id.to_string()),
-            domains: message
-                .domains
+            recipients: message
+                .recipients
                 .iter()
-                .enumerate()
-                .map(|(idx, domain)| Domain {
-                    name: domain.domain.to_string(),
-                    status: match &domain.status {
+                .map(|rcpt| Recipient {
+                    address: rcpt.address.to_string(),
+                    status: match &rcpt.status {
                         ArchivedStatus::Scheduled => Status::Scheduled,
-                        ArchivedStatus::Completed(_) => Status::Completed(String::new()),
+                        ArchivedStatus::Completed(status) => {
+                            Status::Completed(status.response.to_string())
+                        }
                         ArchivedStatus::TemporaryFailure(status) => {
                             Status::TemporaryFailure(status.to_string())
                         }
@@ -623,37 +598,22 @@ impl From<&ArchivedMessage> for Message {
                             Status::PermanentFailure(status.to_string())
                         }
                     },
-                    retry_num: domain.retry.inner.into(),
-                    next_retry: Some(DateTime::from_timestamp(u64::from(domain.retry.due) as i64)),
-                    next_notify: if domain.notify.due > now {
-                        DateTime::from_timestamp(u64::from(domain.notify.due) as i64).into()
+                    retry_num: rcpt.retry.inner.into(),
+                    next_retry: Some(DateTime::from_timestamp(u64::from(rcpt.retry.due) as i64)),
+                    next_notify: if rcpt.notify.due > now {
+                        DateTime::from_timestamp(u64::from(rcpt.notify.due) as i64).into()
                     } else {
                         None
                     },
-                    recipients: message
-                        .recipients
-                        .iter()
-                        .filter(|rcpt| u32::from(rcpt.domain_idx) == idx as u32)
-                        .map(|rcpt| Recipient {
-                            address: rcpt.address.to_string(),
-                            status: match &rcpt.status {
-                                ArchivedStatus::Scheduled => Status::Scheduled,
-                                ArchivedStatus::Completed(status) => {
-                                    Status::Completed(status.response.to_string())
-                                }
-                                ArchivedStatus::TemporaryFailure(status) => {
-                                    Status::TemporaryFailure(status.response.to_string())
-                                }
-                                ArchivedStatus::PermanentFailure(status) => {
-                                    Status::PermanentFailure(status.response.to_string())
-                                }
-                            },
-                            orcpt: rcpt.orcpt.as_ref().map(|orcpt| orcpt.to_string()),
-                        })
-                        .collect(),
-                    expires: DateTime::from_timestamp(u64::from(domain.expires) as i64),
+                    expires: if let ArchivedQueueExpiry::Duration(time) = &rcpt.expires {
+                        DateTime::from_timestamp((u64::from(*time) + message.created) as i64).into()
+                    } else {
+                        None
+                    },
+                    orcpt: rcpt.orcpt.as_ref().map(|orcpt| orcpt.to_string()),
                 })
                 .collect(),
+
             blob_hash: URL_SAFE_NO_PAD.encode::<&[u8]>(message.blob_hash.0.as_slice()),
         }
     }
@@ -744,10 +704,11 @@ async fn fetch_queued_messages(
                 if matches {
                     if offset == 0 {
                         if limit == 0 || total_returned < limit {
+                            let queue_id = key.deserialize_be_u64(0)?;
                             if values {
-                                result.values.push(Message::from(message));
+                                result.values.push(Message::from_archive(queue_id, message));
                             } else {
-                                result.ids.push(key.deserialize_be_u64(0)?);
+                                result.ids.push(queue_id);
                             }
                             total_returned += 1;
                         }

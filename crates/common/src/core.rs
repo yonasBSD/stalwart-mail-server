@@ -9,7 +9,10 @@ use crate::{
     auth::{AccessToken, ResourceToken, TenantInfo},
     config::smtp::{
         auth::{ArcSealer, DkimSigner, LazySignature, ResolvedSignature, build_signature},
-        queue::RelayHost,
+        queue::{
+            ConnectionStrategy, DEFAULT_QUEUE_NAME, GatewayStrategy, MxConfig, QueueExpiry,
+            QueueName, QueueStrategy, RequireOptional, TlsStrategy, VirtualQueue,
+        },
     },
     ipc::{BroadcastEvent, StateEvent},
 };
@@ -21,8 +24,12 @@ use jmap_proto::types::{
     state::StateChange,
     type_state::DataType,
 };
+use mail_auth::IpLookupStrategy;
 use sieve::Sieve;
-use std::sync::Arc;
+use std::{
+    sync::{Arc, LazyLock},
+    time::Duration,
+};
 use store::{
     BitmapKey, BlobClass, BlobStore, Deserialize, FtsStore, InMemoryStore, IndexKey, IterateParams,
     Key, LogKey, SUBSPACE_LOGS, SerializeInfallible, Store, U32_LEN, U64_LEN, ValueKey,
@@ -183,16 +190,149 @@ impl Server {
         })
     }
 
-    pub fn get_relay_host(&self, name: &str, session_id: u64) -> Option<&RelayHost> {
-        self.core.smtp.queue.relay_hosts.get(name).or_else(|| {
-            trc::event!(
-                Smtp(trc::SmtpEvent::RemoteIdNotFound),
-                Id = name.to_string(),
-                SpanId = session_id,
-            );
+    pub fn get_gateway_or_default(&self, name: &str, session_id: u64) -> &GatewayStrategy {
+        static LOCAL_GATEWAY: GatewayStrategy = GatewayStrategy::Local;
+        static MX_GATEWAY: GatewayStrategy = GatewayStrategy::Mx(MxConfig {
+            max_mx: 5,
+            max_multi_homed: 2,
+            ip_lookup_strategy: IpLookupStrategy::Ipv4thenIpv6,
+        });
+        self.core
+            .smtp
+            .queue
+            .gateway_strategy
+            .get(name)
+            .unwrap_or_else(|| match name {
+                "local" => &LOCAL_GATEWAY,
+                "mx" => &MX_GATEWAY,
+                _ => {
+                    trc::event!(
+                        Smtp(trc::SmtpEvent::IdNotFound),
+                        Id = name.to_string(),
+                        Details = "Gateway not found",
+                        SpanId = session_id,
+                    );
+                    &MX_GATEWAY
+                }
+            })
+    }
 
-            None
-        })
+    pub fn get_virtual_queue_or_default(&self, name: &QueueName, session_id: u64) -> &VirtualQueue {
+        static DEFAULT_QUEUE: VirtualQueue = VirtualQueue { threads: 25 };
+        self.core
+            .smtp
+            .queue
+            .virtual_queues
+            .get(name)
+            .unwrap_or_else(|| {
+                if name != &DEFAULT_QUEUE_NAME {
+                    trc::event!(
+                        Smtp(trc::SmtpEvent::IdNotFound),
+                        Id = name.to_string(),
+                        Details = "Virtual queue not found",
+                        SpanId = session_id,
+                    );
+                }
+
+                &DEFAULT_QUEUE
+            })
+    }
+
+    pub fn get_queue_or_default(&self, name: &str, session_id: u64) -> &QueueStrategy {
+        static DEFAULT_SCHEDULE: LazyLock<QueueStrategy> = LazyLock::new(|| QueueStrategy {
+            retry: vec![
+                120,  // 2 minutes
+                300,  // 5 minutes
+                600,  // 10 minutes
+                900,  // 15 minutes
+                1800, // 30 minutes
+                3600, // 1 hour
+                7200, // 2 hours
+            ],
+            notify: vec![
+                86400,  // 1 day
+                259200, // 3 days
+            ],
+            expiry: QueueExpiry::Duration(432000), // 5 days
+            virtual_queue: QueueName::default(),
+        });
+        self.core
+            .smtp
+            .queue
+            .queue_strategy
+            .get(name)
+            .unwrap_or_else(|| {
+                if name != "default" {
+                    trc::event!(
+                        Smtp(trc::SmtpEvent::IdNotFound),
+                        Id = name.to_string(),
+                        Details = "Queue strategy not found",
+                        SpanId = session_id,
+                    );
+                }
+
+                &DEFAULT_SCHEDULE
+            })
+    }
+
+    pub fn get_tls_or_default(&self, name: &str, session_id: u64) -> &TlsStrategy {
+        static DEFAULT_TLS: TlsStrategy = TlsStrategy {
+            dane: RequireOptional::Optional,
+            mta_sts: RequireOptional::Optional,
+            tls: RequireOptional::Optional,
+            allow_invalid_certs: false,
+            timeout_tls: Duration::from_secs(3 * 60),
+            timeout_mta_sts: Duration::from_secs(5 * 60),
+        };
+        self.core
+            .smtp
+            .queue
+            .tls_strategy
+            .get(name)
+            .unwrap_or_else(|| {
+                if name != "default" {
+                    trc::event!(
+                        Smtp(trc::SmtpEvent::IdNotFound),
+                        Id = name.to_string(),
+                        Details = "TLS strategy not found",
+                        SpanId = session_id,
+                    );
+                }
+
+                &DEFAULT_TLS
+            })
+    }
+
+    pub fn get_connection_or_default(&self, name: &str, session_id: u64) -> &ConnectionStrategy {
+        static DEFAULT_CONNECTION: ConnectionStrategy = ConnectionStrategy {
+            source_ipv4: Vec::new(),
+            source_ipv6: Vec::new(),
+            ehlo_hostname: None,
+            timeout_connect: Duration::from_secs(5 * 60),
+            timeout_greeting: Duration::from_secs(5 * 60),
+            timeout_ehlo: Duration::from_secs(5 * 60),
+            timeout_mail: Duration::from_secs(5 * 60),
+            timeout_rcpt: Duration::from_secs(5 * 60),
+            timeout_data: Duration::from_secs(10 * 60),
+        };
+
+        self.core
+            .smtp
+            .queue
+            .connection_strategy
+            .get(name)
+            .unwrap_or_else(|| {
+                if name != "default" {
+                    trc::event!(
+                        Smtp(trc::SmtpEvent::IdNotFound),
+                        Id = name.to_string(),
+                        Details = "Connection strategy not found",
+                        SpanId = session_id,
+                    );
+                }
+
+                &DEFAULT_CONNECTION
+            })
     }
 
     pub async fn get_used_quota(&self, account_id: u32) -> trc::Result<i64> {

@@ -175,11 +175,7 @@ impl Tracers {
         // Parse tracers
         let mut tracers: Vec<TelemetrySubscriber> = Vec::new();
         let mut global_interests = Interests::default();
-        for tracer_id in config
-            .sub_keys("tracer", ".type")
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>()
-        {
+        for tracer_id in config.sub_keys("tracer", ".type") {
             let id = tracer_id.as_str();
 
             // Skip disabled tracers
@@ -546,11 +542,7 @@ impl Tracers {
         }
 
         // Parse webhooks
-        for id in config
-            .sub_keys("webhook", ".url")
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>()
-        {
+        for id in config.sub_keys("webhook", ".url") {
             if let Some(webhook) = parse_webhook(config, &id, &mut global_interests) {
                 tracers.push(webhook);
             }
@@ -599,6 +591,7 @@ impl Metrics {
 
         // Obtain log path
         for tracer_id in config.sub_keys("tracer", ".type") {
+            let tracer_id = tracer_id.as_str();
             if config
                 .value(("tracer", tracer_id, "enable"))
                 .unwrap_or("true")
