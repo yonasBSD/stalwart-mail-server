@@ -4,6 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use dav_proto::Depth;
+use hyper::StatusCode;
+
 use super::WebDavTest;
 
 pub async fn test(test: &WebDavTest) {
@@ -42,6 +45,30 @@ pub async fn test(test: &WebDavTest) {
             "D:multistatus.D:response.D:href",
             ["/dav/cal/", "/dav/cal/jane/", "/dav/cal/support/"],
         );
+
+    // Test 404 responses
+    jane.sync_collection(
+        "/dav/cal/jane/default/",
+        "",
+        Depth::Infinity,
+        None,
+        ["D:getetag"],
+    )
+    .await;
+    jane.sync_collection(
+        "/dav/cal/jane/test-404/",
+        "",
+        Depth::Infinity,
+        None,
+        ["D:getetag"],
+    )
+    .await;
+    jane.request("PROPFIND", "/dav/cal/jane/default/", "")
+        .await
+        .with_status(StatusCode::MULTI_STATUS);
+    jane.request("PROPFIND", "/dav/cal/jane/test-404/", "")
+        .await
+        .with_status(StatusCode::NOT_FOUND);
 
     john.delete_default_containers().await;
     jane.delete_default_containers().await;

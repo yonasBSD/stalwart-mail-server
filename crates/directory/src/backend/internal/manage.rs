@@ -50,6 +50,7 @@ pub struct ChangedPrincipals(AHashMap<u32, ChangedPrincipal>);
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct ChangedPrincipal {
     pub typ: Type,
+    pub name_change: bool,
     pub member_change: bool,
 }
 
@@ -2538,7 +2539,8 @@ impl ChangedPrincipals {
                         PrincipalField::EnabledPermissions | PrincipalField::DisabledPermissions,
                         Type::Role | Type::Tenant
                     )
-                ));
+                ))
+                .update_name_change(matches!(field, PrincipalField::Name));
         }
     }
 
@@ -2615,13 +2617,18 @@ impl ChangedPrincipal {
         Self {
             typ,
             member_change: false,
+            name_change: false,
         }
     }
 
-    pub fn update_member_change(&mut self, member_change: bool) {
-        if !self.member_change && member_change {
-            self.member_change = true;
-        }
+    pub fn update_member_change(&mut self, member_change: bool) -> &mut Self {
+        self.member_change |= member_change;
+        self
+    }
+
+    pub fn update_name_change(&mut self, name_change: bool) -> &mut Self {
+        self.name_change |= name_change;
+        self
     }
 }
 

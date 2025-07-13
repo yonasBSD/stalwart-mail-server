@@ -4,6 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use super::{AccessToken, ResourceToken, TenantInfo, roles::RolePermissions};
+use crate::{
+    Server,
+    ipc::BroadcastEvent,
+    listener::limiter::{ConcurrencyLimiter, LimiterResult},
+};
 use ahash::AHashSet;
 use directory::{
     Permission, Principal, PrincipalData, QueryBy, Type,
@@ -20,19 +26,12 @@ use std::{
     hash::{DefaultHasher, Hash, Hasher},
     sync::Arc,
 };
-use store::{dispatch::lookup::KeyValue, query::acl::AclQuery};
+use store::{query::acl::AclQuery, rand};
 use trc::AddContext;
 use utils::map::{
     bitmap::{Bitmap, BitmapItem},
     vec_map::VecMap,
 };
-
-use crate::{
-    KV_TOKEN_REVISION, Server,
-    listener::limiter::{ConcurrencyLimiter, LimiterResult},
-};
-
-use super::{AccessToken, ResourceToken, TenantInfo, roles::RolePermissions};
 
 pub enum PrincipalOrId {
     Principal(Principal),
@@ -209,7 +208,6 @@ impl Server {
 
         // Obtain current revision
         let principal_id = principal.id();
-        let revision = self.fetch_token_revision(principal_id).await;
 
         match self
             .inner
@@ -218,32 +216,9 @@ impl Server {
             .get_value_or_guard_async(&principal_id)
             .await
         {
-            Ok(token) => {
-                if revision == Some(token.revision) {
-                    Ok(token)
-                } else {
-                    let revision = revision.unwrap_or(u64::MAX);
-                    let token: Arc<AccessToken> = match principal {
-                        PrincipalOrId::Principal(principal) => {
-                            self.build_access_token_from_principal(principal, revision)
-                                .await?
-                        }
-                        PrincipalOrId::Id(account_id) => {
-                            self.build_access_token(account_id, revision).await?
-                        }
-                    }
-                    .into();
-
-                    self.inner
-                        .cache
-                        .access_tokens
-                        .insert(token.primary_id(), token.clone());
-
-                    Ok(token)
-                }
-            }
+            Ok(token) => Ok(token),
             Err(guard) => {
-                let revision = revision.unwrap_or(u64::MAX);
+                let revision = rand::random::<u64>();
                 let token: Arc<AccessToken> = match principal {
                     PrincipalOrId::Principal(principal) => {
                         self.build_access_token_from_principal(principal, revision)
@@ -260,11 +235,21 @@ impl Server {
         }
     }
 
-    pub async fn increment_token_revision(&self, changed_principals: ChangedPrincipals) {
+    pub async fn invalidate_principal_caches(&self, changed_principals: ChangedPrincipals) {
         let mut nested_principals = Vec::new();
+        let mut changed_ids = AHashSet::new();
+        let mut changed_names = Vec::new();
 
         for (id, changed_principal) in changed_principals.iter() {
-            self.increment_revision(*id).await;
+            changed_ids.insert(*id);
+
+            if changed_principal.name_change {
+                self.inner.cache.files.remove(id);
+                self.inner.cache.contacts.remove(id);
+                self.inner.cache.events.remove(id);
+                self.inner.cache.scheduling.remove(id);
+                changed_names.push(*id);
+            }
 
             if changed_principal.member_change {
                 if changed_principal.typ == Type::Tenant {
@@ -282,9 +267,7 @@ impl Server {
                     {
                         Ok(principals) => {
                             for principal in principals.items {
-                                if !changed_principals.contains(principal.id()) {
-                                    self.increment_revision(principal.id()).await;
-                                }
+                                changed_ids.insert(principal.id());
                             }
                         }
                         Err(err) => {
@@ -302,20 +285,14 @@ impl Server {
         }
 
         if !nested_principals.is_empty() {
-            let mut fetched_ids = AHashSet::new();
             let mut ids = nested_principals.into_iter();
             let mut ids_stack = vec![];
 
             loop {
                 if let Some(id) = ids.next() {
                     // Skip if already fetched
-                    if !fetched_ids.insert(id) {
+                    if !changed_ids.insert(id) {
                         continue;
-                    }
-
-                    // Increment revision
-                    if !changed_principals.contains(id) {
-                        self.increment_revision(id).await;
                     }
 
                     // Obtain principal
@@ -339,41 +316,23 @@ impl Server {
                 }
             }
         }
-    }
 
-    async fn increment_revision(&self, id: u32) {
-        if let Err(err) = self
-            .in_memory_store()
-            .counter_incr(
-                KeyValue::with_prefix(KV_TOKEN_REVISION, id.to_be_bytes(), 1).expires(30 * 86400),
-                false,
-            )
-            .await
-        {
-            trc::error!(
-                err.details("Failed to increment principal revision")
-                    .account_id(id)
-            );
-        }
-    }
-
-    pub async fn fetch_token_revision(&self, id: u32) -> Option<u64> {
-        match self
-            .in_memory_store()
-            .counter_get(KeyValue::<()>::build_key(
-                KV_TOKEN_REVISION,
-                id.to_be_bytes(),
-            ))
-            .await
-        {
-            Ok(revision) => (revision as u64).into(),
-            Err(err) => {
-                trc::error!(
-                    err.details("Failed to obtain principal revision")
-                        .account_id(id)
-                );
-                None
+        // Invalidate access tokens in cluster
+        if !changed_ids.is_empty() {
+            let mut ids = Vec::with_capacity(changed_ids.len());
+            for id in changed_ids {
+                self.inner.cache.permissions.remove(&id);
+                self.inner.cache.access_tokens.remove(&id);
+                ids.push(id);
             }
+            self.cluster_broadcast(BroadcastEvent::InvalidateAccessTokens(ids))
+                .await;
+        }
+
+        // Invalidate DAV caches
+        if !changed_names.is_empty() {
+            self.cluster_broadcast(BroadcastEvent::InvalidateDavCache(changed_names))
+                .await;
         }
     }
 }

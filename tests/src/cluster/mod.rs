@@ -6,6 +6,7 @@
 
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
+use ahash::AHashMap;
 use common::{
     Caches, Core, Data, Inner, Server,
     config::{
@@ -52,6 +53,7 @@ pub async fn cluster_tests() {
 #[allow(dead_code)]
 pub struct ClusterTest {
     servers: Vec<Server>,
+    account_ids: AHashMap<String, u32>,
     shutdown_txs: Vec<watch::Sender<bool>>,
 }
 
@@ -107,15 +109,18 @@ async fn init_cluster_tests(delete_if_exists: bool) -> ClusterTest {
     }
 
     // Create test users
+    let mut account_ids = AHashMap::new();
     for (account, secret, name, email) in TEST_USERS {
-        let _account_id = store
+        let account_id = store
             .create_test_user(account, secret, name, &[email])
             .await;
+        account_ids.insert(account.to_string(), account_id);
     }
 
     ClusterTest {
         servers,
         shutdown_txs,
+        account_ids,
     }
 }
 
@@ -141,6 +146,13 @@ impl ClusterTest {
         self.servers
             .get(node_id)
             .unwrap_or_else(|| panic!("No server found for node ID: {}", node_id))
+    }
+
+    pub fn account_id(&self, login: &str) -> u32 {
+        self.account_ids
+            .get(login)
+            .cloned()
+            .unwrap_or_else(|| panic!("No account ID found for login: {}", login))
     }
 }
 
@@ -246,6 +258,7 @@ url = "'https://127.0.0.1:800{NODE_ID}'"
 
 [cluster]
 node-id = {NODE_ID}
+coordinator = "{PUBSUB}"
 
 [server.listener.http]
 bind = ["127.0.0.1:1800{NODE_ID}"]
@@ -323,7 +336,6 @@ fts = "{STORE}"
 blob = "{STORE}"
 lookup = "{STORE}"
 directory = "{STORE}"
-pubsub = "{PUBSUB}"
 
 [directory."{STORE}"]
 type = "internal"

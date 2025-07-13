@@ -5,7 +5,6 @@
  */
 
 use crate::{
-    DavResourceName, RFC_3986,
     cache::calcard::{build_scheduling_resources, path_from_scheduling, resource_from_scheduling},
     calendar::{Calendar, CalendarEvent, CalendarPreferences},
     contact::{AddressBook, ContactCard},
@@ -17,7 +16,6 @@ use calcard::{
     resource_from_calendar, resource_from_card, resource_from_event,
 };
 use common::{CacheSwap, DavResource, DavResources, Server, auth::AccessToken};
-use directory::backend::internal::manage::ManageDirectory;
 use file::{build_file_resources, build_nested_hierarchy, resource_from_file};
 use jmap_proto::types::collection::{Collection, SyncCollection};
 use std::{sync::Arc, time::Instant};
@@ -179,27 +177,6 @@ impl GroupwareCache for Server {
             return Ok(cache);
         }
 
-        // Build base path
-        let base_path = if access_token.primary_id() == account_id {
-            format!(
-                "{}/{}/",
-                DavResourceName::from(collection).base_path(),
-                percent_encoding::utf8_percent_encode(&access_token.name, RFC_3986)
-            )
-        } else {
-            let name = self
-                .store()
-                .get_principal_name(account_id)
-                .await
-                .caused_by(trc::location!())?
-                .unwrap_or_else(|| format!("_{account_id}"));
-            format!(
-                "{}/{}/",
-                DavResourceName::from(collection).base_path(),
-                percent_encoding::utf8_percent_encode(&name, RFC_3986)
-            )
-        };
-
         let num_changes = changes.changes.len();
         let cache = if !matches!(collection, SyncCollection::CalendarScheduling) {
             let mut updated_resources = AHashMap::with_capacity(8);
@@ -244,7 +221,7 @@ impl GroupwareCache for Server {
 
             if rebuild_hierarchy {
                 let mut cache = DavResources {
-                    base_path,
+                    base_path: cache.base_path.clone(),
                     paths: Default::default(),
                     resources,
                     item_change_id: changes.item_change_id.unwrap_or(cache.item_change_id),
@@ -264,7 +241,7 @@ impl GroupwareCache for Server {
                 cache
             } else {
                 DavResources {
-                    base_path,
+                    base_path: cache.base_path.clone(),
                     paths: cache.paths.clone(),
                     resources,
                     item_change_id: changes.item_change_id.unwrap_or(cache.item_change_id),
@@ -307,7 +284,7 @@ impl GroupwareCache for Server {
             }
 
             DavResources {
-                base_path,
+                base_path: cache.base_path.clone(),
                 paths,
                 resources,
                 item_change_id: changes.item_change_id.unwrap_or(cache.item_change_id),

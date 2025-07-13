@@ -161,7 +161,7 @@ impl Server {
             }
         }
 
-        self.increment_token_revision(changed_principals).await;
+        self.invalidate_principal_caches(changed_principals).await;
     }
 
     pub async fn refresh_archived_acls(
@@ -204,7 +204,7 @@ impl Server {
             }
         }
 
-        self.increment_token_revision(changed_principals).await;
+        self.invalidate_principal_caches(changed_principals).await;
     }
 
     pub async fn map_acl_set(&self, acl_set: Vec<Value>) -> Result<Vec<AclGrant>, SetError> {

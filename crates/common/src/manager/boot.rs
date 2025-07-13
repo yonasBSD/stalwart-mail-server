@@ -470,7 +470,7 @@ impl BootManager {
                     core.network.asn_geo_lookup,
                     AsnGeoLookupConfig::Resource { .. }
                 );
-                let (ipc, ipc_rxs) = build_ipc(!core.storage.pubsub.is_none());
+                let (ipc, ipc_rxs) = build_ipc(core.storage.pubsub.is_none());
                 let inner = Arc::new(Inner {
                     shared_core: ArcSwap::from_pointee(core),
                     data,

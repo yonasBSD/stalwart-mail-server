@@ -181,7 +181,7 @@ impl PrincipalManager for Server {
                 }
 
                 // Increment revision
-                self.increment_token_revision(result.changed_principals)
+                self.invalidate_principal_caches(result.changed_principals)
                     .await;
 
                 Ok(JsonResponse::new(json!({
@@ -390,7 +390,7 @@ impl PrincipalManager for Server {
                             {
                                 Ok(changed_principals) => {
                                     // Increment revision
-                                    server.increment_token_revision(changed_principals).await;
+                                    server.invalidate_principal_caches(changed_principals).await;
                                 }
                                 Err(err) => {
                                     trc::error!(err.details("Failed to delete principal"));
@@ -539,7 +539,7 @@ impl PrincipalManager for Server {
                         }
 
                         // Increment revision
-                        self.increment_token_revision(changed_principals).await;
+                        self.invalidate_principal_caches(changed_principals).await;
 
                         Ok(JsonResponse::new(json!({
                             "data": (),
@@ -669,7 +669,7 @@ impl PrincipalManager for Server {
                             .await?;
 
                         // Increment revision
-                        self.increment_token_revision(changed_principals).await;
+                        self.invalidate_principal_caches(changed_principals).await;
 
                         Ok(JsonResponse::new(json!({
                             "data": (),
@@ -770,7 +770,7 @@ impl PrincipalManager for Server {
                         .await?;
 
                     // Increment revision
-                    self.increment_token_revision(ChangedPrincipals::from_change(
+                    self.invalidate_principal_caches(ChangedPrincipals::from_change(
                         access_token.primary_id(),
                         Type::Individual,
                         PrincipalField::Secrets,
@@ -841,7 +841,7 @@ impl PrincipalManager for Server {
             .await?;
 
         // Increment revision
-        self.increment_token_revision(changed_principals).await;
+        self.invalidate_principal_caches(changed_principals).await;
 
         Ok(JsonResponse::new(json!({
             "data": (),

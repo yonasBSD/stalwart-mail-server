@@ -70,6 +70,8 @@ pub enum StateEvent {
 #[derive(Debug)]
 pub enum BroadcastEvent {
     StateChange(StateChange),
+    InvalidateAccessTokens(Vec<u32>),
+    InvalidateDavCache(Vec<u32>),
     ReloadSettings,
     ReloadBlockedIps,
 }
