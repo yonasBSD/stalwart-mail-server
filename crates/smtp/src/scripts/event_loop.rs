@@ -4,10 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, future::Future, sync::Arc, time::Instant};
-
+use crate::{
+    inbound::DkimSign,
+    queue::{MessageSource, quota::HasQueueQuota, spool::SmtpSpool},
+};
 use common::{Server, config::smtp::queue::QueueExpiry, scripts::plugins::PluginContext};
-
 use mail_auth::common::headers::HeaderWriter;
 use mail_parser::{Encoding, Message, MessagePart, PartType};
 use sieve::{
@@ -18,12 +19,8 @@ use smtp_proto::{
     MAIL_BY_TRACE, MAIL_RET_FULL, MAIL_RET_HDRS, RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE,
     RCPT_NOTIFY_NEVER, RCPT_NOTIFY_SUCCESS,
 };
+use std::{borrow::Cow, future::Future, sync::Arc, time::Instant};
 use trc::SieveEvent;
-
-use crate::{
-    inbound::DkimSign,
-    queue::{DomainPart, MessageSource, quota::HasQueueQuota, spool::SmtpSpool},
-};
 
 use super::{ScriptModification, ScriptParameters, ScriptResult};
 
@@ -161,14 +158,8 @@ impl RunScript for Server {
                         message_id,
                     } => {
                         // Build message
-                        let return_path_lcase = params.return_path.to_lowercase();
-                        let return_path_domain = return_path_lcase.domain_part().to_string();
-                        let mut message = self.new_message(
-                            params.return_path.clone(),
-                            return_path_lcase,
-                            return_path_domain,
-                            session_id,
-                        );
+                        let mut message =
+                            self.new_message(params.return_path.to_lowercase(), session_id);
                         match recipient {
                             Recipient::Address(rcpt) => {
                                 message.add_recipient(rcpt, self).await;
@@ -331,12 +322,12 @@ impl RunScript for Server {
                                     Sieve(SieveEvent::QuotaExceeded),
                                     SpanId = session_id,
                                     Id = script_id.clone(),
-                                    From = message.message.return_path_lcase,
+                                    From = message.message.return_path,
                                     To = message
                                         .message
                                         .recipients
                                         .into_iter()
-                                        .map(|r| trc::Value::from(r.address_lcase))
+                                        .map(|r| trc::Value::from(r.address))
                                         .collect::<Vec<_>>(),
                                 );
                             }

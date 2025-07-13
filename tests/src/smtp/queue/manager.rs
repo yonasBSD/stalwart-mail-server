@@ -171,8 +171,6 @@ pub fn new_message(queue_id: u64) -> MessageWrapper {
             size: 0,
             created: now(),
             return_path: "sender@foobar.org".into(),
-            return_path_lcase: "".into(),
-            return_path_domain: "foobar.org".into(),
             recipients: vec![],
             flags: 0,
             env_id: None,
@@ -222,14 +220,14 @@ impl TestMessage for Message {
     fn rcpt(&self, name: &str) -> &Recipient {
         self.recipients
             .iter()
-            .find(|d| d.address_lcase == name)
+            .find(|d| d.address == name)
             .unwrap_or_else(|| panic!("Expected rcpt {name} not found in {:?}", self.recipients))
     }
 
     fn rcpt_mut(&mut self, name: &str) -> &mut Recipient {
         self.recipients
             .iter_mut()
-            .find(|d| d.address_lcase == name)
+            .find(|d| d.address == name)
             .unwrap()
     }
 }

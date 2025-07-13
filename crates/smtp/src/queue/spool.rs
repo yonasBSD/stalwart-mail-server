@@ -39,13 +39,7 @@ pub struct QueuedMessages {
 }
 
 pub trait SmtpSpool: Sync + Send {
-    fn new_message(
-        &self,
-        return_path: impl Into<String>,
-        return_path_lcase: impl Into<String>,
-        return_path_domain: impl Into<String>,
-        span_id: u64,
-    ) -> MessageWrapper;
+    fn new_message(&self, return_path: impl Into<String>, span_id: u64) -> MessageWrapper;
 
     fn next_event(&self, queue: &mut Queue) -> impl Future<Output = QueuedMessages> + Send;
 
@@ -74,13 +68,7 @@ pub trait SmtpSpool: Sync + Send {
 }
 
 impl SmtpSpool for Server {
-    fn new_message(
-        &self,
-        return_path: impl Into<String>,
-        return_path_lcase: impl Into<String>,
-        return_path_domain: impl Into<String>,
-        span_id: u64,
-    ) -> MessageWrapper {
+    fn new_message(&self, return_path: impl Into<String>, span_id: u64) -> MessageWrapper {
         let created = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs());
@@ -93,8 +81,6 @@ impl SmtpSpool for Server {
             message: Message {
                 created,
                 return_path: return_path.into(),
-                return_path_lcase: return_path_lcase.into(),
-                return_path_domain: return_path_domain.into(),
                 recipients: Vec::with_capacity(1),
                 flags: 0,
                 env_id: None,
@@ -389,7 +375,7 @@ impl MessageWrapper {
                 .message
                 .recipients
                 .iter()
-                .map(|r| trc::Value::String(r.address_lcase.as_str().into()))
+                .map(|r| trc::Value::String(r.address.as_str().into()))
                 .collect::<Vec<_>>(),
             Size = self.message.size,
             NextRetry = self
@@ -492,16 +478,10 @@ impl MessageWrapper {
         true
     }
 
-    pub async fn add_recipient_parts(
-        &mut self,
-        rcpt: impl Into<String>,
-        rcpt_lcase: impl Into<String>,
-        server: &Server,
-    ) {
+    pub async fn add_recipient_parts(&mut self, rcpt: impl Into<String>, server: &Server) {
         // Resolve queue
         self.message.recipients.push(Recipient {
             address: rcpt.into(),
-            address_lcase: rcpt_lcase.into(),
             status: Status::Scheduled,
             flags: 0,
             orcpt: None,
@@ -530,10 +510,9 @@ impl MessageWrapper {
         recipient.queue = queue.virtual_queue;
     }
 
-    pub async fn add_recipient(&mut self, rcpt: impl Into<String>, server: &Server) {
-        let rcpt = rcpt.into();
-        let rcpt_lcase = rcpt.to_lowercase();
-        self.add_recipient_parts(rcpt, rcpt_lcase, server).await;
+    pub async fn add_recipient(&mut self, rcpt: impl AsRef<str>, server: &Server) {
+        let rcpt = rcpt.as_ref().to_lowercase();
+        self.add_recipient_parts(rcpt, server).await;
     }
 
     pub async fn save_changes(mut self, server: &Server, prev_event: Option<u64>) -> bool {
@@ -691,7 +670,7 @@ impl MessageWrapper {
 
     pub fn has_domain(&self, domains: &[String]) -> bool {
         self.message.recipients.iter().any(|r| {
-            let domain = r.address_lcase.domain_part();
+            let domain = r.address.domain_part();
             domains.iter().any(|dd| dd == domain)
         }) || self
             .message
@@ -704,7 +683,7 @@ impl MessageWrapper {
 impl ArchivedMessage {
     pub fn has_domain(&self, domains: &[String]) -> bool {
         self.recipients.iter().any(|r| {
-            let domain = r.address_lcase.domain_part();
+            let domain = r.address.domain_part();
             domains.iter().any(|dd| dd == domain)
         }) || self
             .return_path
@@ -712,22 +691,22 @@ impl ArchivedMessage {
             .is_some_and(|(_, domain)| domains.iter().any(|dd| dd == domain))
     }
 
-    pub fn next_delivery_event(&self) -> u64 {
-        let mut next_delivery = now();
+    pub fn next_delivery_event(&self, queue: Option<QueueName>) -> Option<u64> {
+        let mut next_delivery = None;
 
-        for (pos, rcpt) in self
-            .recipients
-            .iter()
-            .filter(|d| {
-                matches!(
-                    d.status,
-                    ArchivedStatus::Scheduled | ArchivedStatus::TemporaryFailure(_)
-                )
-            })
-            .enumerate()
-        {
-            if pos == 0 || rcpt.retry.due < next_delivery {
-                next_delivery = rcpt.retry.due.into();
+        for rcpt in self.recipients.iter().filter(|d| {
+            matches!(
+                d.status,
+                ArchivedStatus::Scheduled | ArchivedStatus::TemporaryFailure(_)
+            ) && queue.is_none_or(|q| d.queue == q)
+        }) {
+            let retry_due = rcpt.retry.due.to_native();
+            if let Some(next_delivery) = &mut next_delivery {
+                if retry_due < *next_delivery {
+                    *next_delivery = retry_due;
+                }
+            } else {
+                next_delivery = Some(retry_due);
             }
         }
 

@@ -34,6 +34,7 @@ use utils::config::{Config, utils::ParseValue};
     rkyv::Archive,
     serde::Deserialize,
 )]
+#[rkyv(derive(Debug, Clone, Copy, PartialEq), compare(PartialEq))]
 #[repr(transparent)]
 pub struct QueueName([u8; 8]);
 
@@ -433,13 +434,13 @@ fn parse_route(config: &mut Config, id: &str) -> Option<RoutingStrategy> {
         "local" => RoutingStrategy::Local.into(),
         "mx" => RoutingStrategy::Mx(MxConfig {
             max_mx: config
-                .property_require(("queue.route", id, "limits.mx"))
+                .property(("queue.route", id, "limits.mx"))
                 .unwrap_or(5),
             max_multi_homed: config
-                .property_require(("queue.route", id, "limits.multihomed"))
+                .property(("queue.route", id, "limits.multihomed"))
                 .unwrap_or(2),
             ip_lookup_strategy: config
-                .property_require(("queue.route", id, "ip-lookup"))
+                .property(("queue.route", id, "ip-lookup"))
                 .unwrap_or(IpLookupStrategy::Ipv4thenIpv6),
         })
         .into(),
@@ -475,22 +476,22 @@ fn parse_tls_strategies(config: &mut Config) -> AHashMap<String, TlsStrategy> {
 fn parse_tls(config: &mut Config, id: &str) -> Option<TlsStrategy> {
     Some(TlsStrategy {
         dane: config
-            .property_require::<RequireOptional>(("queue.tls", id, "dane"))
+            .property::<RequireOptional>(("queue.tls", id, "dane"))
             .unwrap_or(RequireOptional::Optional),
         mta_sts: config
-            .property_require::<RequireOptional>(("queue.tls", id, "mta-sts"))
+            .property::<RequireOptional>(("queue.tls", id, "mta-sts"))
             .unwrap_or(RequireOptional::Optional),
         tls: config
-            .property_require::<RequireOptional>(("queue.tls", id, "starttls"))
+            .property::<RequireOptional>(("queue.tls", id, "starttls"))
             .unwrap_or(RequireOptional::Optional),
         allow_invalid_certs: config
-            .property_require::<bool>(("queue.tls", id, "allow-invalid-certs"))
+            .property::<bool>(("queue.tls", id, "allow-invalid-certs"))
             .unwrap_or(false),
         timeout_tls: config
-            .property_require::<Duration>(("queue.tls", id, "timeout.tls"))
+            .property::<Duration>(("queue.tls", id, "timeout.tls"))
             .unwrap_or(Duration::from_secs(3 * 60)),
         timeout_mta_sts: config
-            .property_require::<Duration>(("queue.tls", id, "timeout.mta-sts"))
+            .property::<Duration>(("queue.tls", id, "timeout.mta-sts"))
             .unwrap_or(Duration::from_secs(5 * 60)),
     })
 }
@@ -538,22 +539,22 @@ fn parse_connection(config: &mut Config, id: &str) -> Option<ConnectionStrategy>
         source_ipv6,
         ehlo_hostname: config.property::<String>(("queue.connection", id, "ehlo-hostname")),
         timeout_connect: config
-            .property_require::<Duration>(("queue.connection", id, "timeout.connect"))
+            .property::<Duration>(("queue.connection", id, "timeout.connect"))
             .unwrap_or(Duration::from_secs(5 * 60)),
         timeout_greeting: config
-            .property_require::<Duration>(("queue.connection", id, "timeout.greeting"))
+            .property::<Duration>(("queue.connection", id, "timeout.greeting"))
             .unwrap_or(Duration::from_secs(5 * 60)),
         timeout_ehlo: config
-            .property_require::<Duration>(("queue.connection", id, "timeout.ehlo"))
+            .property::<Duration>(("queue.connection", id, "timeout.ehlo"))
             .unwrap_or(Duration::from_secs(5 * 60)),
         timeout_mail: config
-            .property_require::<Duration>(("queue.connection", id, "timeout.mail-from"))
+            .property::<Duration>(("queue.connection", id, "timeout.mail-from"))
             .unwrap_or(Duration::from_secs(5 * 60)),
         timeout_rcpt: config
-            .property_require::<Duration>(("queue.connection", id, "timeout.rcpt-to"))
+            .property::<Duration>(("queue.connection", id, "timeout.rcpt-to"))
             .unwrap_or(Duration::from_secs(5 * 60)),
         timeout_data: config
-            .property_require::<Duration>(("queue.connection", id, "timeout.data"))
+            .property::<Duration>(("queue.connection", id, "timeout.data"))
             .unwrap_or(Duration::from_secs(10 * 60)),
     })
 }
@@ -935,6 +936,14 @@ impl QueueName {
     }
 }
 
+impl ArchivedQueueName {
+    pub fn as_str(&self) -> &str {
+        std::str::from_utf8(self.0.as_ref())
+            .unwrap_or_default()
+            .trim_end_matches('\0')
+    }
+}
+
 impl Default for QueueName {
     fn default() -> Self {
         DEFAULT_QUEUE_NAME
@@ -955,7 +964,13 @@ impl ParseValue for QueueName {
 
 impl Display for QueueName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str())
+        self.as_str().fmt(f)
+    }
+}
+
+impl Display for ArchivedQueueName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.as_str().fmt(f)
     }
 }
 

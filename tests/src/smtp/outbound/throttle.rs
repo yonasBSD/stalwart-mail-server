@@ -68,7 +68,7 @@ async fn throttle_outbound() {
 
     // Build test message
     let mut test_message = new_message(0).message;
-    test_message.return_path_domain = "foobar.org".into();
+    test_message.return_path = "test@foobar.org".into();
     test_message
         .recipients
         .push(build_rcpt("bill@test.org", 0, 0, 0));
@@ -110,7 +110,7 @@ async fn throttle_outbound() {
     local.queue_receiver.read_event().await.assert_on_hold();*/
 
     // Expect rate limit throttle for sender domain 'foobar.net'
-    test_message.return_path_domain = "foobar.net".into();
+    test_message.return_path = "test@foobar.net".into();
     for t in &throttle.sender {
         core.is_allowed(
             t,
@@ -136,7 +136,7 @@ async fn throttle_outbound() {
     assert!(due > 0, "Due: {}", due);
 
     // Expect concurrency throttle for recipient domain 'example.org'
-    test_message.return_path_domain = "test.net".into();
+    test_message.return_path = "test@test.net".into();
     test_message
         .recipients
         .push(build_rcpt("test@example.org", 0, 0, 0));
@@ -286,7 +286,7 @@ impl<'x> TestQueueEnvelope<'x> for QueueEnvelope<'x> {
             mx,
             remote_ip: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
             local_ip: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
-            domain: rcpt.address_lcase.domain_part(),
+            domain: rcpt.address.domain_part(),
             rcpt,
         }
     }

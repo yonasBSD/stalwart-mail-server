@@ -244,17 +244,14 @@ where
         Message {
             created: message.created,
             blob_hash: message.blob_hash,
-            return_path: message.return_path,
-            return_path_lcase: message.return_path_lcase,
-            return_path_domain: message.return_path_domain,
+            return_path: message.return_path_lcase,
             recipients: message
                 .recipients
                 .into_iter()
                 .map(|r| {
                     let domain = &domains[r.domain_idx.as_u64() as usize];
                     Recipient {
-                        address: r.address,
-                        address_lcase: r.address_lcase,
+                        address: r.address_lcase,
                         status: match r.status {
                             Status::Scheduled => match &domain.status {
                                 Status::Scheduled | Status::Completed(_) => Status::Scheduled,

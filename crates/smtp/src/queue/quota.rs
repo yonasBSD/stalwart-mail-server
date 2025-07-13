@@ -64,7 +64,7 @@ impl HasQueueQuota for Server {
             let mut seen_domains = AHashSet::new();
             for quota in &self.core.smtp.queue.quota.rcpt_domain {
                 for (rcpt_idx, rcpt) in message.message.recipients.iter().enumerate() {
-                    if seen_domains.insert(rcpt.address_lcase.domain_part())
+                    if seen_domains.insert(rcpt.address.domain_part())
                         && !self
                             .check_quota(
                                 quota,
@@ -192,7 +192,7 @@ impl MessageWrapper {
                 &rcpt.status,
                 Status::Completed(_) | Status::PermanentFailure(_)
             ) {
-                if seen_domains.insert(rcpt.address_lcase.domain_part()) {
+                if seen_domains.insert(rcpt.address.domain_part()) {
                     quota_ids.push(((pos + 1) as u64) << 32);
                 }
                 quota_ids.push((pos + 1) as u64);

@@ -53,13 +53,11 @@ pub struct Message {
     pub created: u64,
     pub blob_hash: BlobHash,
 
+    pub return_path: String,
+    pub recipients: Vec<Recipient>,
+
     pub received_from_ip: IpAddr,
     pub received_via_port: u16,
-
-    pub return_path: String,
-    pub return_path_lcase: String,
-    pub return_path_domain: String,
-    pub recipients: Vec<Recipient>,
 
     pub flags: u64,
     pub env_id: Option<String>,
@@ -105,7 +103,6 @@ pub enum QuotaKey {
 )]
 pub struct Recipient {
     pub address: String,
-    pub address_lcase: String,
 
     pub retry: Schedule<u32>,
     pub notify: Schedule<u32>,
@@ -268,7 +265,7 @@ impl<'x> QueueEnvelope<'x> {
     pub fn new(message: &'x Message, rcpt: &'x Recipient) -> Self {
         Self {
             message,
-            domain: rcpt.address_lcase.domain_part(),
+            domain: rcpt.address.domain_part(),
             rcpt,
             mx: "",
             remote_ip: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
@@ -280,22 +277,24 @@ impl<'x> QueueEnvelope<'x> {
 impl<'x> ResolveVariable for QueueEnvelope<'x> {
     fn resolve_variable(&self, variable: u32) -> expr::Variable<'x> {
         match variable {
-            V_SENDER => self.message.return_path_lcase.as_str().into(),
-            V_SENDER_DOMAIN => self.message.return_path_domain.as_str().into(),
+            V_SENDER => self.message.return_path.as_str().into(),
+            V_SENDER_DOMAIN => self.message.return_path.domain_part().into(),
             V_RECIPIENT_DOMAIN => self.domain.into(),
-            V_RECIPIENT => self.rcpt.address_lcase.as_str().into(),
+            V_RECIPIENT => self.rcpt.address.as_str().into(),
             V_RECIPIENTS => self
                 .message
                 .recipients
                 .iter()
-                .map(|r| Variable::from(r.address_lcase.as_str()))
+                .map(|r| Variable::from(r.address.as_str()))
                 .collect::<Vec<_>>()
                 .into(),
             V_QUEUE_RETRY_NUM => self.rcpt.retry.inner.into(),
             V_QUEUE_NOTIFY_NUM => self.rcpt.notify.inner.into(),
             V_QUEUE_EXPIRES_IN => match &self.rcpt.expires {
                 QueueExpiry::Ttl(time) => (*time + self.message.created).saturating_sub(now()),
-                QueueExpiry::Attempts(count) => (*count) as u64,
+                QueueExpiry::Attempts(count) => {
+                    (count.saturating_sub(self.rcpt.retry.inner)) as u64
+                }
             }
             .into(),
             V_QUEUE_LAST_STATUS => self.rcpt.status.to_compact_string().into(),
@@ -353,12 +352,12 @@ impl<'x> ResolveVariable for QueueEnvelope<'x> {
 impl ResolveVariable for Message {
     fn resolve_variable(&self, variable: u32) -> expr::Variable<'_> {
         match variable {
-            V_SENDER => self.return_path_lcase.as_str().into(),
-            V_SENDER_DOMAIN => self.return_path_domain.as_str().into(),
+            V_SENDER => self.return_path.as_str().into(),
+            V_SENDER_DOMAIN => self.return_path.domain_part().into(),
             V_RECIPIENTS => self
                 .recipients
                 .iter()
-                .map(|r| Variable::from(r.address_lcase.as_str()))
+                .map(|r| Variable::from(r.address.as_str()))
                 .collect::<Vec<_>>()
                 .into(),
             V_PRIORITY => self.priority.into(),

@@ -37,13 +37,9 @@ impl SendDsn for Server {
         if !message.message.return_path.is_empty() {
             // Build DSN
             if let Some(dsn) = message.build_dsn(self).await {
-                let mut dsn_message = self.new_message("", "", "", message.span_id);
+                let mut dsn_message = self.new_message("", message.span_id);
                 dsn_message
-                    .add_recipient_parts(
-                        message.message.return_path.as_str(),
-                        message.message.return_path_lcase.as_str(),
-                        self,
-                    )
+                    .add_recipient_parts(message.message.return_path.as_str(), self)
                     .await;
 
                 // Sign message
@@ -81,7 +77,7 @@ impl SendDsn for Server {
                     trc::event!(
                         Delivery(trc::DeliveryEvent::DsnSuccess),
                         SpanId = message.span_id,
-                        To = rcpt.address_lcase.clone(),
+                        To = rcpt.address.clone(),
                         Hostname = response.hostname.clone(),
                         Code = response.response.code,
                         Details = response.response.message.to_string(),
@@ -91,7 +87,7 @@ impl SendDsn for Server {
                     trc::event!(
                         Delivery(trc::DeliveryEvent::DsnTempFail),
                         SpanId = message.span_id,
-                        To = rcpt.address_lcase.clone(),
+                        To = rcpt.address.clone(),
                         Hostname = response.entity.clone(),
                         Details = response.details.to_string(),
                         NextRetry = trc::Value::Timestamp(rcpt.retry.due),
@@ -105,7 +101,7 @@ impl SendDsn for Server {
                     trc::event!(
                         Delivery(trc::DeliveryEvent::DsnPermFail),
                         SpanId = message.span_id,
-                        To = rcpt.address_lcase.clone(),
+                        To = rcpt.address.clone(),
                         Hostname = response.entity.clone(),
                         Details = response.details.to_string(),
                         Total = rcpt.retry.inner,
@@ -115,7 +111,7 @@ impl SendDsn for Server {
                     trc::event!(
                         Delivery(trc::DeliveryEvent::DsnTempFail),
                         SpanId = message.span_id,
-                        To = rcpt.address_lcase.clone(),
+                        To = rcpt.address.clone(),
                         Details = "Concurrency limited",
                         NextRetry = trc::Value::Timestamp(rcpt.retry.due),
                         Expires = rcpt

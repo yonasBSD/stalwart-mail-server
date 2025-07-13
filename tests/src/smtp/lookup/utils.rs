@@ -147,11 +147,8 @@ async fn strategies() {
         received_from_ip: "1.2.3.4".parse().unwrap(),
         received_via_port: 7911,
         return_path: "test@example.com".to_string(),
-        return_path_lcase: "test@example.com".to_string(),
-        return_path_domain: "example.com".to_string(),
         recipients: vec![Recipient {
             address: "recipient@foobar.com".to_string(),
-            address_lcase: "recipient@foobar.com".to_string(),
             retry: Schedule::now(),
             notify: Schedule::now(),
             expires: QueueExpiry::Ttl(3600),

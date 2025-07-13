@@ -67,9 +67,8 @@ pub struct Message {
 #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct Recipient {
     pub address: String,
-
+    pub queue: String,
     pub status: Status<String, String>,
-
     pub retry_num: u32,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -295,7 +294,7 @@ impl QueueManagement for Server {
                             Status::Scheduled | Status::TemporaryFailure(_)
                         ) && item
                             .as_ref()
-                            .is_none_or(|item| recipient.address_lcase.contains(item))
+                            .is_none_or(|item| recipient.address.contains(item))
                         {
                             recipient.retry.due = time;
                             if recipient
@@ -384,7 +383,7 @@ impl QueueManagement for Server {
                     if let Some(item) = params.get("filter") {
                         // Cancel delivery for all recipients that match
                         for rcpt in &mut message.message.recipients {
-                            if rcpt.address_lcase.contains(item) {
+                            if rcpt.address.contains(item) {
                                 rcpt.status = Status::PermanentFailure(ErrorDetails {
                                     entity: "localhost".to_string(),
                                     details: queue::Error::Io("Delivery canceled.".to_string()),
@@ -587,6 +586,7 @@ impl Message {
                 .iter()
                 .map(|rcpt| Recipient {
                     address: rcpt.address.to_string(),
+                    queue: rcpt.queue.to_string(),
                     status: match &rcpt.status {
                         ArchivedStatus::Scheduled => Status::Scheduled,
                         ArchivedStatus::Completed(status) => {
@@ -631,6 +631,7 @@ async fn fetch_queued_messages(
     params: &UrlParams<'_>,
     tenant_domains: &Option<Vec<String>>,
 ) -> trc::Result<QueuedMessages> {
+    let queue = params.get("queue").and_then(QueueName::new);
     let text = params.get("text");
     let from = params.get("from");
     let to = params.get("to");
@@ -655,8 +656,12 @@ async fn fetch_queued_messages(
     };
     let from_key = ValueKey::from(ValueClass::Queue(QueueClass::Message(range_start)));
     let to_key = ValueKey::from(ValueClass::Queue(QueueClass::Message(range_end)));
-    let has_filters =
-        text.is_some() || from.is_some() || to.is_some() || before.is_some() || after.is_some();
+    let has_filters = text.is_some()
+        || from.is_some()
+        || to.is_some()
+        || before.is_some()
+        || after.is_some()
+        || queue.is_some();
     let mut offset = page.saturating_sub(1) * limit;
     let mut total_returned = 0;
 
@@ -680,27 +685,28 @@ async fn fetch_queued_messages(
                             .as_ref()
                             .map(|text| {
                                 message.return_path.contains(text)
-                                    || message
-                                        .recipients
-                                        .iter()
-                                        .any(|r| r.address_lcase.contains(text))
+                                    || message.recipients.iter().any(|r| r.address.contains(text))
                             })
                             .unwrap_or_else(|| {
                                 from.as_ref()
                                     .is_none_or(|from| message.return_path.contains(from))
                                     && to.as_ref().is_none_or(|to| {
-                                        message
-                                            .recipients
-                                            .iter()
-                                            .any(|r| r.address_lcase.contains(to))
+                                        message.recipients.iter().any(|r| r.address.contains(to))
                                     })
                             })
-                            && before
+                            && before.as_ref().is_none_or(|before| {
+                                message
+                                    .next_delivery_event(queue)
+                                    .is_some_and(|next| next < *before)
+                            })
+                            && after.as_ref().is_none_or(|after| {
+                                message
+                                    .next_delivery_event(queue)
+                                    .is_some_and(|next| next > *after)
+                            })
+                            && queue
                                 .as_ref()
-                                .is_none_or(|before| message.next_delivery_event() < *before)
-                            && after
-                                .as_ref()
-                                .is_none_or(|after| message.next_delivery_event() > *after)));
+                                .is_none_or(|q| message.recipients.iter().any(|r| &r.queue == q))));
 
                 if matches {
                     if offset == 0 {

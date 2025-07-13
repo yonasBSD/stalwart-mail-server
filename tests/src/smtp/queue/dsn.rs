@@ -64,11 +64,8 @@ async fn generate_dsn() {
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .map_or(0, |d| d.as_secs()),
             return_path: "sender@foobar.org".into(),
-            return_path_lcase: "".into(),
-            return_path_domain: "foobar.org".into(),
             recipients: vec![Recipient {
                 address: "foobar@example.org".into(),
-                address_lcase: "foobar@example.org".into(),
                 status: Status::PermanentFailure(ErrorDetails {
                     entity: "mx.example.org".into(),
                     details: Error::UnexpectedResponse(UnexpectedResponse {
@@ -125,7 +122,6 @@ async fn generate_dsn() {
     // Success DSN
     message.message.recipients.push(Recipient {
         address: "jane@example.org".into(),
-        address_lcase: "jane@example.org".into(),
         status: Status::Completed(HostResponse {
             hostname: "mx2.example.org".into(),
             response: Response {
@@ -148,7 +144,6 @@ async fn generate_dsn() {
     // Delay DSN
     message.message.recipients.push(Recipient {
         address: "john.doe@example.org".into(),
-        address_lcase: "john.doe@example.org".into(),
         status: Status::TemporaryFailure(ErrorDetails {
             entity: "mx.domain.org".into(),
             details: Error::ConnectionError("Connection timeout".into()),

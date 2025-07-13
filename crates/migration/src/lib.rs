@@ -10,14 +10,16 @@ use crate::{
     tasks::migrate_tasks_v011,
 };
 use changelog::reset_changelog;
-use common::{DATABASE_SCHEMA_VERSION, KV_LOCK_HOUSEKEEPER, Server};
+use common::{
+    DATABASE_SCHEMA_VERSION, KV_LOCK_HOUSEKEEPER, Server, manager::boot::DEFAULT_SETTINGS,
+};
 use jmap_proto::types::{collection::Collection, property::Property};
 use principal::{migrate_principal, migrate_principals};
 use report::migrate_reports;
 use std::time::Duration;
 use store::{
     Deserialize, IterateParams, SUBSPACE_PROPERTY, SUBSPACE_QUEUE_MESSAGE, SUBSPACE_REPORT_IN,
-    SUBSPACE_REPORT_OUT, SerializeInfallible, U32_LEN, Value, ValueKey,
+    SUBSPACE_REPORT_OUT, SUBSPACE_SETTINGS, SerializeInfallible, U32_LEN, Value, ValueKey,
     dispatch::{DocumentSet, lookup::KeyValue},
     rand::{self, seq::SliceRandom},
     write::{AnyClass, AnyKey, BatchBuilder, ValueClass, key::DeserializeBigEndian},
@@ -65,7 +67,7 @@ pub async fn try_migrate(server: &Server) -> trc::Result<()> {
         return Ok(());
     }
 
-    match server
+    let add_v013_config = match server
         .store()
         .get_value::<u32>(AnyKey {
             subspace: SUBSPACE_PROPERTY,
@@ -81,11 +83,13 @@ pub async fn try_migrate(server: &Server) -> trc::Result<()> {
             migrate_v0_12(server, true)
                 .await
                 .caused_by(trc::location!())?;
+            true
         }
         Some(2) => {
             migrate_v0_12(server, false)
                 .await
                 .caused_by(trc::location!())?;
+            true
         }
         Some(version) => {
             panic!(
@@ -96,9 +100,12 @@ pub async fn try_migrate(server: &Server) -> trc::Result<()> {
         _ => {
             if !is_new_install(server).await.caused_by(trc::location!())? {
                 migrate_v0_11(server).await.caused_by(trc::location!())?;
+                true
+            } else {
+                false
             }
         }
-    }
+    };
 
     let mut batch = BatchBuilder::new();
     batch.set(
@@ -108,6 +115,24 @@ pub async fn try_migrate(server: &Server) -> trc::Result<()> {
         }),
         DATABASE_SCHEMA_VERSION.serialize(),
     );
+
+    if add_v013_config {
+        for (key, value) in DEFAULT_SETTINGS {
+            if key
+                .strip_prefix("queue.")
+                .is_some_and(|s| !s.starts_with("limiter.") && !s.starts_with("quota."))
+            {
+                batch.set(
+                    ValueClass::Any(AnyClass {
+                        subspace: SUBSPACE_SETTINGS,
+                        key: key.as_bytes().to_vec(),
+                    }),
+                    value.as_bytes().to_vec(),
+                );
+            }
+        }
+    }
+
     server
         .store()
         .write(batch.build_all())

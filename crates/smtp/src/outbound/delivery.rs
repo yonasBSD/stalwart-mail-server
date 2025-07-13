@@ -74,7 +74,7 @@ impl QueuedMessage {
                                     Status::Scheduled | Status::TemporaryFailure(_)
                                 ) && r.queue == message.queue_name
                                 {
-                                    Some(trc::Value::String(r.address_lcase.as_str().into()))
+                                    Some(trc::Value::String(r.address.as_str().into()))
                                 } else {
                                     None
                                 }
@@ -236,7 +236,7 @@ impl QueuedMessage {
                 );
 
                 routes
-                    .entry((rcpt.address_lcase.domain_part(), route))
+                    .entry((rcpt.address.domain_part(), route))
                     .or_default()
                     .push(rcpt_idx);
             }
@@ -1325,7 +1325,7 @@ impl MessageWrapper {
                         SpanId = self.span_id,
                         QueueId = self.queue_id,
                         QueueName = self.queue_name.as_str().to_string(),
-                        To = rcpt.address_lcase.clone(),
+                        To = rcpt.address.clone(),
                         Reason = from_error_details(&err.details),
                         Details = trc::Value::Timestamp(now),
                         Expires = rcpt
@@ -1344,7 +1344,7 @@ impl MessageWrapper {
                         SpanId = self.span_id,
                         QueueId = self.queue_id,
                         QueueName = self.queue_name.as_str().to_string(),
-                        To = rcpt.address_lcase.clone(),
+                        To = rcpt.address.clone(),
                         Reason = "Message expired without any delivery attempts made.",
                         Details = trc::Value::Timestamp(now),
                         Expires = rcpt
@@ -1355,7 +1355,7 @@ impl MessageWrapper {
                     );
 
                     rcpt.status = Status::PermanentFailure(ErrorDetails {
-                        entity: rcpt.address_lcase.domain_part().to_string(),
+                        entity: rcpt.address.domain_part().to_string(),
                         details: Error::Io(
                             "Message expired without any delivery attempts made.".into(),
                         ),

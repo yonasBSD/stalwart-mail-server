@@ -709,9 +709,7 @@ impl<T: SessionStream> Session<T> {
             .map_or(0, |d| d.as_secs());
         let mut message = Message {
             created,
-            return_path: mail_from.address,
-            return_path_lcase: mail_from.address_lcase,
-            return_path_domain: mail_from.domain,
+            return_path: mail_from.address_lcase,
             recipients: Vec::with_capacity(rcpt_to.len()),
             flags: mail_from.flags,
             priority: self.data.priority,
@@ -728,8 +726,7 @@ impl<T: SessionStream> Session<T> {
         rcpt_to.sort_unstable();
         for rcpt in rcpt_to {
             message.recipients.push(queue::Recipient {
-                address: rcpt.address,
-                address_lcase: rcpt.address_lcase,
+                address: rcpt.address_lcase,
                 status: queue::Status::Scheduled,
                 flags: if rcpt.flags
                     & (RCPT_NOTIFY_DELAY
