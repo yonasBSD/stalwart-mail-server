@@ -7,7 +7,8 @@
 use std::{net::IpAddr, sync::Arc};
 
 use directory::{
-    Directory, Permission, Permissions, Principal, QueryBy, core::secret::verify_secret_hash,
+    Directory, Permission, Permissions, Principal, QueryBy, Type,
+    backend::internal::lookup::DirectoryStore, core::secret::verify_secret_hash,
 };
 use jmap_proto::types::collection::Collection;
 use mail_send::Credentials;
@@ -62,6 +63,7 @@ pub struct AuthRequest<'x> {
     session_id: u64,
     remote_ip: IpAddr,
     return_member_of: bool,
+    allow_api_access: bool,
     directory: Option<&'x Directory>,
 }
 
@@ -124,48 +126,62 @@ impl Server {
         };
 
         // Then check if the credentials match the fallback admin or master user
-        match (
-            &self.core.jmap.fallback_admin,
-            &self.core.jmap.master_user,
-            &req.credentials,
-        ) {
-            (Some((fallback_admin, fallback_pass)), _, Credentials::Plain { username, secret })
-                if username == fallback_admin =>
-            {
-                if verify_secret_hash(fallback_pass, secret).await? {
-                    trc::event!(
-                        Auth(trc::AuthEvent::Success),
-                        AccountName = username.clone(),
-                        SpanId = req.session_id,
-                    );
-
-                    return Ok(Principal::fallback_admin(fallback_pass));
-                }
-            }
-            (_, Some((master_user, master_pass)), Credentials::Plain { username, secret })
-                if username.ends_with(master_user) =>
-            {
-                if verify_secret_hash(master_pass, secret).await? {
-                    let username = username.strip_suffix(master_user).unwrap();
-                    let username = username.strip_suffix('%').unwrap_or(username);
-
-                    if let Some(principal) = directory
-                        .query(QueryBy::Name(username), req.return_member_of)
-                        .await?
-                    {
+        if let Credentials::Plain { username, secret } = &req.credentials {
+            match (&self.core.jmap.fallback_admin, &self.core.jmap.master_user) {
+                (Some((fallback_admin, fallback_pass)), _) if username == fallback_admin => {
+                    if verify_secret_hash(fallback_pass, secret).await? {
                         trc::event!(
                             Auth(trc::AuthEvent::Success),
-                            AccountName = username.to_string(),
+                            AccountName = username.clone(),
                             SpanId = req.session_id,
-                            AccountId = principal.id(),
-                            Type = principal.typ().as_str(),
                         );
 
-                        return Ok(principal);
+                        return Ok(Principal::fallback_admin(fallback_pass));
+                    }
+                }
+                (_, Some((master_user, master_pass))) if username.ends_with(master_user) => {
+                    if verify_secret_hash(master_pass, secret).await? {
+                        let username = username.strip_suffix(master_user).unwrap();
+                        let username = username.strip_suffix('%').unwrap_or(username);
+
+                        if let Some(principal) = directory
+                            .query(QueryBy::Name(username), req.return_member_of)
+                            .await?
+                        {
+                            trc::event!(
+                                Auth(trc::AuthEvent::Success),
+                                AccountName = username.to_string(),
+                                SpanId = req.session_id,
+                                AccountId = principal.id(),
+                                Type = principal.typ().as_str(),
+                            );
+
+                            return Ok(principal);
+                        }
+                    }
+                }
+                _ => {
+                    // Validate API credentials
+                    if req.allow_api_access {
+                        if let Ok(Some(principal)) = self
+                            .store()
+                            .query(QueryBy::Credentials(&req.credentials), req.return_member_of)
+                            .await
+                        {
+                            if principal.typ == Type::ApiKey {
+                                trc::event!(
+                                    Auth(trc::AuthEvent::Success),
+                                    AccountName = principal.name().to_string(),
+                                    AccountId = principal.id(),
+                                    SpanId = req.session_id,
+                                );
+
+                                return Ok(principal);
+                            }
+                        }
                     }
                 }
             }
-            _ => {}
         }
 
         if let Err(err) = result {
@@ -205,6 +221,7 @@ impl<'x> AuthRequest<'x> {
             remote_ip,
             return_member_of: true,
             directory: None,
+            allow_api_access: false,
         }
     }
 
@@ -231,6 +248,11 @@ impl<'x> AuthRequest<'x> {
 
     pub fn with_directory(mut self, directory: &'x Directory) -> Self {
         self.directory = Some(directory);
+        self
+    }
+
+    pub fn with_api_access(mut self, allow_api_access: bool) -> Self {
+        self.allow_api_access = allow_api_access;
         self
     }
 }

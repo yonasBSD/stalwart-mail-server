@@ -43,6 +43,9 @@ impl Authenticator for Server {
                         .is_http_authenticated_request_allowed(&access_token)
                         .await
                         .map(|in_flight| (in_flight, access_token));
+                } else {
+                    // If the revision is not valid, remove the cached credentials
+                    self.inner.cache.http_auth.remove(token);
                 }
             }
 
@@ -81,11 +84,14 @@ impl Authenticator for Server {
 
             // Authenticate
             let access_token = self
-                .authenticate(&AuthRequest::from_credentials(
-                    credentials,
-                    session.session_id,
-                    session.remote_ip,
-                ))
+                .authenticate(
+                    &AuthRequest::from_credentials(
+                        credentials,
+                        session.session_id,
+                        session.remote_ip,
+                    )
+                    .with_api_access(allow_api_access),
+                )
                 .await?;
 
             // Cache credentials
@@ -153,8 +159,8 @@ fn decode_plain_auth(token: &str) -> Option<Credentials<String>> {
 
 fn decode_bearer_token(token: &str, allow_api_access: bool) -> Option<Credentials<String>> {
     if allow_api_access {
-        if let Some(token) = token.strip_prefix("api_") {
-            return decode_plain_auth(token);
+        if let Some(token) = token.strip_prefix("api_").and_then(decode_plain_auth) {
+            return Some(token);
         }
     }
 
