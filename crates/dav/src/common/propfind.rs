@@ -22,7 +22,10 @@ use crate::{
     },
     common::{DavQueryResource, acl::current_user_privilege_set, uri::DavUriResource},
     file::{FILE_CONTAINER_PROPS, FILE_ITEM_PROPS},
-    principal::{CurrentUserPrincipal, propfind::PrincipalPropFind},
+    principal::{
+        CurrentUserPrincipal,
+        propfind::{PrincipalPropFind, build_home_set},
+    },
 };
 use calcard::common::timezone::Tz;
 use common::{
@@ -47,10 +50,10 @@ use dav_proto::{
     },
 };
 use directory::{Permission, Type, backend::internal::manage::ManageDirectory};
+use groupware::calendar::SCHEDULE_INBOX_ID;
 use groupware::{
     DavCalendarResource, DavResourceName, cache::GroupwareCache, calendar::ArchivedTimezone,
 };
-use groupware::{RFC_3986, calendar::SCHEDULE_INBOX_ID};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
 use jmap_proto::types::{
@@ -246,11 +249,13 @@ impl PropFindRequestHandler for Server {
             // Add container info
             if !headers.depth_no_root {
                 add_base_collection_response(
+                    self,
                     &request,
                     resource.collection,
                     access_token,
                     &mut response,
-                );
+                )
+                .await?;
             }
 
             if return_children {
@@ -386,11 +391,13 @@ impl PropFindRequestHandler for Server {
                 // Add container info
                 if !query.depth_no_root {
                     add_base_collection_response(
+                        self,
                         &query.propfind,
                         parent_collection,
                         access_token,
                         &mut response,
-                    );
+                    )
+                    .await?;
                 }
 
                 discover_root_paths(
@@ -1686,12 +1693,13 @@ impl SyncTokenUrn for DavResources {
     }
 }
 
-fn add_base_collection_response(
+async fn add_base_collection_response(
+    server: &Server,
     request: &PropFind,
     collection: Collection,
     access_token: &AccessToken,
     response: &mut MultiStatus,
-) {
+) -> trc::Result<()> {
     let properties = match request {
         PropFind::PropName => {
             response.add_response(Response::new_propstat(
@@ -1706,7 +1714,7 @@ fn add_base_collection_response(
                     )),
                 ])],
             ));
-            return;
+            return Ok(());
         }
         PropFind::AllProp(_) => [
             DavProperty::WebDav(WebDavProperty::ResourceType),
@@ -1735,25 +1743,31 @@ fn add_base_collection_response(
                 ));
             }
             DavProperty::Principal(PrincipalProperty::CalendarHomeSet) => {
-                fields.push(DavPropertyValue::new(
-                    prop.clone(),
-                    vec![Href(format!(
-                        "{}/{}/",
-                        DavResourceName::Cal.base_path(),
-                        percent_encoding::utf8_percent_encode(&access_token.name, RFC_3986),
-                    ))],
-                ));
+                let hrefs = build_home_set(
+                    server,
+                    access_token,
+                    &access_token.name,
+                    access_token.primary_id,
+                    true,
+                )
+                .await
+                .caused_by(trc::location!())?;
+
+                fields.push(DavPropertyValue::new(prop.clone(), hrefs));
                 response.set_namespace(Namespace::CalDav);
             }
             DavProperty::Principal(PrincipalProperty::AddressbookHomeSet) => {
-                fields.push(DavPropertyValue::new(
-                    prop.clone(),
-                    vec![Href(format!(
-                        "{}/{}/",
-                        DavResourceName::Card.base_path(),
-                        percent_encoding::utf8_percent_encode(&access_token.name, RFC_3986),
-                    ))],
-                ));
+                let hrefs = build_home_set(
+                    server,
+                    access_token,
+                    &access_token.name,
+                    access_token.primary_id,
+                    false,
+                )
+                .await
+                .caused_by(trc::location!())?;
+
+                fields.push(DavPropertyValue::new(prop.clone(), hrefs));
                 response.set_namespace(Namespace::CardDav);
             }
             DavProperty::WebDav(WebDavProperty::SupportedReportSet) => {
@@ -1787,4 +1801,6 @@ fn add_base_collection_response(
         DavResourceName::from(collection).collection_path(),
         prop_stat,
     ));
+
+    Ok(())
 }

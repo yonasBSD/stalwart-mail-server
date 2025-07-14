@@ -270,54 +270,28 @@ impl PrincipalPropFind for Server {
                                 ))],
                             ));
                         }
-                        PrincipalProperty::CalendarHomeSet
-                        | PrincipalProperty::AddressbookHomeSet => {
-                            let mut hrefs = Vec::new();
-                            let (collection, resource_name, namespace) =
-                                if principal_property == &PrincipalProperty::CalendarHomeSet {
-                                    (
-                                        Collection::Calendar,
-                                        DavResourceName::Cal,
-                                        Namespace::CalDav,
-                                    )
-                                } else {
-                                    (
-                                        Collection::AddressBook,
-                                        DavResourceName::Card,
-                                        Namespace::CardDav,
-                                    )
-                                };
-
-                            hrefs.push(Href(format!(
-                                "{}/{}/",
-                                resource_name.base_path(),
-                                percent_encoding::utf8_percent_encode(&name, RFC_3986),
-                            )));
-
-                            if account_id == access_token.primary_id() {
-                                for account_id in access_token.all_ids_by_collection(collection) {
-                                    if account_id != access_token.primary_id() {
-                                        let other_name = self
-                                            .store()
-                                            .get_principal_name(account_id)
-                                            .await
-                                            .caused_by(trc::location!())?
-                                            .unwrap_or_else(|| format!("_{account_id}"));
-
-                                        hrefs.push(Href(format!(
-                                            "{}/{}/",
-                                            resource_name.base_path(),
-                                            percent_encoding::utf8_percent_encode(
-                                                &other_name,
-                                                RFC_3986
-                                            ),
-                                        )));
-                                    }
-                                }
-                            }
+                        PrincipalProperty::CalendarHomeSet => {
+                            let hrefs =
+                                build_home_set(self, access_token, name.as_ref(), account_id, true)
+                                    .await
+                                    .caused_by(trc::location!())?;
 
                             fields.push(DavPropertyValue::new(property.clone(), hrefs));
-                            response.set_namespace(namespace);
+                            response.set_namespace(Namespace::CalDav);
+                        }
+                        PrincipalProperty::AddressbookHomeSet => {
+                            let hrefs = build_home_set(
+                                self,
+                                access_token,
+                                name.as_ref(),
+                                account_id,
+                                false,
+                            )
+                            .await
+                            .caused_by(trc::location!())?;
+
+                            fields.push(DavPropertyValue::new(property.clone(), hrefs));
+                            response.set_namespace(Namespace::CardDav);
                         }
 
                         PrincipalProperty::PrincipalAddress => {
@@ -433,6 +407,48 @@ impl PrincipalPropFind for Server {
             )))
         }
     }
+}
+
+pub(crate) async fn build_home_set(
+    server: &Server,
+    access_token: &AccessToken,
+    name: &str,
+    account_id: u32,
+    is_calendar: bool,
+) -> trc::Result<Vec<Href>> {
+    let (collection, resource_name) = if is_calendar {
+        (Collection::Calendar, DavResourceName::Cal)
+    } else {
+        (Collection::AddressBook, DavResourceName::Card)
+    };
+
+    let mut hrefs = Vec::new();
+    hrefs.push(Href(format!(
+        "{}/{}/",
+        resource_name.base_path(),
+        percent_encoding::utf8_percent_encode(name, RFC_3986),
+    )));
+
+    if account_id == access_token.primary_id() {
+        for account_id in access_token.all_ids_by_collection(collection) {
+            if account_id != access_token.primary_id() {
+                let other_name = server
+                    .store()
+                    .get_principal_name(account_id)
+                    .await
+                    .caused_by(trc::location!())?
+                    .unwrap_or_else(|| format!("_{account_id}"));
+
+                hrefs.push(Href(format!(
+                    "{}/{}/",
+                    resource_name.base_path(),
+                    percent_encoding::utf8_percent_encode(&other_name, RFC_3986),
+                )));
+            }
+        }
+    }
+
+    Ok(hrefs)
 }
 
 fn all_props(collection: Collection, all_props: Option<&[DavProperty]>) -> Vec<DavProperty> {

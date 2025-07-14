@@ -209,13 +209,19 @@ pub async fn test(test: &WebDavTest) {
             .with_status(StatusCode::OK);
         props
             .get(DavProperty::Principal(PrincipalProperty::CalendarHomeSet))
-            .with_values([format!("D:href:{}/jane/", DavResourceName::Cal.base_path()).as_str()])
+            .with_values([
+                format!("D:href:{}/jane/", DavResourceName::Cal.base_path()).as_str(),
+                format!("D:href:{}/support/", DavResourceName::Cal.base_path()).as_str(),
+            ])
             .with_status(StatusCode::OK);
         props
             .get(DavProperty::Principal(
                 PrincipalProperty::AddressbookHomeSet,
             ))
-            .with_values([format!("D:href:{}/jane/", DavResourceName::Card.base_path()).as_str()])
+            .with_values([
+                format!("D:href:{}/jane/", DavResourceName::Card.base_path()).as_str(),
+                format!("D:href:{}/support/", DavResourceName::Card.base_path()).as_str(),
+            ])
             .with_status(StatusCode::OK);
 
         for (account, _, name, _) in TEST_USERS
