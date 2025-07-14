@@ -188,13 +188,14 @@ impl<T: SessionStream> SessionData<T> {
                             .details("Mailboxes under root shared folders are not allowed.")
                             .code(ResponseCode::Cannot));
                     }
+
                     // Build path
                     let root = &mut path[2];
                     if root.eq_ignore_ascii_case("INBOX") {
                         *root = "INBOX";
                     }
                     let full_path = path.join("/");
-                    let prefix = Some(format!("{}/{}", path.remove(0), path.remove(0)));
+                    let prefix = Some(format!("{}/{}", path[0], path[1]));
 
                     // Locate account
                     if let Some(account) = mailboxes
