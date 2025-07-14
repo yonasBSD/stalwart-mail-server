@@ -179,7 +179,7 @@ pub(crate) async fn migrate_queue_v012(server: &Server) -> trc::Result<()> {
             .await
             .and_then(|archive| {
                 if let Some(archive) = archive {
-                    archive.deserialize::<MessageV012>().map(Some)
+                    archive.deserialize_untrusted::<MessageV012>().map(Some)
                 } else {
                     Ok(None)
                 }
@@ -209,7 +209,7 @@ pub(crate) async fn migrate_queue_v012(server: &Server) -> trc::Result<()> {
                     .await
                     .and_then(|archive| {
                         if let Some(archive) = archive {
-                            archive.deserialize::<Message>().map(Some)
+                            archive.deserialize_untrusted::<Message>().map(Some)
                         } else {
                             Ok(None)
                         }
@@ -395,6 +395,7 @@ pub struct LegacyMessage<SIZE, IDX> {
     pub quota_keys: Vec<QuotaKey>,
 
     #[serde(skip)]
+    #[rkyv(with = rkyv::with::Skip)]
     pub span_id: u64,
 }
 
