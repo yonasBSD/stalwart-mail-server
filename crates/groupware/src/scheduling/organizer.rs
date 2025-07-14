@@ -264,20 +264,7 @@ pub(crate) fn organizer_handle_update(
                         ItipExportAs::Organizer(&ICalendarParticipationStatus::NeedsAction),
                     )
                 } else {
-                    let mut cancel_comp = build_cancel_component(
-                        orig_component.component_type.clone(),
-                        itip,
-                        sequence,
-                        dt_stamp.clone(),
-                        emails.iter().map(|e| format!("mailto:{}", e)),
-                    );
-
-                    if let InstanceId::Recurrence(recurrence_id) = instance_id {
-                        cancel_comp
-                            .entries
-                            .push(orig_component.entries[recurrence_id.entry_id as usize].clone());
-                    }
-                    cancel_comp
+                    build_cancel_component(orig_component, sequence, dt_stamp.clone(), &emails)
                 };
 
                 // Add component to message

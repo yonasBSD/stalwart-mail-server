@@ -541,11 +541,16 @@ METHOD:CANCEL
 PRODID:-//Stalwart Labs LLC//Stalwart Server//EN
 VERSION:2.0
 BEGIN:VEVENT
+DESCRIPTION:IETF-C&S Conference Call
+LOCATION:Conference Call
 STATUS:CANCELLED
-ATTENDEE:mailto:a@example.com
+SUMMARY:IETF Calendaring Working Group Meeting
+DTEND:19970601T220000Z
+DTSTART:19970601T210000Z
 ATTENDEE:mailto:b@example.com
 ATTENDEE:mailto:c@example.com
 ATTENDEE:mailto:d@example.com
+ATTENDEE;ROLE=CHAIR;PARTSTAT=ACCEPTED:mailto:a@example.com
 ORGANIZER:mailto:a@example.com
 UID:guid-1@example.com
 DTSTAMP:0
@@ -569,10 +574,10 @@ STATUS:CANCELLED
 SUMMARY:IETF Calendaring Working Group Meeting
 DTEND:19970601T220000Z
 DTSTART:19970601T210000Z
-ATTENDEE:mailto:a@example.com
 ATTENDEE:mailto:b@example.com
 ATTENDEE:mailto:c@example.com
 ATTENDEE:mailto:d@example.com
+ATTENDEE;ROLE=CHAIR;PARTSTAT=ACCEPTED:mailto:a@example.com
 ORGANIZER:mailto:a@example.com
 UID:guid-1@example.com
 RRULE:FREQ=MONTHLY;UNTIL=19980901T210000Z;BYMONTHDAY=1
@@ -586,10 +591,10 @@ STATUS:CANCELLED
 SUMMARY:IETF Calendaring Working Group Meeting
 DTEND:19970703T220000Z
 DTSTART:19970703T210000Z
-ATTENDEE:mailto:a@example.com
 ATTENDEE:mailto:b@example.com
 ATTENDEE:mailto:c@example.com
 ATTENDEE:mailto:d@example.com
+ATTENDEE;ROLE=CHAIR;PARTSTAT=ACCEPTED:mailto:a@example.com
 ORGANIZER:mailto:a@example.com
 RECURRENCE-ID:19970701T210000Z
 UID:guid-1@example.com
@@ -598,10 +603,10 @@ SEQUENCE:2
 END:VEVENT
 BEGIN:VEVENT
 STATUS:CANCELLED
-ATTENDEE:mailto:a@example.com
 ATTENDEE:mailto:b@example.com
 ATTENDEE:mailto:c@example.com
 ATTENDEE:mailto:d@example.com
+ATTENDEE;ROLE=CHAIR;PARTSTAT=ACCEPTED:mailto:a@example.com
 ORGANIZER:mailto:a@example.com
 RECURRENCE-ID:19970801T210000Z
 UID:guid-1@example.com
@@ -616,10 +621,10 @@ STATUS:CANCELLED
 SUMMARY:IETF Calendaring Working Group Meeting
 DTEND:19970901T220000Z
 DTSTART:19970901T210000Z
-ATTENDEE:mailto:a@example.com
 ATTENDEE:mailto:b@example.com
 ATTENDEE:mailto:c@example.com
 ATTENDEE:mailto:d@example.com
+ATTENDEE;ROLE=CHAIR;PARTSTAT=ACCEPTED:mailto:a@example.com
 ORGANIZER:mailto:a@example.com
 RECURRENCE-ID;THISANDFUTURE:19970901T210000Z
 UID:guid-1@example.com
@@ -768,8 +773,10 @@ METHOD:CANCEL
 PRODID:-//Stalwart Labs LLC//Stalwart Server//EN
 VERSION:2.0
 BEGIN:VEVENT
+LOCATION:The Red Room
 STATUS:CANCELLED
-ATTENDEE:mailto:c@example.com
+SUMMARY:Review Accounts
+ATTENDEE;RSVP=TRUE:mailto:c@example.com
 ORGANIZER:mailto:a@example.com
 RECURRENCE-ID;THISANDFUTURE:19970901T210000Z
 UID:123456789@example.com
@@ -811,7 +818,7 @@ BEGIN:VEVENT
 LOCATION:The Red Room
 STATUS:CANCELLED
 SUMMARY:Review Accounts
-ATTENDEE:mailto:c@example.com
+ATTENDEE;RSVP=TRUE:mailto:c@example.com
 ORGANIZER:mailto:a@example.com
 RECURRENCE-ID;THISANDFUTURE:19970901T210000Z
 UID:123456789@example.com

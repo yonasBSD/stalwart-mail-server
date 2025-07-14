@@ -230,7 +230,7 @@ pub fn test() {
                     assert_eq!(
                         command.payload.trim(),
                         last_itip_str.trim(),
-                        "iTIP message mismatch for {} at line {}: expected {}, got {}",
+                        "iTIP message mismatch for {} at line {}\nEXPECTED {}\n\nRECEIVED {}",
                         command.test_name,
                         command.line_num,
                         command.payload,

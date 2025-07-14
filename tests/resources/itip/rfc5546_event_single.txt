@@ -658,7 +658,10 @@ PRODID:-//Stalwart Labs LLC//Stalwart Server//EN
 VERSION:2.0
 BEGIN:VEVENT
 STATUS:CANCELLED
-ATTENDEE:mailto:b@example.com
+SUMMARY:Phone Conference
+DTEND:19970701T190000Z
+DTSTART:19970701T180000Z
+ATTENDEE;RSVP=TRUE;CUTYPE=INDIVIDUAL:mailto:b@example.com
 ORGANIZER:mailto:a@example.com
 UID:calsrv.example.com-873970198738777@example.com
 DTSTAMP:0
@@ -679,7 +682,7 @@ STATUS:CANCELLED
 SUMMARY:Phone Conference
 DTEND:19970701T190000Z
 DTSTART:19970701T180000Z
-ATTENDEE:mailto:b@example.com
+ATTENDEE;RSVP=TRUE;CUTYPE=INDIVIDUAL:mailto:b@example.com
 ORGANIZER:mailto:a@example.com
 UID:calsrv.example.com-873970198738777@example.com
 DTSTAMP:0
@@ -701,11 +704,16 @@ PRODID:-//Stalwart Labs LLC//Stalwart Server//EN
 VERSION:2.0
 BEGIN:VEVENT
 STATUS:CANCELLED
-ATTENDEE:mailto:a@example.com
-ATTENDEE:mailto:c@example.com
-ATTENDEE:mailto:conf@example.com
-ATTENDEE:mailto:d@example.com
-ATTENDEE:mailto:e@example.com
+SUMMARY:Phone Conference
+DTEND:19970701T190000Z
+DTSTART:19970701T180000Z
+ATTENDEE;CUTYPE=INDIVIDUAL;PARTSTAT=DELEGATED;DELEGATED-TO="mailto:e@exam
+ ple.com";SCHEDULE-STATUS=2.0:mailto:c@example.com
+ATTENDEE;ROLE=CHAIR;PARTSTAT=ACCEPTED:mailto:a@example.com
+ATTENDEE;ROLE=NON-PARTICIPANT;RSVP=FALSE;CUTYPE=ROOM:mailto:conf@example.com
+ATTENDEE;RSVP=TRUE;CUTYPE=INDIVIDUAL;CN=Hal:mailto:d@example.com
+ATTENDEE;RSVP=TRUE;DELEGATED-FROM="mailto:c@example.com";PARTSTAT=DECLINED;
+ SCHEDULE-STATUS=2.0:mailto:e@example.com
 ORGANIZER:mailto:a@example.com
 UID:calsrv.example.com-873970198738777@example.com
 DTSTAMP:0

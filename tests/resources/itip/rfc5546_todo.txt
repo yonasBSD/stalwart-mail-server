@@ -345,7 +345,10 @@ PRODID:-//Stalwart Labs LLC//Stalwart Server//EN
 VERSION:2.0
 BEGIN:VTODO
 STATUS:CANCELLED
-ATTENDEE:mailto:c@example.com
+SUMMARY:Create the requirements document
+DUE:19970722T170000Z
+DTSTART:19970701T170000Z
+ATTENDEE;RSVP=TRUE:mailto:c@example.com
 ORGANIZER:mailto:a@example.com
 UID:calsrv.example.com-873970198738777-00@example.com
 DTSTAMP:0
@@ -366,7 +369,7 @@ STATUS:CANCELLED
 SUMMARY:Create the requirements document
 DUE:19970722T170000Z
 DTSTART:19970701T170000Z
-ATTENDEE:mailto:c@example.com
+ATTENDEE;RSVP=TRUE:mailto:c@example.com
 ORGANIZER:mailto:a@example.com
 UID:calsrv.example.com-873970198738777-00@example.com
 DTSTAMP:0
