@@ -273,17 +273,29 @@ impl ToManageHttpResponse for &trc::Error {
                 }
             }
             .into_http_response(),
-            trc::EventType::Auth(trc::AuthEvent::Failed) => {
-                HttpResponse::new(StatusCode::UNAUTHORIZED)
-                    .with_header(header::WWW_AUTHENTICATE, "Bearer realm=\"Stalwart Server\"")
-                    .with_header(header::WWW_AUTHENTICATE, "Basic realm=\"Stalwart Server\"")
-                    .with_content_type("application/problem+json")
-                    .with_text_body(
-                        serde_json::to_string(&RequestError::unauthorized()).unwrap_or_default(),
-                    )
-            }
+            trc::EventType::Auth(
+                trc::AuthEvent::Failed | trc::AuthEvent::Error | trc::AuthEvent::TokenExpired,
+            ) => HttpResponse::unauthorized(true),
             _ => self.to_request_error().into_http_response(),
         }
+    }
+}
+
+pub trait UnauthorizedResponse {
+    fn unauthorized(include_realms: bool) -> Self;
+}
+
+impl UnauthorizedResponse for HttpResponse {
+    fn unauthorized(include_realms: bool) -> Self {
+        (if include_realms {
+            HttpResponse::new(StatusCode::UNAUTHORIZED)
+                .with_header(header::WWW_AUTHENTICATE, "Bearer realm=\"Stalwart Server\"")
+                .with_header(header::WWW_AUTHENTICATE, "Basic realm=\"Stalwart Server\"")
+        } else {
+            HttpResponse::new(StatusCode::UNAUTHORIZED)
+        })
+        .with_content_type("application/problem+json")
+        .with_text_body(serde_json::to_string(&RequestError::unauthorized()).unwrap_or_default())
     }
 }
 

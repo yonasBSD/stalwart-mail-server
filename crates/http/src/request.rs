@@ -4,8 +4,21 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{net::IpAddr, sync::Arc};
-
+use crate::{
+    HttpSessionManager,
+    auth::{
+        authenticate::{Authenticator, HttpHeaders},
+        oauth::{
+            FormData, auth::OAuthApiHandler, openid::OpenIdHandler,
+            registration::ClientRegistrationHandler, token::TokenHandler,
+        },
+    },
+    autoconfig::Autoconfig,
+    form::FormHandler,
+    management::{
+        ManagementApi, ToManageHttpResponse, UnauthorizedResponse, troubleshoot::TroubleshootApi,
+    },
+};
 use common::{
     Inner, KV_ACME, Server,
     auth::{AccessToken, oauth::GrantType},
@@ -40,23 +53,10 @@ use jmap_proto::{
     request::{Request, capability::Session},
     types::{blob::BlobId, id::Id},
 };
+use std::{net::IpAddr, sync::Arc};
 use store::dispatch::lookup::KeyValue;
 use trc::SecurityEvent;
 use utils::url_params::UrlParams;
-
-use crate::{
-    HttpSessionManager,
-    auth::{
-        authenticate::{Authenticator, HttpHeaders},
-        oauth::{
-            FormData, auth::OAuthApiHandler, openid::OpenIdHandler,
-            registration::ClientRegistrationHandler, token::TokenHandler,
-        },
-    },
-    autoconfig::Autoconfig,
-    form::FormHandler,
-    management::{ManagementApi, ToManageHttpResponse, troubleshoot::TroubleshootApi},
-};
 
 pub trait ParseHttp: Sync + Send {
     fn parse_http_request(
@@ -427,7 +427,7 @@ impl ParseHttp for Server {
                                 (Some("troubleshoot"), _, Some(token)) => {
                                     (GrantType::Troubleshoot, token)
                                 }
-                                _ => return Err(err),
+                                _ => return Ok(HttpResponse::unauthorized(false)),
                             };
                             let token_info =
                                 self.validate_access_token(grant_type.into(), token).await?;
