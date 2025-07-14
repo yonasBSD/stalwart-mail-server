@@ -315,10 +315,12 @@ impl DavAclHandler for Server {
                     Privilege::Write => {
                         acls.insert(Acl::Modify);
                         acls.insert(Acl::Delete);
+                        acls.insert(Acl::AddItems);
                         acls.insert(Acl::ModifyItems);
                         acls.insert(Acl::RemoveItems);
                     }
                     Privilege::WriteContent => {
+                        acls.insert(Acl::AddItems);
                         acls.insert(Acl::Modify);
                         acls.insert(Acl::ModifyItems);
                     }

@@ -66,7 +66,7 @@ impl FileDeleteRequestHandler for Server {
         // Validate ACLs
         if !access_token.is_member(account_id) {
             let permissions = resources.shared_containers(access_token, [Acl::Delete], false);
-            if permissions.len() != sorted_ids.len() as u64
+            if permissions.len() < sorted_ids.len() as u64
                 || !sorted_ids.iter().all(|id| permissions.contains(*id))
             {
                 return Err(DavError::Code(StatusCode::FORBIDDEN));

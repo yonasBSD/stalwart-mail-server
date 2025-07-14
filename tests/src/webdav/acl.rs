@@ -35,6 +35,7 @@ pub async fn test(test: &WebDavTest) {
         let owner_file_content = resource_type.generate();
         let owner_file_private = format!("{owner_folder_private}test-file-private");
         let owner_file_content_private = resource_type.generate();
+        let sharee_created_file = format!("{owner_folder}test-file-sharee");
         for (folder, file, content) in [
             (&owner_folder, &owner_file, &owner_file_content),
             (
@@ -204,6 +205,10 @@ pub async fn test(test: &WebDavTest) {
             .request("PUT", &owner_file, resource_type.generate())
             .await
             .with_status(StatusCode::FORBIDDEN);
+        sharee_client
+            .request("PUT", &sharee_created_file, resource_type.generate())
+            .await
+            .with_status(StatusCode::FORBIDDEN);
 
         // Test 9: Grant write access to the sharee
         owner_client
@@ -279,6 +284,10 @@ pub async fn test(test: &WebDavTest) {
             .request("PUT", &owner_file, &owner_file_content)
             .await
             .with_status(StatusCode::NO_CONTENT);
+        sharee_client
+            .request("PUT", &sharee_created_file, resource_type.generate())
+            .await
+            .with_status(StatusCode::CREATED);
 
         // Test 11: Grant delete access to the sharee and verify
         owner_client
@@ -290,6 +299,14 @@ pub async fn test(test: &WebDavTest) {
                 .acl(&owner_file, sharee_principal.as_str(), ["read", "write"])
                 .await
                 .with_status(StatusCode::OK);
+            owner_client
+                .acl(
+                    &sharee_created_file,
+                    sharee_principal.as_str(),
+                    ["read", "write"],
+                )
+                .await
+                .with_status(StatusCode::OK);
         }
         sharee_client
             .request_with_headers(
@@ -298,6 +315,10 @@ pub async fn test(test: &WebDavTest) {
                 [("destination", sharee_file.as_str())],
                 "",
             )
+            .await
+            .with_status(StatusCode::NO_CONTENT);
+        sharee_client
+            .request("DELETE", &sharee_created_file, "")
             .await
             .with_status(StatusCode::NO_CONTENT);
         sharee_client
