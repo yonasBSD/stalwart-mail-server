@@ -120,6 +120,25 @@ pub async fn test(test: &WebDavTest) {
             .await
             .with_status(StatusCode::OK)
             .with_body(&owner_file_content);
+        match resource_type {
+            DavResourceName::Cal => {
+                sharee_client
+                    .multiget_calendar(&owner_folder, &[&owner_file])
+                    .await
+                    .properties(&owner_file)
+                    .with_status(StatusCode::OK)
+                    .is_defined(DavProperty::WebDav(WebDavProperty::GetETag));
+            }
+            DavResourceName::Card => {
+                sharee_client
+                    .multiget_addressbook(&owner_folder, &[&owner_file])
+                    .await
+                    .properties(&owner_file)
+                    .with_status(StatusCode::OK)
+                    .is_defined(DavProperty::WebDav(WebDavProperty::GetETag));
+            }
+            _ => {}
+        }
 
         // Test 5: Read ACL as owner
         let response = owner_client

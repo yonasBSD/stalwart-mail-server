@@ -1480,7 +1480,7 @@ async fn multiget(
             if !resource.is_container() {
                 if document_ids
                     .as_ref()
-                    .is_none_or(|docs| docs.contains(resource.document_id()))
+                    .is_none_or(|docs| docs.contains(resource.parent_id().unwrap()))
                 {
                     paths.push(PropFindItem::new(
                         resources.format_resource(resource),
