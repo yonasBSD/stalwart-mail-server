@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.13.0] - 2025-07-15
+
+If you are upgrading from v0.11.x or v0.12.x, this version includes **breaking changes** to the message queue and MTA configuration. Please read the [UPGRADING.md](https://github.com/stalwartlabs/stalwart/blob/main/UPGRADING.md) file for more information on how to upgrade from previous versions.
+
+## Added
+- MTA queue enhancements (#1246 #1035 #457).
+- Danish locale support (contributed by @Fadil2k) (#1772).
+- DKIM support for `stalwart-cli` (contributed by @rmsc) (#1804).
+
+## Changed
+- Invalidate access token caches in a cluster using pub/sub (#1741).
+- Allow updating secrets for all directory types.
+
+## Fixed
+- WebDAV: Return all shared resources in `calendar-home-set` and `addressbook-home-set` (#1796).
+- WebDAV ACL: Fix write permission and `multiget` reports (#1768).
+- CalDAV Scheduling: Include `DTSTART`/`DTEND` properties in iMIP `CANCEL` messages (#1775).
+- HTTP: Do not include `WWW-Authenticate` headers in API responses (#1795).
+- API: Allow API keys to be used with external directories (#1815).
+- IMAP: Fix issue creating subfolders under INBOX for group shared folder (#1817).
+- IMAP: Custom Name for Shared Folders ignored (#1620).
+- LDAP: `local` placeholder should return username when its not an email address (#1784).
+
 ## [0.12.5] - 2025-06-25
 
 If you are upgrading from v0.11.x, this version includes **breaking changes** to the database layout and requires a migration. Please read the [UPGRADING.md](https://github.com/stalwartlabs/stalwart/blob/main/UPGRADING.md) file for more information on how to upgrade from previous versions.
