@@ -438,7 +438,8 @@ impl BootManager {
                 );
 
                 // Webadmin auto-update
-                if config
+                // Disabled temporarily until selective updates are implemented
+                /*if config
                     .property_or_default::<bool>("webadmin.auto-update", "false")
                     .unwrap_or_default()
                 {
@@ -449,7 +450,7 @@ impl BootManager {
                             CausedBy = err
                         );
                     }
-                }
+                }*/
 
                 // Spam filter auto-update
                 if config
