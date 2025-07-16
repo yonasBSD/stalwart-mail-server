@@ -62,7 +62,7 @@ impl Queue {
             locked: AHashMap::with_capacity(128),
             locked_revision: 0,
             stats: AHashMap::new(),
-            next_refresh: Instant::now(),
+            next_refresh: Instant::now() + Duration::from_secs(1),
             is_paused: false,
             rx,
         }

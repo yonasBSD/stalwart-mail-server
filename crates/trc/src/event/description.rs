@@ -396,7 +396,7 @@ impl SmtpEvent {
     pub fn description(&self) -> &'static str {
         match self {
             SmtpEvent::Error => "SMTP error occurred",
-            SmtpEvent::IdNotFound => "Remote host ID not found",
+            SmtpEvent::IdNotFound => "Strategy not found",
             SmtpEvent::ConcurrencyLimitExceeded => "Concurrency limit exceeded",
             SmtpEvent::TransferLimitExceeded => "Transfer limit exceeded",
             SmtpEvent::RateLimitExceeded => "Rate limit exceeded",
@@ -483,7 +483,7 @@ impl SmtpEvent {
     pub fn explain(&self) -> &'static str {
         match self {
             SmtpEvent::Error => "An error occurred during an SMTP command",
-            SmtpEvent::IdNotFound => "The remote server ID was not found in the configuration",
+            SmtpEvent::IdNotFound => "The strategy ID was not found in the configuration",
             SmtpEvent::ConcurrencyLimitExceeded => "The concurrency limit was exceeded",
             SmtpEvent::TransferLimitExceeded => {
                 "The remote host transferred more data than allowed"

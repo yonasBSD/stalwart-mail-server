@@ -126,9 +126,14 @@ impl SmtpSpool for Server {
 
                     if due <= now {
                         let queue_id = key.deserialize_be_u64(U64_LEN)?;
-                        let queue_name =
-                            QueueName::from_bytes(key.get(U64_LEN + U64_LEN..).unwrap_or_default())
-                                .unwrap_or_default();
+                        let queue_name = key
+                            .get(U64_LEN + U64_LEN..)
+                            .and_then(QueueName::from_bytes)
+                            .ok_or_else(|| {
+                                trc::StoreEvent::DataCorruption
+                                    .caused_by(trc::location!())
+                                    .ctx(trc::Key::Key, key)
+                            })?;
 
                         let add_event = queue
                             .stats
