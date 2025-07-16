@@ -101,7 +101,9 @@ impl MailboxGet for Server {
                             Value::Null
                         }
                     }
-                    Property::SortOrder => Value::from(cached_mailbox.sort_order()),
+                    Property::SortOrder => {
+                        Value::from(cached_mailbox.sort_order().unwrap_or_default())
+                    }
                     Property::ParentId => {
                         if let Some(parent_id) = cached_mailbox.parent_id() {
                             Value::Id((parent_id).into())
