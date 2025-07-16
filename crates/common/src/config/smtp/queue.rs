@@ -460,7 +460,6 @@ fn parse_tls_strategies(config: &mut Config) -> AHashMap<String, TlsStrategy> {
         &[
             ".allow-invalid-certs",
             ".dane",
-            ".mta-sts",
             ".starttls",
             ".timeout.tls",
             ".timeout.mta-sts",
