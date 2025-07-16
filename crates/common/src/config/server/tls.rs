@@ -252,6 +252,26 @@ fn build_dns_updater(config: &mut Config, acme_id: &str) -> Option<DnsUpdater> {
             })
             .ok()
         }
+        "digitalocean" => {
+            let timeout = config
+                .property_or_default(("acme", acme_id, "timeout"), "30s")
+                .unwrap_or_else(|| Duration::from_secs(30));
+
+            DnsUpdater::new_digitalocean(
+                config
+                    .value_require(("acme", acme_id, "secret"))?
+                    .trim()
+                    .to_string(),
+                timeout.into(),
+            )
+            .map_err(|err| {
+                config.new_build_error(
+                    ("acme", acme_id, "provider"),
+                    format!("Failed to create DigitalOcean DNS updater: {err}"),
+                )
+            })
+            .ok()
+        }
         _ => {
             config.new_parse_error(("acme", acme_id, "provider"), "Unsupported provider");
             None
