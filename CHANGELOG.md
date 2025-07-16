@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.13.1] - 2025-07-16
+
+If you are upgrading from v0.11.x or v0.12.x, this version includes **breaking changes** to the message queue and MTA configuration. Please read the [UPGRADING.md](https://github.com/stalwartlabs/stalwart/blob/main/UPGRADING.md) file for more information on how to upgrade from previous versions.
+
+## Added
+- ACME: DigitalOcean cloud DNS provider support (closes #1667).
+
+## Changed
+
+## Fixed
+- Migration: Old queue events not deleted causing high CPU usage in some deployments (#1833).
+- MTA: `mta-sts` setting parsing issue (#1830).
+- JMAP: `sortOrder` should not be null (#1831).
+- Allow invalid TOML when parsing database settings (#1822).
+
 ## [0.13.0] - 2025-07-15
 
 If you are upgrading from v0.11.x or v0.12.x, this version includes **breaking changes** to the message queue and MTA configuration. Please read the [UPGRADING.md](https://github.com/stalwartlabs/stalwart/blob/main/UPGRADING.md) file for more information on how to upgrade from previous versions.
