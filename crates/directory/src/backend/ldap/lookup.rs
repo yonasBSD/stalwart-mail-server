@@ -33,7 +33,9 @@ impl LdapDirectory {
             QueryBy::Name(username) => {
                 let filter = self.mappings.filter_name.build(username);
                 if let Some(mut result) = self.find_principal(&mut conn, &filter).await? {
-                    result.principal.name = username.into();
+                    if result.principal.name.is_empty() {
+                        result.principal.name = username.into();
+                    }
                     (result.principal, result.member_of, None)
                 } else {
                     trc::event!(
@@ -112,7 +114,9 @@ impl LdapDirectory {
 
                         match result {
                             Ok(Some(mut result)) => {
-                                result.principal.name = username.into();
+                                if result.principal.name.is_empty() {
+                                    result.principal.name = username.into();
+                                }
                                 (result.principal, result.member_of, None)
                             }
                             Err(err)
@@ -162,7 +166,9 @@ impl LdapDirectory {
                                 .success()
                                 .is_ok()
                             {
-                                result.principal.name = username.into();
+                                if result.principal.name.is_empty() {
+                                    result.principal.name = username.into();
+                                }
                                 (result.principal, result.member_of, None)
                             } else {
                                 trc::event!(
@@ -185,7 +191,9 @@ impl LdapDirectory {
                         let filter = self.mappings.filter_name.build(username);
                         if let Some(mut result) = self.find_principal(&mut conn, &filter).await? {
                             if result.principal.verify_secret(secret).await? {
-                                result.principal.name = username.into();
+                                if result.principal.name.is_empty() {
+                                    result.principal.name = username.into();
+                                }
                                 (result.principal, result.member_of, None)
                             } else {
                                 trc::event!(
