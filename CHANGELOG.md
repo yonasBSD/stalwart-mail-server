@@ -7,7 +7,7 @@ All notable changes to this project will be documented in this file. This projec
 If you are upgrading from v0.11.x or v0.12.x, this version includes **breaking changes** to the message queue and MTA configuration. Please read the [UPGRADING.md](https://github.com/stalwartlabs/stalwart/blob/main/UPGRADING.md) file for more information on how to upgrade from previous versions.
 
 ## Added
-- ACME: DigitalOcean cloud DNS provider support (closes #1667).
+- ACME: DigitalOcean cloud DNS provider support (#1667).
 
 ## Changed
 
