@@ -11,6 +11,7 @@ use crate::{
 use common::{listener::SessionStream, storage::index::ObjectIndexBuilder};
 use directory::Permission;
 use email::{
+    cache::{MessageCacheFetch, email::MessageCacheAccess},
     mailbox::{JUNK_ID, UidMailbox},
     message::{
         bayes::EmailBayesTrain, copy::EmailCopy, ingest::EmailIngest, metadata::MessageData,
@@ -343,6 +344,11 @@ impl<T: SessionStream> SessionData<T> {
             let dest_account_id = dest_mailbox.account_id;
             let resource_token = access_token.as_resource_token();
             let mut destroy_ids = RoaringBitmap::new();
+            let cache = self
+                .server
+                .get_cached_messages(src_account_id)
+                .await
+                .imap_ctx(&arguments.tag, trc::location!())?;
             for (id, imap_id) in ids {
                 match self
                     .server
@@ -351,7 +357,10 @@ impl<T: SessionStream> SessionData<T> {
                         id,
                         &resource_token,
                         vec![dest_mailbox_id],
-                        Vec::new(),
+                        cache
+                            .email_by_id(&id)
+                            .map(|e| cache.expand_keywords(e).collect())
+                            .unwrap_or_default(),
                         None,
                         self.session_id,
                     )
