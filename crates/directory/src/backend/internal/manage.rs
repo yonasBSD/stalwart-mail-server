@@ -394,13 +394,15 @@ impl ManageDirectory for Store {
             let mut principal_quotas = Vec::new();
 
             for (idx, quota) in quotas.into_iter().take(Type::MAX_ID + 2).enumerate() {
-                if idx != 0 {
-                    principal_quotas.push(PrincipalQuota {
-                        quota,
-                        typ: Type::from_u8((idx - 1) as u8),
-                    });
-                } else if quota != 0 {
-                    principal_create.quota = Some(quota);
+                if quota != 0 {
+                    if idx != 0 {
+                        principal_quotas.push(PrincipalQuota {
+                            quota,
+                            typ: Type::from_u8((idx - 1) as u8),
+                        });
+                    } else {
+                        principal_create.quota = Some(quota);
+                    }
                 }
             }
 
@@ -1209,13 +1211,15 @@ impl ManageDirectory for Store {
                     let mut principal_quotas = Vec::new();
 
                     for (idx, quota) in quotas.into_iter().enumerate() {
-                        if idx != 0 {
-                            principal_quotas.push(PrincipalQuota {
-                                quota,
-                                typ: Type::from_u8((idx - 1) as u8),
-                            });
-                        } else if quota != 0 {
-                            new_quota = Some(quota);
+                        if quota != 0 {
+                            if idx != 0 {
+                                principal_quotas.push(PrincipalQuota {
+                                    quota,
+                                    typ: Type::from_u8((idx - 1) as u8),
+                                });
+                            } else {
+                                new_quota = Some(quota);
+                            }
                         }
                     }
 
