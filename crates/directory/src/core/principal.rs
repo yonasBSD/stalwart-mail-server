@@ -912,7 +912,7 @@ impl Type {
             1 => Type::Group,
             2 => Type::Resource,
             3 => Type::Location,
-            4 => Type::Individual, // legacy
+            4 => Type::Other, // legacy
             5 => Type::List,
             6 => Type::Other,
             7 => Type::Domain,

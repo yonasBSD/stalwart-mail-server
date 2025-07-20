@@ -572,6 +572,7 @@ impl PrincipalManager for Server {
                         })?;
 
                         // Validate changes
+                        let mut invalidate_logo_cache = false;
                         for change in &changes {
                             match change.field {
                                 PrincipalField::Secrets
@@ -581,13 +582,16 @@ impl PrincipalManager for Server {
                                 | PrincipalField::UsedQuota
                                 | PrincipalField::Description
                                 | PrincipalField::Type
-                                | PrincipalField::Picture
                                 | PrincipalField::MemberOf
                                 | PrincipalField::Members
                                 | PrincipalField::Lists
                                 | PrincipalField::Urls
                                 | PrincipalField::ExternalMembers
                                 | PrincipalField::Locale => (),
+                                PrincipalField::Picture => {
+                                    invalidate_logo_cache |=
+                                        matches!(typ, Type::Domain | Type::Tenant);
+                                }
                                 PrincipalField::Tenant => {
                                     // Tenants are not allowed to change their tenantId
                                     if access_token.tenant.is_some() {
@@ -670,6 +674,11 @@ impl PrincipalManager for Server {
 
                         // Increment revision
                         self.invalidate_principal_caches(changed_principals).await;
+
+                        // Invalidate logo cache if needed
+                        if invalidate_logo_cache {
+                            self.inner.data.logos.lock().clear();
+                        }
 
                         Ok(JsonResponse::new(json!({
                             "data": (),
