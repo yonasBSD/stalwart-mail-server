@@ -62,12 +62,12 @@ impl Server {
 
         // Apply principal permissions
         let mut permissions = role_permissions.finalize();
+        let mut tenant = None;
 
         // SPDX-SnippetBegin
         // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
         // SPDX-License-Identifier: LicenseRef-SEL
 
-        let mut tenant = None;
         #[cfg(feature = "enterprise")]
         if self.is_enterprise_edition() {
             if let Some(tenant_id) = principal.tenant {

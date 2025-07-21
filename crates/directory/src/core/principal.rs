@@ -75,10 +75,17 @@ impl Principal {
     // SPDX-SnippetBegin
     // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
     // SPDX-License-Identifier: LicenseRef-SEL
+
+    #[cfg(feature = "enterprise")]
     pub fn tenant(&self) -> Option<u32> {
         self.tenant
     }
     // SPDX-SnippetEnd
+
+    #[cfg(not(feature = "enterprise"))]
+    pub fn tenant(&self) -> Option<u32> {
+        None
+    }
 
     pub fn description(&self) -> Option<&str> {
         self.description.as_deref()

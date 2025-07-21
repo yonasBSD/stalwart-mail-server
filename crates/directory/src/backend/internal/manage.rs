@@ -646,12 +646,13 @@ impl ManageDirectory for Store {
         let mut batch = BatchBuilder::new();
         batch.with_account_id(u32::MAX);
 
+        let tenant = principal.tenant.as_ref().map(|t| t.to_native());
+
         // SPDX-SnippetBegin
         // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
         // SPDX-License-Identifier: LicenseRef-SEL
 
         // Make sure tenant has no data
-        let tenant = principal.tenant.as_ref().map(|t| t.to_native());
         #[cfg(feature = "enterprise")]
         match typ {
             Type::Individual | Type::Group => {

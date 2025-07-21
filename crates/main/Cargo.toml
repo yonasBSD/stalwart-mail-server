@@ -65,4 +65,5 @@ enterprise = [ "jmap/enterprise",
                "http/enterprise",
                "dav/enterprise",
                "groupware/enterprise",
+               "trc/enterprise",
                "services/enterprise" ]

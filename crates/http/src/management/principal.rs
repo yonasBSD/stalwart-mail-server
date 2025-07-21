@@ -252,12 +252,11 @@ impl PrincipalManager for Server {
                     })?;
                 }
 
+                let mut tenant = access_token.tenant.map(|t| t.id);
+
                 // SPDX-SnippetBegin
                 // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
                 // SPDX-License-Identifier: LicenseRef-SEL
-
-                let mut tenant = access_token.tenant.map(|t| t.id);
-
                 #[cfg(feature = "enterprise")]
                 if self.core.is_enterprise_edition() {
                     if tenant.is_none() {
@@ -276,7 +275,6 @@ impl PrincipalManager for Server {
                 } else if types.contains(&Type::Tenant) {
                     return Err(manage::enterprise());
                 }
-
                 // SPDX-SnippetEnd
 
                 let principals = self
@@ -347,6 +345,9 @@ impl PrincipalManager for Server {
 
                 let mut tenant = access_token.tenant.map(|t| t.id);
 
+                // SPDX-SnippetBegin
+                // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
+                // SPDX-License-Identifier: LicenseRef-SEL
                 #[cfg(feature = "enterprise")]
                 if self.core.is_enterprise_edition() {
                     if tenant.is_none() {
@@ -365,6 +366,7 @@ impl PrincipalManager for Server {
                 } else if typ == Type::Tenant {
                     return Err(manage::enterprise());
                 }
+                // SPDX-SnippetEnd
 
                 let principals = self
                     .store()

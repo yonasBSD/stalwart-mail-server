@@ -51,8 +51,6 @@ pub mod auth;
 pub mod config;
 pub mod core;
 pub mod dns;
-#[cfg(feature = "enterprise")]
-pub mod enterprise;
 pub mod expr;
 pub mod i18n;
 pub mod ipc;
@@ -62,6 +60,15 @@ pub mod scripts;
 pub mod sharing;
 pub mod storage;
 pub mod telemetry;
+
+// SPDX-SnippetBegin
+// SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
+// SPDX-License-Identifier: LicenseRef-SEL
+
+#[cfg(feature = "enterprise")]
+pub mod enterprise;
+
+// SPDX-SnippetEnd
 
 pub use psl;
 
@@ -338,8 +345,13 @@ pub struct Core {
     pub spam: SpamFilterConfig,
     pub imap: ImapConfig,
     pub metrics: Metrics,
+
+    // SPDX-SnippetBegin
+    // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
+    // SPDX-License-Identifier: LicenseRef-SEL
     #[cfg(feature = "enterprise")]
     pub enterprise: Option<enterprise::Enterprise>,
+    // SPDX-SnippetEnd
 }
 
 impl<T: CacheItemWeight> CacheItemWeight for CacheSwap<T> {
