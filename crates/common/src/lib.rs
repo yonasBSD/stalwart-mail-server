@@ -36,7 +36,7 @@ use std::{
     hash::{BuildHasher, Hash, Hasher},
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     sync::{Arc, atomic::AtomicBool},
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tinyvec::TinyVec;
 use tokio::sync::{Notify, Semaphore, mpsc};
@@ -239,10 +239,11 @@ pub struct MailboxCache {
     pub acls: TinyVec<[AclGrant; 2]>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct HttpAuthCache {
     pub account_id: u32,
     pub revision: u64,
+    pub expires: Instant,
 }
 
 pub struct Ipc {

@@ -10,7 +10,7 @@ use super::{
 };
 use crate::{
     MemberOf, Permission, PermissionGrant, Permissions, Principal, PrincipalData, PrincipalQuota,
-    QueryBy, ROLE_ADMIN, ROLE_TENANT_ADMIN, ROLE_USER, Type, backend::RcptType,
+    QueryBy, QueryParams, ROLE_ADMIN, ROLE_TENANT_ADMIN, ROLE_USER, Type, backend::RcptType,
     core::principal::build_search_index,
 };
 use ahash::{AHashMap, AHashSet};
@@ -268,7 +268,7 @@ impl ManageDirectory for Store {
         #[cfg(feature = "enterprise")]
         if let Some(tenant_id) = tenant_id {
             let tenant = self
-                .query(QueryBy::Id(tenant_id), false)
+                .query(crate::QueryParams::id(tenant_id).with_return_member_of(false))
                 .await?
                 .ok_or_else(|| {
                     trc::ManageEvent::NotFound
@@ -2025,7 +2025,7 @@ impl ManageDirectory for Store {
 
             for principal in result.items {
                 items.push(
-                    self.query(QueryBy::Id(principal.id), fetch)
+                    self.query(QueryParams::id(principal.id).with_return_member_of(fetch))
                         .await
                         .caused_by(trc::location!())?
                         .ok_or_else(|| not_found(principal.name().to_string()))?,
@@ -2236,8 +2236,9 @@ impl ManageDirectory for Store {
             match principal.typ {
                 Type::Group | Type::List | Type::Role => {
                     for member_id in self.get_members(principal.id).await? {
-                        if let Some(member_principal) =
-                            self.query(QueryBy::Id(member_id), false).await?
+                        if let Some(member_principal) = self
+                            .query(QueryParams::id(member_id).with_return_member_of(false))
+                            .await?
                         {
                             result.append_str(PrincipalField::Members, member_principal.name);
                         }

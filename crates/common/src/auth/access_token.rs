@@ -12,7 +12,7 @@ use crate::{
 };
 use ahash::AHashSet;
 use directory::{
-    Permission, Principal, PrincipalData, QueryBy, Type,
+    Permission, Principal, PrincipalData, QueryParams, Type,
     backend::internal::{
         lookup::DirectoryStore,
         manage::{ChangedPrincipals, ManageDirectory},
@@ -72,6 +72,8 @@ impl Server {
         if self.is_enterprise_edition() {
             if let Some(tenant_id) = principal.tenant {
                 // Limit tenant permissions
+
+                use directory::QueryParams;
                 permissions.intersection(&self.get_role_permissions(tenant_id).await?.enabled);
 
                 // Obtain tenant quota
@@ -79,7 +81,7 @@ impl Server {
                     id: tenant_id,
                     quota: self
                         .store()
-                        .query(QueryBy::Id(tenant_id), false)
+                        .query(QueryParams::id(tenant_id).with_return_member_of(false))
                         .await
                         .caused_by(trc::location!())?
                         .ok_or_else(|| {
@@ -178,7 +180,11 @@ impl Server {
     }
 
     async fn build_access_token(&self, account_id: u32, revision: u64) -> trc::Result<AccessToken> {
-        let err = match self.directory().query(QueryBy::Id(account_id), true).await {
+        let err = match self
+            .directory()
+            .query(QueryParams::id(account_id).with_return_member_of(true))
+            .await
+        {
             Ok(Some(principal)) => {
                 return self
                     .build_access_token_from_principal(principal, revision)

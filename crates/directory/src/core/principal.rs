@@ -4,8 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{collections::hash_map::Entry, fmt, str::FromStr};
-
+use crate::{
+    ArchivedPrincipal, FALLBACK_ADMIN_ID, Permission, PermissionGrant, Principal, PrincipalData,
+    ROLE_ADMIN, Type,
+    backend::internal::{PrincipalField, PrincipalSet, PrincipalUpdate, PrincipalValue},
+};
 use ahash::AHashSet;
 use nlp::tokenizers::word::WordTokenizer;
 use serde::{
@@ -13,15 +16,11 @@ use serde::{
     de::{self, IgnoredAny, Visitor},
     ser::SerializeMap,
 };
+use std::{collections::hash_map::Entry, fmt, str::FromStr};
 use store::{
     U64_LEN,
     backend::MAX_TOKEN_LENGTH,
     write::{BatchBuilder, DirectoryClass},
-};
-
-use crate::{
-    ArchivedPrincipal, Permission, PermissionGrant, Principal, PrincipalData, ROLE_ADMIN, Type,
-    backend::internal::{PrincipalField, PrincipalSet, PrincipalUpdate, PrincipalValue},
 };
 
 impl Principal {
@@ -313,7 +312,7 @@ impl Principal {
 
     pub fn fallback_admin(fallback_pass: impl Into<String>) -> Self {
         Principal {
-            id: u32::MAX,
+            id: FALLBACK_ADMIN_ID,
             typ: Type::Individual,
             name: "Fallback Administrator".into(),
             secrets: vec![fallback_pass.into()],

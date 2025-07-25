@@ -6,7 +6,7 @@
 
 use common::{KV_BAYES_MODEL_USER, Server, auth::AccessToken};
 use directory::{
-    DirectoryInner, Permission, QueryBy, Type,
+    DirectoryInner, Permission, QueryBy, QueryParams, Type,
     backend::internal::{
         PrincipalAction, PrincipalField, PrincipalSet, PrincipalUpdate, PrincipalValue,
         SpecialSecrets,
@@ -476,7 +476,7 @@ impl PrincipalManager for Server {
 
                         let principal = self
                             .store()
-                            .query(QueryBy::Id(account_id), true)
+                            .query(QueryParams::id(account_id).with_return_member_of(true))
                             .await?
                             .ok_or_else(|| trc::ManageEvent::NotFound.into_err())?;
 
@@ -707,7 +707,7 @@ impl PrincipalManager for Server {
         if access_token.primary_id() != u32::MAX {
             let principal = self
                 .directory()
-                .query(QueryBy::Id(access_token.primary_id()), false)
+                .query(QueryParams::id(access_token.primary_id()).with_return_member_of(false))
                 .await?
                 .ok_or_else(|| trc::ManageEvent::NotFound.into_err())?;
 
@@ -803,7 +803,16 @@ impl PrincipalManager for Server {
         }
 
         // Make sure the current directory supports updates
-        self.assert_supported_directory(false)?;
+        if requests.iter().any(|r| {
+            matches!(
+                r,
+                AccountAuthRequest::SetPassword { .. }
+                    | AccountAuthRequest::EnableOtpAuth { .. }
+                    | AccountAuthRequest::DisableOtpAuth { .. }
+            )
+        }) {
+            self.assert_supported_directory(false)?;
+        }
 
         // Build actions
         let mut actions = Vec::with_capacity(requests.len());

@@ -16,7 +16,7 @@ use crate::{
 use common::{
     Server, auth::AccessToken, config::jmap::settings::SpecialUse, scripts::plugins::PluginContext,
 };
-use directory::{Permission, QueryBy};
+use directory::{Permission, QueryParams};
 use jmap_proto::types::{collection::Collection, id::Id, keyword::Keyword, property::Property};
 use mail_parser::MessageParser;
 use sieve::{Envelope, Event, Input, Mailbox, Recipient, Sieve};
@@ -109,7 +109,7 @@ impl SieveScriptIngest for Server {
             .core
             .storage
             .directory
-            .query(QueryBy::Id(account_id), false)
+            .query(QueryParams::id(account_id).with_return_member_of(false))
             .await
             .caused_by(trc::location!())?
             .and_then(|p| {
