@@ -18,6 +18,7 @@ use jmap_proto::{
 };
 use mail_parser::MessageParser;
 use std::future::Future;
+use trc::AddContext;
 use utils::map::vec_map::VecMap;
 
 pub trait EmailImport: Sync + Send {
@@ -42,6 +43,16 @@ impl EmailImport for Server {
         let old_state: State = cache.assert_state(false, &request.if_in_state)?;
         let can_add_mailbox_ids = if access_token.is_shared(account_id) {
             cache.shared_mailboxes(access_token, Acl::AddItems).into()
+        } else {
+            None
+        };
+
+        // Obtain import access token
+        let import_access_token = if account_id != access_token.primary_id() {
+            self.get_access_token(account_id)
+                .await
+                .caused_by(trc::location!())?
+                .into()
         } else {
             None
         };
@@ -114,7 +125,7 @@ impl EmailImport for Server {
                 .email_ingest(IngestEmail {
                     raw_message: &raw_message,
                     message: MessageParser::new().parse(&raw_message),
-                    access_token,
+                    access_token: import_access_token.as_deref().unwrap_or(access_token),
                     mailbox_ids,
                     keywords: email.keywords,
                     received_at: email.received_at.map(|r| r.into()),
