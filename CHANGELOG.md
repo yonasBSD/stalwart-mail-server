@@ -2,12 +2,13 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
-## [0.13.2] - 2025-07-27
+## [0.13.2] - 2025-07-28
 
 If you are upgrading from v0.11.x or v0.12.x, this version includes **breaking changes** to the message queue and MTA configuration. Please read the [UPGRADING.md](https://github.com/stalwartlabs/stalwart/blob/main/UPGRADING.md) file for more information on how to upgrade from previous versions.
 
 ## Added
 - ACME: DeSEC cloud DNS provider support (contributed by @Tyr3al).
+- ACME: OVH cloud DNS provider support (contributed by @srachner).
 - CalDAV Scheduling: Catalan language support (contributed by @jolupa) (#1873).
 - MTA: Allow to send e-mails as group, while member of that group (#485).
 - OIDC: Allow local access tokens to be used with third-party OIDC backends (#1311 stalwartlabs/webadmin#52).
