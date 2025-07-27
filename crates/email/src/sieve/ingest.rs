@@ -35,6 +35,7 @@ use utils::config::utils::ParseValue;
 struct SieveMessage<'x> {
     pub raw_message: Cow<'x, [u8]>,
     pub file_into: Vec<u32>,
+    pub did_file_into: bool,
     pub flags: Vec<Keyword>,
 }
 
@@ -138,6 +139,7 @@ impl SieveScriptIngest for Server {
             raw_message: raw_message.into(),
             file_into: Vec::new(),
             flags: Vec::new(),
+            did_file_into: false,
         }];
         let mut ingested_message = IngestedEmail {
             id: Id::default(),
@@ -358,6 +360,7 @@ impl SieveScriptIngest for Server {
                             if !message.file_into.contains(&target_id) {
                                 message.file_into.push(target_id);
                             }
+                            message.did_file_into = true;
                             do_deliver = true;
                         } else {
                             trc::event!(
@@ -453,6 +456,7 @@ impl SieveScriptIngest for Server {
                             raw_message: message.into(),
                             file_into: Vec::new(),
                             flags: Vec::new(),
+                            did_file_into: false,
                         });
                         input = true.into();
                     }
@@ -516,7 +520,8 @@ impl SieveScriptIngest for Server {
                             deliver_to: envelope_to,
                             is_sender_authenticated: envelope_from_authenticated,
                         },
-                        spam_classify: access_token.has_permission(Permission::SpamFilterClassify),
+                        spam_classify: access_token.has_permission(Permission::SpamFilterClassify)
+                            && !sieve_message.did_file_into,
                         spam_train: can_spam_train,
                         session_id,
                     })
