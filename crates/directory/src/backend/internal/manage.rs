@@ -9,9 +9,9 @@ use super::{
     SpecialSecrets, lookup::DirectoryStore,
 };
 use crate::{
-    MemberOf, Permission, PermissionGrant, Permissions, Principal, PrincipalData, PrincipalQuota,
-    QueryBy, QueryParams, ROLE_ADMIN, ROLE_TENANT_ADMIN, ROLE_USER, Type, backend::RcptType,
-    core::principal::build_search_index,
+    FALLBACK_ADMIN_ID, MemberOf, Permission, PermissionGrant, Permissions, Principal,
+    PrincipalData, PrincipalQuota, QueryBy, QueryParams, ROLE_ADMIN, ROLE_TENANT_ADMIN, ROLE_USER,
+    Type, backend::RcptType, core::principal::build_search_index,
 };
 use ahash::{AHashMap, AHashSet};
 use compact_str::CompactString;
@@ -182,6 +182,12 @@ impl ManageDirectory for Store {
                     .assign_document_ids(u32::MAX, Collection::Principal, 1)
                     .await
                     .caused_by(trc::location!())?;
+                if principal_id_ == FALLBACK_ADMIN_ID {
+                    return Err(trc::StoreEvent::UnexpectedError
+                        .into_err()
+                        .details("ID assignment failed")
+                        .caused_by(trc::location!()));
+                }
                 principal_id = Some(principal_id_);
                 principal_id_
             };
@@ -536,6 +542,12 @@ impl ManageDirectory for Store {
             .assign_document_ids(u32::MAX, Collection::Principal, 1)
             .await
             .caused_by(trc::location!())?;
+        if principal_id == FALLBACK_ADMIN_ID {
+            return Err(trc::StoreEvent::UnexpectedError
+                .into_err()
+                .details("ID assignment failed")
+                .caused_by(trc::location!()));
+        }
         principal_create.id = principal_id;
         let mut batch = BatchBuilder::new();
         let pinfo_name = PrincipalInfo::new(principal_id, principal_create.typ, tenant_id);
