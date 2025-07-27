@@ -99,18 +99,35 @@ impl Server {
 
         // SPDX-SnippetEnd
 
+        // Build member of and e-mail addresses
+        let primary_id = principal.id();
+        let member_of = principal
+            .member_of_mut()
+            .map(std::mem::take)
+            .unwrap_or_default();
+        let mut emails = principal.emails;
+        for &group_id in &member_of {
+            if let Some(group) = self
+                .store()
+                .query(QueryParams::id(group_id).with_return_member_of(false))
+                .await
+                .caused_by(trc::location!())?
+            {
+                if group.typ == Type::Group {
+                    emails.extend(group.emails);
+                }
+            }
+        }
+
         // Build access token
         let mut access_token = AccessToken {
-            primary_id: principal.id(),
-            member_of: principal
-                .member_of_mut()
-                .map(std::mem::take)
-                .unwrap_or_default(),
+            primary_id,
+            member_of,
             access_to: VecMap::new(),
             tenant,
             name: principal.name,
             description: principal.description,
-            emails: principal.emails,
+            emails,
             quota: principal.quota.unwrap_or_default(),
             locale: principal.data.iter().find_map(|data| {
                 if let PrincipalData::Locale(v) = data {
