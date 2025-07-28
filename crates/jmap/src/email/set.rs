@@ -86,10 +86,18 @@ impl EmailSet for Server {
 
         // Obtain import access token
         let import_access_token = if account_id != access_token.primary_id() {
-            self.get_access_token(account_id)
-                .await
-                .caused_by(trc::location!())?
-                .into()
+            #[cfg(feature = "test_mode")]
+            {
+                std::sync::Arc::new(AccessToken::from_id(account_id)).into()
+            }
+
+            #[cfg(not(feature = "test_mode"))]
+            {
+                self.get_access_token(account_id)
+                    .await
+                    .caused_by(trc::location!())?
+                    .into()
+            }
         } else {
             None
         };
