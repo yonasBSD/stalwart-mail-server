@@ -439,12 +439,13 @@ impl MailboxSet for Server {
         let cached_mailboxes = self.get_cached_messages(ctx.account_id).await?;
 
         // Verify that the mailbox role is unique.
-        if !matches!(changes.role, SpecialUse::None)
-            && update
-                .as_ref()
-                .is_none_or(|(_, m)| m.inner.role != changes.role)
+        if update
+            .as_ref()
+            .is_none_or(|(_, m)| m.inner.role != changes.role)
         {
-            if cached_mailboxes.mailbox_by_role(&changes.role).is_some() {
+            if !matches!(changes.role, SpecialUse::None)
+                && cached_mailboxes.mailbox_by_role(&changes.role).is_some()
+            {
                 return Ok(Err(SetError::invalid_properties()
                     .with_property(Property::Role)
                     .with_description(format!(
