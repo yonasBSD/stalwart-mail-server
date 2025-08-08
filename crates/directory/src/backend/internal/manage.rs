@@ -553,6 +553,14 @@ impl ManageDirectory for Store {
         let pinfo_name = PrincipalInfo::new(principal_id, principal_create.typ, tenant_id);
         let pinfo_email = PrincipalInfo::new(principal_id, principal_create.typ, None);
 
+        // Validate object size
+        if principal_create.object_size() > 100_000 {
+            return Err(error(
+                "Invalid parameter",
+                "Principal object size exceeds 100kb safety limit.".into(),
+            ));
+        }
+
         // Serialize
         let archiver = Archiver::new(principal_create);
         let principal_bytes = archiver.serialize().caused_by(trc::location!())?;
@@ -1900,6 +1908,14 @@ impl ManageDirectory for Store {
                     ));
                 }
             }
+        }
+
+        // Validate object size
+        if principal.object_size() > 100_000 {
+            return Err(error(
+                "Invalid parameter",
+                "Principal object size exceeds 100kb safety limit.".into(),
+            ));
         }
 
         if update_principal {

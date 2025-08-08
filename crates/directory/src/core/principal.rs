@@ -18,7 +18,7 @@ use serde::{
 };
 use std::{collections::hash_map::Entry, fmt, str::FromStr};
 use store::{
-    U64_LEN,
+    U32_LEN, U64_LEN,
     backend::MAX_TOKEN_LENGTH,
     write::{BatchBuilder, DirectoryClass},
 };
@@ -308,6 +308,28 @@ impl Principal {
         }
 
         updates
+    }
+
+    pub fn object_size(&self) -> usize {
+        self.name.len()
+            + self.description.as_ref().map_or(0, |d| d.len())
+            + self.secrets.iter().map(|s| s.len()).sum::<usize>()
+            + self.emails.iter().map(|e| e.len()).sum::<usize>()
+            + self
+                .data
+                .iter()
+                .map(|d| match d {
+                    PrincipalData::MemberOf(items)
+                    | PrincipalData::Roles(items)
+                    | PrincipalData::Lists(items) => items.len() * U32_LEN,
+                    PrincipalData::Permissions(items) => items.len() * U32_LEN,
+                    PrincipalData::ExternalMembers(items) | PrincipalData::Urls(items) => {
+                        items.iter().map(|s| s.len()).sum::<usize>()
+                    }
+                    PrincipalData::PrincipalQuota(items) => items.len() * U32_LEN,
+                    PrincipalData::Picture(value) | PrincipalData::Locale(value) => value.len(),
+                })
+                .sum::<usize>()
     }
 
     pub fn fallback_admin(fallback_pass: impl Into<String>) -> Self {
