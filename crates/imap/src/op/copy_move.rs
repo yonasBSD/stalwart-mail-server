@@ -12,7 +12,7 @@ use common::{listener::SessionStream, storage::index::ObjectIndexBuilder};
 use directory::Permission;
 use email::{
     cache::{MessageCacheFetch, email::MessageCacheAccess},
-    mailbox::{JUNK_ID, UidMailbox},
+    mailbox::{JUNK_ID, TRASH_ID, UidMailbox},
     message::{
         bayes::EmailBayesTrain, copy::EmailCopy, ingest::EmailIngest, metadata::MessageData,
     },
@@ -328,7 +328,9 @@ impl<T: SessionStream> SessionData<T> {
                             vec![],
                         );
                         has_spam_train_tasks = true;
-                    } else if src_mailbox.id.mailbox_id == JUNK_ID {
+                    } else if src_mailbox.id.mailbox_id == JUNK_ID
+                        && dest_mailbox_id.mailbox_id != TRASH_ID
+                    {
                         batch.set(
                             ValueClass::TaskQueue(
                                 self.server
