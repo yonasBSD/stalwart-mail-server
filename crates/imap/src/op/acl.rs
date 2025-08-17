@@ -54,6 +54,25 @@ impl<T: SessionStream> Session<T> {
                 .to_unarchived::<email::mailbox::Mailbox>()
                 .imap_ctx(&arguments.tag, trc::location!())?;
 
+            // Add the current user if they are the owner or a group member
+            if data.access_token.is_member(mailbox_id.account_id) {
+                permissions.push((
+                    data.access_token.name.clone(),
+                    vec![
+                        Rights::Read,
+                        Rights::Lookup,
+                        Rights::Insert,
+                        Rights::DeleteMessages,
+                        Rights::Expunge,
+                        Rights::Seen,
+                        Rights::Write,
+                        Rights::CreateMailbox,
+                        Rights::DeleteMailbox,
+                        Rights::Post,
+                    ],
+                ));
+            }
+
             for item in mailbox.inner.acls.iter() {
                 if let Some(account_name) = data
                     .server
