@@ -45,6 +45,7 @@ impl<T: SessionStream> Session<T> {
             _ => unreachable!(),
         };
         let is_rev2 = self.version.is_rev2();
+        let is_utf8 = self.is_utf8;
         let is_qresync = self.is_qresync;
 
         // Register with state manager
@@ -109,7 +110,7 @@ impl<T: SessionStream> Session<T> {
                         }
 
                         if has_mailbox_changes || has_email_changes {
-                            data.write_changes(&mailbox, has_mailbox_changes, has_email_changes, is_qresync, is_rev2).await?;
+                            data.write_changes(&mailbox, has_mailbox_changes, has_email_changes, is_qresync, is_rev2, is_utf8).await?;
                         }
                     } else {
                         self.write_bytes(&b"* BYE Server shutting down.\r\n"[..]).await.ok();
@@ -129,6 +130,7 @@ impl<T: SessionStream> SessionData<T> {
         check_emails: bool,
         is_qresync: bool,
         is_rev2: bool,
+        is_utf8: bool,
     ) -> trc::Result<()> {
         // Fetch all changed mailboxes
         if check_mailboxes {
@@ -147,7 +149,7 @@ impl<T: SessionStream> SessionData<T> {
                     attributes: vec![Attribute::NonExistent],
                     tags: vec![],
                 }
-                .serialize(&mut buf, is_rev2, false);
+                .serialize(&mut buf, is_rev2, is_utf8, false);
             }
 
             // List added mailboxes
@@ -157,7 +159,7 @@ impl<T: SessionStream> SessionData<T> {
                     attributes: vec![],
                     tags: vec![],
                 }
-                .serialize(&mut buf, is_rev2, false);
+                .serialize(&mut buf, is_rev2, is_utf8, false);
             }
             // Obtain status of changed mailboxes
             for mailbox_name in changes.changed {
@@ -173,7 +175,7 @@ impl<T: SessionStream> SessionData<T> {
                     )
                     .await
                 {
-                    status.serialize(&mut buf, is_rev2);
+                    status.serialize(&mut buf, is_utf8);
                 }
             }
 
@@ -242,7 +244,6 @@ impl<T: SessionStream> SessionData<T> {
                             mailbox.clone(),
                             true,
                             is_qresync,
-                            is_rev2,
                             false,
                             op_start,
                         )

@@ -56,7 +56,6 @@ impl<T: SessionStream> Session<T> {
 
         let (data, mailbox) = self.state.select_data();
         let is_qresync = self.is_qresync;
-        let is_rev2 = self.version.is_rev2();
 
         let mut ops = Vec::with_capacity(requests.len());
 
@@ -92,7 +91,6 @@ impl<T: SessionStream> Session<T> {
                                 mailbox.clone(),
                                 is_uid,
                                 is_qresync,
-                                is_rev2,
                                 enabled_condstore,
                                 Instant::now(),
                             )
@@ -117,7 +115,6 @@ impl<T: SessionStream> SessionData<T> {
         mailbox: Arc<SelectedMailbox>,
         is_uid: bool,
         is_qresync: bool,
-        _is_rev2: bool,
         enabled_condstore: bool,
         op_start: Instant,
     ) -> trc::Result<StatusResponse> {

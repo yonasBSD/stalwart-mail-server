@@ -97,10 +97,10 @@ pub struct MyRightsResponse {
 }
 
 impl GetAclResponse {
-    pub fn into_bytes(self, is_rev2: bool) -> Vec<u8> {
+    pub fn into_bytes(self, is_utf8: bool) -> Vec<u8> {
         let mut buf = Vec::with_capacity(self.mailbox_name.len() + 10 * self.permissions.len() * 5);
         buf.extend_from_slice(b"* ACL ");
-        if is_rev2 {
+        if is_utf8 {
             quoted_string(&mut buf, &self.mailbox_name);
         } else {
             quoted_string(&mut buf, &utf7_encode(&self.mailbox_name));
@@ -120,12 +120,12 @@ impl GetAclResponse {
 }
 
 impl ListRightsResponse {
-    pub fn into_bytes(self, is_rev2: bool) -> Vec<u8> {
+    pub fn into_bytes(self, is_utf8: bool) -> Vec<u8> {
         let mut buf = Vec::with_capacity(
             self.mailbox_name.len() + self.identifier.len() + 10 * self.permissions.len() * 5,
         );
         buf.extend_from_slice(b"* LISTRIGHTS ");
-        if is_rev2 {
+        if is_utf8 {
             quoted_string(&mut buf, &self.mailbox_name);
         } else {
             quoted_string(&mut buf, &utf7_encode(&self.mailbox_name));
@@ -144,10 +144,10 @@ impl ListRightsResponse {
 }
 
 impl MyRightsResponse {
-    pub fn into_bytes(self, is_rev2: bool) -> Vec<u8> {
+    pub fn into_bytes(self, is_utf8: bool) -> Vec<u8> {
         let mut buf = Vec::with_capacity(self.mailbox_name.len() + 10 + self.rights.len());
         buf.extend_from_slice(b"* MYRIGHTS ");
-        if is_rev2 {
+        if is_utf8 {
             quoted_string(&mut buf, &self.mailbox_name);
         } else {
             quoted_string(&mut buf, &utf7_encode(&self.mailbox_name));

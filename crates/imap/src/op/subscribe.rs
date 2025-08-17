@@ -29,7 +29,7 @@ impl<T: SessionStream> Session<T> {
         self.assert_has_permission(Permission::ImapSubscribe)?;
 
         let op_start = Instant::now();
-        let arguments = request.parse_subscribe(self.version)?;
+        let arguments = request.parse_subscribe(self.is_utf8)?;
         let data = self.state.session_data();
 
         spawn_op!(data, {

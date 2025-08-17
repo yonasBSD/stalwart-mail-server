@@ -30,11 +30,11 @@ impl<T: SessionStream> Session<T> {
         self.assert_has_permission(Permission::ImapCreate)?;
 
         let data = self.state.session_data();
-        let version = self.version;
+        let is_utf8 = self.is_utf8;
 
         spawn_op!(data, {
             for request in requests {
-                match request.parse_create(version) {
+                match request.parse_create(is_utf8) {
                     Ok(argument) => match data.create_folder(argument).await {
                         Ok(response) => {
                             data.write_bytes(response.into_bytes()).await?;

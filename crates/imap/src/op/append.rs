@@ -30,7 +30,7 @@ impl<T: SessionStream> Session<T> {
         self.assert_has_permission(Permission::ImapAppend)?;
 
         let op_start = Instant::now();
-        let arguments = request.parse_append(self.version)?;
+        let arguments = request.parse_append(self.is_utf8)?;
         let (data, selected_mailbox) = self.state.session_mailbox_state();
 
         // Refresh mailboxes

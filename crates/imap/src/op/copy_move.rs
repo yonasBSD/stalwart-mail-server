@@ -53,7 +53,7 @@ impl<T: SessionStream> Session<T> {
         })?;
 
         let op_start = Instant::now();
-        let arguments = request.parse_copy_move(self.version)?;
+        let arguments = request.parse_copy_move(self.is_utf8)?;
         let (data, src_mailbox) = self.state.mailbox_state();
         let is_qresync = self.is_qresync;
 

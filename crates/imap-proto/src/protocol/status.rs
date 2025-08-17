@@ -42,9 +42,9 @@ pub enum StatusItemType {
 }
 
 impl StatusItem {
-    pub fn serialize(&self, buf: &mut Vec<u8>, is_rev2: bool) {
+    pub fn serialize(&self, buf: &mut Vec<u8>, is_utf8: bool) {
         buf.extend_from_slice(b"* STATUS ");
-        if is_rev2 {
+        if is_utf8 {
             quoted_string(buf, &self.mailbox_name);
         } else {
             quoted_string(buf, &utf7_encode(&self.mailbox_name));

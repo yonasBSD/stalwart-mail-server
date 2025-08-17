@@ -27,7 +27,7 @@ impl<T: SessionStream> Session<T> {
         self.assert_has_permission(Permission::ImapRename)?;
 
         let op_start = Instant::now();
-        let arguments = request.parse_rename(self.version)?;
+        let arguments = request.parse_rename(self.is_utf8)?;
         let data = self.state.session_data();
 
         spawn_op!(data, {

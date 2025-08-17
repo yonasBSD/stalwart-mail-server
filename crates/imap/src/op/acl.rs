@@ -40,8 +40,8 @@ impl<T: SessionStream> Session<T> {
         self.assert_has_permission(Permission::ImapAuthenticate)?;
 
         let op_start = Instant::now();
-        let arguments = request.parse_acl(self.version)?;
-        let is_rev2 = self.version.is_rev2();
+        let arguments = request.parse_acl(self.is_utf8)?;
+        let is_utf8 = self.version.is_rev2() || self.is_utf8;
         let data = self.state.session_data();
 
         spawn_op!(data, {
@@ -143,7 +143,7 @@ impl<T: SessionStream> Session<T> {
                             mailbox_name: arguments.mailbox_name.to_string(),
                             permissions,
                         }
-                        .into_bytes(is_rev2),
+                        .into_bytes(is_utf8),
                     ),
             )
             .await
@@ -155,9 +155,9 @@ impl<T: SessionStream> Session<T> {
         self.assert_has_permission(Permission::ImapMyRights)?;
 
         let op_start = Instant::now();
-        let arguments = request.parse_acl(self.version)?;
+        let arguments = request.parse_acl(self.is_utf8)?;
         let data = self.state.session_data();
-        let is_rev2 = self.version.is_rev2();
+        let is_utf8 = self.version.is_rev2() || self.is_utf8;
 
         spawn_op!(data, {
             let (mailbox_id, mailbox_, access_token) = data
@@ -231,7 +231,7 @@ impl<T: SessionStream> Session<T> {
                             mailbox_name: arguments.mailbox_name.to_string(),
                             rights,
                         }
-                        .into_bytes(is_rev2),
+                        .into_bytes(is_utf8),
                     ),
             )
             .await
@@ -244,7 +244,7 @@ impl<T: SessionStream> Session<T> {
 
         let op_start = Instant::now();
         let command = request.command;
-        let arguments = request.parse_acl(self.version)?;
+        let arguments = request.parse_acl(self.is_utf8)?;
         let data = self.state.session_data();
 
         spawn_op!(data, {
@@ -390,7 +390,7 @@ impl<T: SessionStream> Session<T> {
         self.assert_has_permission(Permission::ImapListRights)?;
 
         let op_start = Instant::now();
-        let arguments = request.parse_acl(self.version)?;
+        let arguments = request.parse_acl(self.is_utf8)?;
 
         trc::event!(
             Imap(trc::ImapEvent::ListRights),
@@ -418,7 +418,7 @@ impl<T: SessionStream> Session<T> {
                             vec![Rights::Administer],
                         ],
                     }
-                    .into_bytes(self.version.is_rev2()),
+                    .into_bytes(self.version.is_rev2() || self.is_utf8),
                 ),
         )
         .await

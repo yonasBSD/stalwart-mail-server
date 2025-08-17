@@ -32,14 +32,14 @@ impl<T: SessionStream> Session<T> {
         // Validate access
         self.assert_has_permission(Permission::ImapStatus)?;
 
-        let version = self.version;
+        let is_utf8 = self.is_utf8;
         let data = self.state.session_data();
 
         spawn_op!(data, {
             let mut did_sync = false;
 
             for request in requests.into_iter() {
-                match request.parse_status(version) {
+                match request.parse_status(is_utf8) {
                     Ok(arguments) => {
                         let op_start = Instant::now();
                         if !did_sync {
@@ -69,7 +69,7 @@ impl<T: SessionStream> Session<T> {
                         );
 
                         let mut buf = Vec::with_capacity(32);
-                        status.serialize(&mut buf, version.is_rev2());
+                        status.serialize(&mut buf, is_utf8);
                         data.write_bytes(
                             StatusResponse::completed(Command::Status)
                                 .with_tag(arguments.tag)
