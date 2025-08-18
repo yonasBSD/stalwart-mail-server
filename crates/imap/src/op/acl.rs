@@ -69,11 +69,17 @@ impl<T: SessionStream> Session<T> {
                         Rights::CreateMailbox,
                         Rights::DeleteMailbox,
                         Rights::Post,
+                        Rights::Administer,
                     ],
                 ));
             }
 
             for item in mailbox.inner.acls.iter() {
+                if item.account_id == mailbox_id.account_id {
+                    // Skip the current user, as they are already added above
+                    continue;
+                }
+
                 if let Some(account_name) = data
                     .server
                     .store()
@@ -207,6 +213,7 @@ impl<T: SessionStream> Session<T> {
                     Rights::CreateMailbox,
                     Rights::DeleteMailbox,
                     Rights::Post,
+                    Rights::Administer,
                 ]
             };
 
