@@ -167,26 +167,24 @@ impl Server {
                     }
                     _ => {
                         // Validate API credentials
-                        if req.allow_api_access {
-                            if let Ok(Some(principal)) = self
+                        if req.allow_api_access
+                            && let Ok(Some(principal)) = self
                                 .store()
                                 .query(
                                     QueryParams::credentials(&req.credentials)
                                         .with_return_member_of(req.return_member_of),
                                 )
                                 .await
-                            {
-                                if principal.typ == Type::ApiKey {
-                                    trc::event!(
-                                        Auth(trc::AuthEvent::Success),
-                                        AccountName = principal.name().to_string(),
-                                        AccountId = principal.id(),
-                                        SpanId = req.session_id,
-                                    );
+                            && principal.typ == Type::ApiKey
+                        {
+                            trc::event!(
+                                Auth(trc::AuthEvent::Success),
+                                AccountName = principal.name().to_string(),
+                                AccountId = principal.id(),
+                                SpanId = req.session_id,
+                            );
 
-                                    return Ok(principal);
-                                }
-                            }
+                            return Ok(principal);
                         }
                     }
                 }

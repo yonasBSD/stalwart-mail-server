@@ -98,11 +98,11 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
             }
 
             // OTEL Push Metrics
-            if server.core.network.roles.push_metrics {
-                if let Some(otel) = &server.core.metrics.otel {
-                    OtelMetrics::enable_errors();
-                    queue.schedule(Instant::now() + otel.interval, ActionClass::OtelMetrics);
-                }
+            if server.core.network.roles.push_metrics
+                && let Some(otel) = &server.core.metrics.otel
+            {
+                OtelMetrics::enable_errors();
+                queue.schedule(Instant::now() + otel.interval, ActionClass::OtelMetrics);
             }
 
             // Calculate expensive metrics
@@ -199,13 +199,13 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
                                     );
                                 }
 
-                                if let Some(metrics_store) = enterprise.metrics_store.as_ref() {
-                                    if !queue.has_action(&ActionClass::InternalMetrics) {
-                                        queue.schedule(
-                                            Instant::now() + metrics_store.interval.time_to_next(),
-                                            ActionClass::InternalMetrics,
-                                        );
-                                    }
+                                if let Some(metrics_store) = enterprise.metrics_store.as_ref()
+                                    && !queue.has_action(&ActionClass::InternalMetrics)
+                                {
+                                    queue.schedule(
+                                        Instant::now() + metrics_store.interval.time_to_next(),
+                                        ActionClass::InternalMetrics,
+                                    );
                                 }
 
                                 if !enterprise.metrics_alerts.is_empty()
@@ -719,17 +719,17 @@ impl Purge for Server {
                 // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
                 // SPDX-License-Identifier: LicenseRef-SEL
                 #[cfg(feature = "enterprise")]
-                if let Some(trace_retention) = trace_retention {
-                    if let Err(err) = store.purge_spans(trace_retention).await {
-                        trc::error!(err.details("Failed to purge tracing spans"));
-                    }
+                if let Some(trace_retention) = trace_retention
+                    && let Err(err) = store.purge_spans(trace_retention).await
+                {
+                    trc::error!(err.details("Failed to purge tracing spans"));
                 }
 
                 #[cfg(feature = "enterprise")]
-                if let Some(metrics_retention) = metrics_retention {
-                    if let Err(err) = store.purge_metrics(metrics_retention).await {
-                        trc::error!(err.details("Failed to purge metrics"));
-                    }
+                if let Some(metrics_retention) = metrics_retention
+                    && let Err(err) = store.purge_metrics(metrics_retention).await
+                {
+                    trc::error!(err.details("Failed to purge metrics"));
                 }
                 // SPDX-SnippetEnd
             }
@@ -767,17 +767,16 @@ impl Purge for Server {
         );
 
         // Remove lock
-        if let Some(lock_name) = &lock_name {
-            if let Err(err) = self
+        if let Some(lock_name) = &lock_name
+            && let Err(err) = self
                 .in_memory_store()
                 .remove_lock(KV_LOCK_HOUSEKEEPER, lock_name)
                 .await
-            {
-                trc::error!(
-                    err.details("Failed to delete task lock.")
-                        .details(lock_type)
-                );
-            }
+        {
+            trc::error!(
+                err.details("Failed to delete task lock.")
+                    .details(lock_type)
+            );
         }
     }
 }

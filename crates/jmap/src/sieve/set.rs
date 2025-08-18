@@ -391,8 +391,7 @@ impl SieveScriptSet for Server {
                     } else if update
                         .as_ref()
                         .is_none_or(|(_, obj)| obj.inner.name != value)
-                    {
-                        if let Some(id) = self
+                        && let Some(id) = self
                             .filter(
                                 ctx.resource_token.account_id,
                                 Collection::SieveScript,
@@ -401,14 +400,13 @@ impl SieveScriptSet for Server {
                             .await?
                             .results
                             .min()
-                        {
-                            return Ok(Err(SetError::already_exists()
-                                .with_existing_id(id.into())
-                                .with_description(format!(
-                                    "A sieve script with name '{}' already exists.",
-                                    value
-                                ))));
-                        }
+                    {
+                        return Ok(Err(SetError::already_exists()
+                            .with_existing_id(id.into())
+                            .with_description(format!(
+                                "A sieve script with name '{}' already exists.",
+                                value
+                            ))));
                     }
 
                     changes.name = value;

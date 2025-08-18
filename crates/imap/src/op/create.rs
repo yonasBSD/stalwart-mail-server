@@ -85,10 +85,10 @@ impl<T: SessionStream> SessionData<T> {
         for (pos, &path_item) in params.path.iter().enumerate() {
             let mut mailbox = email::mailbox::Mailbox::new(path_item).with_parent_id(parent_id);
 
-            if pos == params.path.len() - 1 {
-                if let Some(mailbox_role) = arguments.mailbox_role.map(attr_to_role) {
-                    mailbox.role = mailbox_role;
-                }
+            if pos == params.path.len() - 1
+                && let Some(mailbox_role) = arguments.mailbox_role.map(attr_to_role)
+            {
+                mailbox.role = mailbox_role;
             }
             let mailbox_id = next_document_id;
             next_document_id -= 1;

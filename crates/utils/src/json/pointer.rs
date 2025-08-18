@@ -71,10 +71,10 @@ impl JsonQueryable for serde_json::Value {
     ) {
         match pointer.next() {
             Some(JsonPointerItem::String(n)) => {
-                if let serde_json::Value::Object(map) = self {
-                    if let Some(v) = map.get(n) {
-                        v.eval_pointer(pointer, results);
-                    }
+                if let serde_json::Value::Object(map) = self
+                    && let Some(v) = map.get(n)
+                {
+                    v.eval_pointer(pointer, results);
                 }
             }
             Some(JsonPointerItem::Number(n)) => match self {

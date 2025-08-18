@@ -354,16 +354,15 @@ impl ManageDirectory for Store {
             principal_create.tenant = tenant_id.into();
 
             if !matches!(principal_create.typ, Type::Tenant | Type::Domain) {
-                if let Some(domain) = name.split('@').nth(1) {
-                    if self
+                if let Some(domain) = name.split('@').nth(1)
+                    && self
                         .get_principal_info(domain)
                         .await
                         .caused_by(trc::location!())?
                         .filter(|v| v.typ == Type::Domain && v.has_tenant_access(tenant_id.into()))
                         .is_some()
-                    {
-                        valid_domains.insert(domain.into());
-                    }
+                {
+                    valid_domains.insert(domain.into());
                 }
 
                 if valid_domains.is_empty() {
@@ -524,14 +523,14 @@ impl ManageDirectory for Store {
                 if self.rcpt(&email).await.caused_by(trc::location!())? != RcptType::Invalid {
                     return Err(err_exists(PrincipalField::Emails, email.to_string()));
                 }
-                if let Some(domain) = email.split('@').nth(1) {
-                    if valid_domains.insert(domain.into()) {
-                        self.get_principal_info(domain)
-                            .await
-                            .caused_by(trc::location!())?
-                            .filter(|v| v.typ == Type::Domain && v.has_tenant_access(tenant_id))
-                            .ok_or_else(|| not_found(domain.to_string()))?;
-                    }
+                if let Some(domain) = email.split('@').nth(1)
+                    && valid_domains.insert(domain.into())
+                {
+                    self.get_principal_info(domain)
+                        .await
+                        .caused_by(trc::location!())?
+                        .filter(|v| v.typ == Type::Domain && v.has_tenant_access(tenant_id))
+                        .ok_or_else(|| not_found(domain.to_string()))?;
                 }
                 principal_create.emails.push(email);
             }
@@ -1004,8 +1003,8 @@ impl ManageDirectory for Store {
                         if tenant_id.is_some()
                             && !matches!(principal_type, Type::Tenant | Type::Domain)
                         {
-                            if let Some(domain) = new_name.split('@').nth(1) {
-                                if self
+                            if let Some(domain) = new_name.split('@').nth(1)
+                                && self
                                     .get_principal_info(domain)
                                     .await
                                     .caused_by(trc::location!())?
@@ -1013,9 +1012,8 @@ impl ManageDirectory for Store {
                                         v.typ == Type::Domain && v.has_tenant_access(tenant_id)
                                     })
                                     .is_some()
-                                {
-                                    valid_domains.insert(domain.to_string());
-                                }
+                            {
+                                valid_domains.insert(domain.to_string());
                             }
 
                             if valid_domains.is_empty() {
@@ -1574,19 +1572,18 @@ impl ManageDirectory for Store {
                     for member_id in &members {
                         if !new_members.contains(member_id) {
                             // Update changed principal ids
-                            if principal_type != Type::List {
-                                if let Some(member_info) = self
+                            if principal_type != Type::List
+                                && let Some(member_info) = self
                                     .get_principal(*member_id)
                                     .await
                                     .caused_by(trc::location!())?
-                                {
-                                    changed_principals.add_member_change(
-                                        *member_id,
-                                        member_info.typ,
-                                        principal_id,
-                                        principal_type,
-                                    );
-                                }
+                            {
+                                changed_principals.add_member_change(
+                                    *member_id,
+                                    member_info.typ,
+                                    principal_id,
+                                    principal_type,
+                                );
                             }
 
                             batch.clear(ValueClass::Directory(DirectoryClass::MemberOf {
@@ -2331,16 +2328,14 @@ impl ManageDirectory for Store {
 
         // Map tenant name
         #[cfg(feature = "enterprise")]
-        if let Some(tenant_id) = principal.tenant {
-            if fields.is_empty() || fields.contains(&PrincipalField::Tenant) {
-                if let Some(name) = self
-                    .get_principal_name(tenant_id)
-                    .await
-                    .caused_by(trc::location!())?
-                {
-                    result.set(PrincipalField::Tenant, name);
-                }
-            }
+        if let Some(tenant_id) = principal.tenant
+            && (fields.is_empty() || fields.contains(&PrincipalField::Tenant))
+            && let Some(name) = self
+                .get_principal_name(tenant_id)
+                .await
+                .caused_by(trc::location!())?
+        {
+            result.set(PrincipalField::Tenant, name);
         }
 
         // SPDX-SnippetEnd
@@ -2350,10 +2345,10 @@ impl ManageDirectory for Store {
             (PrincipalField::Name, Some(principal.name)),
             (PrincipalField::Description, principal.description),
         ] {
-            if let Some(value) = value {
-                if fields.is_empty() || fields.contains(&name) {
-                    result.set(name, value);
-                }
+            if let Some(value) = value
+                && (fields.is_empty() || fields.contains(&name))
+            {
+                result.set(name, value);
             }
         }
         for (name, value) in [
@@ -2637,7 +2632,7 @@ impl ChangedPrincipals {
         self.0.contains_key(&principal_id)
     }
 
-    pub fn iter(&self) -> std::collections::hash_map::Iter<u32, ChangedPrincipal> {
+    pub fn iter(&'_ self) -> std::collections::hash_map::Iter<'_, u32, ChangedPrincipal> {
         self.0.iter()
     }
 

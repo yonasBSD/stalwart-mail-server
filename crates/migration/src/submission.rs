@@ -236,27 +236,27 @@ fn convert_envelope(value: &Value) -> Envelope {
 }
 
 fn convert_envelope_address(envelope: &Value) -> Option<Address> {
-    if let Value::Object(envelope) = envelope {
-        if let (Value::Text(email), Value::Object(params)) = (
+    if let Value::Object(envelope) = envelope
+        && let (Value::Text(email), Value::Object(params)) = (
             envelope.get(&Property::Email),
             envelope.get(&Property::Parameters),
-        ) {
-            let mut addr = Address {
-                email: email.to_string(),
-                parameters: None,
-            };
-            for (k, v) in params.0.iter() {
-                if let Property::_T(k) = &k {
-                    if !k.is_empty() {
-                        let k = k.to_string();
-                        let v = v.as_string().map(|s| s.to_string());
+        )
+    {
+        let mut addr = Address {
+            email: email.to_string(),
+            parameters: None,
+        };
+        for (k, v) in params.0.iter() {
+            if let Property::_T(k) = &k
+                && !k.is_empty()
+            {
+                let k = k.to_string();
+                let v = v.as_string().map(|s| s.to_string());
 
-                        addr.parameters.get_or_insert_default().append(k, v);
-                    }
-                }
+                addr.parameters.get_or_insert_default().append(k, v);
             }
-            return Some(addr);
         }
+        return Some(addr);
     }
 
     None

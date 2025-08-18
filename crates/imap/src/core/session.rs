@@ -28,12 +28,12 @@ impl SessionManager for ImapSessionManager {
         session: SessionData<T>,
     ) -> impl std::future::Future<Output = ()> + Send {
         async move {
-            if let Ok(mut session) = Session::new(session, self).await {
-                if session.handle_conn().await && session.instance.acceptor.is_tls() {
-                    if let Ok(mut session) = session.into_tls().await {
-                        session.handle_conn().await;
-                    }
-                }
+            if let Ok(mut session) = Session::new(session, self).await
+                && session.handle_conn().await
+                && session.instance.acceptor.is_tls()
+                && let Ok(mut session) = session.into_tls().await
+            {
+                session.handle_conn().await;
             }
         }
     }

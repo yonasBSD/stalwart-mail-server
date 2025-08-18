@@ -396,13 +396,13 @@ impl MessageWrapper {
         let now = now();
 
         for rcpt in &mut self.message.recipients {
-            if !rcpt.has_flag(RCPT_DSN_SENT | RCPT_NOTIFY_NEVER) {
-                if let Status::PermanentFailure(err) = &rcpt.status {
-                    rcpt.flags |= RCPT_DSN_SENT;
-                    let mut dsn = String::new();
-                    err.write_dsn_text(&rcpt.address, &mut dsn);
-                    is_double_bounce.push(dsn);
-                }
+            if !rcpt.has_flag(RCPT_DSN_SENT | RCPT_NOTIFY_NEVER)
+                && let Status::PermanentFailure(err) = &rcpt.status
+            {
+                rcpt.flags |= RCPT_DSN_SENT;
+                let mut dsn = String::new();
+                err.write_dsn_text(&rcpt.address, &mut dsn);
+                is_double_bounce.push(dsn);
             }
 
             if rcpt.notify.due <= now {
@@ -529,12 +529,12 @@ impl Recipient {
     }
 
     fn write_dsn_will_retry_until(&self, created: u64, dsn: &mut String) {
-        if let Some(expires) = self.expiration_time(created) {
-            if expires > now() {
-                dsn.push_str("Will-Retry-Until: ");
-                dsn.push_str(&DateTime::from_timestamp(expires as i64).to_rfc822());
-                dsn.push_str("\r\n");
-            }
+        if let Some(expires) = self.expiration_time(created)
+            && expires > now()
+        {
+            dsn.push_str("Will-Retry-Until: ");
+            dsn.push_str(&DateTime::from_timestamp(expires as i64).to_rfc822());
+            dsn.push_str("\r\n");
         }
     }
 }
@@ -624,10 +624,10 @@ impl Status<HostResponse<String>, ErrorDetails> {
     }
 
     fn write_dsn_diagnostic(&self, dsn: &mut String) {
-        if let Status::PermanentFailure(err) | Status::TemporaryFailure(err) = self {
-            if let Error::UnexpectedResponse(response) = &err.details {
-                response.response.write_dsn_diagnostic(dsn);
-            }
+        if let Status::PermanentFailure(err) | Status::TemporaryFailure(err) = self
+            && let Error::UnexpectedResponse(response) = &err.details
+        {
+            response.response.write_dsn_diagnostic(dsn);
         }
     }
 }

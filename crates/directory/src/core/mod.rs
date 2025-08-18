@@ -261,6 +261,7 @@ mod test {
 
     #[test]
     #[ignore]
+    #[allow(clippy::obfuscated_if_else)]
     fn print_permissions() {
         const CHECK: &str = ":white_check_mark:";
 

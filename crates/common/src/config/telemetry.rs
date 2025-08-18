@@ -171,12 +171,10 @@ impl Tracers {
         {
             if let Some(event_type) =
                 config.try_parse_value::<EventType>(("tracing.level", &event_name), &event_name)
-            {
-                if let Some(level) =
+                && let Some(level) =
                     config.property_require::<Level>(("tracing.level", &event_name))
-                {
-                    custom_levels.insert(event_type, level);
-                }
+            {
+                custom_levels.insert(event_type, level);
             }
         }
 
@@ -531,28 +529,27 @@ impl Tracers {
             if config
                 .property_or_default("tracing.history.enable", "false")
                 .unwrap_or(false)
+                && let Some(store_id) = config.value_require("tracing.history.store")
             {
-                if let Some(store_id) = config.value_require("tracing.history.store") {
-                    if let Some(store) = stores.stores.get(store_id) {
-                        let mut tracer = TelemetrySubscriber {
-                            id: "history".to_string(),
-                            interests: Default::default(),
-                            lossy: false,
-                            typ: TelemetrySubscriberType::StoreTracer(StoreTracer {
-                                store: store.clone(),
-                            }),
-                        };
+                if let Some(store) = stores.stores.get(store_id) {
+                    let mut tracer = TelemetrySubscriber {
+                        id: "history".to_string(),
+                        interests: Default::default(),
+                        lossy: false,
+                        typ: TelemetrySubscriberType::StoreTracer(StoreTracer {
+                            store: store.clone(),
+                        }),
+                    };
 
-                        for event_type in StoreTracer::default_events() {
-                            tracer.interests.set(event_type);
-                            global_interests.set(event_type);
-                        }
-
-                        tracers.push(tracer);
-                    } else {
-                        let err = format!("Store {store_id} not found");
-                        config.new_build_error("tracing.history.store", err);
+                    for event_type in StoreTracer::default_events() {
+                        tracer.interests.set(event_type);
+                        global_interests.set(event_type);
                     }
+
+                    tracers.push(tracer);
+                } else {
+                    let err = format!("Store {store_id} not found");
+                    config.new_build_error("tracing.history.store", err);
                 }
             }
         }
@@ -617,14 +614,12 @@ impl Metrics {
                     .value(("tracer", tracer_id, "type"))
                     .unwrap_or_default()
                     == "log"
-            {
-                if let Some(path) = config
+                && let Some(path) = config
                     .value(("tracer", tracer_id, "path"))
                     .map(|s| s.to_string())
-                {
-                    metrics.log_path = Some(path);
-                    break;
-                }
+            {
+                metrics.log_path = Some(path);
+                break;
             }
         }
 

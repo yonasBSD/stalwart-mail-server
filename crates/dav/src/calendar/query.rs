@@ -275,11 +275,11 @@ impl CalendarQueryHandler {
                                     let mut matched_any = false;
 
                                     for value in entry.values.iter() {
-                                        if let Some(text) = value.as_text() {
-                                            if text_match.matches(text) {
-                                                matched_any = true;
-                                                break;
-                                            }
+                                        if let Some(text) = value.as_text()
+                                            && text_match.matches(text)
+                                        {
+                                            matched_any = true;
+                                            break;
                                         }
                                     }
 
@@ -443,31 +443,29 @@ impl CalendarQueryHandler {
                     .unwrap();
 
                 // Limit recurrence override
-                if let Some(limit_recurrence) = &data.limit_recurrence {
-                    if component.is_recurrence_override()
-                        && !self.expanded_times.iter().any(|event| {
-                            event.comp_id == component_id
-                                && limit_recurrence.is_in_range(
-                                    component.component_type == ICalendarComponentType::VTodo,
-                                    event.start,
-                                    event.end,
-                                )
-                        })
-                    {
-                        continue;
-                    }
+                if let Some(limit_recurrence) = &data.limit_recurrence
+                    && component.is_recurrence_override()
+                    && !self.expanded_times.iter().any(|event| {
+                        event.comp_id == component_id
+                            && limit_recurrence.is_in_range(
+                                component.component_type == ICalendarComponentType::VTodo,
+                                event.start,
+                                event.end,
+                            )
+                    })
+                {
+                    continue;
                 }
 
                 // Limit freebusy
-                if let Some(limit_recurrence) = &data.limit_freebusy {
-                    if component.component_type == ICalendarComponentType::VFreebusy
-                        && !self.expanded_times.iter().any(|event| {
-                            event.comp_id == component_id
-                                && limit_recurrence.is_in_range(false, event.start, event.end)
-                        })
-                    {
-                        continue;
-                    }
+                if let Some(limit_recurrence) = &data.limit_freebusy
+                    && component.component_type == ICalendarComponentType::VFreebusy
+                    && !self.expanded_times.iter().any(|event| {
+                        event.comp_id == component_id
+                            && limit_recurrence.is_in_range(false, event.start, event.end)
+                    })
+                {
+                    continue;
                 }
 
                 // Filter entries

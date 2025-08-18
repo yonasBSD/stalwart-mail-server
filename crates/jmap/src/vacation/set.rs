@@ -315,14 +315,13 @@ impl VacationResponseSet for Server {
             }
         } else if !will_destroy.is_empty() {
             for id in will_destroy {
-                if id.is_singleton() {
-                    if let Some(document_id) = self.get_vacation_sieve_script_id(account_id).await?
-                    {
-                        self.sieve_script_delete(&resource_token, document_id, false, &mut batch)
-                            .await?;
-                        response.destroyed.push(id);
-                        continue;
-                    }
+                if id.is_singleton()
+                    && let Some(document_id) = self.get_vacation_sieve_script_id(account_id).await?
+                {
+                    self.sieve_script_delete(&resource_token, document_id, false, &mut batch)
+                        .await?;
+                    response.destroyed.push(id);
+                    continue;
                 }
 
                 response.not_destroyed.append(id, SetError::not_found());

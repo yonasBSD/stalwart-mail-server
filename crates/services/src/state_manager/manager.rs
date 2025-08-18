@@ -75,14 +75,12 @@ pub fn spawn_state_manager(inner: Arc<Inner>, mut change_rx: mpsc::Receiver<Stat
                                     .access_to
                                     .iter()
                                     .any(|(id, _)| *id == *shared_account_id)
-                            {
-                                if let Some(shared_list) =
+                                && let Some(shared_list) =
                                     shared_accounts_map.get_mut(shared_account_id)
-                                {
-                                    shared_list.remove(&account_id);
-                                    if shared_list.is_empty() {
-                                        shared_accounts_map.remove(shared_account_id);
-                                    }
+                            {
+                                shared_list.remove(&account_id);
+                                if shared_list.is_empty() {
+                                    shared_accounts_map.remove(shared_account_id);
                                 }
                             }
                         }
@@ -140,20 +138,18 @@ pub fn spawn_state_manager(inner: Arc<Inner>, mut change_rx: mpsc::Receiver<Stat
                     broadcast,
                 } => {
                     // Publish event to cluster
-                    if broadcast {
-                        if let Some(broadcast_tx) = &inner.ipc.broadcast_tx.clone() {
-                            if broadcast_tx
-                                .send(BroadcastEvent::StateChange(state_change))
-                                .await
-                                .is_err()
-                            {
-                                trc::event!(
-                                    Server(trc::ServerEvent::ThreadError),
-                                    Details = "Error sending broadcast event.",
-                                    CausedBy = trc::location!()
-                                );
-                            }
-                        }
+                    if broadcast
+                        && let Some(broadcast_tx) = &inner.ipc.broadcast_tx.clone()
+                        && broadcast_tx
+                            .send(BroadcastEvent::StateChange(state_change))
+                            .await
+                            .is_err()
+                    {
+                        trc::event!(
+                            Server(trc::ServerEvent::ThreadError),
+                            Details = "Error sending broadcast event.",
+                            CausedBy = trc::location!()
+                        );
                     }
 
                     if let Some(shared_accounts) = shared_accounts_map.get(&state_change.account_id)
@@ -247,14 +243,14 @@ pub fn spawn_state_manager(inner: Arc<Inner>, mut change_rx: mpsc::Receiver<Stat
                         let mut remove_ids = Vec::new();
 
                         for subscriber_id in subscribers.keys() {
-                            if let SubscriberId::Push(push_id) = subscriber_id {
-                                if !subscriptions.iter().any(|s| {
+                            if let SubscriberId::Push(push_id) = subscriber_id
+                                && !subscriptions.iter().any(|s| {
                                     matches!(s, UpdateSubscription::Verified(
                                         PushSubscription { id, .. }
                                     ) if id == push_id)
-                                }) {
-                                    remove_ids.push(*subscriber_id);
-                                }
+                                })
+                            {
+                                remove_ids.push(*subscriber_id);
                             }
                         }
 

@@ -557,16 +557,15 @@ impl ParseHttp for Server {
             "metrics" => match path.next().unwrap_or_default() {
                 "prometheus" => {
                     if let Some(prometheus) = &self.core.metrics.prometheus {
-                        if let Some(auth) = &prometheus.auth {
-                            if req
+                        if let Some(auth) = &prometheus.auth
+                            && req
                                 .authorization_basic()
                                 .is_none_or(|secret| secret != auth)
-                            {
-                                return Err(trc::AuthEvent::Failed
-                                    .into_err()
-                                    .details("Invalid or missing credentials.")
-                                    .caused_by(trc::location!()));
-                            }
+                        {
+                            return Err(trc::AuthEvent::Failed
+                                .into_err()
+                                .details("Invalid or missing credentials.")
+                                .caused_by(trc::location!()));
                         }
 
                         return Ok(Resource::new(

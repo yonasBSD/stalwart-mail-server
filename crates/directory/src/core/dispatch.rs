@@ -40,10 +40,10 @@ impl Directory {
 
     pub async fn is_local_domain(&self, domain: &str) -> trc::Result<bool> {
         // Check cache
-        if let Some(cache) = &self.cache {
-            if let Some(result) = cache.get_domain(domain) {
-                return Ok(result);
-            }
+        if let Some(cache) = &self.cache
+            && let Some(result) = cache.get_domain(domain)
+        {
+            return Ok(result);
         }
 
         let result = match &self.store {
@@ -67,10 +67,10 @@ impl Directory {
 
     pub async fn rcpt(&self, email: &str) -> trc::Result<RcptType> {
         // Check cache
-        if let Some(cache) = &self.cache {
-            if let Some(result) = cache.get_rcpt(email) {
-                return Ok(result);
-            }
+        if let Some(cache) = &self.cache
+            && let Some(result) = cache.get_rcpt(email)
+        {
+            return Ok(result);
         }
 
         let result = match &self.store {

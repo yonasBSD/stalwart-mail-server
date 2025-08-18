@@ -102,9 +102,7 @@ mod tests {
 
         assert_eq!(
             String::from_utf8(buf).unwrap(),
-            concat!(
-                "* STATUS \"blurdybloop\" (MESSAGES 231 UIDNEXT 44292 MAILBOXID (abc-123))\r\n",
-            )
+            "* STATUS \"blurdybloop\" (MESSAGES 231 UIDNEXT 44292 MAILBOXID (abc-123))\r\n"
         );
     }
 }

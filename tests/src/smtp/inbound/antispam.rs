@@ -772,7 +772,7 @@ impl ParseConfigValue for Policy {
 fn html_tokens() {
     for (input, expected) in [
         (
-            concat!("<html>hello<br/>world<br/></html>"),
+            "<html>hello<br/>world<br/></html>",
             vec![
                 HtmlToken::StartTag {
                     name: 1819112552,
@@ -799,7 +799,7 @@ fn html_tokens() {
             ],
         ),
         (
-            concat!("<html>using &lt;><br/></html>"),
+            "<html>using &lt;><br/></html>",
             vec![
                 HtmlToken::StartTag {
                     name: 1819112552,
@@ -818,7 +818,7 @@ fn html_tokens() {
             ],
         ),
         (
-            concat!("test <not br/>tag<br />"),
+            "test <not br/>tag<br />",
             vec![
                 HtmlToken::Text {
                     text: "test".to_compact_string(),
@@ -839,7 +839,7 @@ fn html_tokens() {
             ],
         ),
         (
-            concat!("<>< ><tag\n/>>hello    world< br \n />"),
+            "<>< ><tag\n/>>hello    world< br \n />",
             vec![
                 HtmlToken::StartTag {
                     name: 6775156,

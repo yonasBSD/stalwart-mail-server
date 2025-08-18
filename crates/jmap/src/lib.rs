@@ -86,11 +86,11 @@ impl JmapMethods for Server {
     }
 
     async fn build_query_response<T: Sync + Send>(
-        &self,
+        &'_ self,
         result_set: &ResultSet,
         query_state: State,
         request: &QueryRequest<T>,
-    ) -> trc::Result<(QueryResponse, Option<Pagination>)> {
+    ) -> trc::Result<(QueryResponse, Option<Pagination<'_>>)> {
         let total = result_set.results.len() as usize;
         let (limit_total, limit) = if let Some(limit) = request.limit {
             if limit > 0 {
@@ -182,11 +182,11 @@ pub trait JmapMethods: Sync + Send {
     ) -> impl Future<Output = trc::Result<RoaringBitmap>> + Send;
 
     fn build_query_response<T: Sync + Send>(
-        &self,
+        &'_ self,
         result_set: &ResultSet,
         query_state: State,
         request: &QueryRequest<T>,
-    ) -> impl Future<Output = trc::Result<(QueryResponse, Option<Pagination>)>> + Send;
+    ) -> impl Future<Output = trc::Result<(QueryResponse, Option<Pagination<'_>>)>> + Send;
 
     fn sort(
         &self,

@@ -431,10 +431,10 @@ impl IsActiveStore for Config {
             "tracing.history.store",
             "metrics.history.store",
         ] {
-            if let Some(store_id) = self.value(key) {
-                if store_id == id {
-                    return true;
-                }
+            if let Some(store_id) = self.value(key)
+                && store_id == id
+            {
+                return true;
             }
         }
 

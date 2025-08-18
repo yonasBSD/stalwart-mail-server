@@ -45,39 +45,39 @@ impl DirectoryStore for Store {
             },
         };
 
-        if let Some(account_id) = account_id {
-            if let Some(mut principal) = self.get_principal(account_id).await? {
-                if let Some(secret) = secret {
-                    if !principal.verify_secret(secret, by.only_app_pass).await? {
-                        return Ok(None);
-                    }
-                }
-
-                if by.return_member_of {
-                    let mut roles = vec![];
-                    let mut lists = vec![];
-                    let mut member_of = vec![];
-
-                    for member in self.get_member_of(principal.id).await? {
-                        match member.typ {
-                            Type::List => lists.push(member.principal_id),
-                            Type::Role => roles.push(member.principal_id),
-                            _ => member_of.push(member.principal_id),
-                        }
-                    }
-
-                    if !roles.is_empty() {
-                        principal.data.push(PrincipalData::Roles(roles));
-                    }
-                    if !lists.is_empty() {
-                        principal.data.push(PrincipalData::Lists(lists));
-                    }
-                    if !member_of.is_empty() {
-                        principal.data.push(PrincipalData::MemberOf(member_of));
-                    }
-                }
-                return Ok(Some(principal));
+        if let Some(account_id) = account_id
+            && let Some(mut principal) = self.get_principal(account_id).await?
+        {
+            if let Some(secret) = secret
+                && !principal.verify_secret(secret, by.only_app_pass).await?
+            {
+                return Ok(None);
             }
+
+            if by.return_member_of {
+                let mut roles = vec![];
+                let mut lists = vec![];
+                let mut member_of = vec![];
+
+                for member in self.get_member_of(principal.id).await? {
+                    match member.typ {
+                        Type::List => lists.push(member.principal_id),
+                        Type::Role => roles.push(member.principal_id),
+                        _ => member_of.push(member.principal_id),
+                    }
+                }
+
+                if !roles.is_empty() {
+                    principal.data.push(PrincipalData::Roles(roles));
+                }
+                if !lists.is_empty() {
+                    principal.data.push(PrincipalData::Lists(lists));
+                }
+                if !member_of.is_empty() {
+                    principal.data.push(PrincipalData::MemberOf(member_of));
+                }
+            }
+            return Ok(Some(principal));
         }
         Ok(None)
     }

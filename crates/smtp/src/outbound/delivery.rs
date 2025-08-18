@@ -1029,36 +1029,36 @@ impl QueuedMessage {
                                     );
 
                                     // Verify DANE
-                                    if let Some(dane_policy) = &dane_policy {
-                                        if let Err(status) = dane_policy.verify(
+                                    if let Some(dane_policy) = &dane_policy
+                                        && let Err(status) = dane_policy.verify(
                                             message.span_id,
                                             envelope.mx,
                                             smtp_client.tls_connection().peer_certificates(),
-                                        ) {
-                                            // Report DANE verification failure
-                                            if let Some(tls_report) = &tls_report {
-                                                server
-                                                    .schedule_report(TlsEvent {
-                                                        policy: dane_policy.into(),
-                                                        domain: domain.to_string(),
-                                                        failure: FailureDetails::new(
-                                                            ResultType::ValidationFailure,
-                                                        )
-                                                        .with_receiving_mx_hostname(envelope.mx)
-                                                        .with_receiving_ip(remote_ip)
-                                                        .with_failure_reason_code(
-                                                            "No matching certificates found.",
-                                                        )
-                                                        .into(),
-                                                        tls_record: tls_report.record.clone(),
-                                                        interval: tls_report.interval,
-                                                    })
-                                                    .await;
-                                            }
-
-                                            last_status = status;
-                                            continue 'next_host;
+                                        )
+                                    {
+                                        // Report DANE verification failure
+                                        if let Some(tls_report) = &tls_report {
+                                            server
+                                                .schedule_report(TlsEvent {
+                                                    policy: dane_policy.into(),
+                                                    domain: domain.to_string(),
+                                                    failure: FailureDetails::new(
+                                                        ResultType::ValidationFailure,
+                                                    )
+                                                    .with_receiving_mx_hostname(envelope.mx)
+                                                    .with_receiving_ip(remote_ip)
+                                                    .with_failure_reason_code(
+                                                        "No matching certificates found.",
+                                                    )
+                                                    .into(),
+                                                    tls_record: tls_report.record.clone(),
+                                                    interval: tls_report.interval,
+                                                })
+                                                .await;
                                         }
+
+                                        last_status = status;
+                                        continue 'next_host;
                                     }
 
                                     // Report TLS success

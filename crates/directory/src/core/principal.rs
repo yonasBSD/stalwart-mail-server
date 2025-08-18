@@ -238,13 +238,11 @@ impl Principal {
             } else {
                 None
             }
-        }) {
-            if let Some(idx) = permissions
-                .iter_mut()
-                .position(|p| p.permission == permission && p.grant == grant)
-            {
-                permissions.swap_remove(idx);
-            }
+        }) && let Some(idx) = permissions
+            .iter_mut()
+            .position(|p| p.permission == permission && p.grant == grant)
+        {
+            permissions.swap_remove(idx);
         }
     }
 
@@ -270,10 +268,10 @@ impl Principal {
         }
 
         // If the principal has no roles, take the ones from the external principal
-        if let Some(roles) = external.roles_mut().filter(|s| !s.is_empty()) {
-            if self.roles().is_empty() {
-                self.data.push(PrincipalData::Roles(std::mem::take(roles)));
-            }
+        if let Some(roles) = external.roles_mut().filter(|s| !s.is_empty())
+            && self.roles().is_empty()
+        {
+            self.data.push(PrincipalData::Roles(std::mem::take(roles)));
         }
 
         if external.description.as_ref().is_some_and(|v| !v.is_empty())

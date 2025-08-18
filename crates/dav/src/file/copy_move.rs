@@ -146,16 +146,15 @@ impl FileCopyMoveRequestHandler for Server {
 
         // Validate destination ACLs
         if let Some(document_id) = destination.document_id {
-            if let Some(delete_destination) = &delete_destination {
-                if !access_token.is_member(to_account_id)
-                    && !from_resources.has_access_to_container(
-                        access_token,
-                        delete_destination.document_id.unwrap(),
-                        Acl::Delete,
-                    )
-                {
-                    return Err(DavError::Code(StatusCode::FORBIDDEN));
-                }
+            if let Some(delete_destination) = &delete_destination
+                && !access_token.is_member(to_account_id)
+                && !from_resources.has_access_to_container(
+                    access_token,
+                    delete_destination.document_id.unwrap(),
+                    Acl::Delete,
+                )
+            {
+                return Err(DavError::Code(StatusCode::FORBIDDEN));
             }
 
             if !access_token.is_member(to_account_id)

@@ -1090,12 +1090,11 @@ impl PropFindRequestHandler for Server {
             }
 
             // Add dead properties
-            if skip_not_found {
-                if let Some(dead_properties) =
+            if skip_not_found
+                && let Some(dead_properties) =
                     dead_properties.filter(|dead_properties| !dead_properties.0.is_empty())
-                {
-                    dead_properties.to_dav_values(&mut fields);
-                }
+            {
+                dead_properties.to_dav_values(&mut fields);
             }
 
             // Add response
@@ -1297,15 +1296,15 @@ async fn get(
                 }
             }
 
-            if maybe_has_vanished {
-                if let Some(vanished_collection) = sync_collection.vanished_collection() {
-                    vanished = server
-                        .store()
-                        .vanished(account_id, vanished_collection, Query::Since(id))
-                        .await
-                        .caused_by(trc::location!())?;
-                    total_changes += vanished.len();
-                }
+            if maybe_has_vanished
+                && let Some(vanished_collection) = sync_collection.vanished_collection()
+            {
+                vanished = server
+                    .store()
+                    .vanished(account_id, vanished_collection, Query::Since(id))
+                    .await
+                    .caused_by(trc::location!())?;
+                total_changes += vanished.len();
             }
 
             // Truncate changes

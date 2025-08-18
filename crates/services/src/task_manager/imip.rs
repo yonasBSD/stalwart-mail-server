@@ -476,82 +476,79 @@ pub async fn build_itip_template(
     if let Some(guests) = fields
         .iter()
         .find(|e| e.name == ICalendarProperty::Attendee)
+        && let ArchivedItipValue::Participants(guests) = &guests.value
     {
-        if let ArchivedItipValue::Participants(guests) = &guests.value {
-            variables.insert_single(
-                CalendarTemplateVariable::AttendeesTitle,
-                locale.calendar_attendees.to_string(),
-            );
-            variables.insert_block(
-                CalendarTemplateVariable::Attendees,
-                guests.iter().map(|guest| {
-                    [
-                        (
-                            CalendarTemplateVariable::Key,
-                            if guest.is_organizer {
-                                if let Some(name) = guest.name.as_ref() {
-                                    format!("{name} - {}", locale.calendar_organizer)
-                                } else {
-                                    locale.calendar_organizer.to_string()
-                                }
+        variables.insert_single(
+            CalendarTemplateVariable::AttendeesTitle,
+            locale.calendar_attendees.to_string(),
+        );
+        variables.insert_block(
+            CalendarTemplateVariable::Attendees,
+            guests.iter().map(|guest| {
+                [
+                    (
+                        CalendarTemplateVariable::Key,
+                        if guest.is_organizer {
+                            if let Some(name) = guest.name.as_ref() {
+                                format!("{name} - {}", locale.calendar_organizer)
                             } else {
-                                guest
-                                    .name
-                                    .as_ref()
-                                    .map(|n| n.as_str())
-                                    .unwrap_or_default()
-                                    .to_string()
-                            },
-                        ),
-                        (CalendarTemplateVariable::Value, guest.email.to_string()),
-                    ]
-                }),
-            );
-        }
+                                locale.calendar_organizer.to_string()
+                            }
+                        } else {
+                            guest
+                                .name
+                                .as_ref()
+                                .map(|n| n.as_str())
+                                .unwrap_or_default()
+                                .to_string()
+                        },
+                    ),
+                    (CalendarTemplateVariable::Value, guest.email.to_string()),
+                ]
+            }),
+        );
     }
 
     // Add RSVP buttons
     if matches!(
         summary,
         ArchivedItipSummary::Invite(_) | ArchivedItipSummary::Update { .. }
-    ) {
-        if let Some(rsvp_url) = server
-            .http_rsvp_url(task.account_id, task.document_id, to)
-            .await
-        {
-            variables.insert_single(
-                CalendarTemplateVariable::Rsvp,
-                locale.calendar_reply_as.replace("$name", to),
-            );
-            variables.insert_block(
-                CalendarTemplateVariable::Actions,
+    ) && let Some(rsvp_url) = server
+        .http_rsvp_url(task.account_id, task.document_id, to)
+        .await
+    {
+        variables.insert_single(
+            CalendarTemplateVariable::Rsvp,
+            locale.calendar_reply_as.replace("$name", to),
+        );
+        variables.insert_block(
+            CalendarTemplateVariable::Actions,
+            [
+                (
+                    ICalendarParticipationStatus::Accepted,
+                    locale.calendar_yes.to_string(),
+                    "info",
+                ),
+                (
+                    ICalendarParticipationStatus::Declined,
+                    locale.calendar_no.to_string(),
+                    "danger",
+                ),
+                (
+                    ICalendarParticipationStatus::Tentative,
+                    locale.calendar_maybe.to_string(),
+                    "warning",
+                ),
+            ]
+            .into_iter()
+            .map(|(status, title, color)| {
                 [
-                    (
-                        ICalendarParticipationStatus::Accepted,
-                        locale.calendar_yes.to_string(),
-                        "info",
-                    ),
-                    (
-                        ICalendarParticipationStatus::Declined,
-                        locale.calendar_no.to_string(),
-                        "danger",
-                    ),
-                    (
-                        ICalendarParticipationStatus::Tentative,
-                        locale.calendar_maybe.to_string(),
-                        "warning",
-                    ),
+                    (CalendarTemplateVariable::ActionName, title.to_string()),
+                    (CalendarTemplateVariable::ActionUrl, rsvp_url.url(&status)),
+                    (CalendarTemplateVariable::Color, color.to_string()),
                 ]
-                .into_iter()
-                .map(|(status, title, color)| {
-                    [
-                        (CalendarTemplateVariable::ActionName, title.to_string()),
-                        (CalendarTemplateVariable::ActionUrl, rsvp_url.url(&status)),
-                        (CalendarTemplateVariable::Color, color.to_string()),
-                    ]
-                }),
-            );
-        }
+            }),
+        );
     }
 
     // Add footer

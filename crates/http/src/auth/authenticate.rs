@@ -160,10 +160,9 @@ fn decode_plain_auth(token: &str) -> Option<Credentials<String>> {
 }
 
 fn decode_bearer_token(token: &str, allow_api_access: bool) -> Option<Credentials<String>> {
-    if allow_api_access {
-        if let Some(token) = token.strip_prefix("api_").and_then(decode_plain_auth) {
-            return Some(token);
-        }
+    if allow_api_access && let Some(token) = token.strip_prefix("api_").and_then(decode_plain_auth)
+    {
+        return Some(token);
     }
 
     Some(Credentials::OAuthBearer {

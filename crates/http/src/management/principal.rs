@@ -168,16 +168,15 @@ impl PrincipalManager for Server {
                     .await?;
 
                 // Set report domain
-                if let Some(report_domain) = report_domain {
-                    if let Err(err) = self
+                if let Some(report_domain) = report_domain
+                    && let Err(err) = self
                         .core
                         .storage
                         .config
                         .set([("report.domain", report_domain)], true)
                         .await
-                    {
-                        trc::error!(err.details("Failed to set report domain"));
-                    }
+                {
+                    trc::error!(err.details("Failed to set report domain"));
                 }
 
                 // Increment revision
@@ -205,20 +204,20 @@ impl PrincipalManager for Server {
                     .unwrap_or_default()
                     .split(',')
                 {
-                    if let Some(typ) = Type::parse(typ) {
-                        if !types.contains(&typ) {
-                            types.push(typ);
-                        }
+                    if let Some(typ) = Type::parse(typ)
+                        && !types.contains(&typ)
+                    {
+                        types.push(typ);
                     }
                 }
 
                 // Parse fields
                 let mut fields = Vec::new();
                 for field in params.get("fields").unwrap_or_default().split(',') {
-                    if let Some(field) = PrincipalField::try_parse(field) {
-                        if !fields.contains(&field) {
-                            fields.push(field);
-                        }
+                    if let Some(field) = PrincipalField::try_parse(field)
+                        && !fields.contains(&field)
+                    {
+                        fields.push(field);
                     }
                 }
 

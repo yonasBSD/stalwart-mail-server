@@ -48,10 +48,10 @@ impl StateManager for Server {
         if_in_state: &Option<State>,
     ) -> trc::Result<State> {
         let old_state: State = self.get_state(account_id, collection).await?;
-        if let Some(if_in_state) = if_in_state {
-            if &old_state != if_in_state {
-                return Err(trc::JmapEvent::StateMismatch.into_err());
-            }
+        if let Some(if_in_state) = if_in_state
+            && &old_state != if_in_state
+        {
+            return Err(trc::JmapEvent::StateMismatch.into_err());
         }
 
         Ok(old_state)
@@ -69,10 +69,10 @@ impl MessageCacheState for MessageStoreCache {
 
     fn assert_state(&self, is_mailbox: bool, if_in_state: &Option<State>) -> trc::Result<State> {
         let old_state: State = self.get_state(is_mailbox);
-        if let Some(if_in_state) = if_in_state {
-            if &old_state != if_in_state {
-                return Err(trc::JmapEvent::StateMismatch.into_err());
-            }
+        if let Some(if_in_state) = if_in_state
+            && &old_state != if_in_state
+        {
+            return Err(trc::JmapEvent::StateMismatch.into_err());
         }
         Ok(old_state)
     }

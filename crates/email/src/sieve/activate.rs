@@ -78,26 +78,25 @@ impl SieveScriptActivate for Server {
         }
 
         // Activate script
-        if let Some(document_id) = activate_id {
-            if let Some(sieve_) = self
+        if let Some(document_id) = activate_id
+            && let Some(sieve_) = self
                 .get_archive(account_id, Collection::SieveScript, document_id)
                 .await?
-            {
-                let sieve = sieve_
-                    .to_unarchived::<SieveScript>()
-                    .caused_by(trc::location!())?;
-                let mut new_sieve = sieve.deserialize().caused_by(trc::location!())?;
-                new_sieve.is_active = true;
-                batch
-                    .update_document(document_id)
-                    .custom(
-                        ObjectIndexBuilder::new()
-                            .with_changes(new_sieve)
-                            .with_current(sieve),
-                    )
-                    .caused_by(trc::location!())?;
-                changed_ids.push((document_id, true));
-            }
+        {
+            let sieve = sieve_
+                .to_unarchived::<SieveScript>()
+                .caused_by(trc::location!())?;
+            let mut new_sieve = sieve.deserialize().caused_by(trc::location!())?;
+            new_sieve.is_active = true;
+            batch
+                .update_document(document_id)
+                .custom(
+                    ObjectIndexBuilder::new()
+                        .with_changes(new_sieve)
+                        .with_current(sieve),
+                )
+                .caused_by(trc::location!())?;
+            changed_ids.push((document_id, true));
         }
 
         // Write changes

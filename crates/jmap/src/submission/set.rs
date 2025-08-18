@@ -511,17 +511,17 @@ impl EmailSubmissionSet for Server {
                     }
                     if let ArchivedHeaderValue::Address(addr) = &header.value {
                         for address in addr.iter() {
-                            if let Some(address) = address.address().and_then(sanitize_email) {
-                                if !rcpt_to.iter().any(|rcpt| rcpt.address == address) {
-                                    submission.envelope.rcpt_to.push(Address {
-                                        email: address.to_string(),
-                                        parameters: None,
-                                    });
-                                    rcpt_to.push(RcptTo {
-                                        address,
-                                        ..Default::default()
-                                    });
-                                }
+                            if let Some(address) = address.address().and_then(sanitize_email)
+                                && !rcpt_to.iter().any(|rcpt| rcpt.address == address)
+                            {
+                                submission.envelope.rcpt_to.push(Address {
+                                    email: address.to_string(),
+                                    parameters: None,
+                                });
+                                rcpt_to.push(RcptTo {
+                                    address,
+                                    ..Default::default()
+                                });
                             }
                         }
                     }
@@ -696,19 +696,19 @@ fn parse_envelope_address(
                     let mut params_list = VecMap::with_capacity(params.0.len());
 
                     for (k, v) in params.0 {
-                        if let Property::_T(k) = k {
-                            if !k.is_empty() {
-                                if !params_text.is_empty() {
-                                    params_text.push(' ');
-                                }
-                                params_text.push_str(&k);
-                                if let Value::Text(v) = v {
-                                    params_text.push('=');
-                                    params_text.push_str(&v);
-                                    params_list.append(k, Some(v));
-                                } else {
-                                    params_list.append(k, None);
-                                }
+                        if let Property::_T(k) = k
+                            && !k.is_empty()
+                        {
+                            if !params_text.is_empty() {
+                                params_text.push(' ');
+                            }
+                            params_text.push_str(&k);
+                            if let Value::Text(v) = v {
+                                params_text.push('=');
+                                params_text.push_str(&v);
+                                params_list.append(k, Some(v));
+                            } else {
+                                params_list.append(k, None);
                             }
                         }
                     }

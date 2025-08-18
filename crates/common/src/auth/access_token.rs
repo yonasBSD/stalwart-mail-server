@@ -69,32 +69,32 @@ impl Server {
         // SPDX-License-Identifier: LicenseRef-SEL
 
         #[cfg(feature = "enterprise")]
-        if self.is_enterprise_edition() {
-            if let Some(tenant_id) = principal.tenant {
-                // Limit tenant permissions
+        if self.is_enterprise_edition()
+            && let Some(tenant_id) = principal.tenant
+        {
+            // Limit tenant permissions
 
-                use directory::QueryParams;
-                permissions.intersection(&self.get_role_permissions(tenant_id).await?.enabled);
+            use directory::QueryParams;
+            permissions.intersection(&self.get_role_permissions(tenant_id).await?.enabled);
 
-                // Obtain tenant quota
-                tenant = Some(TenantInfo {
-                    id: tenant_id,
-                    quota: self
-                        .store()
-                        .query(QueryParams::id(tenant_id).with_return_member_of(false))
-                        .await
-                        .caused_by(trc::location!())?
-                        .ok_or_else(|| {
-                            trc::SecurityEvent::Unauthorized
-                                .into_err()
-                                .details("Tenant not found")
-                                .id(tenant_id)
-                                .caused_by(trc::location!())
-                        })?
-                        .quota
-                        .unwrap_or_default(),
-                });
-            }
+            // Obtain tenant quota
+            tenant = Some(TenantInfo {
+                id: tenant_id,
+                quota: self
+                    .store()
+                    .query(QueryParams::id(tenant_id).with_return_member_of(false))
+                    .await
+                    .caused_by(trc::location!())?
+                    .ok_or_else(|| {
+                        trc::SecurityEvent::Unauthorized
+                            .into_err()
+                            .details("Tenant not found")
+                            .id(tenant_id)
+                            .caused_by(trc::location!())
+                    })?
+                    .quota
+                    .unwrap_or_default(),
+            });
         }
 
         // SPDX-SnippetEnd
@@ -112,10 +112,9 @@ impl Server {
                 .query(QueryParams::id(group_id).with_return_member_of(false))
                 .await
                 .caused_by(trc::location!())?
+                && group.typ == Type::Group
             {
-                if group.typ == Type::Group {
-                    emails.extend(group.emails);
-                }
+                emails.extend(group.emails);
             }
         }
 

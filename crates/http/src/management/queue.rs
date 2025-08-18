@@ -145,24 +145,24 @@ impl QueueManagement for Server {
 
         // Limit to tenant domains
         #[cfg(feature = "enterprise")]
-        if self.core.is_enterprise_edition() {
-            if let Some(tenant) = access_token.tenant {
-                tenant_domains = self
-                    .core
-                    .storage
-                    .data
-                    .list_principals(None, tenant.id.into(), &[Type::Domain], false, 0, 0)
-                    .await
-                    .map(|principals| {
-                        principals
-                            .items
-                            .into_iter()
-                            .map(|p| p.name)
-                            .collect::<Vec<_>>()
-                    })
-                    .caused_by(trc::location!())?
-                    .into();
-            }
+        if self.core.is_enterprise_edition()
+            && let Some(tenant) = access_token.tenant
+        {
+            tenant_domains = self
+                .core
+                .storage
+                .data
+                .list_principals(None, tenant.id.into(), &[Type::Domain], false, 0, 0)
+                .await
+                .map(|principals| {
+                    principals
+                        .items
+                        .into_iter()
+                        .map(|p| p.name)
+                        .collect::<Vec<_>>()
+                })
+                .caused_by(trc::location!())?
+                .into();
         }
 
         // SPDX-SnippetEnd
@@ -458,7 +458,12 @@ impl QueueManagement for Server {
                         {
                             let mut rua = Vec::new();
                             if let Some(report) = self
-                                .generate_tls_aggregate_report(&[event.clone()], &mut rua, None, 0)
+                                .generate_tls_aggregate_report(
+                                    std::slice::from_ref(&event),
+                                    &mut rua,
+                                    None,
+                                    0,
+                                )
                                 .await?
                             {
                                 result = Report::tls(event, report, rua).into();

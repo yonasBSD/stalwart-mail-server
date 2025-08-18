@@ -98,20 +98,18 @@ impl<T: SessionStream> Session<T> {
                         .get_trusted_sieve_script(&name, self.data.session_id)
                         .map(|s| (s, name))
                 })
-            {
-                if let ScriptResult::Reject(message) = self
+                && let ScriptResult::Reject(message) = self
                     .run_script(
                         script_id,
                         script.clone(),
                         self.build_script_parameters("ehlo"),
                     )
                     .await
-                {
-                    self.data.mail_from = None;
-                    self.data.helo_domain = prev_helo_domain;
-                    self.data.spf_ehlo = None;
-                    return self.write(message.as_bytes()).await;
-                }
+            {
+                self.data.mail_from = None;
+                self.data.helo_domain = prev_helo_domain;
+                self.data.spf_ehlo = None;
+                return self.write(message.as_bytes()).await;
             }
 
             // Milter filtering

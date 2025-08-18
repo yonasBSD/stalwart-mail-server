@@ -182,10 +182,10 @@ impl MailboxQuery for Server {
                 if response.total.is_some() {
                     response.total = Some(total);
                 }
-                if let Some(paginate) = &mut paginate {
-                    if paginate.limit > total {
-                        paginate.limit = total;
-                    }
+                if let Some(paginate) = &mut paginate
+                    && paginate.limit > total
+                {
+                    paginate.limit = total;
                 }
                 result_set.results = filtered_ids;
             }

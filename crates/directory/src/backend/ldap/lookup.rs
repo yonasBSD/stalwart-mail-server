@@ -230,13 +230,12 @@ impl LdapDirectory {
                         .map_err(|err| err.into_error().caused_by(trc::location!()))?;
                     for entry in rs {
                         'outer: for (attr, value) in SearchEntry::construct(entry).attrs {
-                            if self.mappings.attr_name.contains(&attr) {
-                                if let Some(group) = value.into_iter().next() {
-                                    if !group.is_empty() {
-                                        name = group;
-                                        break 'outer;
-                                    }
-                                }
+                            if self.mappings.attr_name.contains(&attr)
+                                && let Some(group) = value.into_iter().next()
+                                && !group.is_empty()
+                            {
+                                name = group;
+                                break 'outer;
                             }
                         }
                     }
@@ -314,14 +313,14 @@ impl LdapDirectory {
         for entry in rs {
             let entry = SearchEntry::construct(entry);
             for attr in &self.mappings.attr_name {
-                if let Some(name) = entry.attrs.get(attr).and_then(|v| v.first()) {
-                    if !name.is_empty() {
-                        return self
-                            .data_store
-                            .get_or_create_principal_id(name, Type::Individual)
-                            .await
-                            .map(Some);
-                    }
+                if let Some(name) = entry.attrs.get(attr).and_then(|v| v.first())
+                    && !name.is_empty()
+                {
+                    return self
+                        .data_store
+                        .get_or_create_principal_id(name, Type::Individual)
+                        .await
+                        .map(Some);
                 }
             }
         }

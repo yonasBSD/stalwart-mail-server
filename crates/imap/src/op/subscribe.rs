@@ -76,17 +76,17 @@ impl<T: SessionStream> SessionData<T> {
         // Verify if mailbox is already subscribed/unsubscribed
         for account in self.mailboxes.lock().iter_mut() {
             if account.account_id == account_id {
-                if let Some(mailbox) = account.mailbox_state.get(&mailbox_id) {
-                    if mailbox.is_subscribed == subscribe {
-                        return Err(trc::ImapEvent::Error
-                            .into_err()
-                            .details(if subscribe {
-                                "Mailbox is already subscribed."
-                            } else {
-                                "Mailbox is already unsubscribed."
-                            })
-                            .id(tag));
-                    }
+                if let Some(mailbox) = account.mailbox_state.get(&mailbox_id)
+                    && mailbox.is_subscribed == subscribe
+                {
+                    return Err(trc::ImapEvent::Error
+                        .into_err()
+                        .details(if subscribe {
+                            "Mailbox is already subscribed."
+                        } else {
+                            "Mailbox is already unsubscribed."
+                        })
+                        .id(tag));
                 }
                 break;
             }

@@ -132,14 +132,13 @@ impl<T: SessionStream> Session<T> {
             }
         }
 
-        if let Some(needs_literal) = needs_literal {
-            if let Err(err) = self
+        if let Some(needs_literal) = needs_literal
+            && let Err(err) = self
                 .write(format!("OK Ready for {} bytes.\r\n", needs_literal).as_bytes())
                 .await
-            {
-                trc::error!(err.span_id(self.session_id));
-                return SessionResult::Close;
-            }
+        {
+            trc::error!(err.span_id(self.session_id));
+            return SessionResult::Close;
         }
 
         SessionResult::Continue

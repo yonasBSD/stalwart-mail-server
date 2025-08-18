@@ -473,20 +473,19 @@ async fn import_mailboxes(
     for (path, mailbox) in build_mailbox_tree(&mailboxes) {
         let id = mailbox.id().unwrap_result("obtain mailbox id");
         // Find existing mailbox based on role
-        if !matches!(mailbox.role(), Role::None) {
-            if let Some(existing_mailbox) = existing_mailboxes
+        if !matches!(mailbox.role(), Role::None)
+            && let Some(existing_mailbox) = existing_mailboxes
                 .iter()
                 .find(|m| m.role() == mailbox.role())
-            {
-                id_mappings.insert(
-                    id.to_string(),
-                    existing_mailbox
-                        .id()
-                        .unwrap_result("obtain mailbox id")
-                        .to_string(),
-                );
-                continue;
-            }
+        {
+            id_mappings.insert(
+                id.to_string(),
+                existing_mailbox
+                    .id()
+                    .unwrap_result("obtain mailbox id")
+                    .to_string(),
+            );
+            continue;
         }
 
         // Find existing mailbox by name

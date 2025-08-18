@@ -29,7 +29,7 @@ impl<'x> Tokenizer<'x> {
         }
     }
 
-    pub fn token(&mut self) -> super::Result<Token> {
+    pub fn token(&'_ mut self) -> super::Result<Token<'_>> {
         loop {
             if self.last_is_end {
                 self.last_is_end = false;

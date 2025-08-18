@@ -80,54 +80,9 @@ impl ArchivedCalendarEventData {
                         .single()?
                         .timestamp();
 
-                    if let Some(alarm_time) = alarm.delta.to_timestamp(start, end, default_tz) {
-                        if alarm_time > start_time {
-                            if let Some(next) = next_alarm {
-                                if alarm_time < next.alarm_time {
-                                    next_alarm = Some(CalendarAlarm {
-                                        alarm_id: alarm.id.to_native(),
-                                        event_id: alarm.parent_id.to_native(),
-                                        alarm_time,
-                                        event_start: start_date_naive,
-                                        event_start_tz: start_tz.as_id(),
-                                        event_end: end_date_naive,
-                                        event_end_tz: end_tz.as_id(),
-                                    });
-                                }
-                            } else {
-                                next_alarm = Some(CalendarAlarm {
-                                    alarm_id: alarm.id.to_native(),
-                                    event_id: alarm.parent_id.to_native(),
-                                    alarm_time,
-                                    event_start: start_date_naive,
-                                    event_start_tz: start_tz.as_id(),
-                                    event_end: end_date_naive,
-                                    event_end_tz: end_tz.as_id(),
-                                });
-                            }
-                            continue 'outer;
-                        }
-                    }
-                }
-            } else {
-                // Single event
-                let start_date_naive = offset_or_count as i64 + base_offset;
-                let end_date_naive = start_date_naive + duration;
-                let start = start_tz
-                    .from_local_datetime(
-                        &DateTime::from_timestamp(start_date_naive, 0)?.naive_local(),
-                    )
-                    .single()?
-                    .timestamp();
-                let end = end_tz
-                    .from_local_datetime(
-                        &DateTime::from_timestamp(end_date_naive, 0)?.naive_local(),
-                    )
-                    .single()?
-                    .timestamp();
-
-                if let Some(alarm_time) = alarm.delta.to_timestamp(start, end, default_tz) {
-                    if alarm_time > start_time {
+                    if let Some(alarm_time) = alarm.delta.to_timestamp(start, end, default_tz)
+                        && alarm_time > start_time
+                    {
                         if let Some(next) = next_alarm {
                             if alarm_time < next.alarm_time {
                                 next_alarm = Some(CalendarAlarm {
@@ -151,6 +106,51 @@ impl ArchivedCalendarEventData {
                                 event_end_tz: end_tz.as_id(),
                             });
                         }
+                        continue 'outer;
+                    }
+                }
+            } else {
+                // Single event
+                let start_date_naive = offset_or_count as i64 + base_offset;
+                let end_date_naive = start_date_naive + duration;
+                let start = start_tz
+                    .from_local_datetime(
+                        &DateTime::from_timestamp(start_date_naive, 0)?.naive_local(),
+                    )
+                    .single()?
+                    .timestamp();
+                let end = end_tz
+                    .from_local_datetime(
+                        &DateTime::from_timestamp(end_date_naive, 0)?.naive_local(),
+                    )
+                    .single()?
+                    .timestamp();
+
+                if let Some(alarm_time) = alarm.delta.to_timestamp(start, end, default_tz)
+                    && alarm_time > start_time
+                {
+                    if let Some(next) = next_alarm {
+                        if alarm_time < next.alarm_time {
+                            next_alarm = Some(CalendarAlarm {
+                                alarm_id: alarm.id.to_native(),
+                                event_id: alarm.parent_id.to_native(),
+                                alarm_time,
+                                event_start: start_date_naive,
+                                event_start_tz: start_tz.as_id(),
+                                event_end: end_date_naive,
+                                event_end_tz: end_tz.as_id(),
+                            });
+                        }
+                    } else {
+                        next_alarm = Some(CalendarAlarm {
+                            alarm_id: alarm.id.to_native(),
+                            event_id: alarm.parent_id.to_native(),
+                            alarm_time,
+                            event_start: start_date_naive,
+                            event_start_tz: start_tz.as_id(),
+                            event_end: end_date_naive,
+                            event_end_tz: end_tz.as_id(),
+                        });
                     }
                 }
             }

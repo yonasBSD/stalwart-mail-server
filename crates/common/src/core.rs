@@ -412,16 +412,16 @@ impl Server {
         // SPDX-License-Identifier: LicenseRef-SEL
 
         #[cfg(feature = "enterprise")]
-        if self.core.is_enterprise_edition() {
-            if let Some(tenant) = quotas.tenant.filter(|tenant| tenant.quota != 0) {
-                let used_quota = self.get_used_quota(tenant.id).await? as u64;
+        if self.core.is_enterprise_edition()
+            && let Some(tenant) = quotas.tenant.filter(|tenant| tenant.quota != 0)
+        {
+            let used_quota = self.get_used_quota(tenant.id).await? as u64;
 
-                if used_quota + item_size > tenant.quota {
-                    return Err(trc::LimitEvent::TenantQuota
-                        .into_err()
-                        .ctx(trc::Key::Limit, tenant.quota)
-                        .ctx(trc::Key::Size, used_quota));
-                }
+            if used_quota + item_size > tenant.quota {
+                return Err(trc::LimitEvent::TenantQuota
+                    .into_err()
+                    .ctx(trc::Key::Limit, tenant.quota)
+                    .ctx(trc::Key::Size, used_quota));
             }
         }
 
@@ -462,24 +462,24 @@ impl Server {
                 // SPDX-License-Identifier: LicenseRef-SEL
 
                 #[cfg(feature = "enterprise")]
-                if self.core.is_enterprise_edition() {
-                    if let Some(tenant_id) = principal.tenant() {
-                        quotas.tenant = TenantInfo {
-                            id: tenant_id,
-                            quota: self
-                                .core
-                                .storage
-                                .directory
-                                .query(QueryParams::id(tenant_id).with_return_member_of(false))
-                                .await
-                                .add_context(|err| {
-                                    err.caused_by(trc::location!()).account_id(tenant_id)
-                                })?
-                                .map(|tenant| tenant.quota())
-                                .unwrap_or_default(),
-                        }
-                        .into();
+                if self.core.is_enterprise_edition()
+                    && let Some(tenant_id) = principal.tenant()
+                {
+                    quotas.tenant = TenantInfo {
+                        id: tenant_id,
+                        quota: self
+                            .core
+                            .storage
+                            .directory
+                            .query(QueryParams::id(tenant_id).with_return_member_of(false))
+                            .await
+                            .add_context(|err| {
+                                err.caused_by(trc::location!()).account_id(tenant_id)
+                            })?
+                            .map(|tenant| tenant.quota())
+                            .unwrap_or_default(),
                     }
+                    .into();
                 }
 
                 // SPDX-SnippetEnd
@@ -804,14 +804,14 @@ impl Server {
     }
 
     pub async fn cluster_broadcast(&self, event: BroadcastEvent) {
-        if let Some(broadcast_tx) = &self.inner.ipc.broadcast_tx.clone() {
-            if broadcast_tx.send(event).await.is_err() {
-                trc::event!(
-                    Server(trc::ServerEvent::ThreadError),
-                    Details = "Error sending broadcast event.",
-                    CausedBy = trc::location!()
-                );
-            }
+        if let Some(broadcast_tx) = &self.inner.ipc.broadcast_tx.clone()
+            && broadcast_tx.send(event).await.is_err()
+        {
+            trc::event!(
+                Server(trc::ServerEvent::ThreadError),
+                Details = "Error sending broadcast event.",
+                CausedBy = trc::location!()
+            );
         }
     }
 

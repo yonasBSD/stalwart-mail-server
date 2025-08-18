@@ -388,38 +388,38 @@ impl<T: SessionStream> Session<T> {
         }
 
         // Add Received-SPF header
-        if let Some(spf_output) = &self.data.spf_mail_from {
-            if self
+        if let Some(spf_output) = &self.data.spf_mail_from
+            && self
                 .server
                 .eval_if(&dc.add_received_spf, self, self.data.session_id)
                 .await
                 .unwrap_or(true)
-            {
-                ReceivedSpf::new(
-                    spf_output,
-                    self.data.remote_ip,
-                    &self.data.helo_domain,
-                    &mail_from.address_lcase,
-                    &self.hostname,
-                )
-                .write_header(&mut headers);
-            }
+        {
+            ReceivedSpf::new(
+                spf_output,
+                self.data.remote_ip,
+                &self.data.helo_domain,
+                &mail_from.address_lcase,
+                &self.hostname,
+            )
+            .write_header(&mut headers);
         }
 
         // ARC Seal
-        if let (Some(arc_sealer), Some(arc_output)) = (arc_sealer, &arc_output) {
-            if !dkim_output.is_empty() && arc_output.can_be_sealed() {
-                match arc_sealer.seal(&auth_message, &auth_results, arc_output) {
-                    Ok(set) => {
-                        set.write_header(&mut headers);
-                    }
-                    Err(err) => {
-                        trc::error!(
-                            trc::Error::from(err)
-                                .span_id(self.data.session_id)
-                                .details("Failed to ARC seal message")
-                        );
-                    }
+        if let (Some(arc_sealer), Some(arc_output)) = (arc_sealer, &arc_output)
+            && !dkim_output.is_empty()
+            && arc_output.can_be_sealed()
+        {
+            match arc_sealer.seal(&auth_message, &auth_results, arc_output) {
+                Ok(set) => {
+                    set.write_header(&mut headers);
+                }
+                Err(err) => {
+                    trc::error!(
+                        trc::Error::from(err)
+                            .span_id(self.data.session_id)
+                            .details("Failed to ARC seal message")
+                    );
                 }
             }
         }

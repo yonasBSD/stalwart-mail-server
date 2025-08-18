@@ -53,24 +53,24 @@ impl ManageReports for Server {
 
         // Limit to tenant domains
         #[cfg(feature = "enterprise")]
-        if self.core.is_enterprise_edition() {
-            if let Some(tenant) = access_token.tenant {
-                tenant_domains = self
-                    .core
-                    .storage
-                    .data
-                    .list_principals(None, tenant.id.into(), &[Type::Domain], false, 0, 0)
-                    .await
-                    .map(|principals| {
-                        principals
-                            .items
-                            .into_iter()
-                            .map(|p| p.name)
-                            .collect::<Vec<_>>()
-                    })
-                    .caused_by(trc::location!())?
-                    .into();
-            }
+        if self.core.is_enterprise_edition()
+            && let Some(tenant) = access_token.tenant
+        {
+            tenant_domains = self
+                .core
+                .storage
+                .data
+                .list_principals(None, tenant.id.into(), &[Type::Domain], false, 0, 0)
+                .await
+                .map(|principals| {
+                    principals
+                        .items
+                        .into_iter()
+                        .map(|p| p.name)
+                        .collect::<Vec<_>>()
+                })
+                .caused_by(trc::location!())?
+                .into();
         }
 
         // SPDX-SnippetEnd
@@ -206,12 +206,11 @@ impl ManageReports for Server {
                             }
                         }
 
-                        if !batch.is_empty() {
-                            if let Err(err) =
+                        if !batch.is_empty()
+                            && let Err(err) =
                                 server.core.storage.data.write(batch.build_all()).await
-                            {
-                                trc::error!(err.caused_by(trc::location!()));
-                            }
+                        {
+                            trc::error!(err.caused_by(trc::location!()));
                         }
                     });
                 }

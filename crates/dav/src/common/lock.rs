@@ -526,8 +526,7 @@ impl LockRequestHandler for Server {
 
                     if let Some(document_id) =
                         resource_state.document_id.filter(|&id| id != u32::MAX)
-                    {
-                        if let Some(archive) = self
+                        && let Some(archive) = self
                             .get_archive(
                                 resource_state.account_id,
                                 resource_state.collection,
@@ -535,22 +534,22 @@ impl LockRequestHandler for Server {
                             )
                             .await
                             .caused_by(trc::location!())?
-                        {
-                            resource_state.etag = archive.etag().into();
-                        }
+                    {
+                        resource_state.etag = archive.etag().into();
                     }
                 }
 
                 // Fetch lock token
-                if needs_lock_token && resource_state.lock_tokens.is_empty() {
-                    if let Some(idx) = locks.find_cache_pos(self, resource_state).await? {
-                        let found_locks = locks
-                            .find_locks_by_pos(idx, resource_state, false)?
-                            .iter()
-                            .map(|(_, lock)| lock.urn().to_string())
-                            .collect::<Vec<_>>();
-                        resource_state.lock_tokens = found_locks;
-                    }
+                if needs_lock_token
+                    && resource_state.lock_tokens.is_empty()
+                    && let Some(idx) = locks.find_cache_pos(self, resource_state).await?
+                {
+                    let found_locks = locks
+                        .find_locks_by_pos(idx, resource_state, false)?
+                        .iter()
+                        .map(|(_, lock)| lock.urn().to_string())
+                        .collect::<Vec<_>>();
+                    resource_state.lock_tokens = found_locks;
                 }
 
                 // Fetch sync token

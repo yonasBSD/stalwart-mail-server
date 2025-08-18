@@ -136,23 +136,23 @@ impl EmailDeletion for Server {
         }
 
         // Auto-expunge deleted and junk messages
-        if let Some(hold_period) = self.core.jmap.mail_autoexpunge_after {
-            if let Err(err) = self.emails_auto_expunge(account_id, hold_period).await {
-                trc::error!(
-                    err.details("Failed to auto-expunge e-mail messages.")
-                        .account_id(account_id)
-                );
-            }
+        if let Some(hold_period) = self.core.jmap.mail_autoexpunge_after
+            && let Err(err) = self.emails_auto_expunge(account_id, hold_period).await
+        {
+            trc::error!(
+                err.details("Failed to auto-expunge e-mail messages.")
+                    .account_id(account_id)
+            );
         }
 
         // Auto-expunge iMIP messages
-        if let Some(hold_period) = self.core.groupware.itip_inbox_auto_expunge {
-            if let Err(err) = self.itip_auto_expunge(account_id, hold_period).await {
-                trc::error!(
-                    err.details("Failed to auto-expunge iTIP messages.")
-                        .account_id(account_id)
-                );
-            }
+        if let Some(hold_period) = self.core.groupware.itip_inbox_auto_expunge
+            && let Err(err) = self.itip_auto_expunge(account_id, hold_period).await
+        {
+            trc::error!(
+                err.details("Failed to auto-expunge iTIP messages.")
+                    .account_id(account_id)
+            );
         }
 
         // Purge tombstoned messages
@@ -164,13 +164,13 @@ impl EmailDeletion for Server {
         }
 
         // Purge changelogs
-        if let Some(history) = self.core.jmap.changes_max_history {
-            if let Err(err) = self.delete_changes(account_id, history).await {
-                trc::error!(
-                    err.details("Failed to purge changes.")
-                        .account_id(account_id)
-                );
-            }
+        if let Some(history) = self.core.jmap.changes_max_history
+            && let Err(err) = self.delete_changes(account_id, history).await
+        {
+            trc::error!(
+                err.details("Failed to purge changes.")
+                    .account_id(account_id)
+            );
         }
 
         // Delete lock

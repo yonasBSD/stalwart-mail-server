@@ -200,10 +200,11 @@ fn next_event_after(message: &Message, queue: Option<QueueName>, instant: u64) -
             {
                 next_event = rcpt.notify.due.into();
             }
-            if let Some(expires) = rcpt.expiration_time(message.created) {
-                if expires > instant && next_event.as_ref().is_none_or(|ne| expires.lt(ne)) {
-                    next_event = expires.into();
-                }
+            if let Some(expires) = rcpt.expiration_time(message.created)
+                && expires > instant
+                && next_event.as_ref().is_none_or(|ne| expires.lt(ne))
+            {
+                next_event = expires.into();
             }
         }
     }

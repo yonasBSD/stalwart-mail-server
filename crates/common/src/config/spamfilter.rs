@@ -331,12 +331,11 @@ impl SpamFilterHeaderConfig {
             if config
                 .property_or_default(("spam-filter.header", typ, "enable"), "true")
                 .unwrap_or(true)
+                && let Some(value) = config.value(("spam-filter.header", typ, "name"))
             {
-                if let Some(value) = config.value(("spam-filter.header", typ, "name")) {
-                    let value = value.trim();
-                    if !value.is_empty() {
-                        *var = value.to_string().into();
-                    }
+                let value = value.trim();
+                if !value.is_empty() {
+                    *var = value.to_string().into();
                 }
             }
         }

@@ -294,10 +294,10 @@ impl SqlMappings {
                     if let Value::Text(text) = value {
                         principal.emails.push(text.to_lowercase());
                     }
-                } else if name.eq_ignore_ascii_case(&self.column_quota) {
-                    if let Value::Integer(quota) = value {
-                        principal.quota = (quota as u64).into();
-                    }
+                } else if name.eq_ignore_ascii_case(&self.column_quota)
+                    && let Value::Integer(quota) = value
+                {
+                    principal.quota = (quota as u64).into();
                 }
             }
         }

@@ -103,39 +103,39 @@ impl EmailSubmissionGet for Server {
                 .map(|(k, v)| (k.to_string(), DeliveryStatus::from(v)))
                 .collect::<VecMap<_, _>>();
             let mut is_pending = false;
-            if let Some(queue_id) = submission.queue_id.as_ref().map(u64::from) {
-                if let Some(queued_message_) = self
+            if let Some(queue_id) = submission.queue_id.as_ref().map(u64::from)
+                && let Some(queued_message_) = self
                     .read_message_archive(queue_id)
                     .await
                     .caused_by(trc::location!())?
-                {
-                    let queued_message = queued_message_
-                        .unarchive::<Message>()
-                        .caused_by(trc::location!())?;
-                    for rcpt in queued_message.recipients.iter() {
-                        *delivery_status.get_mut_or_insert(rcpt.address().to_string()) =
-                            DeliveryStatus {
-                                smtp_reply: match &rcpt.status {
-                                    ArchivedStatus::Completed(reply) => {
-                                        format_archived_response(&reply.response)
-                                    }
-                                    ArchivedStatus::TemporaryFailure(reply)
-                                    | ArchivedStatus::PermanentFailure(reply) => {
-                                        format_archived_error_details(reply)
-                                    }
-                                    ArchivedStatus::Scheduled => "250 2.1.5 Queued".to_string(),
-                                },
-                                delivered: match &rcpt.status {
-                                    ArchivedStatus::Scheduled
-                                    | ArchivedStatus::TemporaryFailure(_) => Delivered::Queued,
-                                    ArchivedStatus::Completed(_) => Delivered::Yes,
-                                    ArchivedStatus::PermanentFailure(_) => Delivered::No,
-                                },
-                                displayed: false,
-                            };
-                    }
-                    is_pending = true;
+            {
+                let queued_message = queued_message_
+                    .unarchive::<Message>()
+                    .caused_by(trc::location!())?;
+                for rcpt in queued_message.recipients.iter() {
+                    *delivery_status.get_mut_or_insert(rcpt.address().to_string()) =
+                        DeliveryStatus {
+                            smtp_reply: match &rcpt.status {
+                                ArchivedStatus::Completed(reply) => {
+                                    format_archived_response(&reply.response)
+                                }
+                                ArchivedStatus::TemporaryFailure(reply)
+                                | ArchivedStatus::PermanentFailure(reply) => {
+                                    format_archived_error_details(reply)
+                                }
+                                ArchivedStatus::Scheduled => "250 2.1.5 Queued".to_string(),
+                            },
+                            delivered: match &rcpt.status {
+                                ArchivedStatus::Scheduled | ArchivedStatus::TemporaryFailure(_) => {
+                                    Delivered::Queued
+                                }
+                                ArchivedStatus::Completed(_) => Delivered::Yes,
+                                ArchivedStatus::PermanentFailure(_) => Delivered::No,
+                            },
+                            displayed: false,
+                        };
                 }
+                is_pending = true;
             }
 
             let mut result = Object::with_capacity(properties.len());

@@ -124,11 +124,11 @@ pub(crate) fn vcard_query(card: &ArchivedVCard, filters: &AddressbookFilter) -> 
                             let mut matched_any = false;
 
                             for value in entry.values.iter() {
-                                if let Some(text) = value.as_text() {
-                                    if text_match.matches(text) {
-                                        matched_any = true;
-                                        break;
-                                    }
+                                if let Some(text) = value.as_text()
+                                    && text_match.matches(text)
+                                {
+                                    matched_any = true;
+                                    break;
                                 }
                             }
 

@@ -45,17 +45,17 @@ impl DavResources {
         let check_acls = check_acls.into();
 
         for resource in &self.resources {
-            if resource.document_id == document_id {
-                if let Some(acls) = resource.acls() {
-                    for acl in acls {
-                        if access_token.is_member(acl.account_id) {
-                            let mut grants = acl.grants;
-                            grants.intersection(&check_acls);
-                            return !grants.is_empty();
-                        }
+            if resource.document_id == document_id
+                && let Some(acls) = resource.acls()
+            {
+                for acl in acls {
+                    if access_token.is_member(acl.account_id) {
+                        let mut grants = acl.grants;
+                        grants.intersection(&check_acls);
+                        return !grants.is_empty();
                     }
-                    break;
                 }
+                break;
             }
         }
 
@@ -66,15 +66,15 @@ impl DavResources {
         let mut account_acls = Bitmap::<Acl>::new();
 
         for resource in &self.resources {
-            if resource.document_id == document_id {
-                if let Some(acls) = resource.acls() {
-                    for acl in acls {
-                        if access_token.is_member(acl.account_id) {
-                            account_acls.union(&acl.grants);
-                        }
+            if resource.document_id == document_id
+                && let Some(acls) = resource.acls()
+            {
+                for acl in acls {
+                    if access_token.is_member(acl.account_id) {
+                        account_acls.union(&acl.grants);
                     }
-                    break;
                 }
+                break;
             }
         }
 

@@ -580,21 +580,20 @@ impl JsonQueryable for Value {
     ) {
         match pointer.next() {
             Some(JsonPointerItem::String(n)) => {
-                if let Value::Object(map) = self {
-                    if let Some(v) = map
+                if let Value::Object(map) = self
+                    && let Some(v) = map
                         .0
                         .iter()
                         .find_map(|(k, v)| if k.as_str() == n { Some(v) } else { None })
-                    {
-                        v.eval_pointer(pointer, results);
-                    }
+                {
+                    v.eval_pointer(pointer, results);
                 }
             }
             Some(JsonPointerItem::Number(n)) => {
-                if let Value::List(values) = self {
-                    if let Some(v) = values.get(*n as usize) {
-                        v.eval_pointer(pointer, results);
-                    }
+                if let Value::List(values) = self
+                    && let Some(v) = values.get(*n as usize)
+                {
+                    v.eval_pointer(pointer, results);
                 }
             }
             Some(JsonPointerItem::Wildcard) => match self {

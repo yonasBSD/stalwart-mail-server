@@ -462,14 +462,13 @@ impl BootManager {
                 if config
                     .property_or_default::<bool>("spam-filter.auto-update", "false")
                     .unwrap_or_default()
+                    && let Err(err) = core.storage.config.update_spam_rules(false, false).await
                 {
-                    if let Err(err) = core.storage.config.update_spam_rules(false, false).await {
-                        trc::event!(
-                            Resource(trc::ResourceEvent::Error),
-                            Details = "Failed to update spam-filter",
-                            CausedBy = err
-                        );
-                    }
+                    trc::event!(
+                        Resource(trc::ResourceEvent::Error),
+                        Details = "Failed to update spam-filter",
+                        CausedBy = err
+                    );
                 }
 
                 // Build shared inner

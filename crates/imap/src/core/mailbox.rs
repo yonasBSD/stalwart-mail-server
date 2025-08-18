@@ -316,12 +316,11 @@ impl<T: SessionStream> SessionData<T> {
                         // Add new mailboxes
                         for (mailbox_name, mailbox_id) in new_account.mailbox_names.iter() {
                             if let Some(old_mailbox) = old_account.mailbox_state.get(mailbox_id) {
-                                if let Some(mailbox) = new_account.mailbox_state.get(mailbox_id) {
-                                    if mailbox.total_messages != old_mailbox.total_messages
-                                        || mailbox.total_unseen != old_mailbox.total_unseen
-                                    {
-                                        changes.changed.push(mailbox_name.clone());
-                                    }
+                                if let Some(mailbox) = new_account.mailbox_state.get(mailbox_id)
+                                    && (mailbox.total_messages != old_mailbox.total_messages
+                                        || mailbox.total_unseen != old_mailbox.total_unseen)
+                                {
+                                    changes.changed.push(mailbox_name.clone());
                                 }
                             } else {
                                 changes.added.push(mailbox_name.clone());

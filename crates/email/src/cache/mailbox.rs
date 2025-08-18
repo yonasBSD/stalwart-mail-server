@@ -28,18 +28,17 @@ pub(crate) async fn update_mailbox_cache(
     };
 
     for (document_id, is_update) in changed_ids {
-        if *is_update {
-            if let Some(archive) = server
+        if *is_update
+            && let Some(archive) = server
                 .get_archive(account_id, Collection::Mailbox, *document_id)
                 .await
                 .caused_by(trc::location!())?
-            {
-                insert_item(
-                    &mut new_cache,
-                    *document_id,
-                    archive.unarchive::<Mailbox>()?,
-                );
-            }
+        {
+            insert_item(
+                &mut new_cache,
+                *document_id,
+                archive.unarchive::<Mailbox>()?,
+            );
         }
     }
 

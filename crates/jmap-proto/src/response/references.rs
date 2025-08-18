@@ -144,25 +144,25 @@ impl Response {
                 let mut graph = HashMap::with_capacity(request.create.len());
                 for (create_id, object) in request.create.iter_mut() {
                     for data in &mut object.data {
-                        if let DataSourceObject::Id { id, .. } = data {
-                            if let MaybeReference::Reference(parent_id) = id {
-                                match self.created_ids.get(parent_id) {
-                                    Some(AnyId::Blob(blob_id)) => {
-                                        *id = MaybeReference::Value(blob_id.clone());
-                                    }
-                                    Some(_) => {
-                                        return Err(trc::JmapEvent::InvalidResultReference
-                                            .into_err()
-                                            .details(format_compact!(
-                                                "Id reference {parent_id:?} points to invalid type."
-                                            )));
-                                    }
-                                    None => {
-                                        graph
-                                            .entry(create_id.to_string())
-                                            .or_insert_with(Vec::new)
-                                            .push(parent_id.to_string());
-                                    }
+                        if let DataSourceObject::Id { id, .. } = data
+                            && let MaybeReference::Reference(parent_id) = id
+                        {
+                            match self.created_ids.get(parent_id) {
+                                Some(AnyId::Blob(blob_id)) => {
+                                    *id = MaybeReference::Value(blob_id.clone());
+                                }
+                                Some(_) => {
+                                    return Err(trc::JmapEvent::InvalidResultReference
+                                        .into_err()
+                                        .details(format_compact!(
+                                            "Id reference {parent_id:?} points to invalid type."
+                                        )));
+                                }
+                                None => {
+                                    graph
+                                        .entry(create_id.to_string())
+                                        .or_insert_with(Vec::new)
+                                        .push(parent_id.to_string());
                                 }
                             }
                         }

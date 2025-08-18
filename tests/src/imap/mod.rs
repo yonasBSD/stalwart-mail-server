@@ -504,33 +504,31 @@ impl AssertResult for Vec<String> {
     }
 
     fn into_response_code(self) -> String {
-        if let Some((_, code)) = self.last().unwrap().split_once('[') {
-            if let Some((code, _)) = code.split_once(']') {
-                return code.to_string();
-            }
+        if let Some((_, code)) = self.last().unwrap().split_once('[')
+            && let Some((code, _)) = code.split_once(']')
+        {
+            return code.to_string();
         }
         panic!("No response code found in {:?}", self.last().unwrap());
     }
 
     fn into_append_uid(self) -> String {
-        if let Some((_, code)) = self.last().unwrap().split_once("[APPENDUID ") {
-            if let Some((code, _)) = code.split_once(']') {
-                if let Some((_, uid)) = code.split_once(' ') {
-                    return uid.to_string();
-                }
-            }
+        if let Some((_, code)) = self.last().unwrap().split_once("[APPENDUID ")
+            && let Some((code, _)) = code.split_once(']')
+            && let Some((_, uid)) = code.split_once(' ')
+        {
+            return uid.to_string();
         }
         panic!("No APPENDUID found in {:?}", self.last().unwrap());
     }
 
     fn into_copy_uid(self) -> String {
         for line in &self {
-            if let Some((_, code)) = line.split_once("[COPYUID ") {
-                if let Some((code, _)) = code.split_once(']') {
-                    if let Some((_, uid)) = code.rsplit_once(' ') {
-                        return uid.to_string();
-                    }
-                }
+            if let Some((_, code)) = line.split_once("[COPYUID ")
+                && let Some((code, _)) = code.split_once(']')
+                && let Some((_, uid)) = code.rsplit_once(' ')
+            {
+                return uid.to_string();
             }
         }
         panic!("No COPYUID found in {:?}", self);

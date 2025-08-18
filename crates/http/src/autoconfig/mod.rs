@@ -203,22 +203,18 @@ impl Autoconfig for Server {
             .email_to_id(emailaddress)
             .await
             .caused_by(trc::location!())?
-        {
-            if let Ok(Some(principal)) = self
+            && let Ok(Some(principal)) = self
                 .core
                 .storage
                 .directory
                 .query(QueryParams::id(id).with_return_member_of(false))
                 .await
-            {
-                if principal
-                    .emails
-                    .first()
-                    .is_some_and(|email| email.eq_ignore_ascii_case(emailaddress))
-                {
-                    account_name = principal.name;
-                }
-            }
+            && principal
+                .emails
+                .first()
+                .is_some_and(|email| email.eq_ignore_ascii_case(emailaddress))
+        {
+            account_name = principal.name;
         }
 
         Ok((account_name, self.core.network.server_name.clone(), domain))
@@ -296,12 +292,11 @@ fn parse_autodiscover_request(bytes: &[u8]) -> Result<String, String> {
         }
     }
 
-    if let Ok(Event::Text(text)) = reader.read_event_into(&mut buf) {
-        if let Ok(text) = text.unescape() {
-            if text.contains('@') {
-                return Ok(text.trim().to_lowercase());
-            }
-        }
+    if let Ok(Event::Text(text)) = reader.read_event_into(&mut buf)
+        && let Ok(text) = text.unescape()
+        && text.contains('@')
+    {
+        return Ok(text.trim().to_lowercase());
     }
 
     Err(format!(
