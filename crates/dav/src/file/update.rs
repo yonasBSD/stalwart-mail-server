@@ -13,7 +13,6 @@ use crate::{
         uri::DavUriResource,
     },
     file::DavFileResource,
-    fix_percent_encoding,
 };
 use common::{
     Server, auth::AccessToken, sharing::EffectiveAcl, storage::index::ObjectIndexBuilder,
@@ -61,11 +60,9 @@ impl FileUpdateRequestHandler for Server {
             .fetch_dav_resources(access_token, account_id, SyncCollection::FileNode)
             .await
             .caused_by(trc::location!())?;
-        let resource_name = fix_percent_encoding(
-            resource
-                .resource
-                .ok_or(DavError::Code(StatusCode::CONFLICT))?,
-        );
+        let resource_name = resource
+            .resource
+            .ok_or(DavError::Code(StatusCode::CONFLICT))?;
 
         if bytes.len() > self.core.groupware.max_file_size {
             return Err(DavError::Code(StatusCode::PAYLOAD_TOO_LARGE));
@@ -106,7 +103,7 @@ impl FileUpdateRequestHandler for Server {
                         collection: resource.collection,
                         document_id: Some(document_id),
                         etag: node.etag().into(),
-                        path: resource_name.as_ref(),
+                        path: resource_name,
                         ..Default::default()
                     }],
                     Default::default(),
@@ -226,7 +223,7 @@ impl FileUpdateRequestHandler for Server {
                     account_id,
                     collection: resource.collection,
                     document_id: Some(u32::MAX),
-                    path: orig_resource_name.as_ref(),
+                    path: orig_resource_name,
                     ..Default::default()
                 }],
                 Default::default(),
