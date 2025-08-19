@@ -37,7 +37,7 @@ use quick_xml::Reader;
 use quick_xml::events::Event;
 use services::SpawnServices;
 use smtp::{SpawnQueueManager, core::SmtpSessionManager};
-use std::str;
+use std::{borrow::Cow, str};
 use std::{
     sync::Arc,
     time::{Duration, Instant},
@@ -758,10 +758,38 @@ fn flatten_xml(xml: &str) -> Vec<(String, String)> {
                 }
             }
             Event::Text(e) => {
-                let text = e.unescape().unwrap();
+                let text = e.xml_content().unwrap();
                 let trimmed = text.trim();
                 if !trimmed.is_empty() {
-                    text_content = Some(trimmed.to_string());
+                    if let Some(text_content) = text_content.as_mut() {
+                        text_content.push_str(trimmed);
+                    } else {
+                        text_content = Some(trimmed.to_string());
+                    }
+                }
+            }
+            Event::GeneralRef(entity) => {
+                let value: Cow<str> = match entity.as_ref() {
+                    b"lt" => "<".into(),
+                    b"gt" => ">".into(),
+                    b"amp" => "&".into(),
+                    b"apos" => "'".into(),
+                    b"quot" => "\"".into(),
+                    _ => {
+                        if let Ok(Some(gr)) = entity.resolve_char_ref() {
+                            gr.to_string().into()
+                        } else {
+                            std::str::from_utf8(entity.as_ref())
+                                .unwrap_or_default()
+                                .into()
+                        }
+                    }
+                };
+
+                if let Some(text_content) = text_content.as_mut() {
+                    text_content.push_str(value.as_ref());
+                } else {
+                    text_content = Some(value.into_owned());
                 }
             }
             Event::CData(e) => {

@@ -293,7 +293,7 @@ fn parse_autodiscover_request(bytes: &[u8]) -> Result<String, String> {
     }
 
     if let Ok(Event::Text(text)) = reader.read_event_into(&mut buf)
-        && let Ok(text) = text.unescape()
+        && let Ok(text) = text.xml_content()
         && text.contains('@')
     {
         return Ok(text.trim().to_lowercase());

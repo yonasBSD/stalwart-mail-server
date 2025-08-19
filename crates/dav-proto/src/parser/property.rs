@@ -306,7 +306,10 @@ impl Tokenizer<'_> {
                                 }
                             }
                             DavProperty::CalDav(CalDavProperty::CalendarTimezone) => {
-                                match self.parse_value()? {
+                                match self
+                                    .collect_string_value()?
+                                    .map(|v| ICalendar::parse(&v).map_err(|_| v))
+                                {
                                     Some(Ok(value)) => DavValue::ICalendar(value),
                                     Some(Err(value)) => DavValue::String(value),
                                     None => DavValue::Null,
