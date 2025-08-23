@@ -277,7 +277,7 @@ impl<T: CommandParser> Receiver<T> {
                         if !escaped {
                             self.push_argument(true)?;
                             self.state = State::Argument { last_ch: b' ' };
-                        } else if self.buf.len() < 1024 {
+                        } else if self.buf.len() < 4096 {
                             self.buf.push(ch);
                             self.state = State::ArgumentQuoted { escaped: false };
                         } else {
@@ -294,7 +294,7 @@ impl<T: CommandParser> Receiver<T> {
                         return Err(self.error_reset("Unterminated quoted argument."));
                     }
                     _ => {
-                        if self.buf.len() < 1024 {
+                        if self.buf.len() < 4096 {
                             if escaped {
                                 self.buf.push(b'\\');
                             }
