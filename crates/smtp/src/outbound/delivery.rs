@@ -926,7 +926,7 @@ impl QueuedMessage {
                         .and_then(|ip| ip.host.as_deref())
                         .or(conn_strategy.ehlo_hostname.as_deref())
                         .unwrap_or(server.core.network.server_name.as_str());
-                    let params = SessionParams {
+                    let mut params = SessionParams {
                         session_id: message.span_id,
                         server: &server,
                         credentials: remote_host.credentials(),
@@ -934,6 +934,7 @@ impl QueuedMessage {
                         hostname: envelope.mx,
                         local_hostname,
                         conn_strategy,
+                        capabilities: None,
                     };
 
                     // Prepare TLS connector
@@ -1132,6 +1133,7 @@ impl QueuedMessage {
                                         continue 'next_host;
                                     } else {
                                         // TLS is not required, proceed in plain-text
+                                        params.capabilities = Some(capabilities);
                                         message
                                             .deliver(
                                                 smtp_client,

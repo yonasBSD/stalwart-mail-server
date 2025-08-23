@@ -25,6 +25,7 @@ pub struct SessionParams<'x> {
     pub server: &'x Server,
     pub hostname: &'x str,
     pub credentials: Option<&'x Credentials<String>>,
+    pub capabilities: Option<EhloResponse<String>>,
     pub is_smtp: bool,
     pub local_hostname: &'x str,
     pub conn_strategy: &'x ConnectionStrategy,
@@ -37,33 +38,37 @@ impl MessageWrapper {
         mut smtp_client: SmtpClient<T>,
         rcpt_idxs: Vec<usize>,
         statuses: &mut Vec<DeliveryResult>,
-        params: SessionParams<'_>,
+        mut params: SessionParams<'_>,
     ) {
         // Obtain capabilities
         let time = Instant::now();
-        let capabilities = match smtp_client.say_helo(&params).await {
-            Ok(capabilities) => {
-                trc::event!(
-                    Delivery(DeliveryEvent::Ehlo),
-                    SpanId = params.session_id,
-                    Hostname = params.hostname.to_string(),
-                    Details = capabilities.capabilities(),
-                    Elapsed = time.elapsed(),
-                );
+        let capabilities = if let Some(capabilities) = params.capabilities.take() {
+            capabilities
+        } else {
+            match smtp_client.say_helo(&params).await {
+                Ok(capabilities) => {
+                    trc::event!(
+                        Delivery(DeliveryEvent::Ehlo),
+                        SpanId = params.session_id,
+                        Hostname = params.hostname.to_string(),
+                        Details = capabilities.capabilities(),
+                        Elapsed = time.elapsed(),
+                    );
 
-                capabilities
-            }
-            Err(status) => {
-                trc::event!(
-                    Delivery(DeliveryEvent::EhloRejected),
-                    SpanId = params.session_id,
-                    Hostname = params.hostname.to_string(),
-                    CausedBy = from_error_status(&status),
-                    Elapsed = time.elapsed(),
-                );
-                smtp_client.quit().await;
-                statuses.push(DeliveryResult::domain(status, rcpt_idxs));
-                return;
+                    capabilities
+                }
+                Err(status) => {
+                    trc::event!(
+                        Delivery(DeliveryEvent::EhloRejected),
+                        SpanId = params.session_id,
+                        Hostname = params.hostname.to_string(),
+                        CausedBy = from_error_status(&status),
+                        Elapsed = time.elapsed(),
+                    );
+                    smtp_client.quit().await;
+                    statuses.push(DeliveryResult::domain(status, rcpt_idxs));
+                    return;
+                }
             }
         };
 
