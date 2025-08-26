@@ -268,10 +268,16 @@ impl PrincipalPropFind for Server {
                             ));
                         }
                         PrincipalProperty::CalendarHomeSet => {
-                            let hrefs =
-                                build_home_set(self, access_token, name.as_ref(), account_id, true)
-                                    .await
-                                    .caused_by(trc::location!())?;
+                            let hrefs = build_home_set(
+                                self,
+                                access_token,
+                                name.as_ref(),
+                                account_id,
+                                true,
+                                false,
+                            )
+                            .await
+                            .caused_by(trc::location!())?;
 
                             fields.push(DavPropertyValue::new(property.clone(), hrefs));
                             response.set_namespace(Namespace::CalDav);
@@ -282,6 +288,7 @@ impl PrincipalPropFind for Server {
                                 access_token,
                                 name.as_ref(),
                                 account_id,
+                                false,
                                 false,
                             )
                             .await
@@ -412,6 +419,7 @@ pub(crate) async fn build_home_set(
     name: &str,
     account_id: u32,
     is_calendar: bool,
+    include_sharings: bool,
 ) -> trc::Result<Vec<Href>> {
     let (collection, resource_name) = if is_calendar {
         (Collection::Calendar, DavResourceName::Cal)
@@ -426,7 +434,7 @@ pub(crate) async fn build_home_set(
         percent_encoding::utf8_percent_encode(name, RFC_3986),
     )));
 
-    if account_id == access_token.primary_id() {
+    if include_sharings && account_id == access_token.primary_id() {
         for account_id in access_token.all_ids_by_collection(collection) {
             if account_id != access_token.primary_id() {
                 let other_name = server

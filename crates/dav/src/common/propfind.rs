@@ -1745,6 +1745,7 @@ async fn add_base_collection_response(
                     &access_token.name,
                     access_token.primary_id,
                     true,
+                    false,
                 )
                 .await
                 .caused_by(trc::location!())?;
@@ -1758,6 +1759,7 @@ async fn add_base_collection_response(
                     access_token,
                     &access_token.name,
                     access_token.primary_id,
+                    false,
                     false,
                 )
                 .await
