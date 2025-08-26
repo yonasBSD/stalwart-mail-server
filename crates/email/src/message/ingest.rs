@@ -328,6 +328,7 @@ impl EmailIngest for Server {
                                             params.access_token,
                                             &resource_token,
                                             sender,
+                                            deliver_to,
                                             itip_message,
                                         )
                                         .await

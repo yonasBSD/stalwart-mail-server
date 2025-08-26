@@ -19,8 +19,8 @@ use crate::{
 use calcard::{
     common::timezone::Tz,
     icalendar::{
-        ICalendar, ICalendarComponentType, ICalendarMethod, ICalendarParameter,
-        ICalendarParticipationStatus, ICalendarProperty,
+        ICalendar, ICalendarComponentType, ICalendarEntry, ICalendarMethod, ICalendarParameter,
+        ICalendarParticipationStatus, ICalendarProperty, ICalendarValue,
     },
 };
 use common::{
@@ -52,6 +52,7 @@ pub trait ItipIngest: Sync + Send {
         access_token: &AccessToken,
         resource_token: &ResourceToken,
         sender: &str,
+        recipient: &str,
         itip_message: &str,
     ) -> impl Future<Output = Result<Option<ItipMessage<ICalendar>>, ItipIngestError>> + Send;
 
@@ -75,10 +76,11 @@ impl ItipIngest for Server {
         access_token: &AccessToken,
         resource_token: &ResourceToken,
         sender: &str,
+        recipient: &str,
         itip_message: &str,
     ) -> Result<Option<ItipMessage<ICalendar>>, ItipIngestError> {
         // Parse and validate the iTIP message
-        let itip = ICalendar::parse(itip_message)
+        let mut itip = ICalendar::parse(itip_message)
             .map_err(|_| ItipIngestError::Message(ItipError::ICalendarParseError))
             .and_then(|ical| {
                 if ical.components.len() > 1
@@ -89,6 +91,43 @@ impl ItipIngest for Server {
                     Err(ItipIngestError::Message(ItipError::ICalendarParseError))
                 }
             })?;
+
+        // Microsoft Exchange does not include the organizer in REPLY, assume it is the recipient.
+        // This will be validated against the stored event anyway.
+        if itip.components[0]
+            .property(&ICalendarProperty::Method)
+            .and_then(|v| v.values.first())
+            .is_some_and(|v| {
+                matches!(
+                    v,
+                    ICalendarValue::Method(ICalendarMethod::Reply | ICalendarMethod::Request)
+                )
+            })
+        {
+            for comp in &mut itip.components {
+                if comp.component_type.is_scheduling_object() {
+                    let mut has_organizer = false;
+                    let mut has_attendee = false;
+
+                    for entry in &comp.entries {
+                        match entry.name {
+                            ICalendarProperty::Organizer => has_organizer = true,
+                            ICalendarProperty::Attendee => has_attendee = true,
+                            _ => {}
+                        }
+                    }
+
+                    if has_attendee && !has_organizer {
+                        comp.entries.push(ICalendarEntry {
+                            name: ICalendarProperty::Organizer,
+                            params: vec![],
+                            values: vec![ICalendarValue::Text(format!("mailto:{recipient}"))],
+                        });
+                    }
+                }
+            }
+        }
+
         let itip_snapshots = itip_snapshot(&itip, access_token.emails.as_slice(), false)?;
         if !itip_snapshots.sender_is_organizer_or_attendee(sender) {
             return Err(ItipIngestError::Message(
