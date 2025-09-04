@@ -1721,10 +1721,10 @@ impl LimitEvent {
 impl ManageEvent {
     pub fn description(&self) -> &'static str {
         match self {
-            ManageEvent::MissingParameter => "Missing management parameter",
-            ManageEvent::AlreadyExists => "Managed resource already exists",
-            ManageEvent::AssertFailed => "Management assertion failed",
-            ManageEvent::NotFound => "Managed resource not found",
+            ManageEvent::MissingParameter => "Missing parameter",
+            ManageEvent::AlreadyExists => "Record already exists",
+            ManageEvent::AssertFailed => "Assertion failed",
+            ManageEvent::NotFound => "Resource not found",
             ManageEvent::NotSupported => "Management operation not supported",
             ManageEvent::Error => "Management error",
         }
@@ -1732,8 +1732,8 @@ impl ManageEvent {
 
     pub fn explain(&self) -> &'static str {
         match self {
-            ManageEvent::MissingParameter => "A management parameter is missing",
-            ManageEvent::AlreadyExists => "The managed resource already exists",
+            ManageEvent::MissingParameter => "A parameter is missing",
+            ManageEvent::AlreadyExists => "A record with the same name already exists",
             ManageEvent::AssertFailed => "A management assertion has failed",
             ManageEvent::NotFound => "The managed resource was not found",
             ManageEvent::NotSupported => "The management operation is not supported",
