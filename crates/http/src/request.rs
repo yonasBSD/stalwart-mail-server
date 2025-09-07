@@ -666,6 +666,7 @@ impl ParseHttp for Server {
 async fn handle_session<T: SessionStream>(inner: Arc<Inner>, session: SessionData<T>) {
     let _in_flight = session.in_flight;
     let is_tls = session.stream.is_tls();
+    let mut remote_ip = session.remote_ip;
 
     if let Err(http_err) = http1::Builder::new()
         .keep_alive(true)
@@ -679,14 +680,12 @@ async fn handle_session<T: SessionStream>(inner: Arc<Inner>, session: SessionDat
                     let server = inner.build_server();
 
                     // Obtain remote IP
-                    let remote_ip = if !server.core.jmap.http_use_forwarded {
+                    if !server.core.jmap.http_use_forwarded {
                         trc::event!(
                             Http(trc::HttpEvent::RequestUrl),
                             SpanId = session.session_id,
                             Url = req.uri().to_string(),
                         );
-
-                        session.remote_ip
                     } else if let Some(forwarded_for) = req
                         .headers()
                         .get(header::FORWARDED)
@@ -747,14 +746,13 @@ async fn handle_session<T: SessionStream>(inner: Arc<Inner>, session: SessionDat
                             Url = req.uri().to_string(),
                         );
 
-                        forwarded_for
+                        remote_ip = forwarded_for;
                     } else {
                         trc::event!(
                             Http(trc::HttpEvent::XForwardedMissing),
                             SpanId = session.session_id,
                         );
-                        session.remote_ip
-                    };
+                    }
 
                     // Parse HTTP request
                     let response = match Box::pin(server.parse_http_request(
@@ -814,16 +812,12 @@ async fn handle_session<T: SessionStream>(inner: Arc<Inner>, session: SessionDat
         .await
     {
         if http_err.is_parse() {
-            match inner
-                .build_server()
-                .is_scanner_fail2banned(session.remote_ip)
-                .await
-            {
+            match inner.build_server().is_scanner_fail2banned(remote_ip).await {
                 Ok(true) => {
                     trc::event!(
                         Security(SecurityEvent::ScanBan),
                         SpanId = session.session_id,
-                        RemoteIp = session.remote_ip,
+                        RemoteIp = remote_ip,
                         Reason = http_err.to_string(),
                     );
                     return;
