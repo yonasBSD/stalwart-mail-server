@@ -84,7 +84,7 @@ impl GroupwareConfig {
             live_property_size: config.property("dav.property.max-size.live").unwrap_or(250),
             assisted_discovery: config
                 .property("dav.collection.assisted-discovery")
-                .unwrap_or(false),
+                .unwrap_or(true),
             max_lock_timeout: config
                 .property::<Duration>("dav.lock.max-timeout")
                 .map(|d| d.as_secs())

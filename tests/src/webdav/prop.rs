@@ -14,7 +14,7 @@ use dav_proto::schema::{
 use groupware::DavResourceName;
 use hyper::StatusCode;
 
-pub async fn test(test: &WebDavTest) {
+pub async fn test(test: &WebDavTest, assisted_discovery: bool) {
     let client = test.client("jane");
 
     for resource_type in [
@@ -91,12 +91,15 @@ pub async fn test(test: &WebDavTest) {
             .with_status(StatusCode::MULTI_STATUS)
             .with_hrefs(
                 [
+                    format!("{group_base_path}/default/").as_str(),
                     format!("{user_base_path}/default/").as_str(),
                     format!("{user_base_path}/").as_str(),
                     &test_base_path,
                 ]
                 .into_iter()
                 .skip(if resource_type == DavResourceName::File {
+                    2
+                } else if !assisted_discovery {
                     1
                 } else {
                     0
@@ -132,11 +135,14 @@ pub async fn test(test: &WebDavTest) {
             .with_status(StatusCode::MULTI_STATUS)
             .with_hrefs(
                 [
+                    format!("{group_base_path}/default/").as_str(),
                     format!("{user_base_path}/default/").as_str(),
                     &test_base_path,
                 ]
                 .into_iter()
                 .skip(if resource_type == DavResourceName::File {
+                    2
+                } else if !assisted_discovery {
                     1
                 } else {
                     0

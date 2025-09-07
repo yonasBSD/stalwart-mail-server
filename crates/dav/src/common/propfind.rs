@@ -135,8 +135,7 @@ impl PropFindRequestHandler for Server {
             Depth::Infinity => match resource.collection {
                 Collection::Principal => true,
                 Collection::Calendar | Collection::AddressBook
-                    if self.core.groupware.assisted_discovery
-                        || (resource.account_id.is_some() && resource.resource.is_some()) =>
+                    if resource.account_id.is_some() && resource.resource.is_some() =>
                 {
                     true
                 }
@@ -215,34 +214,6 @@ impl PropFindRequestHandler for Server {
                 }
                 _ => unreachable!(),
             }
-        } else if (self.core.groupware.assisted_discovery
-            || matches!(headers.depth, Depth::Infinity))
-            && matches!(
-                resource.collection,
-                Collection::Calendar | Collection::AddressBook
-            )
-        {
-            // Assisted collection discovery
-
-            // Validate permissions
-            access_token.assert_has_permission(match resource.collection {
-                Collection::Calendar => Permission::DavCalPropFind,
-                Collection::AddressBook => Permission::DavCardPropFind,
-                _ => unreachable!(),
-            })?;
-
-            self.handle_dav_query(
-                access_token,
-                DavQuery::discovery(
-                    request,
-                    access_token
-                        .all_ids_by_collection(resource.collection)
-                        .collect(),
-                    resource.collection,
-                    headers,
-                ),
-            )
-            .await
         } else {
             let mut response = MultiStatus::new(Vec::with_capacity(16));
 
@@ -380,7 +351,7 @@ impl PropFindRequestHandler for Server {
 
                 items
             }
-            DavQueryResource::Discovery {
+            /*DavQueryResource::Discovery {
                 parent_collection,
                 account_ids,
             } => {
@@ -411,7 +382,7 @@ impl PropFindRequestHandler for Server {
                     account_ids,
                 )
                 .await?
-            }
+            }*/
             DavQueryResource::None => unreachable!(),
         };
         response.set_namespace(collection_container.namespace());
@@ -1181,13 +1152,14 @@ async fn get(
     limit: usize,
     is_sync_limited: &mut bool,
 ) -> crate::Result<Vec<PropFindItem>> {
-    let account_id = resource.account_id;
     let container_has_children = collection_children != collection_container;
+    response.set_namespace(collection_container.namespace());
+
+    let account_id = resource.account_id;
     let resources = data
         .resources(server, access_token, account_id, sync_collection)
         .await
         .caused_by(trc::location!())?;
-    response.set_namespace(collection_container.namespace());
 
     // Obtain document ids
     let mut display_containers = if !access_token.is_member(account_id) {
@@ -1221,7 +1193,7 @@ async fn get(
         });
 
     // Filter by changelog
-    match query.sync_type {
+    let is_sync = match query.sync_type {
         SyncType::From { id, seq } => {
             let changes = server
                 .store()
@@ -1356,15 +1328,19 @@ async fn get(
             if !*is_sync_limited {
                 response.set_sync_token(resources.sync_token());
             }
+
+            true
         }
         SyncType::Initial => {
             response.set_sync_token(resources.sync_token());
+            false
         }
-        SyncType::None => (),
-    }
+        SyncType::None => false,
+    };
 
-    Ok(if let Some(resource) = resource.resource {
-        resources
+    let mut results = Vec::new();
+    if let Some(resource) = resource.resource {
+        results = resources
             .subtree_with_depth(resource, query.depth)
             .filter(|item| {
                 display_containers.as_ref().is_none_or(|containers| {
@@ -1382,7 +1358,7 @@ async fn get(
                 }) && (!query.depth_no_root || item.path() != resource)
             })
             .map(|item| PropFindItem::new(resources.format_resource(item), account_id, item))
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>();
     } else {
         if !query.depth_no_root && query.sync_type.is_none_or_initial() {
             server
@@ -1397,7 +1373,7 @@ async fn get(
         }
 
         if query.depth != 0 {
-            resources
+            results = resources
                 .tree_with_depth(query.depth - 1)
                 .filter(|item| {
                     display_containers.as_ref().is_none_or(|containers| {
@@ -1415,11 +1391,70 @@ async fn get(
                     })
                 })
                 .map(|item| PropFindItem::new(resources.format_resource(item), account_id, item))
-                .collect::<Vec<_>>()
-        } else {
-            Vec::new()
+                .collect::<Vec<_>>();
+
+            // Assisted discovery:
+            // If 'bob' has access to 'jane' and `bill` calendars, a query to '/dav/cal/bob' will return:
+            //    - /dav/cal/bob/default
+            //    - /dav/cal/jane/default
+            //    - /dav/cal/bill/default
+            // This is invalid but it's the only workaround for clients which do not support multiple home-sets
+            if server.core.groupware.assisted_discovery
+                && !is_sync
+                && account_id == access_token.primary_id()
+                && matches!(
+                    sync_collection,
+                    SyncCollection::Calendar | SyncCollection::AddressBook
+                )
+            {
+                for shared_account_id in access_token.all_ids_by_collection(collection_container) {
+                    if shared_account_id == access_token.primary_id() {
+                        continue;
+                    }
+                    let shared_resources = data
+                        .resources(server, access_token, shared_account_id, sync_collection)
+                        .await
+                        .caused_by(trc::location!())?;
+                    let shared_containers =
+                        (!access_token.is_member(shared_account_id)).then(|| {
+                            shared_resources.shared_containers(
+                                access_token,
+                                [if container_has_children {
+                                    Acl::ReadItems
+                                } else {
+                                    Acl::Read
+                                }],
+                                true,
+                            )
+                        });
+                    if shared_containers
+                        .as_ref()
+                        .is_none_or(|containers| !containers.is_empty())
+                    {
+                        results.extend(
+                            shared_resources
+                                .tree_with_depth(query.depth - 1)
+                                .filter(|item| {
+                                    item.is_container()
+                                        && shared_containers.as_ref().is_none_or(|containers| {
+                                            containers.contains(item.document_id())
+                                        })
+                                })
+                                .map(|item| {
+                                    PropFindItem::new(
+                                        shared_resources.format_resource(item),
+                                        shared_account_id,
+                                        item,
+                                    )
+                                }),
+                        );
+                    }
+                }
+            }
         }
-    })
+    }
+
+    Ok(results)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1507,58 +1542,6 @@ async fn multiget(
         } else {
             response.add_response(Response::new_status([item], StatusCode::NOT_FOUND));
         }
-    }
-
-    Ok(paths)
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn discover_root_paths(
-    server: &Server,
-    access_token: &AccessToken,
-    collection_container: Collection,
-    sync_collection: SyncCollection,
-    query: &DavQuery<'_>,
-    data: &mut PropFindData,
-    response: &mut MultiStatus,
-    account_ids: Vec<u32>,
-) -> crate::Result<Vec<PropFindItem>> {
-    let mut paths = Vec::with_capacity(account_ids.len() * 2);
-
-    for account_id in account_ids {
-        let resources = data
-            .resources(server, access_token, account_id, sync_collection)
-            .await
-            .caused_by(trc::location!())?;
-        server
-            .prepare_principal_propfind_response(
-                access_token,
-                collection_container,
-                [account_id].into_iter(),
-                &query.propfind,
-                response,
-            )
-            .await?;
-
-        // Obtain document ids
-        let display_containers = if !access_token.is_member(account_id) {
-            resources
-                .shared_containers(access_token, [Acl::ReadItems], true)
-                .into()
-        } else {
-            None
-        };
-        paths.extend(
-            resources
-                .tree_with_depth(0)
-                .filter(|item| {
-                    item.is_container()
-                        && display_containers
-                            .as_ref()
-                            .is_none_or(|containers| containers.contains(item.document_id()))
-                })
-                .map(|item| PropFindItem::new(resources.format_resource(item), account_id, item)),
-        );
     }
 
     Ok(paths)
@@ -1745,7 +1728,6 @@ async fn add_base_collection_response(
                     &access_token.name,
                     access_token.primary_id,
                     true,
-                    false,
                 )
                 .await
                 .caused_by(trc::location!())?;
@@ -1759,7 +1741,6 @@ async fn add_base_collection_response(
                     access_token,
                     &access_token.name,
                     access_token.primary_id,
-                    false,
                     false,
                 )
                 .await

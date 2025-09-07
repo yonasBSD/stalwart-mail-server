@@ -9,7 +9,7 @@ use common::{
     expr::{self, functions::ResolveVariable, *},
 };
 use compact_str::ToCompactString;
-use smtp_proto::{ArchivedResponse, Response};
+use smtp_proto::Response;
 use std::{
     fmt::Display,
     net::{IpAddr, Ipv4Addr},
@@ -537,8 +537,7 @@ impl Display for ArchivedError {
                 write!(
                     f,
                     "Unexpected response for {}: {}",
-                    response.command,
-                    response.response.to_string()
+                    response.command, response.response
                 )
             }
             ArchivedError::DnsError(err) => {
@@ -590,6 +589,8 @@ impl Display for ArchivedErrorDetails {
     }
 }
 
+/*
+
 pub trait DisplayArchivedResponse {
     fn to_string(&self) -> String;
 }
@@ -602,3 +603,4 @@ impl DisplayArchivedResponse for ArchivedResponse<String> {
         )
     }
 }
+*/

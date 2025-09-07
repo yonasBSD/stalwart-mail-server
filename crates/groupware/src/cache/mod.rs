@@ -327,12 +327,16 @@ impl GroupwareCache for Server {
                 .await?;
             AddressBook {
                 name: name.clone(),
-                display_name: self
-                    .core
-                    .groupware
-                    .default_addressbook_display_name
-                    .as_ref()
-                    .map(|display| format!("{display} ({account_name})")),
+                display_name: format!(
+                    "{} ({})",
+                    self.core
+                        .groupware
+                        .default_addressbook_display_name
+                        .as_ref()
+                        .unwrap_or(name),
+                    account_name
+                )
+                .into(),
                 is_default: true,
                 ..Default::default()
             }
@@ -360,15 +364,15 @@ impl GroupwareCache for Server {
                 name: name.clone(),
                 preferences: vec![CalendarPreferences {
                     account_id,
-                    name: self
-                        .core
-                        .groupware
-                        .default_calendar_display_name
-                        .as_ref()
-                        .map_or_else(
-                            || name.clone(),
-                            |display| format!("{display} ({account_name})",),
-                        ),
+                    name: format!(
+                        "{} ({})",
+                        self.core
+                            .groupware
+                            .default_calendar_display_name
+                            .as_ref()
+                            .unwrap_or(name),
+                        account_name
+                    ),
                     ..Default::default()
                 }],
                 ..Default::default()

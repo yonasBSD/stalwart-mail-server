@@ -25,8 +25,7 @@ use serde::{Deserializer, Serializer};
 use serde_json::json;
 use smtp::{
     queue::{
-        self, ArchivedMessage, ArchivedStatus, DisplayArchivedResponse, ErrorDetails, QueueId,
-        Status, spool::SmtpSpool,
+        self, ArchivedMessage, ArchivedStatus, ErrorDetails, QueueId, Status, spool::SmtpSpool,
     },
     reporting::{dmarc::DmarcReporting, tls::TlsReporting},
 };

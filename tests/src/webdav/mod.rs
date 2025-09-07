@@ -73,11 +73,13 @@ fn webdav_tests() {
         .unwrap()
         .block_on(async {
             // Prepare settings
+            let assisted_discovery = std::env::var("ASSISTED_DISCOVERY").unwrap_or_default() == "1";
             let start_time = Instant::now();
             let delete = true;
             let handle = init_webdav_tests(
                 &std::env::var("STORE")
                     .expect("Missing store type. Try running `STORE=<store_type> cargo test`"),
+                assisted_discovery,
                 delete,
             )
             .await;
@@ -85,12 +87,12 @@ fn webdav_tests() {
             basic::test(&handle).await;
             put_get::test(&handle).await;
             mkcol::test(&handle).await;
-            copy_move::test(&handle).await;
-            prop::test(&handle).await;
+            copy_move::test(&handle, assisted_discovery).await;
+            prop::test(&handle, assisted_discovery).await;
             multiget::test(&handle).await;
             sync::test(&handle).await;
             lock::test(&handle).await;
-            principals::test(&handle).await;
+            principals::test(&handle, assisted_discovery).await;
             acl::test(&handle).await;
             card_query::test(&handle).await;
             cal_query::test(&handle).await;
@@ -121,13 +123,18 @@ pub struct WebDavTest {
     shutdown_tx: watch::Sender<bool>,
 }
 
-async fn init_webdav_tests(store_id: &str, delete_if_exists: bool) -> WebDavTest {
+async fn init_webdav_tests(
+    store_id: &str,
+    assisted_discovery: bool,
+    delete_if_exists: bool,
+) -> WebDavTest {
     // Load and parse config
     let temp_dir = TempDir::new("webdav_tests", delete_if_exists);
     let mut config = Config::new(
         add_test_certs(SERVER)
             .replace("{STORE}", store_id)
             .replace("{TMP}", &temp_dir.path.display().to_string())
+            .replace("{ASSISTED_DISCOVERY}", &assisted_discovery.to_string())
             .replace(
                 "{LEVEL}",
                 &std::env::var("LOG").unwrap_or_else(|_| "disable".to_string()),
@@ -1190,7 +1197,7 @@ minimum-interval = "1s"
 auto-add = true
 
 [dav.collection]
-assisted-discovery = false
+assisted-discovery = {ASSISTED_DISCOVERY}
 
 [store."auth"]
 type = "sqlite"
