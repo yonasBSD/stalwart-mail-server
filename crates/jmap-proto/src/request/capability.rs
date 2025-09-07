@@ -308,7 +308,10 @@ impl Default for SieveSessionCapabilities {
 impl WebSocketCapabilities {
     pub fn new(base_url: &str) -> Self {
         WebSocketCapabilities {
-            url: format!("ws{}/jmap/ws", base_url.strip_prefix("http").unwrap()),
+            url: format!(
+                "ws{}/jmap/ws",
+                base_url.strip_prefix("http").unwrap_or_default()
+            ),
             supports_push: true,
         }
     }
