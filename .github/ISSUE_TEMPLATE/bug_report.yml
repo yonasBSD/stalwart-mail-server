@@ -1,5 +1,5 @@
-name: I think I found a bug
-description: File a bug report issue. If you have a question or are experiencing a problem, please start a [new discussion](https://github.com/stalwartlabs/stalwart/discussions/new?category=q-a) instead.
+name: I am absolutely certain I found a bug
+description: Most reported issues turn out to be configuration problems rather than actual bugs. If you are not 100% certain this is a bug, please start a new discussion the instead.
 title: "🐛: "
 labels: ["bug"]
 body:
