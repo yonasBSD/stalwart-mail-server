@@ -1,5 +1,5 @@
 name: I am absolutely certain I found a bug
-description: Most reported issues turn out to be configuration problems rather than actual bugs. If you are not 100% certain this is a bug, please start a new discussion the instead.
+description: Most reported issues turn out to be configuration problems rather than actual bugs. If you are not 100% certain this is a bug, please start a new discussion instead.
 title: "🐛: "
 labels: ["bug"]
 body:
