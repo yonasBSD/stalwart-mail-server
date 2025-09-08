@@ -814,26 +814,25 @@ async fn handle_session<T: SessionStream>(inner: Arc<Inner>, session: SessionDat
         .await
     {
         if http_err.is_parse() {
-            match inner
-                .build_server()
-                .is_scanner_fail2banned(session.remote_ip)
-                .await
-            {
-                Ok(true) => {
-                    trc::event!(
-                        Security(SecurityEvent::ScanBan),
-                        SpanId = session.session_id,
-                        RemoteIp = session.remote_ip,
-                        Reason = http_err.to_string(),
-                    );
-                    return;
-                }
-                Ok(false) => {}
-                Err(err) => {
-                    trc::error!(
-                        err.span_id(session.session_id)
-                            .details("Failed to check for fail2ban")
-                    );
+            let server = inner.build_server();
+            if !server.core.jmap.http_use_forwarded {
+                match server.is_scanner_fail2banned(session.remote_ip).await {
+                    Ok(true) => {
+                        trc::event!(
+                            Security(SecurityEvent::ScanBan),
+                            SpanId = session.session_id,
+                            RemoteIp = session.remote_ip,
+                            Reason = http_err.to_string(),
+                        );
+                        return;
+                    }
+                    Ok(false) => {}
+                    Err(err) => {
+                        trc::error!(
+                            err.span_id(session.session_id)
+                                .details("Failed to check for fail2ban")
+                        );
+                    }
                 }
             }
         }
