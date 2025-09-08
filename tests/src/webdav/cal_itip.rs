@@ -31,7 +31,7 @@ struct Test {
 enum Command {
     Put,
     Get,
-    Delete,
+    Delete(bool),
     Expect,
     Send,
     Reset,
@@ -81,7 +81,8 @@ pub fn test() {
                     "get" => Command::Get,
                     "expect" => Command::Expect,
                     "send" => Command::Send,
-                    "delete" => Command::Delete,
+                    "delete" => Command::Delete(false),
+                    "delete-force-send" => Command::Delete(true),
                     "reset" => Command::Reset,
                     "itip" => Command::Itip,
                     _ => panic!("Unknown command: {}", last_command),
@@ -185,7 +186,7 @@ pub fn test() {
                             );
                         });
                 }
-                Command::Delete => {
+                Command::Delete(force_send) => {
                     let account = command
                         .parameters
                         .first()
@@ -200,7 +201,8 @@ pub fn test() {
 
                     if let Some(ical) = store.remove(name) {
                         last_itip = Some(
-                            itip_cancel(&ical, &[account.to_string()]).map(|message| vec![message]),
+                            itip_cancel(&ical, &[account.to_string()], force_send)
+                                .map(|message| vec![message]),
                         );
                     } else {
                         panic!(

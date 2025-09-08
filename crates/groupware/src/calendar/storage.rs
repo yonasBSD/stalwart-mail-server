@@ -391,7 +391,7 @@ impl DestroyArchive<Archive<&ArchivedCalendarEvent>> {
                         .caused_by(trc::location!())?;
 
                     if let Ok(messages) =
-                        itip_cancel(&event.data.event, access_token.emails.as_slice())
+                        itip_cancel(&event.data.event, access_token.emails.as_slice(), true)
                     {
                         ItipMessages::new(vec![messages])
                             .queue(batch)

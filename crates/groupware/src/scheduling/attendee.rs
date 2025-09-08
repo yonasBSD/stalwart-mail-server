@@ -59,6 +59,7 @@ pub(crate) fn attendee_handle_update(
                                     old_instance,
                                     &dt_stamp,
                                     &mut email_rcpt,
+                                    false,
                                 ) {
                                     // Add EXDATE as RECURRENCE-ID
                                     cancel_comp
@@ -207,6 +208,7 @@ pub(crate) fn attendee_handle_update(
                     old_instance,
                     &dt_stamp,
                     &mut email_rcpt,
+                    false,
                 ) {
                     // Add cancel component
                     let comp_id = message.components.len() as u16;
@@ -269,6 +271,7 @@ pub(crate) fn attendee_decline<'x>(
     comp: &'x ItipSnapshot<'x>,
     dt_stamp: &'x PartialDateTime,
     email_rcpt: &mut AHashSet<&'x str>,
+    skip_needs_action: bool,
 ) -> Option<(ICalendarComponent, &'x Email)> {
     let component = comp.comp;
     let mut cancel_comp = ICalendarComponent {
@@ -284,14 +287,14 @@ pub(crate) fn attendee_decline<'x>(
         if attendee.email.is_local {
             if attendee.is_server_scheduling
                 && attendee.rsvp.is_none_or(|rsvp| rsvp)
-                && (attendee.force_send.is_some()
-                    || !matches!(
-                        attendee.part_stat,
-                        Some(
-                            ICalendarParticipationStatus::Declined
-                                | ICalendarParticipationStatus::Delegated
-                        )
-                    ))
+                && match attendee.part_stat {
+                    Some(
+                        ICalendarParticipationStatus::Declined
+                        | ICalendarParticipationStatus::Delegated,
+                    ) => attendee.force_send.is_some(),
+                    Some(ICalendarParticipationStatus::NeedsAction) => !skip_needs_action,
+                    _ => true,
+                }
             {
                 local_attendee = Some(attendee);
             }

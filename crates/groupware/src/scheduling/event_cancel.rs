@@ -22,6 +22,7 @@ use calcard::{
 pub fn itip_cancel(
     ical: &ICalendar,
     account_emails: &[String],
+    is_deletion: bool,
 ) -> Result<ItipMessage<ICalendar>, ItipError> {
     // Prepare iTIP message
     let itip = itip_snapshot(ical, account_emails, false)?;
@@ -88,9 +89,14 @@ pub fn itip_cancel(
         let mut mail_from = None;
         let mut email_rcpt = AHashSet::new();
         for (instance_id, comp) in &itip.components {
-            if let Some((cancel_comp, attendee_email)) =
-                attendee_decline(instance_id, &itip, comp, &dt_stamp, &mut email_rcpt)
-            {
+            if let Some((cancel_comp, attendee_email)) = attendee_decline(
+                instance_id,
+                &itip,
+                comp,
+                &dt_stamp,
+                &mut email_rcpt,
+                is_deletion,
+            ) {
                 // Add cancel component
                 let comp_id = message.components.len() as u16;
                 message.components[0].component_ids.push(comp_id);
