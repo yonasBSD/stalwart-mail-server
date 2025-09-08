@@ -258,7 +258,11 @@ impl Principal {
         }
     }
 
-    pub fn update_external(&mut self, mut external: Principal) -> Vec<PrincipalUpdate> {
+    pub fn update_external(
+        &mut self,
+        mut external: Principal,
+        overwrite_emails: bool,
+    ) -> Vec<PrincipalUpdate> {
         let mut updates = Vec::new();
 
         // Add external members
@@ -284,16 +288,34 @@ impl Principal {
             ));
         }
 
-        for (name, field, external_field) in [
-            (PrincipalField::Secrets, &mut self.secrets, external.secrets),
-            (PrincipalField::Emails, &mut self.emails, external.emails),
-        ] {
-            if !external_field.is_empty() && &external_field != field {
-                *field = external_field;
+        if !external.secrets.is_empty() && external.secrets != self.secrets {
+            self.secrets = external.secrets;
+            updates.push(PrincipalUpdate::set(
+                PrincipalField::Secrets,
+                PrincipalValue::StringList(self.secrets.clone()),
+            ));
+        }
+
+        if !external.emails.is_empty() && external.emails != self.emails {
+            if overwrite_emails {
+                self.emails = external.emails;
                 updates.push(PrincipalUpdate::set(
-                    name,
-                    PrincipalValue::StringList(field.clone()),
+                    PrincipalField::Emails,
+                    PrincipalValue::StringList(self.emails.clone()),
                 ));
+            } else {
+                // Missing emails are appended to avoid overwriting locally defined aliases
+                // This means that old email addresses need to be deleted either manually or using the API
+                for email in external.emails {
+                    let email = email.to_lowercase();
+                    if !self.emails.contains(&email) {
+                        updates.push(PrincipalUpdate::add_item(
+                            PrincipalField::Emails,
+                            PrincipalValue::String(email.clone()),
+                        ));
+                        self.emails.push(email);
+                    }
+                }
             }
         }
 

@@ -270,7 +270,7 @@ impl LdapDirectory {
         };
 
         // Keep the internal store up to date with the LDAP server
-        let changes = principal.update_external(external_principal);
+        let changes = principal.update_external(external_principal, true);
         if !changes.is_empty() {
             self.data_store
                 .update_principal(
