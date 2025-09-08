@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::scheduling::{ArchivedItipSummary, ItipMessage, ItipMessages};
 use calcard::{
     common::PartialDateTime,
     icalendar::{
@@ -17,8 +18,6 @@ use store::{
     write::{Archiver, BatchBuilder, TaskQueueClass, ValueClass, now},
 };
 use trc::AddContext;
-
-use crate::scheduling::{ArchivedItipSummary, ItipMessage, ItipMessages};
 
 pub(crate) fn itip_build_envelope(method: ICalendarMethod) -> ICalendarComponent {
     ICalendarComponent {

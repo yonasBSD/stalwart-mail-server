@@ -148,6 +148,7 @@ pub(crate) fn build_cancel_component(
                 | ICalendarProperty::Summary
                 | ICalendarProperty::Dtstart
                 | ICalendarProperty::Dtend
+                | ICalendarProperty::Duration
                 | ICalendarProperty::Due
                 | ICalendarProperty::RecurrenceId
                 | ICalendarProperty::Created

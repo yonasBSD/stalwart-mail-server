@@ -318,6 +318,23 @@ pub(crate) fn attendee_decline<'x>(
         cancel_comp.add_uid(itip.uid);
         cancel_comp.add_dtstamp(dt_stamp.clone());
         cancel_comp.add_sequence(comp.sequence.unwrap_or_default());
+        cancel_comp.entries.extend(
+            component
+                .entries
+                .iter()
+                .filter(|e| {
+                    matches!(
+                        e.name,
+                        ICalendarProperty::Dtstart
+                            | ICalendarProperty::Dtend
+                            | ICalendarProperty::Duration
+                            | ICalendarProperty::Due
+                            | ICalendarProperty::Description
+                            | ICalendarProperty::Summary
+                    )
+                })
+                .cloned(),
+        );
 
         if let InstanceId::Recurrence(recurrence_id) = instance_id {
             cancel_comp
