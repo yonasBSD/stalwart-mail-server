@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.13.3] - 2025-09-10
+
+If you are upgrading from v0.11.x or v0.12.x, this version includes **breaking changes** to the message queue and MTA configuration. Please read the [UPGRADING.md](https://github.com/stalwartlabs/stalwart/blob/main/UPGRADING.md) file for more information on how to upgrade from previous versions.
+
+## Added
+- CLI: Health checks (contributed by @Codekloeppler)
+
+## Changed
+- WebDAV: Assisted discovery v2
+
+## Fixed
+- iTIP: Do not send a REPLY when deleting an event that was not accepted.
+- iTIP: Include event details in REPLY messages (#2102).
+- iTIP: Add organizer to iMIP replies if missing to deal with MS Exchange 2010 bug.
+- OIDC: Do not overwrite locally defined aliases (#2065).
+- HTTP: Scan ban should only be triggered by HTTP parse errors.
+- HTTP: Skip scanner fail2ban checks when the proxy client IP can't be parsed (#2121).
+- JMAP: Do not allow roles to be removed from system mailboxes (#1977).
+- JMAP WS: Fix panic when using invalid server url.
+- SMTP: Do no send `EHLO` twice when `STARTTLS` is unavailable (#2050).
+- IMAP: Allow `ENABLE UTF8` in IMAPrev1.
+- IMAP: Include `administer` permission in ACL responses.
+- IMAP: Add owner rights to ACL get responses.
+- IMAP: Do not auto-train Bayes when moving messages from Junk to Trash.
+- IMAP/ManageSieve: Increase maximum quoted argument size (fixes #2039).
+- WebDAV: Do not fix percent encoding on WebDAV FS (closes #2036).
+
 ## [0.13.2] - 2025-07-28
 
 If you are upgrading from v0.11.x or v0.12.x, this version includes **breaking changes** to the message queue and MTA configuration. Please read the [UPGRADING.md](https://github.com/stalwartlabs/stalwart/blob/main/UPGRADING.md) file for more information on how to upgrade from previous versions.
