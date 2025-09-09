@@ -296,6 +296,7 @@ impl PropFindRequestHandler for Server {
         );
         let mut is_sync_limited = false;
         let mut is_propfind = false;
+        let mut ical_instances_limit = self.core.groupware.max_ical_instances;
 
         let paths = match std::mem::take(&mut query.resource) {
             DavQueryResource::Uri(resource) => {
@@ -351,38 +352,6 @@ impl PropFindRequestHandler for Server {
 
                 items
             }
-            /*DavQueryResource::Discovery {
-                parent_collection,
-                account_ids,
-            } => {
-                collection_container = parent_collection;
-                collection_children = collection_container.child_collection().unwrap();
-                sync_collection = SyncCollection::from(collection_container);
-
-                // Add container info
-                if !query.depth_no_root {
-                    add_base_collection_response(
-                        self,
-                        &query.propfind,
-                        parent_collection,
-                        access_token,
-                        &mut response,
-                    )
-                    .await?;
-                }
-
-                discover_root_paths(
-                    self,
-                    access_token,
-                    collection_container,
-                    sync_collection,
-                    &query,
-                    &mut data,
-                    &mut response,
-                    account_ids,
-                )
-                .await?
-            }*/
             DavQueryResource::None => unreachable!(),
         };
         response.set_namespace(collection_container.namespace());
@@ -441,7 +410,7 @@ impl PropFindRequestHandler for Server {
 
         let view_as_id = access_token.primary_id();
         let is_scheduling = collection_container == Collection::CalendarScheduling;
-        for item in paths {
+        'outer: for item in paths {
             let account_id = item.account_id;
             let document_id = item.document_id;
             let collection = if item.is_container {
@@ -981,20 +950,27 @@ impl PropFindRequestHandler for Server {
                             CalDavProperty::CalendarData(data),
                             ArchivedResource::CalendarEvent(event),
                         ) => {
-                            let ical = if calendar_filter.is_some() || !data.properties.is_empty() {
-                                calendar_filter
+                            if calendar_filter.is_some() || !data.properties.is_empty() {
+                                if let Some(ical) = calendar_filter
                                     .get_or_insert_with(|| {
                                         CalendarQueryHandler::new(event.inner, None, Tz::UTC)
                                     })
-                                    .serialize_ical(event.inner, data)
+                                    .serialize_ical(event.inner, data, &mut ical_instances_limit)
+                                {
+                                    fields.push(DavPropertyValue::new(
+                                        property.clone(),
+                                        DavValue::CData(ical),
+                                    ));
+                                } else {
+                                    limit = 0;
+                                    break 'outer;
+                                }
                             } else {
-                                event.inner.data.event.to_string()
-                            };
-
-                            fields.push(DavPropertyValue::new(
-                                property.clone(),
-                                DavValue::CData(ical),
-                            ));
+                                fields.push(DavPropertyValue::new(
+                                    property.clone(),
+                                    DavValue::CData(event.inner.data.event.to_string()),
+                                ));
+                            }
                         }
                         (
                             CalDavProperty::CalendarData(_),
@@ -1092,12 +1068,21 @@ impl PropFindRequestHandler for Server {
             response.add_response(
                 Response::new_status([query.uri], StatusCode::INSUFFICIENT_STORAGE)
                     .with_error(BaseCondition::NumberOfMatchesWithinLimit)
-                    .with_response_description(format!(
-                        "The number of matches exceeds the limit of {}",
-                        query
-                            .limit
-                            .unwrap_or(self.core.groupware.max_results as u32)
-                    )),
+                    .with_response_description(if ical_instances_limit > 0 {
+                        format!(
+                            "The number of matches exceeds the limit of {}",
+                            query
+                                .limit
+                                .unwrap_or(self.core.groupware.max_results as u32)
+                        )
+                    } else {
+                        format!(
+                            "The number of recurrence instances exceeds the limit of {}",
+                            query
+                                .limit
+                                .unwrap_or(self.core.groupware.max_ical_instances as u32)
+                        )
+                    }),
             );
         }
 

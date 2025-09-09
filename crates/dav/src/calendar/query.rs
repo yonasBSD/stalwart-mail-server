@@ -420,7 +420,12 @@ impl CalendarQueryHandler {
         is_all || matches_one
     }
 
-    pub fn serialize_ical(&mut self, event: &ArchivedCalendarEvent, data: &CalendarData) -> String {
+    pub fn serialize_ical(
+        &mut self,
+        event: &ArchivedCalendarEvent,
+        data: &CalendarData,
+        instances_limit: &mut usize,
+    ) -> Option<String> {
         let mut out = String::with_capacity(event.size.to_native() as usize);
         let _v = [0.into()];
         let mut component_iter: Iter<'_, rkyv::rend::u16_le> = _v.iter();
@@ -528,6 +533,11 @@ impl CalendarQueryHandler {
                             && (!is_recurrent_or_override
                                 || expand.is_in_range(is_todo, event.start, event.end))
                         {
+                            if *instances_limit > 0 {
+                                *instances_limit -= 1;
+                            } else {
+                                return None;
+                            }
                             let _ = write!(&mut out, "BEGIN:{component_name}\r\n");
 
                             // Write DTSTART, DTEND and RECURRENCE-ID
@@ -607,7 +617,7 @@ impl CalendarQueryHandler {
             }
         }
 
-        out
+        Some(out)
     }
 
     pub fn into_expanded_times(self) -> Vec<CalendarEvent<i64, i64>> {
