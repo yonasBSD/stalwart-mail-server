@@ -26,9 +26,9 @@ If you are upgrading from v0.11.x or v0.12.x, this version includes **breaking c
 - IMAP: Include `administer` permission in ACL responses.
 - IMAP: Add owner rights to ACL get responses.
 - IMAP: Do not auto-train Bayes when moving messages from Junk to Trash.
-- IMAP/ManageSieve: Increase maximum quoted argument size (fixes #2039).
-- CalDAV: Limit recurrence expansions in calendar reports.
-- WebDAV: Do not fix percent encoding on WebDAV FS (closes #2036).
+- IMAP/ManageSieve: Increase maximum quoted argument size (#2039).
+- CalDAV: Limit recurrence expansions in calendar reports ([CVE-2025-59045](https://github.com/stalwartlabs/stalwart/security/advisories/GHSA-xv4r-q6gr-6pfg)).
+- WebDAV: Do not fix percent encoding on WebDAV FS (#2036).
 
 ## [0.13.2] - 2025-07-28
 

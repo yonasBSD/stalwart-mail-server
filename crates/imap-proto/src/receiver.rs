@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use super::{ResponseCode, ResponseType};
+use compact_str::{CompactString, format_compact};
 use std::fmt::Display;
 
-use compact_str::{CompactString, format_compact};
-
-use super::{ResponseCode, ResponseType};
+const QUOTED_ARG_MAX_LEN: usize = 4096;
 
 #[derive(Debug, Clone)]
 pub enum Error {
@@ -277,7 +277,7 @@ impl<T: CommandParser> Receiver<T> {
                         if !escaped {
                             self.push_argument(true)?;
                             self.state = State::Argument { last_ch: b' ' };
-                        } else if self.buf.len() < 4096 {
+                        } else if self.buf.len() < QUOTED_ARG_MAX_LEN {
                             self.buf.push(ch);
                             self.state = State::ArgumentQuoted { escaped: false };
                         } else {
@@ -286,7 +286,11 @@ impl<T: CommandParser> Receiver<T> {
                     }
                     b'\\' => {
                         if escaped {
-                            self.buf.push(ch);
+                            if self.buf.len() < QUOTED_ARG_MAX_LEN {
+                                self.buf.push(ch);
+                            } else {
+                                return Err(self.error_reset("Quoted argument too long."));
+                            }
                         }
                         self.state = State::ArgumentQuoted { escaped: !escaped };
                     }
@@ -294,7 +298,7 @@ impl<T: CommandParser> Receiver<T> {
                         return Err(self.error_reset("Unterminated quoted argument."));
                     }
                     _ => {
-                        if self.buf.len() < 4096 {
+                        if self.buf.len() < QUOTED_ARG_MAX_LEN {
                             if escaped {
                                 self.buf.push(b'\\');
                             }
@@ -340,7 +344,6 @@ impl<T: CommandParser> Receiver<T> {
                                 self.buf.push(ch);
                             } else {
                                 // Digit found after non-sync '+' flag
-
                                 return Err(self.error_reset("Invalid literal."));
                             }
                         }
