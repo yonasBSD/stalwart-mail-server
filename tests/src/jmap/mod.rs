@@ -4,8 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{fmt::Debug, path::PathBuf, sync::Arc, time::Duration};
-
+use crate::{
+    AssertConfig, add_test_certs, directory::internal::TestInternalDirectory, store::TempDir,
+};
 use base64::{
     Engine,
     engine::general_purpose::{self, STANDARD},
@@ -36,7 +37,7 @@ use reqwest::header;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use services::SpawnServices;
 use smtp::{SpawnQueueManager, core::SmtpSessionManager};
-
+use std::{fmt::Debug, path::PathBuf, sync::Arc, time::Duration};
 use store::{
     IterateParams, SUBSPACE_PROPERTY, Stores, ValueKey,
     roaring::RoaringBitmap,
@@ -45,10 +46,6 @@ use store::{
 use tokio::sync::watch;
 use utils::{BlobHash, config::Config};
 use webhooks::{MockWebhookEndpoint, spawn_mock_webhook_endpoint};
-
-use crate::{
-    AssertConfig, add_test_certs, directory::internal::TestInternalDirectory, store::TempDir,
-};
 
 pub mod auth_acl;
 pub mod auth_limits;
@@ -102,7 +99,7 @@ async fn jmap_tests() {
     thread_merge::test(&mut params).await;
     mailbox::test(&mut params).await;
     delivery::test(&mut params).await;
-    auth_acl::test(&mut params).await;
+    auth_acl::test(&mut params).await;*/
     auth_limits::test(&mut params).await;
     auth_oauth::test(&mut params).await;
     event_source::test(&mut params).await;
@@ -113,7 +110,7 @@ async fn jmap_tests() {
     websocket::test(&mut params).await;
     quota::test(&mut params).await;
     crypto::test(&mut params).await;
-    blob::test(&mut params).await;*/
+    blob::test(&mut params).await;
     permissions::test(&params).await;
     purge::test(&mut params).await;
     enterprise::test(&mut params).await;

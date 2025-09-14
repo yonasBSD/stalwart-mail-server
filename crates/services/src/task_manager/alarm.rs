@@ -202,7 +202,7 @@ async fn send_alarm(
         // MAIL FROM
         let _ = session
             .handle_mail_from(MailFrom {
-                address: mail_from,
+                address: mail_from.into(),
                 ..Default::default()
             })
             .await;
@@ -214,7 +214,7 @@ async fn send_alarm(
         session.params.rcpt_errors_wait = Duration::from_secs(0);
         let _ = session
             .handle_rcpt_to(RcptTo {
-                address: to,
+                address: to.into(),
                 ..Default::default()
             })
             .await;

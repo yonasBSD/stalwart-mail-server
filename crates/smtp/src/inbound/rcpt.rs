@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::borrow::Cow;
+
 use common::{
     KV_GREYLIST, config::smtp::session::Stage, listener::SessionStream, scripts::ScriptModification,
 };
@@ -22,7 +24,7 @@ use crate::{
 };
 
 impl<T: SessionStream> Session<T> {
-    pub async fn handle_rcpt_to(&mut self, to: RcptTo<String>) -> Result<(), ()> {
+    pub async fn handle_rcpt_to(&mut self, to: RcptTo<Cow<'_, str>>) -> Result<(), ()> {
         #[cfg(feature = "test_mode")]
         if self.instance.id.ends_with("-debug") {
             if to.address.contains("fail@") {
@@ -72,9 +74,9 @@ impl<T: SessionStream> Session<T> {
         let rcpt = SessionAddress {
             domain: address_lcase.domain_part().into(),
             address_lcase,
-            address: to.address,
+            address: to.address.into_owned(),
             flags: to.flags,
-            dsn_info: to.orcpt,
+            dsn_info: to.orcpt.map(|e| e.into_owned()),
         };
 
         if self.data.rcpt_to.contains(&rcpt) {

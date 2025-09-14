@@ -40,7 +40,7 @@ use smtp::{
     queue::spool::SmtpSpool,
 };
 use smtp_proto::{MailFrom, RcptTo, request::parser::Rfc5321Parser};
-use std::future::Future;
+use std::{borrow::Cow, future::Future};
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use store::write::{BatchBuilder, now};
 use trc::AddContext;
@@ -320,8 +320,8 @@ impl EmailSubmissionSet for Server {
             thread_id: u32::MAX,
             ..Default::default()
         };
-        let mut mail_from: Option<MailFrom<String>> = None;
-        let mut rcpt_to: Vec<RcptTo<String>> = Vec::new();
+        let mut mail_from: Option<MailFrom<Cow<'_, str>>> = None;
+        let mut rcpt_to: Vec<RcptTo<Cow<'_, str>>> = Vec::new();
 
         for (property, value) in object.0 {
             let value = match response.eval_object_references(value) {
@@ -350,14 +350,14 @@ impl EmailSubmissionSet for Server {
                                             .map_or(&b"\n"[..], |p| p.as_bytes())
                                             .iter(),
                                     )
-                                    .mail_from_parameters(addr)
+                                    .mail_from_parameters(addr.into())
                                     {
                                         Ok(addr) => {
                                             submission.envelope.mail_from = Address {
-                                                email: addr.address.clone(),
+                                                email: addr.address.as_ref().to_string(),
                                                 parameters: params,
                                             };
-                                            mail_from = addr.into();
+                                            mail_from = from_into_static(addr).into();
                                         }
                                         Err(err) => {
                                             return Ok(Err(SetError::invalid_properties()
@@ -382,7 +382,7 @@ impl EmailSubmissionSet for Server {
                                                     .map_or(&b"\n"[..], |p| p.as_bytes())
                                                     .iter(),
                                             )
-                                            .rcpt_to_parameters(addr)
+                                            .rcpt_to_parameters(addr.into())
                                             {
                                                 Ok(addr) => {
                                                     if !rcpt_to
@@ -390,10 +390,13 @@ impl EmailSubmissionSet for Server {
                                                         .any(|rcpt| rcpt.address == addr.address)
                                                     {
                                                         submission.envelope.rcpt_to.push(Address {
-                                                            email: addr.address.clone(),
+                                                            email: addr
+                                                                .address
+                                                                .as_ref()
+                                                                .to_string(),
                                                             parameters: params,
                                                         });
-                                                        rcpt_to.push(addr);
+                                                        rcpt_to.push(rcpt_into_static(addr));
                                                     }
                                                 }
                                                 Err(err) => {
@@ -473,7 +476,7 @@ impl EmailSubmissionSet for Server {
                 parameters: None,
             };
             MailFrom {
-                address: identity_mail_from,
+                address: Cow::Owned(identity_mail_from),
                 ..Default::default()
             }
         };
@@ -519,7 +522,7 @@ impl EmailSubmissionSet for Server {
                                     parameters: None,
                                 });
                                 rcpt_to.push(RcptTo {
-                                    address,
+                                    address: Cow::Owned(address),
                                     ..Default::default()
                                 });
                             }
@@ -732,5 +735,37 @@ fn parse_envelope_address(
         Err(SetError::invalid_properties()
             .with_property(Property::Envelope)
             .with_description("Invalid envelope object."))
+    }
+}
+
+fn from_into_static(from: MailFrom<Cow<'_, str>>) -> MailFrom<Cow<'static, str>> {
+    MailFrom {
+        address: from.address.into_owned().into(),
+        flags: from.flags,
+        size: from.size,
+        trans_id: from.trans_id.map(Cow::into_owned).map(Cow::Owned),
+        by: from.by,
+        env_id: from.env_id.map(Cow::into_owned).map(Cow::Owned),
+        solicit: from.solicit.map(Cow::into_owned).map(Cow::Owned),
+        mtrk: from
+            .mtrk
+            .map(smtp_proto::Mtrk::into_owned)
+            .map(|v| smtp_proto::Mtrk {
+                certifier: Cow::Owned(v.certifier),
+                timeout: v.timeout,
+            }),
+        auth: from.auth.map(Cow::into_owned).map(Cow::Owned),
+        hold_for: from.hold_for,
+        hold_until: from.hold_until,
+        mt_priority: from.mt_priority,
+    }
+}
+
+fn rcpt_into_static(rcpt: RcptTo<Cow<'_, str>>) -> RcptTo<Cow<'static, str>> {
+    RcptTo {
+        address: rcpt.address.into_owned().into(),
+        orcpt: rcpt.orcpt.map(Cow::into_owned).map(Cow::Owned),
+        rrvs: rcpt.rrvs,
+        flags: rcpt.flags,
     }
 }

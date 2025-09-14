@@ -11,7 +11,7 @@ store = { path =  "../store" }
 trc = { path = "../trc" }
 nlp = { path = "../nlp" }
 jmap_proto = { path =  "../jmap-proto" }
-smtp-proto = { version = "0.1" }
+smtp-proto = { version = "0.2" }
 mail-parser = { version = "0.11", features = ["full_encoding", "rkyv"] } 
 mail-send = { version = "0.5", default-features = false, features = ["cram-md5", "ring", "tls12"] }
 mail-builder = { version = "0.4" }
