@@ -9,14 +9,15 @@ use email::cache::{MessageCacheFetch, email::MessageCacheAccess, mailbox::Mailbo
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     types::{
-        acl::Acl,
-        keyword::Keyword,
         property::Property,
         value::{Object, Value},
     },
 };
 use std::future::Future;
 use store::ahash::AHashSet;
+use types::{acl::Acl, keyword::Keyword};
+
+use crate::api::auth::JmapAcl;
 
 pub trait MailboxGet: Sync + Send {
     fn mailbox_get(

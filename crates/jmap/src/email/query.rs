@@ -10,7 +10,6 @@ use email::cache::{MessageCacheFetch, email::MessageCacheAccess};
 use jmap_proto::{
     method::query::{Comparator, Filter, QueryRequest, QueryResponse, SortProperty},
     object::email::QueryArguments,
-    types::{acl::Acl, collection::Collection, keyword::Keyword, property::Property},
 };
 use mail_parser::HeaderName;
 use nlp::language::Language;
@@ -23,6 +22,7 @@ use store::{
     roaring::RoaringBitmap,
 };
 use trc::AddContext;
+use types::{acl::Acl, collection::Collection, field::EmailField, keyword::Keyword};
 
 pub trait EmailQuery: Sync + Send {
     fn email_query(
@@ -203,17 +203,15 @@ impl EmailQuery for Server {
                             filters.push(query::Filter::End);
                             filters.push(query::Filter::End);
                         }
-                        Filter::Before(date) => {
-                            filters.push(query::Filter::lt(Property::ReceivedAt, date.serialize()))
-                        }
-                        Filter::After(date) => {
-                            filters.push(query::Filter::gt(Property::ReceivedAt, date.serialize()))
-                        }
+                        Filter::Before(date) => filters
+                            .push(query::Filter::lt(EmailField::ReceivedAt, date.serialize())),
+                        Filter::After(date) => filters
+                            .push(query::Filter::gt(EmailField::ReceivedAt, date.serialize())),
                         Filter::MinSize(size) => {
-                            filters.push(query::Filter::ge(Property::Size, size.serialize()))
+                            filters.push(query::Filter::ge(EmailField::Size, size.serialize()))
                         }
                         Filter::MaxSize(size) => {
-                            filters.push(query::Filter::lt(Property::Size, size.serialize()))
+                            filters.push(query::Filter::lt(EmailField::Size, size.serialize()))
                         }
                         Filter::AllInThreadHaveKeyword(keyword) => {
                             filters.push(query::Filter::is_in_set(thread_keywords(
@@ -258,7 +256,8 @@ impl EmailQuery for Server {
                             if !has_attach {
                                 filters.push(query::Filter::Not);
                             }
-                            filters.push(query::Filter::is_in_bitmap(Property::HasAttachment, ()));
+                            filters
+                                .push(query::Filter::is_in_bitmap(EmailField::HasAttachment, ()));
                             if !has_attach {
                                 filters.push(query::Filter::End);
                             }
@@ -273,10 +272,10 @@ impl EmailQuery for Server {
                             filters.push(query::Filter::is_in_set(set));
                         }
                         Filter::SentBefore(date) => {
-                            filters.push(query::Filter::lt(Property::SentAt, date.serialize()))
+                            filters.push(query::Filter::lt(EmailField::SentAt, date.serialize()))
                         }
                         Filter::SentAfter(date) => {
-                            filters.push(query::Filter::gt(Property::SentAt, date.serialize()))
+                            filters.push(query::Filter::gt(EmailField::SentAt, date.serialize()))
                         }
                         Filter::InThread(id) => {
                             filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
@@ -317,22 +316,22 @@ impl EmailQuery for Server {
             {
                 comparators.push(match comparator.property {
                     SortProperty::ReceivedAt => {
-                        query::Comparator::field(Property::ReceivedAt, comparator.is_ascending)
+                        query::Comparator::field(EmailField::ReceivedAt, comparator.is_ascending)
                     }
                     SortProperty::Size => {
-                        query::Comparator::field(Property::Size, comparator.is_ascending)
+                        query::Comparator::field(EmailField::Size, comparator.is_ascending)
                     }
                     SortProperty::From => {
-                        query::Comparator::field(Property::From, comparator.is_ascending)
+                        query::Comparator::field(EmailField::From, comparator.is_ascending)
                     }
                     SortProperty::To => {
-                        query::Comparator::field(Property::To, comparator.is_ascending)
+                        query::Comparator::field(EmailField::To, comparator.is_ascending)
                     }
                     SortProperty::Subject => {
-                        query::Comparator::field(Property::Subject, comparator.is_ascending)
+                        query::Comparator::field(EmailField::Subject, comparator.is_ascending)
                     }
                     SortProperty::SentAt => {
-                        query::Comparator::field(Property::SentAt, comparator.is_ascending)
+                        query::Comparator::field(EmailField::SentAt, comparator.is_ascending)
                     }
                     SortProperty::HasKeyword => query::Comparator::set(
                         RoaringBitmap::from_iter(
@@ -360,7 +359,7 @@ impl EmailQuery for Server {
                     ),
                     // Non-standard
                     SortProperty::Cc => {
-                        query::Comparator::field(Property::Cc, comparator.is_ascending)
+                        query::Comparator::field(EmailField::Cc, comparator.is_ascending)
                     }
 
                     other => {

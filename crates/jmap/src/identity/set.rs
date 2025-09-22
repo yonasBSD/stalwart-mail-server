@@ -12,7 +12,6 @@ use jmap_proto::{
     method::set::{RequestArguments, SetRequest, SetResponse},
     response::references::EvalObjectReferences,
     types::{
-        collection::{Collection, SyncCollection},
         property::Property,
         state::State,
         value::{MaybePatchValue, Value},
@@ -21,6 +20,10 @@ use jmap_proto::{
 use std::future::Future;
 use store::write::BatchBuilder;
 use trc::AddContext;
+use types::{
+    collection::{Collection, SyncCollection},
+    field::Field,
+};
 use utils::sanitize_email;
 
 pub trait IdentitySet: Sync + Send {
@@ -160,7 +163,7 @@ impl IdentitySet for Server {
                     .with_account_id(account_id)
                     .with_collection(Collection::Identity)
                     .delete_document(document_id)
-                    .clear(Property::Value)
+                    .clear(Field::ARCHIVE)
                     .log_item_delete(SyncCollection::Identity, None)
                     .commit_point();
                 response.destroyed.push(id);

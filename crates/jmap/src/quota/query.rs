@@ -7,9 +7,10 @@
 use common::{Server, auth::AccessToken};
 use jmap_proto::{
     method::query::{QueryRequest, QueryResponse, RequestArguments},
-    types::{id::Id, state::State},
+    types::state::State,
 };
 use std::future::Future;
+use types::id::Id;
 
 pub trait QuotaQuery: Sync + Send {
     fn quota_query(

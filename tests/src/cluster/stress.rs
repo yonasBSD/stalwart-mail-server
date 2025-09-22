@@ -17,12 +17,12 @@ use jmap_client::{
     core::set::{SetErrorType, SetObject},
     mailbox::{self, Mailbox, Role},
 };
-use jmap_proto::types::{collection::Collection, id::Id};
 use std::{sync::Arc, time::Duration};
 use store::{
     rand::{self, Rng},
     roaring::RoaringBitmap,
 };
+use types::{collection::Collection, id::Id};
 
 const TEST_USER_ID: u32 = 1;
 const NUM_PASSES: usize = 1;

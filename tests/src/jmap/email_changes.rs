@@ -4,19 +4,17 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use super::JMAPTest;
+use crate::jmap::assert_is_empty;
 use jmap_proto::{
     parser::{JsonObjectParser, json::Parser},
-    types::{
-        collection::{Collection, SyncCollection},
-        id::Id,
-        state::State,
-    },
+    types::state::State,
 };
 use store::{ahash::AHashSet, write::BatchBuilder};
-
-use crate::jmap::assert_is_empty;
-
-use super::JMAPTest;
+use types::{
+    collection::{Collection, SyncCollection},
+    id::Id,
+};
 
 pub async fn test(params: &mut JMAPTest) {
     println!("Running Email Changes tests...");

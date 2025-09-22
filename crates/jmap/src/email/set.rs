@@ -7,7 +7,10 @@
 use std::{borrow::Cow, collections::HashMap};
 
 use super::headers::{BuildHeader, ValueToHeader};
-use crate::{JmapMethods, blob::download::BlobDownload, changes::state::MessageCacheState};
+use crate::{
+    JmapMethods, blob::download::BlobDownload, changes::state::MessageCacheState,
+    email::ingested_into_object,
+};
 use common::{Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
 use email::{
     cache::{MessageCacheFetch, email::MessageCacheAccess, mailbox::MailboxCacheAccess},
@@ -24,12 +27,8 @@ use jmap_proto::{
     method::set::{RequestArguments, SetRequest, SetResponse},
     response::references::EvalObjectReferences,
     types::{
-        acl::Acl,
-        collection::{Collection, SyncCollection, VanishedCollection},
-        keyword::Keyword,
         property::Property,
-        state::{State, StateChange},
-        type_state::DataType,
+        state::State,
         value::{MaybePatchValue, SetValue, Value},
     },
 };
@@ -45,6 +44,12 @@ use mail_parser::MessageParser;
 use std::future::Future;
 use store::{ahash::AHashMap, roaring::RoaringBitmap, write::BatchBuilder};
 use trc::AddContext;
+use types::{
+    acl::Acl,
+    collection::{Collection, SyncCollection, VanishedCollection},
+    keyword::Keyword,
+    type_state::{DataType, StateChange},
+};
 
 pub trait EmailSet: Sync + Send {
     fn email_set(
@@ -734,7 +739,7 @@ impl EmailSet for Server {
             {
                 Ok(message) => {
                     last_change_id = message.change_id.into();
-                    response.created.insert(id, message.into());
+                    response.created.insert(id, ingested_into_object(message));
                 }
                 Err(err) if err.matches(trc::EventType::Limit(trc::LimitEvent::Quota)) => {
                     response.not_created.append(

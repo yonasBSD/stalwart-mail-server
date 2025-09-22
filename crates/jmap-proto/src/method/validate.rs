@@ -4,14 +4,13 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use serde::Serialize;
-
 use crate::{
     error::set::SetError,
     parser::{JsonObjectParser, Token, json::Parser},
     request::RequestProperty,
-    types::{blob::BlobId, id::Id},
 };
+use serde::Serialize;
+use types::{blob::BlobId, id::Id};
 
 #[derive(Debug, Clone)]
 pub struct ValidateSieveScriptRequest {

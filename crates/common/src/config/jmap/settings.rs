@@ -4,10 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{str::FromStr, time::Duration};
-
 use jmap_proto::request::capability::BaseCapabilities;
 use nlp::language::Language;
+use std::{str::FromStr, time::Duration};
 use utils::config::{Config, Rate, cron::SimpleCron, utils::ParseValue};
 
 #[derive(Default, Clone)]

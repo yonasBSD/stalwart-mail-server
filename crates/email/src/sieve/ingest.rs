@@ -17,7 +17,6 @@ use common::{
     Server, auth::AccessToken, config::jmap::settings::SpecialUse, scripts::plugins::PluginContext,
 };
 use directory::{Permission, QueryParams};
-use jmap_proto::types::{collection::Collection, id::Id, keyword::Keyword, property::Property};
 use mail_parser::MessageParser;
 use sieve::{Envelope, Event, Input, Mailbox, Recipient, Sieve};
 use std::future::Future;
@@ -30,6 +29,7 @@ use store::{
     write::{AlignedBytes, Archive, ArchiveVersion, Archiver, BatchBuilder, BlobOp},
 };
 use trc::{AddContext, SieveEvent};
+use types::{collection::Collection, field::SieveField, id::Id, keyword::Keyword};
 use utils::config::utils::ParseValue;
 
 struct SieveMessage<'x> {
@@ -142,7 +142,8 @@ impl SieveScriptIngest for Server {
             did_file_into: false,
         }];
         let mut ingested_message = IngestedEmail {
-            id: Id::default(),
+            document_id: 0,
+            thread_id: 0,
             change_id: u64::MAX,
             blob_id: Default::default(),
             size: raw_message.len(),
@@ -560,7 +561,7 @@ impl SieveScriptIngest for Server {
             .filter(
                 account_id,
                 Collection::SieveScript,
-                vec![Filter::eq(Property::IsActive, vec![1u8])],
+                vec![Filter::eq(SieveField::IsActive, vec![1u8])],
             )
             .await
             .caused_by(trc::location!())?
@@ -591,7 +592,7 @@ impl SieveScriptIngest for Server {
             .filter(
                 account_id,
                 Collection::SieveScript,
-                vec![Filter::eq(Property::Name, name.serialize())],
+                vec![Filter::eq(SieveField::Name, name.serialize())],
             )
             .await
             .caused_by(trc::location!())?
@@ -693,9 +694,9 @@ impl SieveScriptIngest for Server {
                         .with_account_id(account_id)
                         .with_collection(Collection::SieveScript)
                         .update_document(document_id)
-                        .assert_value(Property::Value, &script_object)
+                        .assert_value(SieveField::Archive, &script_object)
                         .set(
-                            Property::Value,
+                            SieveField::Archive,
                             new_archive.serialize().caused_by(trc::location!())?,
                         )
                         .clear(BlobOp::Link { hash: blob_hash })

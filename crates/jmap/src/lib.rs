@@ -12,7 +12,7 @@ use jmap_proto::{
         query::{QueryRequest, QueryResponse},
         set::{SetRequest, SetResponse},
     },
-    types::{collection::Collection, state::State},
+    types::state::State,
 };
 use std::{fmt::Display, future::Future};
 use store::{
@@ -21,6 +21,7 @@ use store::{
     roaring::RoaringBitmap,
 };
 use trc::AddContext;
+use types::collection::Collection;
 
 pub mod api;
 pub mod blob;

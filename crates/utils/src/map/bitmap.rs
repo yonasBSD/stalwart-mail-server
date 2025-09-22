@@ -260,29 +260,3 @@ impl<T: BitmapItem> Default for Bitmap<T> {
         }
     }
 }
-
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct ShortId(pub u8);
-
-impl BitmapItem for ShortId {
-    fn max() -> u64 {
-        u8::MAX as u64
-    }
-
-    fn is_valid(&self) -> bool {
-        true
-    }
-}
-
-impl From<u64> for ShortId {
-    fn from(value: u64) -> Self {
-        ShortId(value as u8)
-    }
-}
-
-impl From<ShortId> for u64 {
-    fn from(value: ShortId) -> Self {
-        value.0 as u64
-    }
-}

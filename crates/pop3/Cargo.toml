@@ -11,7 +11,7 @@ directory = { path = "../directory" }
 imap = { path = "../imap" }
 utils = { path = "../utils" }
 trc = { path = "../trc" }
-jmap_proto = { path = "../jmap-proto" }
+types = { path = "../types" }
 email = { path = "../email" }
 mail-parser = { version = "0.11", features = ["full_encoding"] } 
 mail-send = { version = "0.5", default-features = false, features = ["cram-md5", "ring", "tls12"] }

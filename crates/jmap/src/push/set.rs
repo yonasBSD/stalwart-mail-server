@@ -13,10 +13,8 @@ use jmap_proto::{
     method::set::{RequestArguments, SetRequest, SetResponse},
     response::references::EvalObjectReferences,
     types::{
-        collection::Collection,
         date::UTCDate,
         property::Property,
-        type_state::DataType,
         value::{MaybePatchValue, Object, Value},
     },
 };
@@ -28,6 +26,7 @@ use store::{
     write::{Archiver, BatchBuilder, now},
 };
 use trc::AddContext;
+use types::{collection::Collection, field::Field, type_state::DataType};
 use utils::map::bitmap::Bitmap;
 
 const EXPIRES_MAX: i64 = 7 * 24 * 3600; // 7 days
@@ -111,7 +110,7 @@ impl PushSubscriptionSet for Server {
                 .with_collection(Collection::PushSubscription)
                 .create_document(document_id)
                 .set(
-                    Property::Value,
+                    Field::ARCHIVE,
                     Archiver::new(push)
                         .serialize()
                         .caused_by(trc::location!())?,
@@ -163,7 +162,7 @@ impl PushSubscriptionSet for Server {
                 .with_collection(Collection::PushSubscription)
                 .update_document(document_id)
                 .set(
-                    Property::Value,
+                    Field::ARCHIVE,
                     Archiver::new(push)
                         .serialize()
                         .caused_by(trc::location!())?,
@@ -181,7 +180,7 @@ impl PushSubscriptionSet for Server {
                     .with_account_id(account_id)
                     .with_collection(Collection::PushSubscription)
                     .delete_document(document_id)
-                    .clear(Property::Value)
+                    .clear(Field::ARCHIVE)
                     .commit_point();
                 response.destroyed.push(id);
             } else {

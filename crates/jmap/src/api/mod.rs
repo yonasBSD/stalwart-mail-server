@@ -14,6 +14,7 @@ use jmap_proto::{
 
 use crate::blob::UploadResponse;
 
+pub mod auth;
 pub mod event_source;
 pub mod request;
 pub mod session;

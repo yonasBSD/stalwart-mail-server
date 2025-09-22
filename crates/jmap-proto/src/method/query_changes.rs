@@ -4,15 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use compact_str::format_compact;
-
+use super::query::{Comparator, Filter, RequestArguments, parse_filter, parse_sort};
 use crate::{
     parser::{Ignore, JsonObjectParser, Token, json::Parser},
     request::{RequestProperty, RequestPropertyParser, method::MethodObject},
-    types::{id::Id, state::State},
+    types::state::State,
 };
-
-use super::query::{Comparator, Filter, RequestArguments, parse_filter, parse_sort};
+use compact_str::format_compact;
+use types::id::Id;
 
 #[derive(Debug, Clone)]
 pub struct QueryChangesRequest {

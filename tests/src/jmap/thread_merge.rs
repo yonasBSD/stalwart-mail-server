@@ -4,24 +4,21 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{io::Cursor, time::Duration};
-
+use super::JMAPTest;
 use crate::{
     jmap::{assert_is_empty, mailbox::destroy_all_mailboxes},
     store::deflate_test_resource,
 };
-use common::auth::AccessToken;
-
 use ::email::message::ingest::{EmailIngest, IngestEmail, IngestSource};
+use common::auth::AccessToken;
 use jmap_client::{email, mailbox::Role};
-use jmap_proto::types::{collection::Collection, id::Id};
 use mail_parser::{MessageParser, mailbox::mbox::MessageIterator};
+use std::{io::Cursor, time::Duration};
 use store::{
     ahash::{AHashMap, AHashSet},
     rand::{self, Rng},
 };
-
-use super::JMAPTest;
+use types::{collection::Collection, id::Id};
 
 pub async fn test(params: &mut JMAPTest) {
     test_single_thread(params).await;

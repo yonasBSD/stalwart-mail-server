@@ -4,18 +4,16 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use utils::map::vec_map::VecMap;
-
 use crate::{
     parser::{Ignore, JsonObjectParser, Token, json::Parser},
     request::RequestProperty,
     types::{
-        blob::BlobId,
-        id::Id,
         property::Property,
         value::{Object, Value},
     },
 };
+use types::{blob::BlobId, id::Id};
+use utils::map::vec_map::VecMap;
 
 #[derive(Debug, Clone)]
 pub struct ParseEmailRequest {

@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::changes::state::MessageCacheState;
+use crate::{changes::state::MessageCacheState, email::ingested_into_object};
 use common::{Server, auth::AccessToken};
 use email::{
     cache::{MessageCacheFetch, email::MessageCacheAccess, mailbox::MailboxCacheAccess},
-    message::copy::EmailCopy,
+    message::copy::{CopyMessageError, EmailCopy},
 };
 use http_proto::HttpSessionData;
 use jmap_proto::{
@@ -24,13 +24,13 @@ use jmap_proto::{
     },
     response::references::EvalObjectReferences,
     types::{
-        acl::Acl,
         property::Property,
         value::{MaybePatchValue, Value},
     },
 };
 use std::future::Future;
 use trc::AddContext;
+use types::acl::Acl;
 use utils::map::vec_map::VecMap;
 
 pub trait JmapEmailCopy: Sync + Send {
@@ -214,16 +214,23 @@ impl JmapEmailCopy for Server {
                     &resource_token,
                     mailboxes,
                     keywords,
-                    received_at,
+                    received_at.map(|dt| dt.timestamp() as u64),
                     session.session_id,
                 )
                 .await?
             {
                 Ok(email) => {
-                    response.created.append(id, email.into());
+                    response.created.append(id, ingested_into_object(email));
                 }
                 Err(err) => {
-                    response.not_created.append(id, err);
+                    response.not_created.append(
+                        id,
+                        match err {
+                            CopyMessageError::NotFound => SetError::not_found()
+                                .with_description("Message not found not found in account."),
+                            CopyMessageError::OverQuota => SetError::over_quota(),
+                        },
+                    );
                 }
             }
 

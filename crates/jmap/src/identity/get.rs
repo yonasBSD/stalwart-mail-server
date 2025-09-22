@@ -10,7 +10,6 @@ use email::identity::{ArchivedEmailAddress, Identity};
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     types::{
-        collection::{Collection, SyncCollection},
         property::Property,
         value::{Object, Value},
     },
@@ -21,6 +20,7 @@ use store::{
     write::BatchBuilder,
 };
 use trc::AddContext;
+use types::collection::{Collection, SyncCollection};
 use utils::sanitize_email;
 
 use crate::changes::state::StateManager;

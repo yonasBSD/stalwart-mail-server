@@ -4,13 +4,13 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use compact_str::format_compact;
-
 use crate::{
     parser::{Ignore, JsonObjectParser, Token, json::Parser},
     request::{RequestProperty, method::MethodObject},
-    types::{id::Id, property::Property, state::State},
+    types::{property::Property, state::State},
 };
+use compact_str::format_compact;
+use types::id::Id;
 
 #[derive(Debug, Clone)]
 pub struct ChangesRequest {

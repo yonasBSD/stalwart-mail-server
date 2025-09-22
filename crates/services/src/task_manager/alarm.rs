@@ -19,7 +19,6 @@ use common::{
 };
 use directory::Permission;
 use groupware::calendar::{ArchivedCalendarEvent, CalendarEvent, alarm::CalendarAlarm};
-use jmap_proto::types::collection::Collection;
 use mail_builder::{
     MessageBuilder,
     headers::{HeaderType, content_type::ContentType},
@@ -31,6 +30,7 @@ use smtp_proto::{MailFrom, RcptTo};
 use std::{str::FromStr, sync::Arc, time::Duration};
 use store::write::{BatchBuilder, now};
 use trc::{AddContext, TaskQueueEvent};
+use types::collection::Collection;
 use utils::{sanitize_email, template::Variables};
 
 pub trait SendAlarmTask: Sync + Send {

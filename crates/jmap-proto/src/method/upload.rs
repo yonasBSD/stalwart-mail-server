@@ -4,19 +4,17 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use ahash::AHashMap;
-use mail_parser::decoders::base64::base64_decode;
-use utils::map::vec_map::VecMap;
-
+use super::ahash_is_empty;
 use crate::{
     error::set::SetError,
     parser::{Ignore, JsonObjectParser, Token, json::Parser},
     request::{RequestProperty, reference::MaybeReference},
     response::Response,
-    types::{blob::BlobId, id::Id},
 };
-
-use super::ahash_is_empty;
+use ahash::AHashMap;
+use mail_parser::decoders::base64::base64_decode;
+use types::{blob::BlobId, id::Id};
+use utils::map::vec_map::VecMap;
 
 #[derive(Debug, Clone)]
 pub struct BlobUploadRequest {

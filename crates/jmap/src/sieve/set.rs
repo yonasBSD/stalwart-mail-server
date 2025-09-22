@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::{JmapMethods, blob::download::BlobDownload, changes::state::StateManager};
 use common::{
     Server,
     auth::{AccessToken, ResourceToken},
@@ -20,9 +21,6 @@ use jmap_proto::{
     request::reference::MaybeReference,
     response::references::EvalObjectReferences,
     types::{
-        blob::{BlobId, BlobSection},
-        collection::{Collection, SyncCollection},
-        id::Id,
         property::Property,
         state::State,
         value::{MaybePatchValue, Object, SetValue, Value},
@@ -30,16 +28,20 @@ use jmap_proto::{
 };
 use rand::distr::Alphanumeric;
 use sieve::compiler::ErrorType;
+use std::future::Future;
 use store::{
-    BlobClass, Serialize,
+    Serialize,
     query::Filter,
     rand::{Rng, rng},
     write::{Archive, Archiver, BatchBuilder},
 };
 use trc::AddContext;
-
-use crate::{JmapMethods, blob::download::BlobDownload, changes::state::StateManager};
-use std::future::Future;
+use types::{
+    blob::{BlobClass, BlobId, BlobSection},
+    collection::{Collection, SyncCollection},
+    field::SieveField,
+    id::Id,
+};
 
 pub struct SetContext<'x> {
     resource_token: ResourceToken,
@@ -395,7 +397,7 @@ impl SieveScriptSet for Server {
                             .filter(
                                 ctx.resource_token.account_id,
                                 Collection::SieveScript,
-                                vec![Filter::eq(Property::Name, value.as_bytes().to_vec())],
+                                vec![Filter::eq(SieveField::Name, value.as_bytes().to_vec())],
                             )
                             .await?
                             .results

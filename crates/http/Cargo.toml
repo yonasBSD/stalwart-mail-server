@@ -17,6 +17,7 @@ groupware = { path = "../groupware" }
 spam-filter = { path = "../spam-filter" }
 http_proto = { path = "../http-proto" }
 jmap_proto = { path = "../jmap-proto" }
+types = { path = "../types" }
 directory = { path =  "../directory" }
 services = { path =  "../services" }
 smtp-proto = { version = "0.2" }

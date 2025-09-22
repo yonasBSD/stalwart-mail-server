@@ -27,8 +27,6 @@ use jmap_proto::{
     },
     response::references::EvalObjectReferences,
     types::{
-        collection::Collection,
-        id::Id,
         property::Property,
         state::State,
         value::{MaybePatchValue, Object, SetValue, Value},
@@ -44,7 +42,8 @@ use std::{borrow::Cow, future::Future};
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use store::write::{BatchBuilder, now};
 use trc::AddContext;
-use utils::{BlobHash, map::vec_map::VecMap, sanitize_email};
+use types::{blob_hash::BlobHash, collection::Collection, field::EmailField, id::Id};
+use utils::{map::vec_map::VecMap, sanitize_email};
 
 pub trait EmailSubmissionSet: Sync + Send {
     fn email_submission_set(
@@ -487,7 +486,7 @@ impl EmailSubmissionSet for Server {
                 account_id,
                 Collection::Email,
                 submission.email_id,
-                Property::BodyStructure,
+                EmailField::Metadata.into(),
             )
             .await?
         {

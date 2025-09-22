@@ -4,24 +4,21 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::{JmapMethods, changes::state::StateManager};
 use common::Server;
 use email::submission::UndoStatus;
-use jmap_proto::{
-    method::query::{
-        Comparator, Filter, QueryRequest, QueryResponse, RequestArguments, SortProperty,
-    },
-    types::{
-        collection::{Collection, SyncCollection},
-        property::Property,
-    },
+use jmap_proto::method::query::{
+    Comparator, Filter, QueryRequest, QueryResponse, RequestArguments, SortProperty,
 };
 use std::future::Future;
 use store::{
     SerializeInfallible,
     query::{self},
 };
-
-use crate::{JmapMethods, changes::state::StateManager};
+use types::{
+    collection::{Collection, SyncCollection},
+    field::EmailSubmissionField,
+};
 
 pub trait EmailSubmissionQuery: Sync + Send {
     fn email_submission_query(
@@ -44,7 +41,7 @@ impl EmailSubmissionQuery for Server {
                     filters.push(query::Filter::Or);
                     for id in ids {
                         filters.push(query::Filter::eq(
-                            Property::IdentityId,
+                            EmailSubmissionField::IdentityId,
                             id.document_id().serialize(),
                         ));
                     }
@@ -53,7 +50,10 @@ impl EmailSubmissionQuery for Server {
                 Filter::EmailIds(ids) => {
                     filters.push(query::Filter::Or);
                     for id in ids {
-                        filters.push(query::Filter::eq(Property::EmailId, id.id().serialize()));
+                        filters.push(query::Filter::eq(
+                            EmailSubmissionField::EmailId,
+                            id.id().serialize(),
+                        ));
                     }
                     filters.push(query::Filter::End);
                 }
@@ -61,25 +61,25 @@ impl EmailSubmissionQuery for Server {
                     filters.push(query::Filter::Or);
                     for id in ids {
                         filters.push(query::Filter::eq(
-                            Property::ThreadId,
+                            EmailSubmissionField::ThreadId,
                             id.document_id().serialize(),
                         ));
                     }
                     filters.push(query::Filter::End);
                 }
                 Filter::UndoStatus(undo_status) => filters.push(query::Filter::eq(
-                    Property::UndoStatus,
+                    EmailSubmissionField::UndoStatus,
                     UndoStatus::parse(&undo_status)
                         .unwrap_or(UndoStatus::Pending)
                         .as_index()
                         .serialize(),
                 )),
                 Filter::Before(before) => filters.push(query::Filter::lt(
-                    Property::SendAt,
+                    EmailSubmissionField::SendAt,
                     (before.timestamp() as u64).serialize(),
                 )),
                 Filter::After(after) => filters.push(query::Filter::gt(
-                    Property::SendAt,
+                    EmailSubmissionField::SendAt,
                     (after.timestamp() as u64).serialize(),
                 )),
                 Filter::And | Filter::Or | Filter::Not | Filter::Close => {
@@ -115,15 +115,18 @@ impl EmailSubmissionQuery for Server {
                 .unwrap_or_else(|| vec![Comparator::descending(SortProperty::SentAt)])
             {
                 comparators.push(match comparator.property {
-                    SortProperty::EmailId => {
-                        query::Comparator::field(Property::EmailId, comparator.is_ascending)
-                    }
-                    SortProperty::ThreadId => {
-                        query::Comparator::field(Property::ThreadId, comparator.is_ascending)
-                    }
-                    SortProperty::SentAt => {
-                        query::Comparator::field(Property::SendAt, comparator.is_ascending)
-                    }
+                    SortProperty::EmailId => query::Comparator::field(
+                        EmailSubmissionField::EmailId,
+                        comparator.is_ascending,
+                    ),
+                    SortProperty::ThreadId => query::Comparator::field(
+                        EmailSubmissionField::ThreadId,
+                        comparator.is_ascending,
+                    ),
+                    SortProperty::SentAt => query::Comparator::field(
+                        EmailSubmissionField::SendAt,
+                        comparator.is_ascending,
+                    ),
                     other => {
                         return Err(trc::JmapEvent::UnsupportedSort
                             .into_err()

@@ -4,18 +4,17 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, collections::HashMap};
-
+use super::{Request, RequestProperty};
 use crate::{
     error::request::{RequestError, RequestErrorType, RequestLimitError},
     parser::{JsonObjectParser, Token, json::Parser},
     request::Call,
     response::{Response, ResponseMethod, serialize::serialize_hex},
-    types::{any_id::AnyId, id::Id, state::State, type_state::DataType},
+    types::{any_id::AnyId, state::State},
 };
+use std::{borrow::Cow, collections::HashMap};
+use types::{id::Id, type_state::DataType};
 use utils::map::vec_map::VecMap;
-
-use super::{Request, RequestProperty};
 
 #[derive(Debug)]
 pub struct WebSocketRequest {

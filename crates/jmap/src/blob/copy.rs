@@ -4,22 +4,20 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use super::download::BlobDownload;
 use common::{Server, auth::AccessToken};
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
     method::copy::{CopyBlobRequest, CopyBlobResponse},
-    types::blob::BlobId,
 };
-use trc::AddContext;
-
 use std::future::Future;
 use store::{
-    BlobClass, SerializeInfallible,
+    SerializeInfallible,
     write::{BatchBuilder, BlobOp, now},
 };
+use trc::AddContext;
+use types::blob::{BlobClass, BlobId};
 use utils::map::vec_map::VecMap;
-
-use super::download::BlobDownload;
 
 pub trait BlobCopy: Sync + Send {
     fn blob_copy(

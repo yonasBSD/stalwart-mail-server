@@ -4,20 +4,17 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::{JmapMethods, changes::state::StateManager};
 use common::Server;
-use jmap_proto::{
-    method::query::{
-        Comparator, Filter, QueryRequest, QueryResponse, RequestArguments, SortProperty,
-    },
-    types::{
-        collection::{Collection, SyncCollection},
-        property::Property,
-    },
+use jmap_proto::method::query::{
+    Comparator, Filter, QueryRequest, QueryResponse, RequestArguments, SortProperty,
 };
 use std::future::Future;
 use store::query::{self};
-
-use crate::{JmapMethods, changes::state::StateManager};
+use types::{
+    collection::{Collection, SyncCollection},
+    field::SieveField,
+};
 
 pub trait SieveScriptQuery: Sync + Send {
     fn sieve_script_query(
@@ -36,10 +33,13 @@ impl SieveScriptQuery for Server {
 
         for cond in std::mem::take(&mut request.filter) {
             match cond {
-                Filter::Name(name) => filters.push(query::Filter::contains(Property::Name, &name)),
-                Filter::IsActive(is_active) => {
-                    filters.push(query::Filter::eq(Property::IsActive, vec![is_active as u8]))
+                Filter::Name(name) => {
+                    filters.push(query::Filter::contains(SieveField::Name, &name))
                 }
+                Filter::IsActive(is_active) => filters.push(query::Filter::eq(
+                    SieveField::IsActive,
+                    vec![is_active as u8],
+                )),
                 Filter::And | Filter::Or | Filter::Not | Filter::Close => {
                     filters.push(cond.into());
                 }
@@ -74,10 +74,10 @@ impl SieveScriptQuery for Server {
             {
                 comparators.push(match comparator.property {
                     SortProperty::Name => {
-                        query::Comparator::field(Property::Name, comparator.is_ascending)
+                        query::Comparator::field(SieveField::Name, comparator.is_ascending)
                     }
                     SortProperty::IsActive => {
-                        query::Comparator::field(Property::IsActive, comparator.is_ascending)
+                        query::Comparator::field(SieveField::IsActive, comparator.is_ascending)
                     }
                     other => {
                         return Err(trc::JmapEvent::UnsupportedSort

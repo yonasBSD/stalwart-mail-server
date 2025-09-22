@@ -15,9 +15,7 @@ use jmap_proto::{
     method::set::{RequestArguments, SetRequest, SetResponse},
     response::references::EvalObjectReferences,
     types::{
-        collection::{Collection, SyncCollection},
         date::UTCDate,
-        id::Id,
         property::Property,
         value::{MaybePatchValue, Object, Value},
     },
@@ -31,6 +29,10 @@ use store::{
     write::{Archiver, BatchBuilder},
 };
 use trc::AddContext;
+use types::{
+    collection::{Collection, SyncCollection},
+    id::Id,
+};
 
 pub trait VacationResponseSet: Sync + Send {
     fn vacation_response_set(

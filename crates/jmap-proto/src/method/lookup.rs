@@ -4,13 +4,13 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use utils::map::vec_map::VecMap;
-
 use crate::{
     parser::{JsonObjectParser, Token, json::Parser},
     request::RequestProperty,
-    types::{MaybeUnparsable, blob::BlobId, id::Id, type_state::DataType},
+    types::MaybeUnparsable,
 };
+use types::{blob::BlobId, id::Id, type_state::DataType};
+use utils::map::vec_map::VecMap;
 
 #[derive(Debug, Clone)]
 pub struct BlobLookupRequest {

@@ -9,6 +9,7 @@ store = { path = "../store" }
 nlp = { path = "../nlp" }
 http_proto = { path = "../http-proto" }
 jmap_proto = { path = "../jmap-proto" }
+types = { path = "../types" }
 smtp = { path =  "../smtp" }
 utils = { path =  "../utils" }
 common = { path =  "../common" }

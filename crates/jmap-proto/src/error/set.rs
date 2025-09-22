@@ -6,7 +6,9 @@
 
 use std::borrow::Cow;
 
-use crate::types::{id::Id, property::Property};
+use types::id::Id;
+
+use crate::types::property::Property;
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SetError {

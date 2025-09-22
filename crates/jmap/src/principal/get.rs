@@ -9,13 +9,13 @@ use directory::QueryParams;
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     types::{
-        collection::Collection,
         property::Property,
         state::State,
         value::{Object, Value},
     },
 };
 use std::future::Future;
+use types::collection::Collection;
 
 pub trait PrincipalGet: Sync + Send {
     fn principal_get(

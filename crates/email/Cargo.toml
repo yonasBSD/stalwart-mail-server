@@ -9,7 +9,7 @@ utils = { path = "../utils" }
 nlp = { path = "../nlp" }
 store = { path = "../store" }
 trc = { path = "../trc" }
-jmap_proto = { path = "../jmap-proto" }
+types = { path = "../types" }
 common = { path =  "../common" }
 directory = { path =  "../directory" }
 groupware = { path =  "../groupware" }

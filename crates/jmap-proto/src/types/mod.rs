@@ -9,7 +9,6 @@ use crate::parser::{JsonObjectParser, json::Parser};
 pub mod acl;
 pub mod any_id;
 pub mod blob;
-pub mod collection;
 pub mod date;
 pub mod id;
 pub mod keyword;
@@ -18,9 +17,6 @@ pub mod property;
 pub mod state;
 pub mod type_state;
 pub mod value;
-
-pub type DocumentId = u32;
-pub type ChangeId = u64;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MaybeUnparsable<V> {

@@ -11,9 +11,7 @@ use jmap_proto::{
     request::reference::MaybeReference,
     types::{
         any_id::AnyId,
-        collection::{Collection, SyncCollection},
         date::UTCDate,
-        id::Id,
         property::Property,
         value::{Object, Value},
     },
@@ -21,6 +19,11 @@ use jmap_proto::{
 use std::future::Future;
 use store::query::Filter;
 use trc::AddContext;
+use types::{
+    collection::{Collection, SyncCollection},
+    field::SieveField,
+    id::Id,
+};
 
 use crate::{JmapMethods, changes::state::StateManager};
 
@@ -160,7 +163,7 @@ impl VacationResponseGet for Server {
         self.filter(
             account_id,
             Collection::SieveScript,
-            vec![Filter::eq(Property::Name, "vacation".as_bytes().to_vec())],
+            vec![Filter::eq(SieveField::Name, "vacation".as_bytes().to_vec())],
         )
         .await
         .map(|r| r.results.min())

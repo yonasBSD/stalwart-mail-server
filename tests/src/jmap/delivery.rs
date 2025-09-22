@@ -4,22 +4,21 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use email::{
-    cache::{MessageCacheFetch, email::MessageCacheAccess},
-    mailbox::{INBOX_ID, JUNK_ID},
-};
-use jmap_proto::types::{collection::Collection, id::Id};
-use std::time::Duration;
-
 use super::JMAPTest;
 use crate::{
     directory::internal::TestInternalDirectory,
     jmap::{assert_is_empty, mailbox::destroy_all_mailboxes},
 };
+use email::{
+    cache::{MessageCacheFetch, email::MessageCacheAccess},
+    mailbox::{INBOX_ID, JUNK_ID},
+};
+use std::time::Duration;
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines, ReadHalf, WriteHalf},
     net::TcpStream,
 };
+use types::{collection::Collection, id::Id};
 
 pub async fn test(params: &mut JMAPTest) {
     println!("Running message delivery tests...");

@@ -4,17 +4,15 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::types::{
+    property::Property,
+    value::{Object, Value},
+};
 use std::sync::Arc;
-
+use types::id::Id;
 use utils::{
     erased_serde,
     json::{JsonPointerItem, JsonQueryable},
-};
-
-use crate::types::{
-    id::Id,
-    property::Property,
-    value::{Object, Value},
 };
 
 pub mod blob;

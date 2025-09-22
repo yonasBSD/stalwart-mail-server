@@ -20,20 +20,22 @@ use jmap_proto::{
     method::get::{GetRequest, GetResponse},
     object::email::GetArguments,
     types::{
-        acl::Acl,
-        blob::BlobId,
-        collection::Collection,
         date::UTCDate,
-        id::Id,
         property::{HeaderForm, Property},
         value::{Object, Value},
     },
 };
 use mail_parser::{ArchivedHeaderName, HeaderValue, core::rkyv::ArchivedGetHeader};
 use std::{borrow::Cow, future::Future};
-use store::BlobClass;
 use trc::{AddContext, StoreEvent};
-use utils::BlobHash;
+use types::{
+    acl::Acl,
+    blob::{BlobClass, BlobId},
+    blob_hash::BlobHash,
+    collection::Collection,
+    field::EmailField,
+    id::Id,
+};
 
 pub trait EmailGet: Sync + Send {
     fn email_get(
@@ -151,7 +153,7 @@ impl EmailGet for Server {
                     account_id,
                     Collection::Email,
                     id.document_id(),
-                    &Property::BodyStructure,
+                    EmailField::Metadata.into(),
                 )
                 .await?
             {

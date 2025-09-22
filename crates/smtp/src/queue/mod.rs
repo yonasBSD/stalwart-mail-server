@@ -16,7 +16,7 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 use store::write::now;
-use utils::BlobHash;
+use types::blob_hash::BlobHash;
 
 pub mod dsn;
 pub mod manager;

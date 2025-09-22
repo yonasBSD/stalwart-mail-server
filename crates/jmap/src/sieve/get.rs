@@ -4,23 +4,22 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::changes::state::StateManager;
 use common::Server;
 use email::sieve::SieveScript;
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     types::{
-        blob::{BlobId, BlobSection},
-        collection::{Collection, SyncCollection},
         property::Property,
         value::{Object, Value},
     },
 };
-use store::BlobClass;
-use trc::AddContext;
-
-use crate::changes::state::StateManager;
-
 use std::future::Future;
+use trc::AddContext;
+use types::{
+    blob::{BlobClass, BlobId, BlobSection},
+    collection::{Collection, SyncCollection},
+};
 
 pub trait SieveScriptGet: Sync + Send {
     fn sieve_script_get(

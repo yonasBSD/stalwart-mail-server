@@ -27,7 +27,7 @@ use store::write::{
 };
 use store::{Deserialize, IterateParams, Serialize, SerializeInfallible, U64_LEN, ValueKey};
 use trc::{AddContext, ServerEvent};
-use utils::BlobHash;
+use types::blob_hash::BlobHash;
 
 pub const LOCK_EXPIRY: u64 = 10 * 60; // 10 minutes
 pub const QUEUE_REFRESH: u64 = 5 * 60; // 5 minutes

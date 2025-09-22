@@ -9,12 +9,7 @@ use common::Server;
 use email::cache::MessageCacheFetch;
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
-    types::{
-        collection::{Collection, SyncCollection},
-        id::Id,
-        property::Property,
-        value::Object,
-    },
+    types::{property::Property, value::Object},
 };
 use std::future::Future;
 use store::{
@@ -23,6 +18,11 @@ use store::{
     roaring::RoaringBitmap,
 };
 use trc::AddContext;
+use types::{
+    collection::{Collection, SyncCollection},
+    field::EmailField,
+    id::Id,
+};
 
 pub trait ThreadGet: Sync + Send {
     fn thread_get(
@@ -87,7 +87,7 @@ impl ThreadGet for Server {
                             .data
                             .sort(
                                 ResultSet::new(account_id, Collection::Email, document_ids),
-                                vec![Comparator::ascending(Property::ReceivedAt)],
+                                vec![Comparator::ascending(EmailField::ReceivedAt)],
                                 Pagination::new(doc_count, 0, None, 0),
                             )
                             .await

@@ -4,8 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{collections::hash_map::Entry, time::Instant};
-
 use super::JMAPTest;
 use crate::{
     jmap::{assert_is_empty, mailbox::destroy_all_mailboxes, wait_for_index},
@@ -19,12 +17,13 @@ use jmap_client::{
     core::query::{Comparator, Filter},
     email,
 };
-use jmap_proto::types::{collection::Collection, id::Id};
 use mail_parser::{DateTime, HeaderName};
+use std::{collections::hash_map::Entry, time::Instant};
 use store::{
     ahash::AHashMap,
     write::{BatchBuilder, now},
 };
+use types::{collection::Collection, id::Id};
 
 const MAX_THREADS: usize = 100;
 const MAX_MESSAGES: usize = 1000;

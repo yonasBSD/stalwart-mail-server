@@ -4,10 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Borrow, cmp::Ordering, fmt, hash::Hash};
-
 use rkyv::Archive;
 use serde::{Deserialize, Serialize, de::DeserializeOwned, ser::SerializeMap};
+use std::{borrow::Borrow, cmp::Ordering, fmt, hash::Hash};
 
 // A map implemented using vectors
 // used for small datasets of less than 20 items

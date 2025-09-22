@@ -4,29 +4,23 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, fmt::Display};
-
-use mail_parser::{Addr, DateTime, Group};
-use rkyv::{option::ArchivedOption, string::ArchivedString};
-use serde::Serialize;
-use utils::{
-    json::{JsonPointerItem, JsonQueryable},
-    map::{bitmap::Bitmap, vec_map::VecMap},
+use super::{
+    any_id::AnyId,
+    date::UTCDate,
+    property::{HeaderForm, IntoProperty, ObjectProperty, Property},
 };
-
 use crate::{
     parser::{Ignore, JsonObjectParser, Token, json::Parser},
     request::reference::{MaybeReference, ResultReference},
 };
-
-use super::{
-    acl::Acl,
-    any_id::AnyId,
-    blob::BlobId,
-    date::UTCDate,
-    id::Id,
-    keyword::Keyword,
-    property::{HeaderForm, IntoProperty, ObjectProperty, Property},
+use mail_parser::{Addr, DateTime, Group};
+use rkyv::{option::ArchivedOption, string::ArchivedString};
+use serde::Serialize;
+use std::{borrow::Cow, fmt::Display};
+use types::{acl::AclGrant, blob::BlobId, id::Id, keyword::Keyword};
+use utils::{
+    json::{JsonPointerItem, JsonQueryable},
+    map::vec_map::VecMap,
 };
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize)]
@@ -49,23 +43,6 @@ pub enum Value {
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize)]
 pub struct Object<T>(pub VecMap<Property, T>);
-
-#[derive(
-    rkyv::Archive,
-    rkyv::Deserialize,
-    rkyv::Serialize,
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    Serialize,
-    Default,
-)]
-#[rkyv(compare(PartialEq), derive(Debug))]
-pub struct AclGrant {
-    pub account_id: u32,
-    pub grants: Bitmap<Acl>,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SetValue {
@@ -612,15 +589,6 @@ impl JsonQueryable for Value {
             Some(JsonPointerItem::Root) | None => {
                 results.push(self);
             }
-        }
-    }
-}
-
-impl From<&ArchivedAclGrant> for AclGrant {
-    fn from(value: &ArchivedAclGrant) -> Self {
-        Self {
-            account_id: u32::from(value.account_id),
-            grants: (&value.grants).into(),
         }
     }
 }

@@ -10,12 +10,9 @@ use email::{
     cache::{MessageCacheFetch, email::MessageCacheAccess},
     message::metadata::{ArchivedMetadataPartType, DecodedPartContent, MessageMetadata},
 };
-use jmap_proto::{
-    method::{
-        query::Filter,
-        search_snippet::{GetSearchSnippetRequest, GetSearchSnippetResponse, SearchSnippet},
-    },
-    types::{acl::Acl, collection::Collection, property::Property},
+use jmap_proto::method::{
+    query::Filter,
+    search_snippet::{GetSearchSnippetRequest, GetSearchSnippetResponse, SearchSnippet},
 };
 use mail_parser::{
     ArchivedHeaderName, core::rkyv::ArchivedGetHeader, decoders::html::html_to_text,
@@ -24,7 +21,7 @@ use nlp::language::{Language, search_snippet::generate_snippet, stemmer::Stemmer
 use std::future::Future;
 use store::backend::MAX_TOKEN_LENGTH;
 use trc::AddContext;
-use utils::BlobHash;
+use types::{acl::Acl, blob_hash::BlobHash, collection::Collection, field::EmailField};
 
 pub trait EmailSearchSnippet: Sync + Send {
     fn email_search_snippet(
@@ -126,7 +123,7 @@ impl EmailSearchSnippet for Server {
                     account_id,
                     Collection::Email,
                     document_id,
-                    Property::BodyStructure,
+                    EmailField::Metadata.into(),
                 )
                 .await?
             {

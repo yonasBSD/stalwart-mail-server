@@ -4,22 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use calcard::{Entry, Parser};
-use common::{DavName, Server, auth::AccessToken};
-use dav_proto::{
-    RequestHeaders, Return,
-    schema::{property::Rfc1123DateTime, response::CardCondition},
-};
-use groupware::{cache::GroupwareCache, contact::ContactCard};
-use http_proto::HttpResponse;
-use hyper::StatusCode;
-use jmap_proto::types::{
-    acl::Acl,
-    collection::{Collection, SyncCollection},
-};
-use store::write::BatchBuilder;
-use trc::AddContext;
-
+use super::assert_is_unique_uid;
 use crate::{
     DavError, DavErrorCondition, DavMethod,
     common::{
@@ -30,8 +15,21 @@ use crate::{
     file::DavFileResource,
     fix_percent_encoding,
 };
-
-use super::assert_is_unique_uid;
+use calcard::{Entry, Parser};
+use common::{DavName, Server, auth::AccessToken};
+use dav_proto::{
+    RequestHeaders, Return,
+    schema::{property::Rfc1123DateTime, response::CardCondition},
+};
+use groupware::{cache::GroupwareCache, contact::ContactCard};
+use http_proto::HttpResponse;
+use hyper::StatusCode;
+use store::write::BatchBuilder;
+use trc::AddContext;
+use types::{
+    acl::Acl,
+    collection::{Collection, SyncCollection},
+};
 
 pub(crate) trait CardUpdateRequestHandler: Sync + Send {
     fn handle_card_update_request(

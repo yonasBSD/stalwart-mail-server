@@ -49,13 +49,11 @@ use jmap::{
     blob::{download::BlobDownload, upload::BlobUpload},
     websocket::upgrade::WebSocketUpgrade,
 };
-use jmap_proto::{
-    request::{Request, capability::Session},
-    types::{blob::BlobId, id::Id},
-};
+use jmap_proto::request::{Request, capability::Session};
 use std::{net::IpAddr, sync::Arc};
 use store::dispatch::lookup::KeyValue;
 use trc::SecurityEvent;
+use types::{blob::BlobId, id::Id};
 use utils::url_params::UrlParams;
 
 pub trait ParseHttp: Sync + Send {

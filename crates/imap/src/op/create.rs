@@ -19,10 +19,10 @@ use imap_proto::{
     protocol::{create::Arguments, list::Attribute},
     receiver::Request,
 };
-use jmap_proto::types::{acl::Acl, collection::Collection, id::Id};
 use std::time::Instant;
 use store::write::BatchBuilder;
 use trc::AddContext;
+use types::{acl::Acl, collection::Collection, id::Id};
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_create(&mut self, requests: Vec<Request<Command>>) -> trc::Result<()> {

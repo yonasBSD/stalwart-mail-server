@@ -4,17 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use utils::{
-    codec::{
-        base32_custom::Base32Writer,
-        leb128::{Leb128Iterator, Leb128Writer},
-    },
-    map::bitmap::Bitmap,
-};
-
 use crate::parser::{JsonObjectParser, base32::JsonBase32Reader, json::Parser};
-
-use super::{ChangeId, type_state::DataType};
+use types::ChangeId;
+use utils::codec::{
+    base32_custom::Base32Writer,
+    leb128::{Leb128Iterator, Leb128Writer},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JMAPIntermediateState {
@@ -29,36 +24,6 @@ pub enum State {
     Initial,
     Exact(ChangeId),
     Intermediate(JMAPIntermediateState),
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct StateChange {
-    pub account_id: u32,
-    pub change_id: u64,
-    pub types: Bitmap<DataType>,
-}
-
-impl StateChange {
-    pub fn new(account_id: u32, change_id: u64) -> Self {
-        Self {
-            account_id,
-            change_id,
-            types: Default::default(),
-        }
-    }
-
-    pub fn set_change(&mut self, type_state: DataType) {
-        self.types.insert(type_state);
-    }
-
-    pub fn with_change(mut self, type_state: DataType) -> Self {
-        self.set_change(type_state);
-        self
-    }
-
-    pub fn has_changes(&self) -> bool {
-        !self.types.is_empty()
-    }
 }
 
 impl From<ChangeId> for State {
@@ -194,10 +159,9 @@ impl std::fmt::Display for State {
 
 #[cfg(test)]
 mod tests {
-
-    use crate::{parser::json::Parser, types::ChangeId};
-
     use super::State;
+    use crate::parser::json::Parser;
+    use types::ChangeId;
 
     #[test]
     fn test_state_id() {

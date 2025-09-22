@@ -6,11 +6,11 @@
 
 use email::message::metadata::{ArchivedMessageMetadataContents, ArchivedMetadataPartType};
 use jmap_proto::types::{
-    blob::BlobId,
     property::Property,
     value::{Object, Value},
 };
 use mail_parser::{ArchivedHeaderValue, HeaderValue, MessagePart, MimeHeaders, PartType};
+use types::blob::BlobId;
 
 use super::headers::HeaderToValue;
 

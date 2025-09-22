@@ -9,9 +9,12 @@ use common::{
     MailboxCache, MailboxesCache, MessageStoreCache, Server, auth::AccessToken,
     config::jmap::settings::SpecialUse, sharing::EffectiveAcl,
 };
-use jmap_proto::types::{acl::Acl, collection::Collection, value::AclGrant};
 use store::{ahash::AHashMap, roaring::RoaringBitmap};
 use trc::AddContext;
+use types::{
+    acl::{Acl, AclGrant},
+    collection::Collection,
+};
 use utils::{map::bitmap::Bitmap, topological::TopologicalSort};
 
 pub(crate) async fn update_mailbox_cache(

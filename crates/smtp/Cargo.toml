@@ -13,6 +13,7 @@ resolver = "2"
 
 [dependencies]
 store = { path =  "../store" }
+types = { path =  "../types" }
 utils = { path =  "../utils" }
 nlp = { path =  "../nlp" }
 directory = { path =  "../directory" }

@@ -11,6 +11,7 @@ nlp = { path = "../nlp" }
 store = { path = "../store" }
 trc = { path = "../trc" }
 directory = { path = "../directory" }
+types = { path = "../types" }
 jmap_proto = { path = "../jmap-proto" }
 imap_proto = { path = "../imap-proto" }
 sieve-rs = { version = "0.7", features = ["rkyv", "serde"] }

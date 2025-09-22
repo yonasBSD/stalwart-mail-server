@@ -12,20 +12,19 @@ use common::{
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     types::{
-        collection::Collection,
         date::UTCDate,
         property::Property,
         value::{Object, Value},
     },
 };
+use std::future::Future;
 use store::{
     BitmapKey, ValueKey,
     write::{AlignedBytes, Archive, ValueClass, now},
 };
 use trc::{AddContext, ServerEvent};
+use types::{collection::Collection, field::Field};
 use utils::map::bitmap::Bitmap;
-
-use std::future::Future;
 
 pub trait PushSubscriptionFetch: Sync + Send {
     fn push_subscription_get(
@@ -167,7 +166,7 @@ impl PushSubscriptionFetch for Server {
                     account_id,
                     collection: Collection::PushSubscription.into(),
                     document_id,
-                    class: ValueClass::Property(Property::Value.into()),
+                    class: ValueClass::Property(Field::ARCHIVE.into()),
                 })
                 .await?
                 .ok_or_else(|| {

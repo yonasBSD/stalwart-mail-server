@@ -4,21 +4,19 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use compact_str::format_compact;
-use serde::Serialize;
-use utils::map::vec_map::VecMap;
-
 use crate::{
     error::set::SetError,
     parser::{JsonObjectParser, Token, json::Parser},
     request::{RequestProperty, method::MethodObject, reference::MaybeReference},
     types::{
-        blob::BlobId,
-        id::Id,
         state::State,
         value::{Object, SetValue, Value},
     },
 };
+use compact_str::format_compact;
+use serde::Serialize;
+use types::{blob::BlobId, id::Id};
+use utils::map::vec_map::VecMap;
 
 #[derive(Debug, Clone)]
 pub struct CopyRequest<T> {

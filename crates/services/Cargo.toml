@@ -12,6 +12,7 @@ trc = { path = "../trc" }
 email = { path = "../email" }
 smtp = { path = "../smtp" }
 groupware = { path = "../groupware" }
+types = { path = "../types" }
 jmap_proto = { path = "../jmap-proto" }
 directory = { path =  "../directory" }
 smtp-proto = { version = "0.2", features = ["rkyv", "serde"] }

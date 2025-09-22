@@ -6,20 +6,8 @@
 
 use std::{sync::Arc, time::Instant};
 
-use common::{Server, auth::AccessToken};
-use http_proto::HttpSessionData;
-use jmap_proto::{
-    method::{
-        get, query,
-        set::{self},
-    },
-    request::{Call, Request, RequestMethod, method::MethodName},
-    response::{Response, ResponseMethod},
-    types::collection::Collection,
-};
-use trc::JmapEvent;
-
 use crate::{
+    api::auth::JmapAuthorization,
     blob::{copy::BlobCopy, get::BlobOperations, upload::BlobUpload},
     changes::{get::ChangesLookup, query::QueryChanges},
     email::{
@@ -39,6 +27,18 @@ use crate::{
     thread::get::ThreadGet,
     vacation::{get::VacationResponseGet, set::VacationResponseSet},
 };
+use common::{Server, auth::AccessToken};
+use http_proto::HttpSessionData;
+use jmap_proto::{
+    method::{
+        get, query,
+        set::{self},
+    },
+    request::{Call, Request, RequestMethod, method::MethodName},
+    response::{Response, ResponseMethod},
+};
+use trc::JmapEvent;
+use types::collection::Collection;
 
 use std::future::Future;
 

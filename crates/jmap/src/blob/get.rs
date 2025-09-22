@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use super::download::BlobDownload;
 use common::{Server, auth::AccessToken};
 use email::message::metadata::MessageData;
 use jmap_proto::{
@@ -14,23 +15,17 @@ use jmap_proto::{
     object::blob::GetArguments,
     types::{
         MaybeUnparsable,
-        collection::Collection,
-        id::Id,
         property::{DataProperty, DigestProperty, Property},
-        type_state::DataType,
         value::{Object, Value},
     },
 };
 use mail_builder::encoders::base64::base64_encode;
 use sha1::{Digest, Sha1};
 use sha2::{Sha256, Sha512};
-use store::BlobClass;
-use trc::AddContext;
-use utils::map::vec_map::VecMap;
-
 use std::future::Future;
-
-use super::download::BlobDownload;
+use trc::AddContext;
+use types::{blob::BlobClass, collection::Collection, id::Id, type_state::DataType};
+use utils::map::vec_map::VecMap;
 
 pub trait BlobOperations: Sync + Send {
     fn blob_get(

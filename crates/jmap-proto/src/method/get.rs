@@ -4,8 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use compact_str::format_compact;
-
 use crate::{
     object::{blob, email},
     parser::{JsonObjectParser, Token, json::Parser},
@@ -16,13 +14,13 @@ use crate::{
     },
     types::{
         any_id::AnyId,
-        blob::BlobId,
-        id::Id,
         property::Property,
         state::State,
         value::{Object, Value},
     },
 };
+use compact_str::format_compact;
+use types::{blob::BlobId, id::Id};
 
 #[derive(Debug, Clone)]
 pub struct GetRequest<T> {

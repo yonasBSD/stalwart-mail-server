@@ -4,10 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use types::id::Id;
+
 use crate::{
     parser::json::Parser,
     request::{RequestProperty, RequestPropertyParser, reference::MaybeReference},
-    types::id::Id,
 };
 
 #[derive(Debug, Clone, Default)]

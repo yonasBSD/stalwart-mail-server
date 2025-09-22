@@ -4,8 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use utils::map::vec_map::VecMap;
-
 use crate::{
     error::set::SetError,
     parser::{JsonObjectParser, Token, json::Parser},
@@ -15,15 +13,14 @@ use crate::{
     },
     response::Response,
     types::{
-        blob::BlobId,
         date::UTCDate,
-        id::Id,
-        keyword::Keyword,
         property::Property,
         state::State,
         value::{Object, SetValueMap, Value},
     },
 };
+use types::{blob::BlobId, id::Id, keyword::Keyword};
+use utils::map::vec_map::VecMap;
 
 #[derive(Debug, Clone)]
 pub struct ImportEmailRequest {

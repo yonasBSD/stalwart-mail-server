@@ -11,9 +11,7 @@ use email::submission::{
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     types::{
-        collection::{Collection, SyncCollection},
         date::UTCDate,
-        id::Id,
         property::Property,
         value::{Object, Value},
     },
@@ -23,6 +21,10 @@ use smtp_proto::ArchivedResponse;
 use std::future::Future;
 use store::rkyv::option::ArchivedOption;
 use trc::AddContext;
+use types::{
+    collection::{Collection, SyncCollection},
+    id::Id,
+};
 use utils::map::vec_map::VecMap;
 
 use crate::changes::state::StateManager;

@@ -8,14 +8,13 @@ use common::{Server, auth::AccessToken};
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     types::{
-        id::Id,
         property::Property,
         state::State,
-        type_state::DataType,
         value::{Object, Value},
     },
 };
 use std::future::Future;
+use types::{id::Id, type_state::DataType};
 
 pub trait QuotaGet: Sync + Send {
     fn quota_get(

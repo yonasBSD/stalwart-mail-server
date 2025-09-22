@@ -4,7 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{blob::download::BlobDownload, changes::state::MessageCacheState};
+use crate::{
+    blob::download::BlobDownload, changes::state::MessageCacheState, email::ingested_into_object,
+};
 use common::{Server, auth::AccessToken};
 use email::{
     cache::{MessageCacheFetch, mailbox::MailboxCacheAccess},
@@ -14,10 +16,11 @@ use http_proto::HttpSessionData;
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
     method::import::{ImportEmailRequest, ImportEmailResponse},
-    types::{acl::Acl, id::Id, property::Property, state::State},
+    types::{property::Property, state::State},
 };
 use mail_parser::MessageParser;
 use std::future::Future;
+use types::{acl::Acl, id::Id};
 use utils::map::vec_map::VecMap;
 
 pub trait EmailImport: Sync + Send {
@@ -145,7 +148,7 @@ impl EmailImport for Server {
                 .await
             {
                 Ok(email) => {
-                    response.created.append(id, email.into());
+                    response.created.append(id, ingested_into_object(email));
                 }
                 Err(mut err) => match err.as_ref() {
                     trc::EventType::Limit(trc::LimitEvent::Quota) => {

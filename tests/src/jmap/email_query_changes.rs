@@ -4,6 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use super::JMAPTest;
+use crate::jmap::{
+    assert_is_empty,
+    email_changes::{LogAction, ParseState},
+    mailbox::destroy_all_mailboxes,
+};
 use ::email::message::metadata::MessageData;
 use common::storage::index::ObjectIndexBuilder;
 use jmap_client::{
@@ -11,24 +17,15 @@ use jmap_client::{
     email,
     mailbox::Role,
 };
-use jmap_proto::types::{
-    collection::{Collection, SyncCollection},
-    id::Id,
-    state::State,
-};
-
+use jmap_proto::types::state::State;
 use store::{
     ahash::{AHashMap, AHashSet},
     write::BatchBuilder,
 };
-
-use crate::jmap::{
-    assert_is_empty,
-    email_changes::{LogAction, ParseState},
-    mailbox::destroy_all_mailboxes,
+use types::{
+    collection::{Collection, SyncCollection},
+    id::Id,
 };
-
-use super::JMAPTest;
 
 pub async fn test(params: &mut JMAPTest) {
     println!("Running Email QueryChanges tests...");

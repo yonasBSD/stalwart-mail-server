@@ -4,10 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use ahash::AHashMap;
-use compact_str::format_compact;
-use utils::map::{bitmap::Bitmap, vec_map::VecMap};
-
+use super::ahash_is_empty;
 use crate::{
     error::set::{InvalidProperty, SetError},
     object::{email_submission, mailbox, sieve},
@@ -19,19 +16,17 @@ use crate::{
     },
     response::Response,
     types::{
-        acl::Acl,
         any_id::AnyId,
-        blob::BlobId,
         date::UTCDate,
-        id::Id,
-        keyword::Keyword,
         property::{HeaderForm, ObjectProperty, Property, SetProperty},
         state::State,
         value::{Object, SetValue, SetValueMap, Value},
     },
 };
-
-use super::ahash_is_empty;
+use ahash::AHashMap;
+use compact_str::format_compact;
+use types::{acl::Acl, blob::BlobId, id::Id, keyword::Keyword};
+use utils::map::{bitmap::Bitmap, vec_map::VecMap};
 
 #[derive(Debug, Clone)]
 pub struct SetRequest<T> {

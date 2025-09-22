@@ -4,17 +4,16 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::fmt::Display;
-
-use compact_str::format_compact;
-use store::fts::{FilterItem, FilterType, FtsFilter};
-
 use crate::{
     object::{email, mailbox},
     parser::{Ignore, JsonObjectParser, Token, json::Parser},
     request::{RequestProperty, RequestPropertyParser, method::MethodObject},
-    types::{date::UTCDate, id::Id, keyword::Keyword, state::State},
+    types::{date::UTCDate, state::State},
 };
+use compact_str::format_compact;
+use std::fmt::Display;
+use store::fts::{FilterItem, FilterType, FtsFilter};
+use types::{id::Id, keyword::Keyword};
 
 #[derive(Debug, Clone)]
 pub struct QueryRequest<T> {

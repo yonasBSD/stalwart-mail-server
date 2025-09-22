@@ -15,7 +15,6 @@ use crate::{
 };
 use ahash::{AHashMap, AHashSet};
 use compact_str::CompactString;
-use jmap_proto::types::collection::Collection;
 use nlp::tokenizers::word::WordTokenizer;
 use store::{
     Deserialize, IterateParams, Serialize, SerializeInfallible, Store, U32_LEN, ValueKey,
@@ -27,6 +26,7 @@ use store::{
     },
 };
 use trc::AddContext;
+use types::collection::Collection;
 use utils::sanitize_email;
 
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]

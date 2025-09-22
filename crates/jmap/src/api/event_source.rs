@@ -4,22 +4,21 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
-
 use common::{LONG_1D_SLUMBER, Server, auth::AccessToken};
 use http_body_util::{StreamBody, combinators::BoxBody};
+use http_proto::*;
 use hyper::{
     StatusCode,
     body::{Bytes, Frame},
 };
-use jmap_proto::{response::status::StateChangeResponse, types::type_state::DataType};
-use utils::map::bitmap::Bitmap;
-
-use http_proto::*;
+use jmap_proto::response::status::StateChangeResponse;
 use std::future::Future;
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
+use types::type_state::DataType;
+use utils::map::bitmap::Bitmap;
 
 struct Ping {
     interval: Duration,

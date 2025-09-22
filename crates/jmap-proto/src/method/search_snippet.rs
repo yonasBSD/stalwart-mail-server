@@ -4,16 +4,15 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use super::query::{Filter, parse_filter};
 use crate::{
     parser::{Ignore, JsonObjectParser, Token, json::Parser},
     request::{
         RequestProperty,
         reference::{MaybeReference, ResultReference},
     },
-    types::id::Id,
 };
-
-use super::query::{Filter, parse_filter};
+use types::id::Id;
 
 #[derive(Debug, Clone)]
 pub struct GetSearchSnippetRequest {

@@ -4,11 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::collections::HashMap;
-
-use compact_str::format_compact;
-use utils::map::vec_map::VecMap;
-
+use super::{Response, ResponseMethod};
 use crate::{
     error::set::SetError,
     method::{copy::CopyResponse, set::SetResponse, upload::DataSourceObject},
@@ -18,13 +14,14 @@ use crate::{
     },
     types::{
         any_id::AnyId,
-        id::Id,
         property::Property,
         value::{MaybePatchValue, Object, SetValue, Value},
     },
 };
-
-use super::{Response, ResponseMethod};
+use compact_str::format_compact;
+use std::collections::HashMap;
+use types::id::Id;
+use utils::map::vec_map::VecMap;
 
 enum EvalResult {
     Properties(Vec<Property>),
@@ -535,17 +532,17 @@ impl EvalResult {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use types::id::Id;
 
     use crate::{
         request::{Request, RequestMethod},
         response::Response,
         types::{
-            id::Id,
             property::Property,
             value::{SetValue, Value},
         },
     };
+    use std::collections::HashMap;
 
     #[test]
     fn eval_references() {

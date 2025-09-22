@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use super::value::Value;
 use crate::{
     parser::{JsonObjectParser, json::Parser},
     request::reference::MaybeReference,
 };
-
-use super::{blob::BlobId, id::Id, value::Value};
+use types::{blob::BlobId, id::Id};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AnyId {

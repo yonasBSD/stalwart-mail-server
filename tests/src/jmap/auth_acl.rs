@@ -4,6 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::{
+    directory::internal::TestInternalDirectory,
+    jmap::{assert_is_empty, mailbox::destroy_all_mailboxes, test_account_login},
+};
 use ::email::mailbox::{INBOX_ID, TRASH_ID};
 use jmap_client::{
     core::{
@@ -14,14 +18,9 @@ use jmap_client::{
     mailbox::{self, Role},
     principal::ACL,
 };
-use jmap_proto::types::id::Id;
 use std::fmt::Debug;
 use store::ahash::AHashMap;
-
-use crate::{
-    directory::internal::TestInternalDirectory,
-    jmap::{assert_is_empty, mailbox::destroy_all_mailboxes, test_account_login},
-};
+use types::id::Id;
 
 use super::JMAPTest;
 

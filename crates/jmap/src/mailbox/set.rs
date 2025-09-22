@@ -4,39 +4,39 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{JmapMethods, changes::state::MessageCacheState};
+use crate::{JmapMethods, api::auth::JmapAcl, changes::state::MessageCacheState};
 use common::{
     Server, auth::AccessToken, config::jmap::settings::SpecialUse, sharing::EffectiveAcl,
     storage::index::ObjectIndexBuilder,
 };
+#[allow(unused_imports)]
+use email::mailbox::{INBOX_ID, JUNK_ID, TRASH_ID, UidMailbox};
 use email::{
     cache::{MessageCacheFetch, mailbox::MailboxCacheAccess},
-    mailbox::{Mailbox, destroy::MailboxDestroy},
+    mailbox::{
+        Mailbox,
+        destroy::{MailboxDestroy, MailboxDestroyError},
+    },
 };
 use jmap_proto::{
-    error::set::SetError,
+    error::set::{SetError, SetErrorType},
     method::set::{SetRequest, SetResponse},
     object::mailbox::SetArguments,
     response::references::EvalObjectReferences,
     types::{
-        acl::Acl,
-        collection::Collection,
-        id::Id,
         property::Property,
         state::State,
         value::{MaybePatchValue, Object, SetValue, Value},
     },
 };
+use std::future::Future;
 use store::{
     roaring::RoaringBitmap,
     write::{Archive, BatchBuilder, assert::AssertValue},
 };
 use trc::AddContext;
+use types::{acl::Acl, collection::Collection, field::MailboxField, id::Id};
 use utils::config::utils::ParseValue;
-
-#[allow(unused_imports)]
-use email::mailbox::{INBOX_ID, JUNK_ID, TRASH_ID, UidMailbox};
-use std::future::Future;
 
 pub struct SetContext<'x> {
     account_id: u32,
@@ -98,7 +98,7 @@ impl MailboxSet for Server {
                     if parent_id > 0 {
                         batch
                             .update_document(parent_id - 1)
-                            .assert_value(Property::Value, AssertValue::Some);
+                            .assert_value(MailboxField::Archive, AssertValue::Some);
                     }
 
                     let document_id = self
@@ -189,7 +189,7 @@ impl MailboxSet for Server {
                         if parent_id > 0 {
                             batch
                                 .update_document(parent_id - 1)
-                                .assert_value(Property::Value, AssertValue::Some);
+                                .assert_value(MailboxField::Archive, AssertValue::Some);
                         }
 
                         batch
@@ -255,7 +255,31 @@ impl MailboxSet for Server {
                     ctx.response.destroyed.push(id);
                 }
                 Err(err) => {
-                    ctx.response.not_destroyed.append(id, err);
+                    ctx.response.not_destroyed.append(
+                        id,
+                        match err {
+                            MailboxDestroyError::CannotDestroy => SetError::forbidden()
+                                .with_description(
+                                    "You are not allowed to delete Inbox, Junk or Trash folders.",
+                                ),
+                            MailboxDestroyError::Forbidden => SetError::forbidden()
+                                .with_description("You are not allowed to delete this mailbox."),
+                            MailboxDestroyError::HasChildren => {
+                                SetError::new(SetErrorType::MailboxHasChild)
+                                    .with_description("Mailbox has at least one children.")
+                            }
+                            MailboxDestroyError::HasEmails => {
+                                SetError::new(SetErrorType::MailboxHasEmail)
+                                    .with_description("Mailbox is not empty.")
+                            }
+                            MailboxDestroyError::NotFound => SetError::not_found(),
+                            MailboxDestroyError::AssertionFailed => SetError::forbidden()
+                                .with_description(concat!(
+                                    "Another process modified a message in this mailbox ",
+                                    "while deleting it, please try again."
+                                )),
+                        },
+                    );
                 }
             }
         }

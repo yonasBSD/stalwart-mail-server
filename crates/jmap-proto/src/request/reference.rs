@@ -5,13 +5,13 @@
  */
 
 use std::fmt::Display;
-
-use crate::{
-    parser::{JsonObjectParser, Token, json::Parser},
-    types::{id::Id, pointer::JSONPointer},
-};
+use types::id::Id;
 
 use super::method::MethodName;
+use crate::{
+    parser::{JsonObjectParser, Token, json::Parser},
+    types::pointer::JSONPointer,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ResultReference {

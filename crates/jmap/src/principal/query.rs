@@ -10,10 +10,11 @@ use directory::QueryParams;
 use http_proto::HttpSessionData;
 use jmap_proto::{
     method::query::{Filter, QueryRequest, QueryResponse, RequestArguments},
-    types::{collection::Collection, state::State},
+    types::state::State,
 };
 use std::future::Future;
 use store::{query::ResultSet, roaring::RoaringBitmap};
+use types::collection::Collection;
 
 pub trait PrincipalQuery: Sync + Send {
     fn principal_query(
@@ -32,7 +33,7 @@ impl PrincipalQuery for Server {
         let account_id = request.account_id.document_id();
         let mut result_set = ResultSet {
             account_id,
-            collection: Collection::Principal.into(),
+            collection: Collection::Principal,
             results: RoaringBitmap::new(),
         };
         let mut is_set = true;

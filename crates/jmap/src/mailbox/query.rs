@@ -10,7 +10,6 @@ use email::cache::{MessageCacheFetch, mailbox::MailboxCacheAccess};
 use jmap_proto::{
     method::query::{Comparator, Filter, QueryRequest, QueryResponse, SortProperty},
     object::mailbox::QueryArguments,
-    types::{acl::Acl, collection::Collection},
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -20,6 +19,7 @@ use store::{
     query::{self},
     roaring::RoaringBitmap,
 };
+use types::{acl::Acl, collection::Collection};
 
 pub trait MailboxQuery: Sync + Send {
     fn mailbox_query(

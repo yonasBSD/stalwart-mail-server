@@ -1285,6 +1285,7 @@ dependencies = [
  "tokio",
  "tokio-rustls 0.26.2",
  "trc",
+ "types",
  "unicode-security",
  "utils",
  "whatlang",
@@ -1737,11 +1738,11 @@ dependencies = [
  "hashify",
  "http_proto",
  "hyper 1.7.0",
- "jmap_proto",
  "percent-encoding",
  "rkyv",
  "store",
  "trc",
+ "types",
  "utils",
 ]
 
@@ -1949,7 +1950,6 @@ dependencies = [
  "compact_str",
  "deadpool 0.10.0",
  "futures",
- "jmap_proto",
  "ldap3",
  "mail-builder",
  "mail-parser",
@@ -1976,6 +1976,7 @@ dependencies = [
  "tokio-rustls 0.26.2",
  "totp-rs",
  "trc",
+ "types",
  "utils",
 ]
 
@@ -2230,7 +2231,6 @@ dependencies = [
  "directory",
  "groupware",
  "hashify",
- "jmap_proto",
  "mail-builder",
  "mail-parser",
  "nlp",
@@ -2249,6 +2249,7 @@ dependencies = [
  "store",
  "tokio",
  "trc",
+ "types",
  "utils",
 ]
 
@@ -2848,12 +2849,12 @@ dependencies = [
  "dav-proto",
  "directory",
  "hashify",
- "jmap_proto",
  "percent-encoding",
  "rkyv",
  "store",
  "tokio",
  "trc",
+ "types",
  "utils",
 ]
 
@@ -3171,6 +3172,7 @@ dependencies = [
  "store",
  "tokio",
  "trc",
+ "types",
  "utils",
  "x509-parser 0.17.0",
 ]
@@ -3558,7 +3560,6 @@ dependencies = [
  "email",
  "imap_proto",
  "indexmap 2.11.1",
- "jmap_proto",
  "mail-parser",
  "mail-send",
  "md5 0.8.0",
@@ -3571,6 +3572,7 @@ dependencies = [
  "tokio",
  "tokio-rustls 0.26.2",
  "trc",
+ "types",
  "utils",
 ]
 
@@ -3582,11 +3584,11 @@ dependencies = [
  "chrono",
  "compact_str",
  "hashify",
- "jmap_proto",
  "mail-parser",
  "store",
  "tokio",
  "trc",
+ "types",
 ]
 
 [[package]]
@@ -3891,6 +3893,7 @@ dependencies = [
  "tokio-tungstenite 0.27.0",
  "trc",
  "tungstenite 0.27.0",
+ "types",
  "utils",
 ]
 
@@ -3931,6 +3934,7 @@ dependencies = [
  "store",
  "tokio",
  "trc",
+ "types",
  "utils",
 ]
 
@@ -4426,6 +4430,7 @@ dependencies = [
  "tokio",
  "tokio-rustls 0.26.2",
  "trc",
+ "types",
  "utils",
 ]
 
@@ -4523,7 +4528,6 @@ dependencies = [
  "directory",
  "email",
  "groupware",
- "jmap_proto",
  "lz4_flex",
  "mail-auth",
  "mail-parser",
@@ -4536,6 +4540,7 @@ dependencies = [
  "store",
  "tokio",
  "trc",
+ "types",
  "utils",
 ]
 
@@ -5521,7 +5526,6 @@ dependencies = [
  "directory",
  "email",
  "imap",
- "jmap_proto",
  "mail-parser",
  "mail-send",
  "rustls 0.23.31",
@@ -5529,6 +5533,7 @@ dependencies = [
  "tokio",
  "tokio-rustls 0.26.2",
  "trc",
+ "types",
  "utils",
 ]
 
@@ -7411,6 +7416,7 @@ dependencies = [
  "store",
  "tokio",
  "trc",
+ "types",
  "utils",
 ]
 
@@ -7633,6 +7639,7 @@ dependencies = [
  "tokio",
  "tokio-rustls 0.26.2",
  "trc",
+ "types",
  "utils",
  "webpki-roots 1.0.2",
  "x509-parser 0.17.0",
@@ -7768,7 +7775,6 @@ dependencies = [
  "imap",
  "jemallocator",
  "jmap",
- "jmap_proto",
  "managesieve",
  "migration",
  "pop3",
@@ -7778,6 +7784,7 @@ dependencies = [
  "store",
  "tokio",
  "trc",
+ "types",
  "utils",
 ]
 
@@ -7861,6 +7868,7 @@ dependencies = [
  "tokio-postgres",
  "tokio-rustls 0.26.2",
  "trc",
+ "types",
  "utils",
  "xxhash-rust",
  "zenoh",
@@ -8082,6 +8090,7 @@ dependencies = [
  "tokio",
  "tokio-rustls 0.26.2",
  "trc",
+ "types",
  "utils",
 ]
 
@@ -8689,6 +8698,19 @@ name = "typenum"
 version = "1.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1dccffe3ce07af9386bfd29e80c0ab1a8205a2fc34e4bcd40364df902cfa8f3f"
+
+[[package]]
+name = "types"
+version = "0.13.3"
+dependencies = [
+ "blake3",
+ "compact_str",
+ "hashify",
+ "rkyv",
+ "serde",
+ "trc",
+ "utils",
+]
 
 [[package]]
 name = "typewit"

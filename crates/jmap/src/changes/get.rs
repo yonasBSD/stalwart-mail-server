@@ -4,17 +4,15 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::api::auth::JmapAuthorization;
 use common::{Server, auth::AccessToken};
 use jmap_proto::{
     method::changes::{ChangesRequest, ChangesResponse, RequestArguments},
-    types::{
-        collection::{Collection, SyncCollection},
-        property::Property,
-        state::State,
-    },
+    types::{property::Property, state::State},
 };
 use std::future::Future;
 use store::query::log::{Change, Query};
+use types::collection::{Collection, SyncCollection};
 
 pub trait ChangesLookup: Sync + Send {
     fn changes(
@@ -86,7 +84,7 @@ impl ChangesLookup for Server {
             State::Initial => {
                 let changelog = self
                     .store()
-                    .changes(account_id, collection, Query::All)
+                    .changes(account_id, collection.into(), Query::All)
                     .await?;
                 if changelog.changes.is_empty() && changelog.from_change_id == 0 {
                     return Ok(response);
@@ -97,7 +95,7 @@ impl ChangesLookup for Server {
             State::Exact(change_id) => (
                 0,
                 self.store()
-                    .changes(account_id, collection, Query::Since(*change_id))
+                    .changes(account_id, collection.into(), Query::Since(*change_id))
                     .await?,
             ),
             State::Intermediate(intermediate_state) => {
@@ -105,7 +103,7 @@ impl ChangesLookup for Server {
                     .store()
                     .changes(
                         account_id,
-                        collection,
+                        collection.into(),
                         Query::RangeInclusive(intermediate_state.from_id, intermediate_state.to_id),
                     )
                     .await?;
@@ -119,7 +117,7 @@ impl ChangesLookup for Server {
                         self.store()
                             .changes(
                                 account_id,
-                                collection,
+                                collection.into(),
                                 Query::Since(intermediate_state.to_id),
                             )
                             .await?,

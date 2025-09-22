@@ -4,10 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::borrow::Cow;
-
-use jmap_proto::error::set::SetErrorType;
 use protocol::capability::Capability;
+use std::borrow::Cow;
 
 pub mod parser;
 pub mod protocol;
@@ -246,6 +244,7 @@ impl StatusResponse {
     }
 }
 
+/*
 impl From<SetErrorType> for ResponseCode {
     fn from(value: SetErrorType) -> Self {
         match value {
@@ -264,3 +263,4 @@ impl From<SetErrorType> for ResponseCode {
         }
     }
 }
+*/

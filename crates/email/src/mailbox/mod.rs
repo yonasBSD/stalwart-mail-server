@@ -5,7 +5,7 @@
  */
 
 use common::config::jmap::settings::SpecialUse;
-use jmap_proto::types::value::AclGrant;
+use types::acl::AclGrant;
 
 pub mod destroy;
 pub mod index;

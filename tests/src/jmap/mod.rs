@@ -30,7 +30,7 @@ use http::HttpSessionManager;
 use hyper::{Method, header::AUTHORIZATION};
 use imap::core::ImapSessionManager;
 use jmap_client::client::{Client, Credentials};
-use jmap_proto::{error::request::RequestError, types::id::Id};
+use jmap_proto::error::request::RequestError;
 use managesieve::core::ManageSieveSessionManager;
 use pop3::Pop3SessionManager;
 use reqwest::header;
@@ -44,7 +44,8 @@ use store::{
     write::{AnyKey, TaskQueueClass, ValueClass, key::DeserializeBigEndian},
 };
 use tokio::sync::watch;
-use utils::{BlobHash, config::Config};
+use types::{blob_hash::BlobHash, id::Id};
+use utils::config::Config;
 use webhooks::{MockWebhookEndpoint, spawn_mock_webhook_endpoint};
 
 pub mod auth_acl;
@@ -99,7 +100,7 @@ async fn jmap_tests() {
     thread_merge::test(&mut params).await;
     mailbox::test(&mut params).await;
     delivery::test(&mut params).await;
-    auth_acl::test(&mut params).await;*/
+    auth_acl::test(&mut params).await;
     auth_limits::test(&mut params).await;
     auth_oauth::test(&mut params).await;
     event_source::test(&mut params).await;
@@ -110,7 +111,7 @@ async fn jmap_tests() {
     websocket::test(&mut params).await;
     quota::test(&mut params).await;
     crypto::test(&mut params).await;
-    blob::test(&mut params).await;
+    blob::test(&mut params).await;*/
     permissions::test(&params).await;
     purge::test(&mut params).await;
     enterprise::test(&mut params).await;

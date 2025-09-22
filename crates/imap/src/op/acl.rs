@@ -28,10 +28,13 @@ use imap_proto::{
     },
     receiver::Request,
 };
-use jmap_proto::types::{acl::Acl, collection::Collection, value::AclGrant};
 use std::{sync::Arc, time::Instant};
 use store::write::{AlignedBytes, Archive, BatchBuilder};
 use trc::AddContext;
+use types::{
+    acl::{Acl, AclGrant},
+    collection::Collection,
+};
 use utils::map::bitmap::Bitmap;
 
 impl<T: SessionStream> Session<T> {

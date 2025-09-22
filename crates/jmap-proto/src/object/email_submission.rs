@@ -4,16 +4,13 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use utils::map::vec_map::VecMap;
-
 use crate::{
     parser::{JsonObjectParser, json::Parser},
     request::{RequestProperty, RequestPropertyParser, reference::MaybeReference},
-    types::{
-        id::Id,
-        value::{Object, SetValue},
-    },
+    types::value::{Object, SetValue},
 };
+use types::id::Id;
+use utils::map::vec_map::VecMap;
 
 #[derive(Debug, Clone, Default)]
 pub struct SetArguments {

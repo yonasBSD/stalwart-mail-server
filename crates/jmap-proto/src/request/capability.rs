@@ -4,14 +4,13 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use compact_str::CompactString;
-use utils::map::vec_map::VecMap;
-
 use crate::{
     parser::{JsonObjectParser, json::Parser},
     response::serialize::serialize_hex,
-    types::{id::Id, type_state::DataType},
 };
+use compact_str::CompactString;
+use types::{id::Id, type_state::DataType};
+use utils::map::vec_map::VecMap;
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct Session {
