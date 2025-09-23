@@ -4,11 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::fmt::Display;
-
+use std::{fmt::Display, str::FromStr};
 use store::SerializeInfallible;
-
-use crate::parser::{JsonObjectParser, json::Parser};
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
 pub struct UTCDate {
@@ -23,11 +20,10 @@ pub struct UTCDate {
     pub tz_minute: u8,
 }
 
-impl JsonObjectParser for UTCDate {
-    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
-    where
-        Self: Sized,
-    {
+impl FromStr for UTCDate {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         // 2004 - 06 - 28 T 23 : 43 : 45 . 000 Z
         // 1969 - 02 - 13 T 23 : 32 : 00 - 03 : 30
         //   0     1    2    3    4    5    6    7
@@ -47,7 +43,7 @@ impl JsonObjectParser for UTCDate {
         let mut skip_digits = false;
         let mut is_plus = true;
 
-        while let Some(ch) = parser.next_unescaped()? {
+        for ch in s.as_bytes() {
             match ch {
                 b'0'..=b'9' => {
                     if !skip_digits {
@@ -119,7 +115,7 @@ impl JsonObjectParser for UTCDate {
                 tz_before_gmt: !is_plus,
             })
         } else {
-            Err(parser.error_value())
+            Err(())
         }
     }
 }
@@ -240,7 +236,7 @@ impl From<u64> for UTCDate {
 
 #[cfg(test)]
 mod tests {
-    use crate::{parser::json::Parser, types::date::UTCDate};
+    use crate::types::date::UTCDate;
 
     #[test]
     fn parse_jmap_date() {
@@ -255,11 +251,7 @@ mod tests {
                 "2021-01-01T09:55:06+02:00",
             ),
         ] {
-            let date = Parser::new(format!("\"{input}\"").as_bytes())
-                .next_token::<UTCDate>()
-                .unwrap()
-                .unwrap_string("")
-                .unwrap();
+            let date = UTCDate::from_str(input).unwrap();
             assert_eq!(date.to_string(), expected_result);
 
             let timestamp = date.timestamp();

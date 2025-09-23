@@ -9,7 +9,6 @@ pub mod cache;
 pub mod codec;
 pub mod config;
 pub mod glob;
-pub mod json;
 pub mod map;
 pub mod snowflake;
 pub mod template;
@@ -25,9 +24,6 @@ use rustls::{
 };
 use rustls_pki_types::TrustAnchor;
 use std::sync::Arc;
-
-pub use downcast_rs;
-pub use erased_serde;
 
 pub trait HttpLimitResponse: Sync + Send {
     fn bytes_with_limit(

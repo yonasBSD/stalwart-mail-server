@@ -7,38 +7,32 @@
 use super::ahash_is_empty;
 use crate::{
     error::set::{InvalidProperty, SetError},
-    object::{email_submission, mailbox, sieve},
-    parser::{JsonObjectParser, Token, json::Parser},
+    object::JmapObject,
     request::{
-        RequestProperty, RequestPropertyParser,
+        MaybeInvalid,
         method::MethodObject,
-        reference::{MaybeReference, ResultReference},
+        reference::{MaybeResultReference, ResultReference},
     },
     response::Response,
-    types::{
-        any_id::AnyId,
-        date::UTCDate,
-        property::{HeaderForm, ObjectProperty, Property, SetProperty},
-        state::State,
-        value::{Object, SetValue, SetValueMap, Value},
-    },
+    types::{date::UTCDate, state::State},
 };
 use ahash::AHashMap;
 use compact_str::format_compact;
+use jmap_tools::Value;
 use types::{acl::Acl, blob::BlobId, id::Id, keyword::Keyword};
 use utils::map::{bitmap::Bitmap, vec_map::VecMap};
 
 #[derive(Debug, Clone)]
-pub struct SetRequest<T> {
+pub struct SetRequest<'x, T: JmapObject> {
     pub account_id: Id,
     pub if_in_state: Option<State>,
-    pub create: Option<VecMap<String, Object<SetValue>>>,
-    pub update: Option<VecMap<Id, Object<SetValue>>>,
-    pub destroy: Option<MaybeReference<Vec<Id>, ResultReference>>,
-    pub arguments: T,
+    pub create: Option<VecMap<String, Value<'x, T::Property, T::Element>>>,
+    pub update: Option<VecMap<MaybeInvalid<Id>, Value<'x, T::Property, T::Element>>>,
+    pub destroy: Option<MaybeResultReference<Vec<MaybeInvalid<Id>>>>,
+    pub arguments: T::SetArguments,
 }
 
-#[derive(Debug, Clone)]
+/*#[derive(Debug, Clone)]
 pub enum RequestArguments {
     Email,
     Mailbox(mailbox::SetArguments),
@@ -47,10 +41,10 @@ pub enum RequestArguments {
     PushSubscription,
     SieveScript(sieve::SetArguments),
     VacationResponse,
-}
+}*/
 
 #[derive(Debug, Clone, Default, serde::Serialize)]
-pub struct SetResponse {
+pub struct SetResponse<T: JmapObject> {
     #[serde(rename = "accountId")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub account_id: Option<Id>,
@@ -65,11 +59,11 @@ pub struct SetResponse {
 
     #[serde(rename = "created")]
     #[serde(skip_serializing_if = "ahash_is_empty")]
-    pub created: AHashMap<String, Object<Value>>,
+    pub created: AHashMap<String, Value<'static, T::Property, T::Element>>,
 
     #[serde(rename = "updated")]
     #[serde(skip_serializing_if = "VecMap::is_empty")]
-    pub updated: VecMap<Id, Option<Object<Value>>>,
+    pub updated: VecMap<Id, Option<Value<'static, T::Property, T::Element>>>,
 
     #[serde(rename = "destroyed")]
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -77,15 +71,15 @@ pub struct SetResponse {
 
     #[serde(rename = "notCreated")]
     #[serde(skip_serializing_if = "VecMap::is_empty")]
-    pub not_created: VecMap<String, SetError>,
+    pub not_created: VecMap<String, SetError<T::Property>>,
 
     #[serde(rename = "notUpdated")]
     #[serde(skip_serializing_if = "VecMap::is_empty")]
-    pub not_updated: VecMap<Id, SetError>,
+    pub not_updated: VecMap<MaybeInvalid<Id>, SetError<T::Property>>,
 
     #[serde(rename = "notDestroyed")]
     #[serde(skip_serializing_if = "VecMap::is_empty")]
-    pub not_destroyed: VecMap<Id, SetError>,
+    pub not_destroyed: VecMap<MaybeInvalid<Id>, SetError<T::Property>>,
 }
 
 impl JsonObjectParser for SetRequest<RequestArguments> {
@@ -127,10 +121,10 @@ impl JsonObjectParser for SetRequest<RequestArguments> {
                     request.account_id = parser.next_token::<Id>()?.unwrap_string("accountId")?;
                 }
                 0x6574_6165_7263 if !key.is_ref => {
-                    request.create = <Option<VecMap<String, Object<SetValue>>>>::parse(parser)?;
+                    request.create = <Option<VecMap<String, Value<'x, P, E>>>>::parse(parser)?;
                 }
                 0x6574_6164_7075 if !key.is_ref => {
-                    request.update = <Option<VecMap<Id, Object<SetValue>>>>::parse(parser)?;
+                    request.update = <Option<VecMap<Id, Value<'x, P, E>>>>::parse(parser)?;
                 }
                 0x0079_6f72_7473_6564 => {
                     request.destroy = if !key.is_ref {
@@ -156,7 +150,7 @@ impl JsonObjectParser for SetRequest<RequestArguments> {
     }
 }
 
-impl JsonObjectParser for Object<SetValue> {
+impl JsonObjectParser for Value<'x, P, E> {
     fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
@@ -409,11 +403,11 @@ impl<T> SetRequest<T> {
         self.create.as_ref().is_some_and(|objs| !objs.is_empty())
     }
 
-    pub fn unwrap_create(&mut self) -> VecMap<String, Object<SetValue>> {
+    pub fn unwrap_create(&mut self) -> VecMap<String, Value<'x, P, E>> {
         self.create.take().unwrap_or_default()
     }
 
-    pub fn unwrap_update(&mut self) -> VecMap<Id, Object<SetValue>> {
+    pub fn unwrap_update(&mut self) -> VecMap<Id, Value<'x, P, E>> {
         self.update.take().unwrap_or_default()
     }
 
@@ -513,7 +507,7 @@ impl SetResponse {
         }
     }
 
-    pub fn get_object_by_id(&mut self, id: Id) -> Option<&mut Object<Value>> {
+    pub fn get_object_by_id(&mut self, id: Id) -> Option<&mut Value<'x, P, E>> {
         if let Some(obj) = self.updated.get_mut(&id) {
             if let Some(obj) = obj {
                 return Some(obj);

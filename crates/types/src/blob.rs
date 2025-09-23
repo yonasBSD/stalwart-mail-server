@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Borrow, time::SystemTime};
+use std::{borrow::Borrow, str::FromStr, time::SystemTime};
 use utils::codec::{
     base32_custom::{Base32Reader, Base32Writer},
     leb128::{Leb128Iterator, Leb128Writer},
@@ -79,6 +79,14 @@ pub struct BlobSection {
     pub encoding: u8,
 }
 
+impl FromStr for BlobId {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        BlobId::from_base32(s).ok_or(())
+    }
+}
+
 impl BlobId {
     pub fn new(hash: BlobHash, class: BlobClass) -> Self {
         BlobId {
@@ -112,12 +120,13 @@ impl BlobId {
         self
     }
 
+    #[inline]
     pub fn from_base32(value: impl AsRef<[u8]>) -> Option<Self> {
         BlobId::from_iter(&mut Base32Reader::new(value.as_ref()))
     }
 
     #[allow(clippy::should_implement_trait)]
-    pub fn from_iter<T, U>(it: &mut T) -> Option<Self>
+    fn from_iter<T, U>(it: &mut T) -> Option<Self>
     where
         T: Iterator<Item = U> + Leb128Iterator<U>,
         U: Borrow<u8>,

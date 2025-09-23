@@ -4,8 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::config::jmap::settings::SpecialUse;
-use types::acl::AclGrant;
+use types::{acl::AclGrant, special_use::SpecialUse};
 
 pub mod destroy;
 pub mod index;

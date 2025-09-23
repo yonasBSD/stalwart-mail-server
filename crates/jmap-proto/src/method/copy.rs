@@ -6,32 +6,34 @@
 
 use crate::{
     error::set::SetError,
-    parser::{JsonObjectParser, Token, json::Parser},
-    request::{RequestProperty, method::MethodObject, reference::MaybeReference},
-    types::{
-        state::State,
-        value::{Object, SetValue, Value},
-    },
+    object::{JmapObject, blob::BlobProperty},
+    request::{MaybeInvalid, method::MethodObject, reference::MaybeIdReference},
+    types::state::State,
 };
 use compact_str::format_compact;
+use jmap_tools::Value;
 use serde::Serialize;
 use types::{blob::BlobId, id::Id};
 use utils::map::vec_map::VecMap;
 
 #[derive(Debug, Clone)]
-pub struct CopyRequest<T> {
+pub struct CopyRequest<'x, T: JmapObject> {
     pub from_account_id: Id,
     pub if_from_in_state: Option<State>,
     pub account_id: Id,
     pub if_in_state: Option<State>,
-    pub create: VecMap<MaybeReference<Id, String>, Object<SetValue>>,
+    pub create: VecMap<MaybeIdReference<Id>, Value<'x, T::Property, T::Element>>,
     pub on_success_destroy_original: Option<bool>,
     pub destroy_from_if_in_state: Option<State>,
-    pub arguments: T,
 }
 
+/*#[derive(Debug, Clone)]
+pub enum RequestArguments {
+    Email,
+}*/
+
 #[derive(Debug, Clone, serde::Serialize)]
-pub struct CopyResponse {
+pub struct CopyResponse<T: JmapObject> {
     #[serde(rename = "fromAccountId")]
     pub from_account_id: Id,
 
@@ -46,18 +48,18 @@ pub struct CopyResponse {
 
     #[serde(rename = "created")]
     #[serde(skip_serializing_if = "VecMap::is_empty")]
-    pub created: VecMap<Id, Object<Value>>,
+    pub created: VecMap<Id, Value<'static, T::Property, T::Element>>,
 
     #[serde(rename = "notCreated")]
     #[serde(skip_serializing_if = "VecMap::is_empty")]
-    pub not_created: VecMap<Id, SetError>,
+    pub not_created: VecMap<MaybeInvalid<Id>, SetError<T::Property>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct CopyBlobRequest {
     pub from_account_id: Id,
     pub account_id: Id,
-    pub blob_ids: Vec<BlobId>,
+    pub blob_ids: Vec<MaybeInvalid<BlobId>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -74,12 +76,7 @@ pub struct CopyBlobResponse {
 
     #[serde(rename = "notCopied")]
     #[serde(skip_serializing_if = "VecMap::is_empty")]
-    pub not_copied: VecMap<BlobId, SetError>,
-}
-
-#[derive(Debug, Clone)]
-pub enum RequestArguments {
-    Email,
+    pub not_copied: VecMap<MaybeInvalid<BlobId>, SetError<BlobProperty>>,
 }
 
 impl JsonObjectParser for CopyRequest<RequestArguments> {
@@ -116,7 +113,7 @@ impl JsonObjectParser for CopyRequest<RequestArguments> {
                 }
                 0x6574_6165_7263 => {
                     request.create =
-                        <VecMap<MaybeReference<Id, String>, Object<SetValue>>>::parse(parser)?;
+                        <VecMap<MaybeReference<Id, String>, Value<'x, P, E>>>::parse(parser)?;
                 }
                 0x0064_4974_6e75_6f63_6341_6d6f_7266 => {
                     request.from_account_id =

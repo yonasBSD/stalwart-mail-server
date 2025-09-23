@@ -63,44 +63,82 @@ pub enum Keyword {
     Other(String),
 }
 
-impl<T: AsRef<str>> From<T> for Keyword {
-    fn from(value: T) -> Self {
-        let value = value.as_ref();
-        if value
-            .as_bytes()
-            .first()
-            .is_some_and(|&ch| [b'$', b'\\'].contains(&ch))
-        {
-            let mut hash = 0;
-            let mut shift = 0;
+impl Keyword {
+    pub fn parse(value: &str) -> Self {
+        value
+            .split_at_checked(1)
+            .filter(|(prefix, _)| matches!(*prefix, "$" | "\\"))
+            .and_then(|(_, rest)| {
+                hashify::tiny_map_ignore_case!(rest.as_bytes(),
+                    "seen" => Keyword::Seen,
+                    "draft" => Keyword::Draft,
+                    "flagged" => Keyword::Flagged,
+                    "answered" => Keyword::Answered,
+                    "recent" => Keyword::Recent,
+                    "important" => Keyword::Important,
+                    "phishing" => Keyword::Phishing,
+                    "junk" => Keyword::Junk,
+                    "notjunk" => Keyword::NotJunk,
+                    "deleted" => Keyword::Deleted,
+                    "forwarded" => Keyword::Forwarded,
+                    "mdnsent" => Keyword::MdnSent
+                )
+            })
+            .unwrap_or_else(|| Keyword::Other(value.to_string()))
+    }
 
-            for &ch in value.as_bytes().iter().skip(1) {
-                if shift < 128 {
-                    hash |= (ch.to_ascii_lowercase() as u128) << shift;
-                    shift += 8;
-                } else {
-                    break;
-                }
-            }
-
-            match hash {
-                0x6e65_6573 => return Keyword::Seen,
-                0x0074_6661_7264 => return Keyword::Draft,
-                0x0064_6567_6761_6c66 => return Keyword::Flagged,
-                0x6465_7265_7773_6e61 => return Keyword::Answered,
-                0x746e_6563_6572 => return Keyword::Recent,
-                0x0074_6e61_7472_6f70_6d69 => return Keyword::Important,
-                0x676e_6968_7369_6870 => return Keyword::Phishing,
-                0x6b6e_756a => return Keyword::Junk,
-                0x006b_6e75_6a74_6f6e => return Keyword::NotJunk,
-                0x0064_6574_656c_6564 => return Keyword::Deleted,
-                0x0064_6564_7261_7772_6f66 => return Keyword::Forwarded,
-                0x0074_6e65_736e_646d => return Keyword::MdnSent,
-                _ => (),
-            }
+    pub fn id(&self) -> Result<u32, &str> {
+        match self {
+            Keyword::Seen => Ok(SEEN as u32),
+            Keyword::Draft => Ok(DRAFT as u32),
+            Keyword::Flagged => Ok(FLAGGED as u32),
+            Keyword::Answered => Ok(ANSWERED as u32),
+            Keyword::Recent => Ok(RECENT as u32),
+            Keyword::Important => Ok(IMPORTANT as u32),
+            Keyword::Phishing => Ok(PHISHING as u32),
+            Keyword::Junk => Ok(JUNK as u32),
+            Keyword::NotJunk => Ok(NOTJUNK as u32),
+            Keyword::Deleted => Ok(DELETED as u32),
+            Keyword::Forwarded => Ok(FORWARDED as u32),
+            Keyword::MdnSent => Ok(MDN_SENT as u32),
+            Keyword::Other(string) => Err(string.as_str()),
         }
+    }
 
-        Keyword::Other(String::from(value))
+    pub fn into_id(self) -> Result<u32, String> {
+        match self {
+            Keyword::Seen => Ok(SEEN as u32),
+            Keyword::Draft => Ok(DRAFT as u32),
+            Keyword::Flagged => Ok(FLAGGED as u32),
+            Keyword::Answered => Ok(ANSWERED as u32),
+            Keyword::Recent => Ok(RECENT as u32),
+            Keyword::Important => Ok(IMPORTANT as u32),
+            Keyword::Phishing => Ok(PHISHING as u32),
+            Keyword::Junk => Ok(JUNK as u32),
+            Keyword::NotJunk => Ok(NOTJUNK as u32),
+            Keyword::Deleted => Ok(DELETED as u32),
+            Keyword::Forwarded => Ok(FORWARDED as u32),
+            Keyword::MdnSent => Ok(MDN_SENT as u32),
+            Keyword::Other(string) => Err(string),
+        }
+    }
+
+    pub fn try_from_id(id: usize) -> Result<Self, usize> {
+        match id {
+            SEEN => Ok(Keyword::Seen),
+            DRAFT => Ok(Keyword::Draft),
+            FLAGGED => Ok(Keyword::Flagged),
+            ANSWERED => Ok(Keyword::Answered),
+            RECENT => Ok(Keyword::Recent),
+            IMPORTANT => Ok(Keyword::Important),
+            PHISHING => Ok(Keyword::Phishing),
+            JUNK => Ok(Keyword::Junk),
+            NOTJUNK => Ok(Keyword::NotJunk),
+            DELETED => Ok(Keyword::Deleted),
+            FORWARDED => Ok(Keyword::Forwarded),
+            MDN_SENT => Ok(Keyword::MdnSent),
+            _ => Err(id),
+        }
     }
 }
 
@@ -164,62 +202,6 @@ impl From<Keyword> for Vec<u8> {
     }
 }
 
-impl Keyword {
-    pub fn id(&self) -> Result<u32, &str> {
-        match self {
-            Keyword::Seen => Ok(SEEN as u32),
-            Keyword::Draft => Ok(DRAFT as u32),
-            Keyword::Flagged => Ok(FLAGGED as u32),
-            Keyword::Answered => Ok(ANSWERED as u32),
-            Keyword::Recent => Ok(RECENT as u32),
-            Keyword::Important => Ok(IMPORTANT as u32),
-            Keyword::Phishing => Ok(PHISHING as u32),
-            Keyword::Junk => Ok(JUNK as u32),
-            Keyword::NotJunk => Ok(NOTJUNK as u32),
-            Keyword::Deleted => Ok(DELETED as u32),
-            Keyword::Forwarded => Ok(FORWARDED as u32),
-            Keyword::MdnSent => Ok(MDN_SENT as u32),
-            Keyword::Other(string) => Err(string.as_str()),
-        }
-    }
-
-    pub fn into_id(self) -> Result<u32, String> {
-        match self {
-            Keyword::Seen => Ok(SEEN as u32),
-            Keyword::Draft => Ok(DRAFT as u32),
-            Keyword::Flagged => Ok(FLAGGED as u32),
-            Keyword::Answered => Ok(ANSWERED as u32),
-            Keyword::Recent => Ok(RECENT as u32),
-            Keyword::Important => Ok(IMPORTANT as u32),
-            Keyword::Phishing => Ok(PHISHING as u32),
-            Keyword::Junk => Ok(JUNK as u32),
-            Keyword::NotJunk => Ok(NOTJUNK as u32),
-            Keyword::Deleted => Ok(DELETED as u32),
-            Keyword::Forwarded => Ok(FORWARDED as u32),
-            Keyword::MdnSent => Ok(MDN_SENT as u32),
-            Keyword::Other(string) => Err(string),
-        }
-    }
-
-    pub fn try_from_id(id: usize) -> Result<Self, usize> {
-        match id {
-            SEEN => Ok(Keyword::Seen),
-            DRAFT => Ok(Keyword::Draft),
-            FLAGGED => Ok(Keyword::Flagged),
-            ANSWERED => Ok(Keyword::Answered),
-            RECENT => Ok(Keyword::Recent),
-            IMPORTANT => Ok(Keyword::Important),
-            PHISHING => Ok(Keyword::Phishing),
-            JUNK => Ok(Keyword::Junk),
-            NOTJUNK => Ok(Keyword::NotJunk),
-            DELETED => Ok(Keyword::Deleted),
-            FORWARDED => Ok(Keyword::Forwarded),
-            MDN_SENT => Ok(Keyword::MdnSent),
-            _ => Err(id),
-        }
-    }
-}
-
 impl ArchivedKeyword {
     pub fn id(&self) -> Result<u32, &str> {
         match self {
@@ -239,33 +221,6 @@ impl ArchivedKeyword {
         }
     }
 }
-
-/*impl From<Keyword> for TagValue {
-    fn from(value: Keyword) -> Self {
-        match value.into_id() {
-            Ok(id) => TagValue::Id(id),
-            Err(string) => TagValue::Text(string.as_bytes().to_vec()),
-        }
-    }
-}
-
-impl From<&Keyword> for TagValue {
-    fn from(value: &Keyword) -> Self {
-        match value.id() {
-            Ok(id) => TagValue::Id(id),
-            Err(string) => TagValue::Text(string.as_bytes().to_vec()),
-        }
-    }
-}
-
-impl From<&ArchivedKeyword> for TagValue {
-    fn from(value: &ArchivedKeyword) -> Self {
-        match value.id() {
-            Ok(id) => TagValue::Id(id),
-            Err(string) => TagValue::Text(string.as_bytes().to_vec()),
-        }
-    }
-}*/
 
 impl From<&ArchivedKeyword> for Keyword {
     fn from(value: &ArchivedKeyword) -> Self {

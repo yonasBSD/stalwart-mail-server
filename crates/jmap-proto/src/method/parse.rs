@@ -4,23 +4,21 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{
-    parser::{Ignore, JsonObjectParser, Token, json::Parser},
-    request::RequestProperty,
-    types::{
-        property::Property,
-        value::{Object, Value},
-    },
-};
+use jmap_tools::Value;
 use types::{blob::BlobId, id::Id};
 use utils::map::vec_map::VecMap;
+
+use crate::{
+    object::email::{EmailProperty, EmailValue},
+    request::MaybeInvalid,
+};
 
 #[derive(Debug, Clone)]
 pub struct ParseEmailRequest {
     pub account_id: Id,
-    pub blob_ids: Vec<BlobId>,
-    pub properties: Option<Vec<Property>>,
-    pub body_properties: Option<Vec<Property>>,
+    pub blob_ids: Vec<MaybeInvalid<BlobId>>,
+    pub properties: Option<Vec<EmailProperty>>,
+    pub body_properties: Option<Vec<EmailProperty>>,
     pub fetch_text_body_values: Option<bool>,
     pub fetch_html_body_values: Option<bool>,
     pub fetch_all_body_values: Option<bool>,
@@ -34,7 +32,7 @@ pub struct ParseEmailResponse {
 
     #[serde(rename = "parsed")]
     #[serde(skip_serializing_if = "VecMap::is_empty")]
-    pub parsed: VecMap<BlobId, Object<Value>>,
+    pub parsed: VecMap<BlobId, Value<'static, EmailProperty, EmailValue>>,
 
     #[serde(rename = "notParsable")]
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -42,7 +40,7 @@ pub struct ParseEmailResponse {
 
     #[serde(rename = "notFound")]
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub not_found: Vec<BlobId>,
+    pub not_found: Vec<MaybeInvalid<BlobId>>,
 }
 
 impl JsonObjectParser for ParseEmailRequest {

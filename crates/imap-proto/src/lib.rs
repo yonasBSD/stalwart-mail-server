@@ -243,24 +243,3 @@ impl StatusResponse {
         }
     }
 }
-
-/*
-impl From<SetErrorType> for ResponseCode {
-    fn from(value: SetErrorType) -> Self {
-        match value {
-            SetErrorType::Forbidden => ResponseCode::NoPerm,
-            SetErrorType::OverQuota => ResponseCode::OverQuota,
-            SetErrorType::RateLimit | SetErrorType::TooLarge => ResponseCode::Limit,
-            SetErrorType::NotFound | SetErrorType::BlobNotFound => ResponseCode::NonExistent,
-            SetErrorType::MailboxHasChild | SetErrorType::MailboxHasEmail => {
-                ResponseCode::HasChildren
-            }
-            SetErrorType::ForbiddenFrom
-            | SetErrorType::ForbiddenMailFrom
-            | SetErrorType::ForbiddenToSend => ResponseCode::AuthorizationFailed,
-            SetErrorType::AlreadyExists => ResponseCode::AlreadyExists,
-            _ => ResponseCode::Cannot,
-        }
-    }
-}
-*/

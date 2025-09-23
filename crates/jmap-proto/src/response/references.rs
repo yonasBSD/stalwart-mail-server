@@ -12,11 +12,6 @@ use crate::{
         RequestMethod,
         reference::{MaybeReference, ResultReference},
     },
-    types::{
-        any_id::AnyId,
-        property::Property,
-        value::{MaybePatchValue, Object, SetValue, Value},
-    },
 };
 use compact_str::format_compact;
 use std::collections::HashMap;
@@ -259,7 +254,7 @@ impl Response {
 
     fn eval_object_references(
         &self,
-        obj: &mut Object<SetValue>,
+        obj: &mut Value<'x, P, E>,
         mut graph: Option<(&str, &mut HashMap<String, Vec<String>>)>,
     ) -> trc::Result<()> {
         for set_value in obj.0.values_mut() {
@@ -376,7 +371,7 @@ fn topological_sort<T>(
 pub trait EvalObjectReferences {
     fn get_id(&self, id_ref: &str) -> Option<Value>;
 
-    fn eval_object_references(&self, set_value: SetValue) -> Result<MaybePatchValue, SetError> {
+    fn eval_object_references(&self, set_value: SetValue) -> Result<MaybePatchValue, SetError<P>> {
         match set_value {
             SetValue::Value(value) => Ok(MaybePatchValue::Value(value)),
             SetValue::Patch(patch) => Ok(MaybePatchValue::Patch(patch)),

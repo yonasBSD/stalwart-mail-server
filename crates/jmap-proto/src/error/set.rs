@@ -4,14 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use jmap_tools::{Key, Property};
 use std::borrow::Cow;
-
 use types::id::Id;
 
-use crate::types::property::Property;
-
 #[derive(Debug, Clone, serde::Serialize)]
-pub struct SetError {
+pub struct SetError<P: Property> {
     #[serde(rename = "type")]
     pub type_: SetErrorType,
 
@@ -19,7 +17,7 @@ pub struct SetError {
     pub description: Option<Cow<'static, str>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub properties: Option<Vec<InvalidProperty>>,
+    pub properties: Option<Vec<InvalidProperty<P>>>,
 
     #[serde(rename = "existingId")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -27,9 +25,9 @@ pub struct SetError {
 }
 
 #[derive(Debug, Clone)]
-pub enum InvalidProperty {
-    Property(Property),
-    Path(Vec<Property>),
+pub enum InvalidProperty<T: Property> {
+    Property(Key<'static, T>),
+    Path(Vec<Key<'static, T>>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -118,7 +116,7 @@ impl SetErrorType {
     }
 }
 
-impl SetError {
+impl<T: Property> SetError<T> {
     pub fn new(type_: SetErrorType) -> Self {
         SetError {
             type_,
@@ -188,19 +186,19 @@ impl SetError {
     }
 }
 
-impl From<Property> for InvalidProperty {
-    fn from(property: Property) -> Self {
+impl<T: Property> From<T> for InvalidProperty<T> {
+    fn from(property: T) -> Self {
         InvalidProperty::Property(property)
     }
 }
 
-impl From<(Property, Property)> for InvalidProperty {
-    fn from((a, b): (Property, Property)) -> Self {
+impl<T: Property> From<(T, T)> for InvalidProperty<T> {
+    fn from((a, b): (T, T)) -> Self {
         InvalidProperty::Path(vec![a, b])
     }
 }
 
-impl serde::Serialize for InvalidProperty {
+impl<T: Property> serde::Serialize for InvalidProperty<T> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,

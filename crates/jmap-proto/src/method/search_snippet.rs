@@ -5,20 +5,14 @@
  */
 
 use super::query::{Filter, parse_filter};
-use crate::{
-    parser::{Ignore, JsonObjectParser, Token, json::Parser},
-    request::{
-        RequestProperty,
-        reference::{MaybeReference, ResultReference},
-    },
-};
+use crate::request::reference::{MaybeResultReference, ResultReference};
 use types::id::Id;
 
 #[derive(Debug, Clone)]
 pub struct GetSearchSnippetRequest {
     pub account_id: Id,
     pub filter: Vec<Filter>,
-    pub email_ids: MaybeReference<Vec<Id>, ResultReference>,
+    pub email_ids: MaybeResultReference<Vec<Id>>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]

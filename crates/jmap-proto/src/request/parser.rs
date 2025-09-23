@@ -8,23 +8,19 @@ use std::collections::HashMap;
 
 use compact_str::ToCompactString;
 
-use crate::{
-    method::{
-        changes::ChangesRequest,
-        copy::{CopyBlobRequest, CopyRequest},
-        get::GetRequest,
-        import::ImportEmailRequest,
-        lookup::BlobLookupRequest,
-        parse::ParseEmailRequest,
-        query::QueryRequest,
-        query_changes::QueryChangesRequest,
-        search_snippet::GetSearchSnippetRequest,
-        set::SetRequest,
-        upload::BlobUploadRequest,
-        validate::ValidateSieveScriptRequest,
-    },
-    parser::{Ignore, JsonObjectParser, Token, json::Parser},
-    types::any_id::AnyId,
+use crate::method::{
+    changes::ChangesRequest,
+    copy::{CopyBlobRequest, CopyRequest},
+    get::GetRequest,
+    import::ImportEmailRequest,
+    lookup::BlobLookupRequest,
+    parse::ParseEmailRequest,
+    query::QueryRequest,
+    query_changes::QueryChangesRequest,
+    search_snippet::GetSearchSnippetRequest,
+    set::SetRequest,
+    upload::BlobUploadRequest,
+    validate::ValidateSieveScriptRequest,
 };
 
 use super::{

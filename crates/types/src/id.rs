@@ -5,7 +5,7 @@
  */
 
 use crate::DocumentId;
-use std::ops::Deref;
+use std::{ops::Deref, str::FromStr};
 use utils::codec::base32_custom::{BASE32_ALPHABET, BASE32_INVERSE};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
@@ -18,24 +18,28 @@ impl Default for Id {
     }
 }
 
-impl Id {
-    pub fn new(id: u64) -> Self {
-        Self(id)
-    }
+impl FromStr for Id {
+    type Err = ();
 
-    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut id = 0;
 
-        for &ch in bytes {
+        for &ch in s.as_bytes() {
             let i = BASE32_INVERSE[ch as usize];
             if i != u8::MAX {
                 id = (id << 5) | i as u64;
             } else {
-                return None;
+                return Err(());
             }
         }
 
-        Id(id).into()
+        Ok(Id(id))
+    }
+}
+
+impl Id {
+    pub fn new(id: u64) -> Self {
+        Self(id)
     }
 
     pub fn singleton() -> Self {
@@ -190,13 +194,39 @@ impl<'de> serde::Deserialize<'de> for Id {
     where
         D: serde::Deserializer<'de>,
     {
-        Id::from_bytes(<&str>::deserialize(deserializer)?.as_bytes())
-            .ok_or_else(|| serde::de::Error::custom("invalid JMAP ID"))
+        Id::from_str(<&str>::deserialize(deserializer)?)
+            .map_err(|_| serde::de::Error::custom("invalid JMAP ID"))
     }
 }
 
 impl std::fmt::Display for Id {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.as_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use crate::id::Id;
+
+    #[test]
+    fn parse_jmap_id() {
+        for number in [
+            0,
+            1,
+            10,
+            1000,
+            Id::singleton().id(),
+            u64::MAX / 2,
+            u64::MAX - 1,
+            u64::MAX,
+        ] {
+            let id = Id::from(number);
+            assert_eq!(Id::from_str(&id.to_string()).unwrap(), id);
+        }
+
+        Id::from_str("p333333333333p333333333333").unwrap();
     }
 }

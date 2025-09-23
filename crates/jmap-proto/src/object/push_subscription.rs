@@ -1,0 +1,123 @@
+/*
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
+ *
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
+
+use crate::types::date::UTCDate;
+use jmap_tools::{Element, JsonPointer, JsonPointerItem};
+use jmap_tools::{Key, Property};
+use std::borrow::Cow;
+use types::{id::Id, type_state::DataType};
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum PushSubscriptionProperty {
+    Id,
+    DeviceClientId,
+    Url,
+    Keys,
+    P256dh,
+    Auth,
+    VerificationCode,
+    Expires,
+    Types,
+
+    // Other
+    Pointer(JsonPointer<PushSubscriptionProperty>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum PushSubscriptionValue {
+    Id(Id),
+    Date(UTCDate),
+    Types(DataType),
+}
+
+impl Property for PushSubscriptionProperty {
+    fn try_parse(key: Option<&Key<'_, Self>>, value: &str) -> Option<Self> {
+        PushSubscriptionProperty::parse(value, key.is_none())
+    }
+
+    fn to_cow(&self) -> Cow<'static, str> {
+        match self {
+            PushSubscriptionProperty::DeviceClientId => "deviceClientId",
+            PushSubscriptionProperty::Expires => "expires",
+            PushSubscriptionProperty::Id => "id",
+            PushSubscriptionProperty::Keys => "keys",
+            PushSubscriptionProperty::Types => "types",
+            PushSubscriptionProperty::Url => "url",
+            PushSubscriptionProperty::VerificationCode => "verificationCode",
+            PushSubscriptionProperty::P256dh => "p256dh",
+            PushSubscriptionProperty::Auth => "auth",
+            PushSubscriptionProperty::Pointer(json_pointer) => {
+                return json_pointer.to_string().into();
+            }
+        }
+        .into()
+    }
+}
+
+impl PushSubscriptionProperty {
+    fn parse(value: &str, allow_patch: bool) -> Option<Self> {
+        hashify::tiny_map!(value.as_bytes(),
+            b"id" => PushSubscriptionProperty::Id,
+            b"deviceClientId" => PushSubscriptionProperty::DeviceClientId,
+            b"url" => PushSubscriptionProperty::Url,
+            b"keys" => PushSubscriptionProperty::Keys,
+            b"p256dh" => PushSubscriptionProperty::P256dh,
+            b"auth" => PushSubscriptionProperty::Auth,
+            b"verificationCode" => PushSubscriptionProperty::VerificationCode,
+            b"expires" => PushSubscriptionProperty::Expires,
+            b"types" => PushSubscriptionProperty::Types,
+        )
+        .or_else(|| {
+            if allow_patch && value.contains('/') {
+                PushSubscriptionProperty::Pointer(JsonPointer::parse(value)).into()
+            } else {
+                None
+            }
+        })
+    }
+
+    fn patch_or_prop(&self) -> &PushSubscriptionProperty {
+        if let PushSubscriptionProperty::Pointer(ptr) = self
+            && let Some(JsonPointerItem::Key(Key::Property(prop))) = ptr.last()
+        {
+            prop
+        } else {
+            self
+        }
+    }
+}
+
+impl Element for PushSubscriptionValue {
+    type Property = PushSubscriptionProperty;
+
+    fn try_parse<P>(key: &Key<'_, Self::Property>, value: &str) -> Option<Self> {
+        if let Key::Property(prop) = key {
+            match prop.patch_or_prop() {
+                PushSubscriptionProperty::Id => {
+                    Id::from_str(value).ok().map(PushSubscriptionValue::Id)
+                }
+                PushSubscriptionProperty::Types => {
+                    DataType::parse(value).map(PushSubscriptionValue::Types)
+                }
+                PushSubscriptionProperty::Expires => UTCDate::from_str(value)
+                    .ok()
+                    .map(PushSubscriptionValue::Date),
+                _ => None,
+            }
+        } else {
+            None
+        }
+    }
+
+    fn to_cow(&self) -> Cow<'static, str> {
+        match self {
+            PushSubscriptionValue::Id(id) => id.to_string().into(),
+            PushSubscriptionValue::Date(utcdate) => utcdate.to_string().into(),
+            PushSubscriptionValue::BlobId(blob_id) => blob_id.to_string().into(),
+            PushSubscriptionValue::IdReference(r) => format!("#{r}").into(),
+        }
+    }
+}

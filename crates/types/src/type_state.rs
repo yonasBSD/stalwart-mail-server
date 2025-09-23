@@ -4,11 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::collection::SyncCollection;
 use serde::Serialize;
 use std::fmt::Display;
 use utils::map::bitmap::{Bitmap, BitmapItem};
-
-use crate::collection::SyncCollection;
 
 #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy, Serialize)]
 #[repr(u8)]
@@ -130,41 +129,6 @@ impl From<DataType> for u64 {
     }
 }
 
-impl TryFrom<&str> for DataType {
-    type Error = ();
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        let mut hash = 0;
-        let mut shift = 0;
-
-        for &ch in value.as_bytes() {
-            if shift < 128 {
-                hash |= (ch as u128) << shift;
-                shift += 8;
-            } else {
-                return Err(());
-            }
-        }
-
-        match hash {
-            0x006c_6961_6d45 => Ok(DataType::Email),
-            0x0079_7265_7669_6c65_446c_6961_6d45 => Ok(DataType::EmailDelivery),
-            0x006e_6f69_7373_696d_6275_536c_6961_6d45 => Ok(DataType::EmailSubmission),
-            0x0078_6f62_6c69_614d => Ok(DataType::Mailbox),
-            0x6461_6572_6854 => Ok(DataType::Thread),
-            0x7974_6974_6e65_6449 => Ok(DataType::Identity),
-            0x6572_6f43 => Ok(DataType::Core),
-            0x6e6f_6974_7069_7263_7362_7553_6873_7550 => Ok(DataType::PushSubscription),
-            0x0074_6570_7069_6e53_6863_7261_6553 => Ok(DataType::SearchSnippet),
-            0x6573_6e6f_7073_6552_6e6f_6974_6163_6156 => Ok(DataType::VacationResponse),
-            0x004e_444d => Ok(DataType::Mdn),
-            0x0061_746f_7551 => Ok(DataType::Quota),
-            0x0074_7069_7263_5365_7665_6953 => Ok(DataType::SieveScript),
-            _ => Err(()),
-        }
-    }
-}
-
 impl DataType {
     pub fn try_from_sync(value: SyncCollection, is_container: bool) -> Option<Self> {
         match (value, is_container) {
@@ -185,6 +149,30 @@ impl DataType {
 }
 
 impl DataType {
+    pub fn parse(value: &str) -> Option<Self> {
+        hashify::tiny_map!(value.as_bytes(),
+            b"Email" => DataType::Email,
+            b"EmailDelivery" => DataType::EmailDelivery,
+            b"EmailSubmission" => DataType::EmailSubmission,
+            b"Mailbox" => DataType::Mailbox,
+            b"Thread" => DataType::Thread,
+            b"Identity" => DataType::Identity,
+            b"Core" => DataType::Core,
+            b"PushSubscription" => DataType::PushSubscription,
+            b"SearchSnippet" => DataType::SearchSnippet,
+            b"VacationResponse" => DataType::VacationResponse,
+            b"MDN" => DataType::Mdn,
+            b"Quota" => DataType::Quota,
+            b"SieveScript" => DataType::SieveScript,
+            b"Calendar" => DataType::Calendar,
+            b"CalendarEvent" => DataType::CalendarEvent,
+            b"CalendarEventNotification" => DataType::CalendarEventNotification,
+            b"AddressBook" => DataType::AddressBook,
+            b"ContactCard" => DataType::ContactCard,
+            b"FileNode" => DataType::FileNode,
+        )
+    }
+
     pub fn as_str(&self) -> &'static str {
         match self {
             DataType::Email => "Email",
@@ -222,7 +210,7 @@ impl<'de> serde::Deserialize<'de> for DataType {
     where
         D: serde::Deserializer<'de>,
     {
-        DataType::try_from(<&str>::deserialize(deserializer)?)
-            .map_err(|_| serde::de::Error::custom("invalid JMAP data type"))
+        DataType::parse(<&str>::deserialize(deserializer)?)
+            .ok_or_else(|| serde::de::Error::custom("invalid JMAP data type"))
     }
 }

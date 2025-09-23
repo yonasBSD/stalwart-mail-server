@@ -5,32 +5,28 @@
  */
 
 use crate::{
-    object::{blob, email},
-    parser::{JsonObjectParser, Token, json::Parser},
+    object::JmapObject,
     request::{
-        RequestProperty, RequestPropertyParser,
+        MaybeInvalid,
         method::MethodObject,
-        reference::{MaybeReference, ResultReference},
+        reference::{MaybeIdReference, MaybeResultReference, ResultReference},
     },
-    types::{
-        any_id::AnyId,
-        property::Property,
-        state::State,
-        value::{Object, Value},
-    },
+    types::state::State,
 };
 use compact_str::format_compact;
+use jmap_tools::{Property, Value};
 use types::{blob::BlobId, id::Id};
 
-#[derive(Debug, Clone)]
-pub struct GetRequest<T> {
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct GetRequest<T: JmapObject> {
     pub account_id: Id,
-    pub ids: Option<MaybeReference<Vec<MaybeReference<AnyId, String>>, ResultReference>>,
-    pub properties: Option<MaybeReference<Vec<Property>, ResultReference>>,
-    pub arguments: T,
+    pub ids: Option<MaybeResultReference<Vec<MaybeIdReference<T::Id>>>>,
+    pub properties: Option<MaybeResultReference<Vec<T::Property>>>,
+    #[serde(flatten)]
+    pub arguments: T::GetArguments,
 }
 
-#[derive(Debug, Clone)]
+/*#[derive(Debug, Clone)]
 pub enum RequestArguments {
     Email(email::GetArguments),
     Mailbox,
@@ -43,10 +39,10 @@ pub enum RequestArguments {
     Principal,
     Quota,
     Blob(blob::GetArguments),
-}
+}*/
 
 #[derive(Debug, Clone, serde::Serialize)]
-pub struct GetResponse {
+pub struct GetResponse<T: JmapObject> {
     #[serde(rename = "accountId")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub account_id: Option<Id>,
@@ -54,10 +50,10 @@ pub struct GetResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state: Option<State>,
 
-    pub list: Vec<Object<Value>>,
+    pub list: Vec<Value<'static, T::Property, T::Element>>,
 
     #[serde(rename = "notFound")]
-    pub not_found: Vec<AnyId>,
+    pub not_found: Vec<MaybeInvalid<T::Id>>,
 }
 
 impl JsonObjectParser for GetRequest<RequestArguments> {

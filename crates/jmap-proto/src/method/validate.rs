@@ -4,25 +4,21 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{
-    error::set::SetError,
-    parser::{JsonObjectParser, Token, json::Parser},
-    request::RequestProperty,
-};
+use crate::{error::set::SetError, object::sieve::SieveProperty, request::MaybeInvalid};
 use serde::Serialize;
 use types::{blob::BlobId, id::Id};
 
 #[derive(Debug, Clone)]
 pub struct ValidateSieveScriptRequest {
     pub account_id: Id,
-    pub blob_id: BlobId,
+    pub blob_id: MaybeInvalid<BlobId>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct ValidateSieveScriptResponse {
     #[serde(rename = "accountId")]
     pub account_id: Id,
-    pub error: Option<SetError>,
+    pub error: Option<SetError<SieveProperty>>,
 }
 
 impl JsonObjectParser for ValidateSieveScriptRequest {

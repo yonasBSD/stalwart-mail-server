@@ -6,9 +6,7 @@
 
 use super::ahash_is_empty;
 use crate::{
-    error::set::SetError,
-    parser::{Ignore, JsonObjectParser, Token, json::Parser},
-    request::{RequestProperty, reference::MaybeReference},
+    error::set::SetError, object::blob::BlobProperty, request::reference::MaybeIdReference,
     response::Response,
 };
 use ahash::AHashMap;
@@ -31,7 +29,7 @@ pub struct UploadObject {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DataSourceObject {
     Id {
-        id: MaybeReference<BlobId, String>,
+        id: MaybeIdReference<BlobId>,
         length: Option<usize>,
         offset: Option<usize>,
     },
@@ -49,7 +47,7 @@ pub struct BlobUploadResponse {
 
     #[serde(rename = "notCreated")]
     #[serde(skip_serializing_if = "VecMap::is_empty")]
-    pub not_created: VecMap<String, SetError>,
+    pub not_created: VecMap<String, SetError<BlobProperty>>,
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize)]

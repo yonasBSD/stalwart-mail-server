@@ -6,19 +6,12 @@
 
 use crate::{
     error::set::SetError,
-    parser::{JsonObjectParser, Token, json::Parser},
-    request::{
-        RequestProperty,
-        reference::{MaybeReference, ResultReference},
-    },
+    object::email::{EmailProperty, EmailValue},
+    request::reference::{MaybeIdReference, MaybeResultReference, ResultReference},
     response::Response,
-    types::{
-        date::UTCDate,
-        property::Property,
-        state::State,
-        value::{Object, SetValueMap, Value},
-    },
+    types::{date::UTCDate, state::State},
 };
+use jmap_tools::Value;
 use types::{blob::BlobId, id::Id, keyword::Keyword};
 use utils::map::vec_map::VecMap;
 
@@ -32,7 +25,7 @@ pub struct ImportEmailRequest {
 #[derive(Debug, Clone)]
 pub struct ImportEmail {
     pub blob_id: BlobId,
-    pub mailbox_ids: MaybeReference<Vec<MaybeReference<Id, String>>, ResultReference>,
+    pub mailbox_ids: MaybeResultReference<Vec<MaybeIdReference<Id>>>,
     pub keywords: Vec<Keyword>,
     pub received_at: Option<UTCDate>,
 }
@@ -51,11 +44,11 @@ pub struct ImportEmailResponse {
 
     #[serde(rename = "created")]
     #[serde(skip_serializing_if = "VecMap::is_empty")]
-    pub created: VecMap<String, Object<Value>>,
+    pub created: VecMap<String, Value<'static, EmailProperty, EmailValue>>,
 
     #[serde(rename = "notCreated")]
     #[serde(skip_serializing_if = "VecMap::is_empty")]
-    pub not_created: VecMap<String, SetError>,
+    pub not_created: VecMap<String, SetError<EmailProperty>>,
 }
 
 impl JsonObjectParser for ImportEmailRequest {

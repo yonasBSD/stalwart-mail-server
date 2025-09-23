@@ -5,14 +5,355 @@
  */
 
 use crate::{
-    parser::{Ignore, JsonObjectParser, json::Parser},
-    request::{RequestProperty, RequestPropertyParser},
-    types::property::Property,
+    object::{MaybeReference, parse_ref},
+    types::date::UTCDate,
 };
+use jmap_tools::{Element, JsonPointer, JsonPointerItem, Key, Property};
+use mail_parser::HeaderName;
+use std::{borrow::Cow, fmt::Display};
+use types::{blob::BlobId, id::Id, keyword::Keyword};
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum EmailProperty {
+    // Metadata
+    Id,
+    BlobId,
+    ThreadId,
+    MailboxIds,
+    Keywords,
+    Size,
+    ReceivedAt,
+
+    // Address
+    Name,
+    Email,
+
+    // GroupedAddresses
+    Addresses,
+
+    // Header Fields Properties
+    Value,
+    Header(HeaderProperty),
+
+    // Convenience properties
+    MessageId,
+    InReplyTo,
+    References,
+    Sender,
+    From,
+    To,
+    Cc,
+    Bcc,
+    ReplyTo,
+    Subject,
+    SentAt,
+
+    // Body Parts
+    TextBody,
+    HtmlBody,
+    Attachments,
+    PartId,
+    Headers,
+    Type,
+    Charset,
+    Disposition,
+    Cid,
+    Language,
+    Location,
+    SubParts,
+    BodyStructure,
+    BodyValues,
+    IsEncodingProblem,
+    IsTruncated,
+    HasAttachment,
+    Preview,
+
+    // Other
+    Keyword(Keyword),
+    Pointer(JsonPointer<EmailProperty>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct HeaderProperty {
+    pub form: HeaderForm,
+    pub header: String,
+    pub all: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum HeaderForm {
+    Raw,
+    Text,
+    Addresses,
+    GroupedAddresses,
+    MessageIds,
+    Date,
+    URLs,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum EmailValue {
+    Id(Id),
+    Date(UTCDate),
+    BlobId(BlobId),
+    IdReference(String),
+}
+
+impl Property for EmailProperty {
+    fn try_parse(key: Option<&Key<'_, Self>>, value: &str) -> Option<Self> {
+        let allow_patch = key.is_none();
+        if let Some(Key::Property(key)) = key {
+            match key.patch_or_prop() {
+                EmailProperty::Keywords => EmailProperty::Keyword(Keyword::parse(value)).into(),
+                _ => EmailProperty::from_str(value, allow_patch),
+            }
+        } else {
+            EmailProperty::parse(value, allow_patch)
+        }
+    }
+
+    fn to_cow(&self) -> Cow<'static, str> {
+        match self {
+            EmailProperty::Attachments => "attachments",
+            EmailProperty::Bcc => "bcc",
+            EmailProperty::BlobId => "blobId",
+            EmailProperty::BodyStructure => "bodyStructure",
+            EmailProperty::BodyValues => "bodyValues",
+            EmailProperty::Cc => "cc",
+            EmailProperty::Charset => "charset",
+            EmailProperty::Cid => "cid",
+            EmailProperty::Disposition => "disposition",
+            EmailProperty::Email => "email",
+            EmailProperty::From => "from",
+            EmailProperty::HasAttachment => "hasAttachment",
+            EmailProperty::Headers => "headers",
+            EmailProperty::HtmlBody => "htmlBody",
+            EmailProperty::Id => "id",
+            EmailProperty::InReplyTo => "inReplyTo",
+            EmailProperty::Keywords => "keywords",
+            EmailProperty::Language => "language",
+            EmailProperty::Location => "location",
+            EmailProperty::MailboxIds => "mailboxIds",
+            EmailProperty::MessageId => "messageId",
+            EmailProperty::Name => "name",
+            EmailProperty::PartId => "partId",
+            EmailProperty::Preview => "preview",
+            EmailProperty::ReceivedAt => "receivedAt",
+            EmailProperty::References => "references",
+            EmailProperty::ReplyTo => "replyTo",
+            EmailProperty::Sender => "sender",
+            EmailProperty::SentAt => "sentAt",
+            EmailProperty::Size => "size",
+            EmailProperty::Subject => "subject",
+            EmailProperty::SubParts => "subParts",
+            EmailProperty::TextBody => "textBody",
+            EmailProperty::ThreadId => "threadId",
+            EmailProperty::To => "to",
+            EmailProperty::Type => "type",
+            EmailProperty::Addresses => "addresses",
+            EmailProperty::Value => "value",
+            EmailProperty::IsEncodingProblem => "isEncodingProblem",
+            EmailProperty::IsTruncated => "isTruncated",
+            EmailProperty::Header(header) => return header.to_string().into(),
+            EmailProperty::Keyword(keyword) => return keyword.to_string().into(),
+            EmailProperty::Pointer(json_pointer) => return json_pointer.to_string().into(),
+        }
+        .into()
+    }
+}
+
+impl Element for EmailValue {
+    type Property = EmailProperty;
+
+    fn try_parse<P>(key: &Key<'_, Self::Property>, value: &str) -> Option<Self> {
+        if let Key::Property(prop) = key {
+            match prop.patch_or_prop() {
+                EmailProperty::Id | EmailProperty::ThreadId | EmailProperty::MailboxIds => {
+                    match parse_ref(value) {
+                        MaybeReference::Value(v) => Some(EmailValue::Id(v)),
+                        MaybeReference::Reference(v) => Some(EmailValue::IdReference(v)),
+                        MaybeReference::ParseError => None,
+                    }
+                }
+                EmailProperty::BlobId => match parse_ref(value) {
+                    MaybeReference::Value(v) => Some(EmailValue::BlobId(v)),
+                    MaybeReference::Reference(v) => Some(EmailValue::IdReference(v)),
+                    MaybeReference::ParseError => None,
+                },
+                EmailProperty::Header(HeaderProperty {
+                    form: HeaderForm::Date,
+                    ..
+                })
+                | EmailProperty::ReceivedAt
+                | EmailProperty::SentAt => UTCDate::from_str(value).ok().map(EmailValue::Date),
+                _ => None,
+            }
+        } else {
+            None
+        }
+    }
+
+    fn to_cow(&self) -> Cow<'static, str> {
+        match self {
+            EmailValue::Id(id) => id.to_string().into(),
+            EmailValue::Date(utcdate) => utcdate.to_string().into(),
+            EmailValue::BlobId(blob_id) => blob_id.to_string().into(),
+            EmailValue::IdReference(r) => format!("#{r}").into(),
+        }
+    }
+}
+
+impl EmailProperty {
+    fn parse(value: &str, allow_patch: bool) -> Option<Self> {
+        hashify::tiny_map!(value.as_bytes(),
+                "id" => EmailProperty::Id,
+                "blobId" => EmailProperty::BlobId,
+                "threadId" => EmailProperty::ThreadId,
+                "mailboxIds" => EmailProperty::MailboxIds,
+                "keywords" => EmailProperty::Keywords,
+                "size" => EmailProperty::Size,
+                "receivedAt" => EmailProperty::ReceivedAt,
+                "name" => EmailProperty::Name,
+                "email" => EmailProperty::Email,
+                "addresses" => EmailProperty::Addresses,
+                "value" => EmailProperty::Value,
+                "messageId" => EmailProperty::MessageId,
+                "inReplyTo" => EmailProperty::InReplyTo,
+                "references" => EmailProperty::References,
+                "sender" => EmailProperty::Sender,
+                "from" => EmailProperty::From,
+                "to" => EmailProperty::To,
+                "cc" => EmailProperty::Cc,
+                "bcc" => EmailProperty::Bcc,
+                "replyTo" => EmailProperty::ReplyTo,
+                "subject" => EmailProperty::Subject,
+                "sentAt" => EmailProperty::SentAt,
+                "textBody" => EmailProperty::TextBody,
+                "htmlBody" => EmailProperty::HtmlBody,
+                "attachments" => EmailProperty::Attachments,
+                "partId" => EmailProperty::PartId,
+                "headers" => EmailProperty::Headers,
+                "type" => EmailProperty::Type,
+                "charset" => EmailProperty::Charset,
+                "disposition" => EmailProperty::Disposition,
+                "cid" => EmailProperty::Cid,
+                "language" => EmailProperty::Language,
+                "location" => EmailProperty::Location,
+                "subParts" => EmailProperty::SubParts,
+                "bodyStructure" => EmailProperty::BodyStructure,
+                "bodyValues" => EmailProperty::BodyValues,
+                "isEncodingProblem" => EmailProperty::IsEncodingProblem,
+                "isTruncated" => EmailProperty::IsTruncated,
+                "hasAttachment" => EmailProperty::HasAttachment,
+                "preview" => EmailProperty::Preview
+        )
+        .or_else(|| {
+            if let Some(header) = value.strip_prefix("header:") {
+                HeaderProperty::parse(header).map(EmailProperty::Header)
+            } else if allow_patch && value.contains('/') {
+                EmailProperty::Pointer(JsonPointer::parse(value)).into()
+            } else {
+                None
+            }
+        })
+    }
+
+    fn patch_or_prop(&self) -> &EmailProperty {
+        if let EmailProperty::Pointer(ptr) = self
+            && let Some(JsonPointerItem::Key(Key::Property(prop))) = ptr.last()
+        {
+            prop
+        } else {
+            self
+        }
+    }
+
+    pub fn as_rfc_header(&self) -> HeaderName<'static> {
+        match self {
+            EmailProperty::MessageId => HeaderName::MessageId,
+            EmailProperty::InReplyTo => HeaderName::InReplyTo,
+            EmailProperty::References => HeaderName::References,
+            EmailProperty::Sender => HeaderName::Sender,
+            EmailProperty::From => HeaderName::From,
+            EmailProperty::To => HeaderName::To,
+            EmailProperty::Cc => HeaderName::Cc,
+            EmailProperty::Bcc => HeaderName::Bcc,
+            EmailProperty::ReplyTo => HeaderName::ReplyTo,
+            EmailProperty::Subject => HeaderName::Subject,
+            EmailProperty::SentAt => HeaderName::Date,
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl HeaderProperty {
+    fn parse(value: &str) -> Option<Self> {
+        let mut result = HeaderProperty {
+            form: HeaderForm::Raw,
+            header: String::new(),
+            all: false,
+        };
+
+        for (pos, value) in value.split(':').enumerate() {
+            match pos {
+                0 => {
+                    result.header = value.to_string();
+                }
+                1 => {
+                    hashify::fnc_map!(value.as_bytes(),
+                        b"asText" => { result.form = HeaderForm::Text;},
+                        b"asAddresses" => { result.form = HeaderForm::Addresses;},
+                        b"asGroupedAddresses" => { result.form = HeaderForm::GroupedAddresses;},
+                        b"asMessageIds" => { result.form = HeaderForm::MessageIds;},
+                        b"asDate" => { result.form = HeaderForm::Date;},
+                        b"asURLs" => { result.form = HeaderForm::URLs;},
+                        b"asRaw"  => { result.form = HeaderForm::Raw; },
+                        b"all"  => { result.all = true; },
+                        _ => {
+                            return None;
+                        }
+                    );
+                }
+                2 if value == "all" && result.all == false => {
+                    result.all = true;
+                }
+                _ => return None,
+            }
+        }
+
+        if !result.header.is_empty() {
+            Some(result)
+        } else {
+            None
+        }
+    }
+}
+
+impl Display for HeaderProperty {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "header:{}", self.header)?;
+        self.form.fmt(f)?;
+        if self.all { write!(f, ":all") } else { Ok(()) }
+    }
+}
+
+impl Display for HeaderForm {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            HeaderForm::Raw => Ok(()),
+            HeaderForm::Text => write!(f, ":asText"),
+            HeaderForm::Addresses => write!(f, ":asAddresses"),
+            HeaderForm::GroupedAddresses => write!(f, ":asGroupedAddresses"),
+            HeaderForm::MessageIds => write!(f, ":asMessageIds"),
+            HeaderForm::Date => write!(f, ":asDate"),
+            HeaderForm::URLs => write!(f, ":asURLs"),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct GetArguments {
-    pub body_properties: Option<Vec<Property>>,
+    pub body_properties: Option<Vec<EmailProperty>>,
     pub fetch_text_body_values: Option<bool>,
     pub fetch_html_body_values: Option<bool>,
     pub fetch_all_body_values: Option<bool>,
@@ -24,7 +365,7 @@ pub struct QueryArguments {
     pub collapse_threads: Option<bool>,
 }
 
-impl RequestPropertyParser for GetArguments {
+/*impl RequestPropertyParser for GetArguments {
     fn parse(&mut self, parser: &mut Parser, property: RequestProperty) -> trc::Result<bool> {
         match (&property.hash[0], &property.hash[1]) {
             (0x7365_6974_7265_706f_7250_7964_6f62, _) => {
@@ -69,3 +410,4 @@ impl RequestPropertyParser for QueryArguments {
         }
     }
 }
+*/

@@ -4,12 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{
-    parser::{Ignore, JsonObjectParser, Token, json::Parser},
-    request::{RequestProperty, method::MethodObject},
-    types::{property::Property, state::State},
-};
+use crate::{object::JmapObject, request::method::MethodObject, types::state::State};
 use compact_str::format_compact;
+use jmap_tools::Property;
 use types::id::Id;
 
 #[derive(Debug, Clone)]
@@ -17,11 +14,10 @@ pub struct ChangesRequest {
     pub account_id: Id,
     pub since_state: State,
     pub max_changes: Option<usize>,
-    pub arguments: RequestArguments,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
-pub struct ChangesResponse {
+pub struct ChangesResponse<T: JmapObject> {
     #[serde(rename = "accountId")]
     pub account_id: Id,
 
@@ -42,10 +38,10 @@ pub struct ChangesResponse {
 
     #[serde(rename = "updatedProperties")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub updated_properties: Option<Vec<Property>>,
+    pub updated_properties: Option<Vec<T::Property>>,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+/*#[derive(Debug, Clone, serde::Serialize)]
 pub enum RequestArguments {
     Email,
     Mailbox,
@@ -53,7 +49,7 @@ pub enum RequestArguments {
     Identity,
     EmailSubmission,
     Quota,
-}
+}*/
 
 impl JsonObjectParser for ChangesRequest {
     fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>

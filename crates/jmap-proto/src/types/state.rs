@@ -4,10 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::parser::{JsonObjectParser, base32::JsonBase32Reader, json::Parser};
 use types::ChangeId;
 use utils::codec::{
-    base32_custom::Base32Writer,
+    base32_custom::{Base32Reader, Base32Writer},
     leb128::{Leb128Iterator, Leb128Writer},
 };
 
@@ -41,25 +40,18 @@ impl From<Option<ChangeId>> for State {
     }
 }
 
-impl JsonObjectParser for State {
-    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
-    where
-        Self: Sized,
-    {
-        match parser
-            .next_unescaped()?
-            .ok_or_else(|| parser.error_value())?
-        {
+impl State {
+    pub fn parse(value: &str) -> Option<Self> {
+        let mut it = value.as_bytes().iter();
+
+        match it.next()? {
             b'n' => Ok(State::Initial),
             b's' => {
-                let mut reader = JsonBase32Reader::new(parser);
-                reader
-                    .next_leb128::<ChangeId>()
-                    .map(State::Exact)
-                    .ok_or_else(|| parser.error_value())
+                let mut reader = Base32Reader::new(it);
+                reader.next_leb128::<ChangeId>().map(State::Exact)
             }
             b'r' => {
-                let mut it = JsonBase32Reader::new(parser);
+                let mut it = Base32Reader::new(it);
 
                 if let (Some(from_id), Some(to_id), Some(items_sent)) = (
                     it.next_leb128::<ChangeId>(),
@@ -73,18 +65,16 @@ impl JsonObjectParser for State {
                             items_sent,
                         }))
                     } else {
-                        Err(parser.error_value())
+                        None
                     }
                 } else {
-                    Err(parser.error_value())
+                    None
                 }
             }
-            _ => Err(parser.error_value()),
+            _ => None,
         }
     }
-}
 
-impl State {
     pub fn new_initial() -> Self {
         State::Initial
     }
@@ -124,10 +114,8 @@ impl<'de> serde::Deserialize<'de> for State {
     where
         D: serde::Deserializer<'de>,
     {
-        // This is inefficient, but serde deserialize on State is only used in test mode
-        let value = format!("{}\"", <&str>::deserialize(deserializer)?);
-        let mut parser = Parser::new(value.as_bytes());
-        State::parse(&mut parser).map_err(|_| serde::de::Error::custom("invalid JMAP State"))
+        State::parse(<&str>::deserialize(deserializer)?)
+            .map_err(|_| serde::de::Error::custom("invalid JMAP State"))
     }
 }
 
@@ -160,7 +148,6 @@ impl std::fmt::Display for State {
 #[cfg(test)]
 mod tests {
     use super::State;
-    use crate::parser::json::Parser;
     use types::ChangeId;
 
     #[test]
@@ -179,14 +166,7 @@ mod tests {
             State::new_intermediate(12345678, 87654321, 12345678),
             State::new_intermediate(ChangeId::MAX, ChangeId::MAX, ChangeId::MAX as usize),
         ] {
-            assert_eq!(
-                Parser::new(format!("\"{id}\"").as_bytes())
-                    .next_token::<State>()
-                    .unwrap()
-                    .unwrap_string("")
-                    .unwrap(),
-                id
-            );
+            assert_eq!(State::parse(&id.to_string()).unwrap(), id);
         }
     }
 }

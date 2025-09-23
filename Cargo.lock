@@ -2064,12 +2064,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fea41bba32d969b513997752735605054bc0dfa92b4c56bf1189f2e174be7a10"
 
 [[package]]
-name = "downcast-rs"
-version = "2.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "117240f60069e65410b3ae1bb213295bd828f707b5bec6596a1afc8793ce0cbc"
-
-[[package]]
 name = "dsa"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2300,16 +2294,6 @@ name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
-
-[[package]]
-name = "erased-serde"
-version = "0.4.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "110ca254af04e46794fcc4be0991e72e13fdd8c78119e02c76a5473f6f74e049"
-dependencies = [
- "serde_core",
- "typeid",
-]
 
 [[package]]
 name = "errno"
@@ -3920,6 +3904,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "jmap-tools"
+version = "0.1.1"
+dependencies = [
+ "hashify",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "jmap_proto"
 version = "0.13.3"
 dependencies = [
@@ -3927,6 +3920,7 @@ dependencies = [
  "compact_str",
  "fast-float",
  "hashify",
+ "jmap-tools",
  "mail-parser",
  "rkyv",
  "serde",
@@ -8688,12 +8682,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9ea3136b675547379c4bd395ca6b938e5ad3c3d20fad76e7fe85f9e0d011419c"
 
 [[package]]
-name = "typeid"
-version = "1.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc7d623258602320d5c55d1bc22793b57daff0ec7efc270ea7d55ce1d5f5471c"
-
-[[package]]
 name = "typenum"
 version = "1.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8904,8 +8892,6 @@ dependencies = [
  "blake3",
  "chrono",
  "compact_str",
- "downcast-rs",
- "erased-serde",
  "fast-float",
  "form_urlencoded",
  "futures",

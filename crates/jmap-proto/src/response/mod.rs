@@ -10,6 +10,8 @@ pub mod status;
 
 use std::collections::HashMap;
 
+use jmap_tools::{Null, Value};
+
 use crate::{
     error::method::MethodErrorWrapper,
     method::{
@@ -26,19 +28,18 @@ use crate::{
         upload::BlobUploadResponse,
         validate::ValidateSieveScriptResponse,
     },
-    request::{Call, echo::Echo, method::MethodName},
-    types::any_id::AnyId,
+    request::{Call, method::MethodName},
 };
 
 use self::serialize::serialize_hex;
 
 #[derive(Debug, serde::Serialize)]
 #[serde(untagged)]
-pub enum ResponseMethod {
-    Get(GetResponse),
+pub enum ResponseMethod<'x> {
+    /*Get(GetResponse),
     Set(SetResponse),
     Changes(ChangesResponse),
-    Copy(CopyResponse),
+    Copy(CopyResponse),*/
     CopyBlob(CopyBlobResponse),
     ImportEmail(ImportEmailResponse),
     ParseEmail(ParseEmailResponse),
@@ -48,14 +49,14 @@ pub enum ResponseMethod {
     ValidateScript(ValidateSieveScriptResponse),
     LookupBlob(BlobLookupResponse),
     UploadBlob(BlobUploadResponse),
-    Echo(Echo),
+    Echo(Value<'x, Null, Null>),
     Error(MethodErrorWrapper),
 }
 
 #[derive(Debug, serde::Serialize)]
-pub struct Response {
+pub struct Response<'x> {
     #[serde(rename = "methodResponses")]
-    pub method_responses: Vec<Call<ResponseMethod>>,
+    pub method_responses: Vec<Call<ResponseMethod<'x>>>,
 
     #[serde(rename = "sessionState")]
     #[serde(serialize_with = "serialize_hex")]
@@ -63,11 +64,11 @@ pub struct Response {
 
     #[serde(rename = "createdIds")]
     #[serde(skip_serializing_if = "HashMap::is_empty")]
-    pub created_ids: HashMap<String, AnyId>,
+    pub created_ids: HashMap<String, String>,
 }
 
-impl Response {
-    pub fn new(session_state: u32, created_ids: HashMap<String, AnyId>, capacity: usize) -> Self {
+impl Response<'_> {
+    pub fn new(session_state: u32, created_ids: HashMap<String, String>, capacity: usize) -> Self {
         Response {
             session_state,
             created_ids,
@@ -96,7 +97,7 @@ impl Response {
         });
     }
 
-    pub fn push_created_id(&mut self, create_id: String, id: impl Into<AnyId>) {
+    pub fn push_created_id(&mut self, create_id: String, id: impl Into<String>) {
         self.created_ids.insert(create_id, id.into());
     }
 }

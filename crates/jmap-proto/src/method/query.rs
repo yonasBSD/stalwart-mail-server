@@ -5,9 +5,8 @@
  */
 
 use crate::{
-    object::{email, mailbox},
-    parser::{Ignore, JsonObjectParser, Token, json::Parser},
-    request::{RequestProperty, RequestPropertyParser, method::MethodObject},
+    object::{JmapObject, email, mailbox},
+    request::method::MethodObject,
     types::{date::UTCDate, state::State},
 };
 use compact_str::format_compact;
@@ -16,16 +15,16 @@ use store::fts::{FilterItem, FilterType, FtsFilter};
 use types::{id::Id, keyword::Keyword};
 
 #[derive(Debug, Clone)]
-pub struct QueryRequest<T> {
+pub struct QueryRequest<T: JmapObject> {
     pub account_id: Id,
-    pub filter: Vec<Filter>,
-    pub sort: Option<Vec<Comparator>>,
+    pub filter: Vec<T::Filter>,
+    pub sort: Option<Vec<T::Comparator>>,
     pub position: Option<i32>,
     pub anchor: Option<Id>,
     pub anchor_offset: Option<i32>,
     pub limit: Option<usize>,
     pub calculate_total: Option<bool>,
-    pub arguments: T,
+    pub arguments: T::QueryArguments,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -661,16 +660,6 @@ impl Display for SortProperty {
             SortProperty::Used => "used",
             SortProperty::_T(s) => s,
         })
-    }
-}
-
-impl RequestPropertyParser for RequestArguments {
-    fn parse(&mut self, parser: &mut Parser, property: RequestProperty) -> trc::Result<bool> {
-        match self {
-            RequestArguments::Email(args) => args.parse(parser, property),
-            RequestArguments::Mailbox(args) => args.parse(parser, property),
-            _ => Ok(false),
-        }
     }
 }
 

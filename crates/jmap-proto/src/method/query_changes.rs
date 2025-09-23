@@ -5,24 +5,20 @@
  */
 
 use super::query::{Comparator, Filter, RequestArguments, parse_filter, parse_sort};
-use crate::{
-    parser::{Ignore, JsonObjectParser, Token, json::Parser},
-    request::{RequestProperty, RequestPropertyParser, method::MethodObject},
-    types::state::State,
-};
+use crate::{object::JmapObject, request::method::MethodObject, types::state::State};
 use compact_str::format_compact;
 use types::id::Id;
 
 #[derive(Debug, Clone)]
-pub struct QueryChangesRequest {
+pub struct QueryChangesRequest<T: JmapObject> {
     pub account_id: Id,
-    pub filter: Vec<Filter>,
-    pub sort: Option<Vec<Comparator>>,
+    pub filter: Vec<T::Filter>,
+    pub sort: Option<Vec<T::Comparator>>,
     pub since_query_state: State,
     pub max_changes: Option<usize>,
     pub up_to_id: Option<Id>,
     pub calculate_total: Option<bool>,
-    pub arguments: RequestArguments,
+    pub arguments: T::QueryArguments,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]

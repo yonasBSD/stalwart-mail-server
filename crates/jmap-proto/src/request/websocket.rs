@@ -4,22 +4,21 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use super::{Request, RequestProperty};
+use super::Request;
 use crate::{
     error::request::{RequestError, RequestErrorType, RequestLimitError},
-    parser::{JsonObjectParser, Token, json::Parser},
     request::Call,
     response::{Response, ResponseMethod, serialize::serialize_hex},
-    types::{any_id::AnyId, state::State},
+    types::state::State,
 };
 use std::{borrow::Cow, collections::HashMap};
 use types::{id::Id, type_state::DataType};
 use utils::map::vec_map::VecMap;
 
 #[derive(Debug)]
-pub struct WebSocketRequest {
+pub struct WebSocketRequest<'x> {
     pub id: Option<String>,
-    pub request: Request,
+    pub request: Request<'x>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -36,7 +35,7 @@ pub struct WebSocketResponse {
 
     #[serde(rename(deserialize = "createdIds"))]
     #[serde(skip_serializing_if = "HashMap::is_empty")]
-    created_ids: HashMap<String, AnyId>,
+    created_ids: HashMap<String, String>,
 
     #[serde(rename = "requestId")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -55,8 +54,8 @@ pub struct WebSocketPushEnable {
 }
 
 #[derive(Debug)]
-pub enum WebSocketMessage {
-    Request(WebSocketRequest),
+pub enum WebSocketMessage<'x> {
+    Request(WebSocketRequest<'x>),
     PushEnable(WebSocketPushEnable),
     PushDisable,
 }

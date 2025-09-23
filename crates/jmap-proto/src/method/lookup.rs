@@ -4,19 +4,16 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{
-    parser::{JsonObjectParser, Token, json::Parser},
-    request::RequestProperty,
-    types::MaybeUnparsable,
-};
 use types::{blob::BlobId, id::Id, type_state::DataType};
 use utils::map::vec_map::VecMap;
+
+use crate::request::MaybeInvalid;
 
 #[derive(Debug, Clone)]
 pub struct BlobLookupRequest {
     pub account_id: Id,
-    pub type_names: Vec<MaybeUnparsable<DataType>>,
-    pub ids: Vec<MaybeUnparsable<BlobId>>,
+    pub type_names: Vec<MaybeInvalid<DataType>>,
+    pub ids: Vec<MaybeInvalid<BlobId>>,
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize)]
@@ -28,7 +25,7 @@ pub struct BlobLookupResponse {
     pub list: Vec<BlobInfo>,
 
     #[serde(rename = "notFound")]
-    pub not_found: Vec<MaybeUnparsable<BlobId>>,
+    pub not_found: Vec<MaybeInvalid<BlobId>>,
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize)]
@@ -59,10 +56,10 @@ impl JsonObjectParser for BlobLookupRequest {
                     request.account_id = parser.next_token::<Id>()?.unwrap_string("accountId")?;
                 }
                 0x0073_656d_614e_6570_7974 if !key.is_ref => {
-                    request.type_names = <Vec<MaybeUnparsable<DataType>>>::parse(parser)?;
+                    request.type_names = <Vec<MaybeInvalid<DataType>>>::parse(parser)?;
                 }
                 0x0073_6469 if !key.is_ref => {
-                    request.ids = <Vec<MaybeUnparsable<BlobId>>>::parse(parser)?;
+                    request.ids = <Vec<MaybeInvalid<BlobId>>>::parse(parser)?;
                 }
                 _ => {
                     parser.skip_token(parser.depth_array, parser.depth_dict)?;
