@@ -4,7 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::fmt;
+
 use crate::response::serialize::serialize_hex;
+use serde::{Deserialize, Deserializer};
 use types::{id::Id, type_state::DataType};
 use utils::map::vec_map::VecMap;
 
@@ -68,6 +71,10 @@ pub enum Capability {
     #[serde(rename(serialize = "urn:ietf:params:jmap:quota"))]
     Quota = 1 << 9,
 }
+
+#[derive(Debug, Clone, Copy, Default)]
+#[repr(transparent)]
+pub struct CapabilityIds(pub u32);
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(untagged)]
@@ -326,5 +333,41 @@ impl Capability {
             "urn:ietf:params:jmap:blob" => Capability::Blob,
             "urn:ietf:params:jmap:quota" => Capability::Quota,
         )
+    }
+}
+
+impl<'de> Deserialize<'de> for CapabilityIds {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct CapabilityIdsVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for CapabilityIdsVisitor {
+            type Value = CapabilityIds;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("an array of capability strings")
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::SeqAccess<'de>,
+            {
+                let mut capability_flags = 0u32;
+
+                while let Some(capability_str) = seq.next_element::<&str>()? {
+                    let capability = Capability::parse(capability_str).ok_or_else(|| {
+                        serde::de::Error::custom(format!("Unknown capability: {capability_str:?}"))
+                    })?;
+
+                    capability_flags |= capability as u32;
+                }
+
+                Ok(CapabilityIds(capability_flags))
+            }
+        }
+
+        deserializer.deserialize_seq(CapabilityIdsVisitor)
     }
 }

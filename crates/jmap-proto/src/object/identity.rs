@@ -8,6 +8,11 @@ use jmap_tools::{Element, JsonPointer, JsonPointerItem, Key, Property};
 use std::{borrow::Cow, str::FromStr};
 use types::id::Id;
 
+use crate::object::JmapObject;
+
+#[derive(Debug, Clone, Default)]
+pub struct Identity;
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum IdentityProperty {
     Id,
@@ -100,4 +105,41 @@ impl IdentityProperty {
             self
         }
     }
+}
+
+impl serde::Serialize for IdentityProperty {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.to_cow().as_ref())
+    }
+}
+
+impl FromStr for IdentityProperty {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        IdentityProperty::parse(s, false).ok_or(())
+    }
+}
+
+impl JmapObject for Identity {
+    type Property = IdentityProperty;
+
+    type Element = IdentityValue;
+
+    type Id = Id;
+
+    type Filter = ();
+
+    type Comparator = ();
+
+    type GetArguments = ();
+
+    type SetArguments = ();
+
+    type QueryArguments = ();
+
+    type CopyArguments = ();
 }

@@ -13,7 +13,7 @@ use calcard::common::timezone::Tz;
 use config::{
     groupware::GroupwareConfig,
     imap::ImapConfig,
-    jmap::settings::{JmapConfig, SpecialUse},
+    jmap::settings::JmapConfig,
     network::Network,
     scripts::Scripting,
     smtp::{
@@ -40,7 +40,7 @@ use std::{
 use tinyvec::TinyVec;
 use tokio::sync::{Notify, Semaphore, mpsc};
 use tokio_rustls::TlsConnector;
-use types::acl::AclGrant;
+use types::{acl::AclGrant, special_use::SpecialUse};
 use utils::{
     cache::{Cache, CacheItemWeight, CacheWithTtl},
     snowflake::SnowflakeIdGenerator,

@@ -4,11 +4,16 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::object::JmapObject;
 use crate::types::date::UTCDate;
 use jmap_tools::{Element, JsonPointer, JsonPointerItem};
 use jmap_tools::{Key, Property};
 use std::borrow::Cow;
+use std::str::FromStr;
 use types::{id::Id, type_state::DataType};
+
+#[derive(Debug, Clone, Default)]
+pub struct PushSubscription;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PushSubscriptionProperty {
@@ -116,8 +121,44 @@ impl Element for PushSubscriptionValue {
         match self {
             PushSubscriptionValue::Id(id) => id.to_string().into(),
             PushSubscriptionValue::Date(utcdate) => utcdate.to_string().into(),
-            PushSubscriptionValue::BlobId(blob_id) => blob_id.to_string().into(),
-            PushSubscriptionValue::IdReference(r) => format!("#{r}").into(),
+            PushSubscriptionValue::Types(data_type) => data_type.as_str().into(),
         }
     }
+}
+
+impl serde::Serialize for PushSubscriptionProperty {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.to_cow().as_ref())
+    }
+}
+
+impl FromStr for PushSubscriptionProperty {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        PushSubscriptionProperty::parse(s, false).ok_or(())
+    }
+}
+
+impl JmapObject for PushSubscription {
+    type Property = PushSubscriptionProperty;
+
+    type Element = PushSubscriptionValue;
+
+    type Id = Id;
+
+    type Filter = ();
+
+    type Comparator = ();
+
+    type GetArguments = ();
+
+    type SetArguments = ();
+
+    type QueryArguments = ();
+
+    type CopyArguments = ();
 }

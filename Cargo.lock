@@ -3918,7 +3918,6 @@ version = "0.13.3"
 dependencies = [
  "ahash",
  "compact_str",
- "fast-float",
  "hashify",
  "jmap-tools",
  "mail-parser",

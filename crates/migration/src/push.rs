@@ -144,7 +144,7 @@ impl FromLegacy for PushSubscription {
                 .map(|l| l.as_slice())
                 .unwrap_or_default()
                 .iter()
-                .filter_map(|v| v.as_string().and_then(|v| DataType::try_from(v).ok()))
+                .filter_map(|v| v.as_string().and_then(DataType::parse))
                 .collect(),
             keys: convert_keys(legacy.get(&Property::Keys)),
         }

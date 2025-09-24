@@ -8,7 +8,7 @@ use crate::DocumentId;
 use std::{ops::Deref, str::FromStr};
 use utils::codec::base32_custom::{BASE32_ALPHABET, BASE32_INVERSE};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Copy, PartialOrd, Ord)]
 #[repr(transparent)]
 pub struct Id(u64);
 

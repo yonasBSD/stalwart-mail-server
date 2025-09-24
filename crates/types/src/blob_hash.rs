@@ -16,6 +16,8 @@ pub const BLOB_HASH_LEN: usize = 32;
     PartialEq,
     Eq,
     Hash,
+    PartialOrd,
+    Ord,
     serde::Serialize,
     serde::Deserialize,
 )]

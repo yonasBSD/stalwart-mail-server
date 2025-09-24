@@ -6,7 +6,7 @@
 
 use super::object::Object;
 use crate::object::{FromLegacy, Property, Value};
-use common::{Server, config::jmap::settings::SpecialUse};
+use common::Server;
 use email::mailbox::Mailbox;
 use store::{
     SUBSPACE_BITMAP_TAG, SUBSPACE_BITMAP_TEXT, SUBSPACE_INDEXES, Serialize, U64_LEN, ValueKey,
@@ -16,7 +16,7 @@ use store::{
     },
 };
 use trc::AddContext;
-use types::{collection::Collection, field::Field};
+use types::{collection::Collection, field::Field, special_use::SpecialUse};
 use utils::config::utils::ParseValue;
 
 pub(crate) async fn migrate_mailboxes(server: &Server, account_id: u32) -> trc::Result<u64> {

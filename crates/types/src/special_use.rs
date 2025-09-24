@@ -4,8 +4,20 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use utils::config::utils::ParseValue;
+
 #[derive(
-    rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Clone, Copy, PartialEq, Eq, Hash, Debug,
+    rkyv::Archive,
+    rkyv::Deserialize,
+    rkyv::Serialize,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    Debug,
+    PartialOrd,
+    Ord,
 )]
 #[rkyv(derive(Debug))]
 pub enum SpecialUse {
@@ -78,5 +90,11 @@ impl From<&ArchivedSpecialUse> for SpecialUse {
             ArchivedSpecialUse::Important => SpecialUse::Important,
             ArchivedSpecialUse::None => SpecialUse::None,
         }
+    }
+}
+
+impl ParseValue for SpecialUse {
+    fn parse_value(value: &str) -> Result<Self, String> {
+        SpecialUse::parse(value).ok_or_else(|| format!("Unknown folder role {:?}", value))
     }
 }

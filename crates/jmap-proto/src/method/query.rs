@@ -6,10 +6,14 @@
 
 use crate::{
     object::{JmapObject, email, mailbox},
-    request::method::MethodObject,
+    request::{
+        deserialize::{DeserializeArguments, deserialize_request},
+        method::MethodObject,
+    },
     types::{date::UTCDate, state::State},
 };
 use compact_str::format_compact;
+use serde::{Deserialize, Deserializer, de::DeserializeOwned};
 use std::fmt::Display;
 use store::fts::{FilterItem, FilterType, FtsFilter};
 use types::{id::Id, keyword::Keyword};
@@ -17,8 +21,8 @@ use types::{id::Id, keyword::Keyword};
 #[derive(Debug, Clone)]
 pub struct QueryRequest<T: JmapObject> {
     pub account_id: Id,
-    pub filter: Vec<T::Filter>,
-    pub sort: Option<Vec<T::Comparator>>,
+    pub filter: Vec<Filter<T::Filter>>,
+    pub sort: Option<Vec<Comparator<T::Comparator>>>,
     pub position: Option<i32>,
     pub anchor: Option<Id>,
     pub anchor_offset: Option<i32>,
@@ -53,9 +57,19 @@ pub struct QueryResponse {
     pub limit: Option<usize>,
 }
 
-#[derive(Clone, Debug)]
-pub enum Filter {
-    Email(String),
+#[derive(Clone, Debug, Deserialize)]
+pub enum Filter<T> {
+    Property(T),
+
+    And,
+    Or,
+    Not,
+    Close,
+}
+
+/*
+
+Email(String),
     Name(String),
     DomainName(String),
     Text(String),
@@ -100,18 +114,14 @@ pub enum Filter {
     ResourceType(String),
     _T(String),
 
-    And,
-    Or,
-    Not,
-    Close,
-}
+*/
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Comparator {
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Comparator<T> {
     pub is_ascending: bool,
     pub collation: Option<String>,
-    pub property: SortProperty,
-    pub keyword: Option<Keyword>,
+    pub property: T,
+    //pub keyword: Option<Keyword>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -138,35 +148,58 @@ pub enum SortProperty {
     _T(String),
 }
 
-#[derive(Debug, Clone)]
-pub enum RequestArguments {
-    Email(email::QueryArguments),
-    Mailbox(mailbox::QueryArguments),
-    EmailSubmission,
-    SieveScript,
-    Principal,
-    Quota,
+impl<'de, T: JmapObject> DeserializeArguments<'de> for QueryRequest<T> {
+    fn deserialize_argument<A>(&mut self, key: &str, map: &mut A) -> Result<(), A::Error>
+    where
+        A: serde::de::MapAccess<'de>,
+    {
+        hashify::fnc_map!(key.as_bytes(),
+            b"accountId" => {
+                self.account_id = map.next_value()?;
+            },
+            b"filter" => {
+                self.filter = map.next_value()?;
+            },
+            b"sort" => {
+                self.sort = map.next_value()?;
+            },
+            b"calculateTotal" => {
+                self.calculate_total = map.next_value()?;
+            },
+            b"position" => {
+                self.position = map.next_value()?;
+            },
+            b"anchor" => {
+                self.anchor = map.next_value()?;
+            },
+            b"anchorOffset" => {
+                self.anchor_offset = map.next_value()?;
+            },
+            b"limit" => {
+                self.limit = map.next_value()?;
+            },
+            _ => {
+                self.arguments.deserialize_argument(key, map)?;
+            }
+        );
+
+        Ok(())
+    }
 }
 
-impl JsonObjectParser for QueryRequest<RequestArguments> {
-    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
+impl<'de, T: JmapObject> Deserialize<'de> for QueryRequest<T> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        Self: Sized,
+        D: Deserializer<'de>,
     {
-        let mut request = QueryRequest {
-            arguments: match &parser.ctx {
-                MethodObject::Email => RequestArguments::Email(Default::default()),
-                MethodObject::Mailbox => RequestArguments::Mailbox(Default::default()),
-                MethodObject::EmailSubmission => RequestArguments::EmailSubmission,
-                MethodObject::SieveScript => RequestArguments::SieveScript,
-                MethodObject::Principal => RequestArguments::Principal,
-                MethodObject::Quota => RequestArguments::Quota,
-                _ => {
-                    return Err(trc::JmapEvent::UnknownMethod
-                        .into_err()
-                        .details(format_compact!("{}/query", parser.ctx)));
-                }
-            },
+        deserialize_request(deserializer)
+    }
+}
+
+impl<T: JmapObject> Default for QueryRequest<T> {
+    fn default() -> Self {
+        Self {
+            account_id: Id::default(),
             filter: vec![],
             sort: None,
             position: None,
@@ -174,72 +207,12 @@ impl JsonObjectParser for QueryRequest<RequestArguments> {
             anchor_offset: None,
             limit: None,
             calculate_total: None,
-            account_id: Id::default(),
-        };
-
-        parser
-            .next_token::<String>()?
-            .assert_jmap(Token::DictStart)?;
-
-        while let Some(key) = parser.next_dict_key::<RequestProperty>()? {
-            match &key.hash[0] {
-                0x0064_4974_6e75_6f63_6361 => {
-                    request.account_id = parser.next_token::<Id>()?.unwrap_string("accountId")?;
-                }
-                0x7265_746c_6966 => match parser.next_token::<Ignore>()? {
-                    Token::DictStart => {
-                        request.filter = parse_filter(parser)?;
-                    }
-                    Token::Null => (),
-                    token => {
-                        return Err(token.error("filter", "object or null"));
-                    }
-                },
-                0x7472_6f73 => match parser.next_token::<Ignore>()? {
-                    Token::ArrayStart => {
-                        request.sort = parse_sort(parser)?.into();
-                    }
-                    Token::Null => (),
-                    token => {
-                        return Err(token.error("sort", "array or null"));
-                    }
-                },
-                0x6e6f_6974_6973_6f70 => {
-                    request.position = parser
-                        .next_token::<Ignore>()?
-                        .unwrap_ints_or_null("position")?;
-                }
-                0x726f_6863_6e61 => {
-                    request.anchor = parser.next_token::<Id>()?.unwrap_string_or_null("anchor")?;
-                }
-                0x7465_7366_664f_726f_6863_6e61 => {
-                    request.anchor_offset = parser
-                        .next_token::<Ignore>()?
-                        .unwrap_ints_or_null("anchorOffset")?;
-                }
-                0x0074_696d_696c => {
-                    request.limit = parser
-                        .next_token::<Ignore>()?
-                        .unwrap_usize_or_null("limit")?;
-                }
-                0x6c61_746f_5465_7461_6c75_636c_6163 => {
-                    request.calculate_total = parser
-                        .next_token::<Ignore>()?
-                        .unwrap_bool_or_null("calculateTotal")?;
-                }
-
-                _ => {
-                    if !request.arguments.parse(parser, key)? {
-                        parser.skip_token(parser.depth_array, parser.depth_dict)?;
-                    }
-                }
-            }
+            arguments: T::QueryArguments::default(),
         }
-
-        Ok(request)
     }
 }
 
+/*
 pub fn parse_filter(parser: &mut Parser) -> trc::Result<Vec<Filter>> {
     let mut filter = vec![Filter::Close];
     let mut pos_stack = vec![0];
@@ -581,6 +554,8 @@ impl JsonObjectParser for SortProperty {
     }
 }
 
+
+
 impl Display for Filter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
@@ -720,28 +695,6 @@ impl Comparator {
     }
 }
 
-impl QueryRequest<RequestArguments> {
-    pub fn take_arguments(&mut self) -> RequestArguments {
-        std::mem::replace(&mut self.arguments, RequestArguments::SieveScript)
-    }
-}
-
-impl<T> QueryRequest<T> {
-    pub fn with_arguments<A>(self, arguments: A) -> QueryRequest<A> {
-        QueryRequest {
-            arguments,
-            account_id: self.account_id,
-            filter: self.filter,
-            sort: self.sort,
-            position: self.position,
-            anchor: self.anchor,
-            anchor_offset: self.anchor_offset,
-            limit: self.limit,
-            calculate_total: self.calculate_total,
-        }
-    }
-}
-
 impl From<Filter> for store::query::Filter {
     fn from(value: Filter) -> Self {
         match value {
@@ -797,3 +750,5 @@ impl From<FilterType> for Filter {
         }
     }
 }
+
+*/

@@ -220,7 +220,7 @@ impl<'de> serde::Deserialize<'de> for MethodName {
         let value = <&str>::deserialize(deserializer)?;
 
         MethodName::parse(value).ok_or_else(|| {
-            serde::de::Error::custom(format!("Invalid method name: {}", value))
+            serde::de::Error::custom(format!("Invalid method name: {:?}", value))
         })
     }
 }

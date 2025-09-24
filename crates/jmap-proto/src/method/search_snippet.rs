@@ -4,15 +4,20 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use super::query::{Filter, parse_filter};
-use crate::request::reference::{MaybeResultReference, ResultReference};
+use super::query::Filter;
+use crate::request::{
+    MaybeInvalid,
+    deserialize::{DeserializeArguments, deserialize_request},
+    reference::{MaybeResultReference, ResultReference},
+};
+use serde::{Deserialize, Deserializer, de::DeserializeOwned};
 use types::id::Id;
 
 #[derive(Debug, Clone)]
-pub struct GetSearchSnippetRequest {
+pub struct GetSearchSnippetRequest<T> {
     pub account_id: Id,
-    pub filter: Vec<Filter>,
-    pub email_ids: MaybeResultReference<Vec<Id>>,
+    pub filter: Vec<Filter<T>>,
+    pub email_ids: MaybeResultReference<Vec<MaybeInvalid<Id>>>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -25,7 +30,7 @@ pub struct GetSearchSnippetResponse {
 
     #[serde(rename = "notFound")]
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub not_found: Vec<Id>,
+    pub not_found: Vec<MaybeInvalid<Id>>,
 }
 
 #[derive(serde::Serialize, Clone, Debug)]
@@ -40,48 +45,48 @@ pub struct SearchSnippet {
     pub preview: Option<String>,
 }
 
-impl JsonObjectParser for GetSearchSnippetRequest {
-    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
+impl<'de, T: DeserializeOwned> DeserializeArguments<'de> for GetSearchSnippetRequest<T> {
+    fn deserialize_argument<A>(&mut self, key: &str, map: &mut A) -> Result<(), A::Error>
     where
-        Self: Sized,
+        A: serde::de::MapAccess<'de>,
     {
-        let mut request = GetSearchSnippetRequest {
-            account_id: Id::default(),
-            filter: vec![],
-            email_ids: MaybeReference::Value(vec![]),
-        };
-
-        parser
-            .next_token::<String>()?
-            .assert_jmap(Token::DictStart)?;
-
-        while let Some(key) = parser.next_dict_key::<RequestProperty>()? {
-            match &key.hash[0] {
-                0x0064_4974_6e75_6f63_6361 if !key.is_ref => {
-                    request.account_id = parser.next_token::<Id>()?.unwrap_string("accountId")?;
-                }
-                0x7265_746c_6966 if !key.is_ref => match parser.next_token::<Ignore>()? {
-                    Token::DictStart => {
-                        request.filter = parse_filter(parser)?;
-                    }
-                    Token::Null => (),
-                    token => {
-                        return Err(token.error("filter", "object or null"));
-                    }
-                },
-                0x7364_496c_6961_6d65 => {
-                    request.email_ids = if !key.is_ref {
-                        MaybeReference::Value(<Vec<Id>>::parse(parser)?)
-                    } else {
-                        MaybeReference::Reference(ResultReference::parse(parser)?)
-                    };
-                }
-                _ => {
-                    parser.skip_token(parser.depth_array, parser.depth_dict)?;
-                }
+        hashify::fnc_map!(key.as_bytes(),
+            b"accountId" => {
+                self.account_id = map.next_value()?;
+            },
+            b"filter" => {
+                self.filter = map.next_value()?;
+            },
+            b"emailIds" => {
+                self.email_ids = MaybeResultReference::Value(map.next_value::<Vec<MaybeInvalid<Id>>>()?);
+            },
+            b"#emailIds" => {
+                self.email_ids = MaybeResultReference::Reference(map.next_value::<ResultReference>()?);
+            },
+            _ => {
+                let _ = map.next_value::<serde::de::IgnoredAny>()?;
             }
-        }
+        );
 
-        Ok(request)
+        Ok(())
+    }
+}
+
+impl<'de, T: DeserializeOwned> Deserialize<'de> for GetSearchSnippetRequest<T> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserialize_request(deserializer)
+    }
+}
+
+impl<T> Default for GetSearchSnippetRequest<T> {
+    fn default() -> Self {
+        Self {
+            account_id: Id::default(),
+            filter: Vec::new(),
+            email_ids: MaybeResultReference::Value(Vec::new()),
+        }
     }
 }

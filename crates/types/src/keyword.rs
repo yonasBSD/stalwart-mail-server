@@ -30,6 +30,8 @@ pub const OTHER: usize = 12;
     Eq,
     Hash,
     Default,
+    PartialOrd,
+    Ord,
     serde::Serialize,
 )]
 #[serde(untagged)]
@@ -65,6 +67,10 @@ pub enum Keyword {
 
 impl Keyword {
     pub fn parse(value: &str) -> Self {
+        Self::try_parse(value).unwrap_or_else(|| Keyword::Other(value.to_string()))
+    }
+
+    pub fn try_parse(value: &str) -> Option<Self> {
         value
             .split_at_checked(1)
             .filter(|(prefix, _)| matches!(*prefix, "$" | "\\"))
@@ -84,7 +90,6 @@ impl Keyword {
                     "mdnsent" => Keyword::MdnSent
                 )
             })
-            .unwrap_or_else(|| Keyword::Other(value.to_string()))
     }
 
     pub fn id(&self) -> Result<u32, &str> {
@@ -139,6 +144,12 @@ impl Keyword {
             MDN_SENT => Ok(Keyword::MdnSent),
             _ => Err(id),
         }
+    }
+}
+
+impl From<String> for Keyword {
+    fn from(value: String) -> Self {
+        Keyword::try_parse(&value).unwrap_or(Keyword::Other(value))
     }
 }
 
@@ -239,5 +250,14 @@ impl From<&ArchivedKeyword> for Keyword {
             ArchivedKeyword::MdnSent => Keyword::MdnSent,
             ArchivedKeyword::Other(string) => Keyword::Other(string.as_str().into()),
         }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Keyword {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Ok(Keyword::parse(<&str>::deserialize(deserializer)?))
     }
 }

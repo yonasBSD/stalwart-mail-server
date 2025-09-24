@@ -5,13 +5,17 @@
  */
 
 use crate::{
-    object::{MaybeReference, parse_ref},
+    object::{JmapObject, MaybeReference, parse_ref},
+    request::{MaybeInvalid, deserialize::DeserializeArguments},
     types::date::UTCDate,
 };
 use jmap_tools::{Element, JsonPointer, JsonPointerItem, Key, Property};
 use mail_parser::HeaderName;
-use std::{borrow::Cow, fmt::Display};
+use std::{borrow::Cow, fmt::Display, str::FromStr};
 use types::{blob::BlobId, id::Id, keyword::Keyword};
+
+#[derive(Debug, Clone, Default)]
+pub struct Email;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum EmailProperty {
@@ -105,7 +109,7 @@ impl Property for EmailProperty {
         if let Some(Key::Property(key)) = key {
             match key.patch_or_prop() {
                 EmailProperty::Keywords => EmailProperty::Keyword(Keyword::parse(value)).into(),
-                _ => EmailProperty::from_str(value, allow_patch),
+                _ => EmailProperty::parse(value, allow_patch),
             }
         } else {
             EmailProperty::parse(value, allow_patch)
@@ -351,9 +355,17 @@ impl Display for HeaderForm {
     }
 }
 
+impl FromStr for EmailProperty {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        EmailProperty::parse(s, false).ok_or(())
+    }
+}
+
 #[derive(Debug, Clone, Default)]
-pub struct GetArguments {
-    pub body_properties: Option<Vec<EmailProperty>>,
+pub struct EmailGetArguments {
+    pub body_properties: Option<Vec<MaybeInvalid<EmailProperty>>>,
     pub fetch_text_body_values: Option<bool>,
     pub fetch_html_body_values: Option<bool>,
     pub fetch_all_body_values: Option<bool>,
@@ -361,53 +373,80 @@ pub struct GetArguments {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct QueryArguments {
+pub struct EmailQueryArguments {
     pub collapse_threads: Option<bool>,
 }
 
-/*impl RequestPropertyParser for GetArguments {
-    fn parse(&mut self, parser: &mut Parser, property: RequestProperty) -> trc::Result<bool> {
-        match (&property.hash[0], &property.hash[1]) {
-            (0x7365_6974_7265_706f_7250_7964_6f62, _) => {
-                self.body_properties = <Option<Vec<Property>>>::parse(parser)?;
+impl<'de> DeserializeArguments<'de> for EmailGetArguments {
+    fn deserialize_argument<A>(&mut self, key: &str, map: &mut A) -> Result<(), A::Error>
+    where
+        A: serde::de::MapAccess<'de>,
+    {
+        hashify::fnc_map!(key.as_bytes(),
+            b"bodyProperties" => {
+                self.body_properties = map.next_value()?;
+            },
+            b"fetchTextBodyValues" => {
+                self.fetch_text_body_values = map.next_value()?;
+            },
+            b"fetchHTMLBodyValues" => {
+                self.fetch_html_body_values = map.next_value()?;
+            },
+            b"fetchAllBodyValues" => {
+                self.fetch_all_body_values = map.next_value()?;
+            },
+            b"maxBodyValueBytes" => {
+                self.max_body_value_bytes = map.next_value()?;
+            },
+            _ => {
+                let _ = map.next_value::<serde::de::IgnoredAny>()?;
             }
-            (0x6c61_5679_646f_4274_7865_5468_6374_6566, 0x0073_6575) => {
-                self.fetch_text_body_values = parser
-                    .next_token::<Ignore>()?
-                    .unwrap_bool_or_null("fetchTextBodyValues")?;
-            }
-            (0x6c61_5679_646f_424c_4d54_4868_6374_6566, 0x0073_6575) => {
-                self.fetch_html_body_values = parser
-                    .next_token::<Ignore>()?
-                    .unwrap_bool_or_null("fetchHTMLBodyValues")?;
-            }
-            (0x756c_6156_7964_6f42_6c6c_4168_6374_6566, 0x7365) => {
-                self.fetch_all_body_values = parser
-                    .next_token::<Ignore>()?
-                    .unwrap_bool_or_null("fetchAllBodyValues")?;
-            }
-            (0x6574_7942_6575_6c61_5679_646f_4278_616d, 0x73) => {
-                self.max_body_value_bytes = parser
-                    .next_token::<Ignore>()?
-                    .unwrap_usize_or_null("maxBodyValueBytes")?;
-            }
-            _ => return Ok(false),
-        }
+        );
 
-        Ok(true)
+        Ok(())
     }
 }
 
-impl RequestPropertyParser for QueryArguments {
-    fn parse(&mut self, parser: &mut Parser, property: RequestProperty) -> trc::Result<bool> {
-        if property.hash[0] == 0x0073_6461_6572_6854_6573_7061_6c6c_6f63 {
-            self.collapse_threads = parser
-                .next_token::<Ignore>()?
-                .unwrap_bool_or_null("collapseThreads")?;
-            Ok(true)
+impl<'de> DeserializeArguments<'de> for EmailQueryArguments {
+    fn deserialize_argument<A>(&mut self, key: &str, map: &mut A) -> Result<(), A::Error>
+    where
+        A: serde::de::MapAccess<'de>,
+    {
+        if key == "collapseThreads" {
+            self.collapse_threads = map.next_value()?;
         } else {
-            Ok(false)
+            let _ = map.next_value::<serde::de::IgnoredAny>()?;
         }
+
+        Ok(())
     }
 }
-*/
+
+impl serde::Serialize for EmailProperty {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.to_cow().as_ref())
+    }
+}
+
+impl JmapObject for Email {
+    type Property = EmailProperty;
+
+    type Element = EmailValue;
+
+    type Id = Id;
+
+    type Filter = ();
+
+    type Comparator = ();
+
+    type GetArguments = EmailGetArguments;
+
+    type SetArguments = ();
+
+    type QueryArguments = ();
+
+    type CopyArguments = ();
+}

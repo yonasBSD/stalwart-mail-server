@@ -66,7 +66,7 @@ pub struct Response<'x> {
     #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub created_ids: HashMap<String, String>,
 }
-
+/*
 impl Response<'_> {
     pub fn new(session_state: u32, created_ids: HashMap<String, String>, capacity: usize) -> Self {
         Response {
@@ -200,3 +200,4 @@ impl<T: Into<ResponseMethod>> From<trc::Result<T>> for ResponseMethod {
         }
     }
 }
+*/

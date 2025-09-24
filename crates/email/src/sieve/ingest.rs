@@ -13,14 +13,12 @@ use crate::{
         ingest::{EmailIngest, IngestEmail, IngestSource, IngestedEmail},
     },
 };
-use common::{
-    Server, auth::AccessToken, config::jmap::settings::SpecialUse, scripts::plugins::PluginContext,
-};
+use common::{Server, auth::AccessToken, scripts::plugins::PluginContext};
 use directory::{Permission, QueryParams};
 use mail_parser::MessageParser;
 use sieve::{Envelope, Event, Input, Mailbox, Recipient, Sieve};
-use std::future::Future;
 use std::{borrow::Cow, sync::Arc};
+use std::{future::Future, str::FromStr};
 use store::{
     Deserialize, Serialize, SerializeInfallible,
     ahash::AHashMap,
@@ -29,7 +27,9 @@ use store::{
     write::{AlignedBytes, Archive, ArchiveVersion, Archiver, BatchBuilder, BlobOp},
 };
 use trc::{AddContext, SieveEvent};
-use types::{collection::Collection, field::SieveField, id::Id, keyword::Keyword};
+use types::{
+    collection::Collection, field::SieveField, id::Id, keyword::Keyword, special_use::SpecialUse,
+};
 use utils::config::utils::ParseValue;
 
 struct SieveMessage<'x> {
@@ -211,10 +211,10 @@ impl SieveScriptIngest for Server {
                                         }
                                     }
                                     Mailbox::Id(id) => {
-                                        if !matches!(Id::from_bytes(id.as_bytes()), Some(id) if
-                                                            cache.has_mailbox_id(&id.document_id()) &&
-                                                            (special_use_ids.is_empty() ||
-                                                            special_use_ids.contains(&id.document_id())))
+                                        if !matches!(Id::from_str(&id), Ok(id) if
+                                                        cache.has_mailbox_id(&id.document_id()) &&
+                                                        (special_use_ids.is_empty() ||
+                                                        special_use_ids.contains(&id.document_id())))
                                         {
                                             result = false;
                                             break;
@@ -308,9 +308,7 @@ impl SieveScriptIngest for Server {
                         let mut target_id = u32::MAX;
 
                         // Find mailbox by Id
-                        if let Some(mailbox_id) =
-                            mailbox_id.and_then(|m| Id::from_bytes(m.as_bytes()))
-                        {
+                        if let Some(mailbox_id) = mailbox_id.and_then(|m| Id::from_str(&m).ok()) {
                             let mailbox_id = mailbox_id.document_id();
                             if cache.has_mailbox_id(&mailbox_id) {
                                 target_id = mailbox_id;

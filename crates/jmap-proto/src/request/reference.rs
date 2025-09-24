@@ -7,7 +7,6 @@
 use super::method::MethodName;
 use jmap_tools::{JsonPointer, Null};
 use std::{fmt::Display, str::FromStr};
-use types::id::Id;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ResultReference {
@@ -70,7 +69,7 @@ impl<'de, V: FromStr> serde::Deserialize<'de> for MaybeIdReference<V> {
     }
 }
 
-impl serde::Serialize for MaybeIdReference<Id> {
+impl<V: serde::Serialize + FromStr> serde::Serialize for MaybeIdReference<V> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -80,5 +79,11 @@ impl serde::Serialize for MaybeIdReference<Id> {
             MaybeIdReference::Reference(str) => serializer.serialize_str(&format!("#{}", str)),
             MaybeIdReference::Invalid(str) => serializer.serialize_str(str),
         }
+    }
+}
+
+impl<V: Default> Default for MaybeResultReference<V> {
+    fn default() -> Self {
+        MaybeResultReference::Value(V::default())
     }
 }

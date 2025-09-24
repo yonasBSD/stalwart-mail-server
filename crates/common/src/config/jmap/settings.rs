@@ -346,9 +346,3 @@ impl JmapConfig {
         jmap
     }
 }
-
-impl ParseValue for SpecialUse {
-    fn parse_value(value: &str) -> Result<Self, String> {
-        SpecialUse::parse(value).ok_or_else(|| format!("Unknown folder role {:?}", value))
-    }
-}

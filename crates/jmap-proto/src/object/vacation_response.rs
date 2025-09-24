@@ -4,10 +4,13 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::types::date::UTCDate;
+use crate::{object::JmapObject, types::date::UTCDate};
 use jmap_tools::{Element, Key, Property};
 use std::{borrow::Cow, str::FromStr};
 use types::id::Id;
+
+#[derive(Debug, Clone, Default)]
+pub struct VacationResponse;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum VacationResponseProperty {
@@ -26,7 +29,7 @@ pub enum VacationResponseValue {
 }
 
 impl Property for VacationResponseProperty {
-    fn try_parse(key: Option<&Key<'_, Self>>, value: &str) -> Option<Self> {
+    fn try_parse(_: Option<&Key<'_, Self>>, value: &str) -> Option<Self> {
         VacationResponseProperty::parse(value)
     }
 
@@ -48,7 +51,7 @@ impl Element for VacationResponseValue {
 
     fn try_parse<P>(key: &Key<'_, Self::Property>, value: &str) -> Option<Self> {
         if let Key::Property(prop) = key {
-            match prop.patch_or_prop() {
+            match prop {
                 VacationResponseProperty::Id => {
                     Id::from_str(value).ok().map(VacationResponseValue::Id)
                 }
@@ -68,8 +71,6 @@ impl Element for VacationResponseValue {
         match self {
             VacationResponseValue::Id(id) => id.to_string().into(),
             VacationResponseValue::Date(utcdate) => utcdate.to_string().into(),
-            VacationResponseValue::BlobId(blob_id) => blob_id.to_string().into(),
-            VacationResponseValue::IdReference(r) => format!("#{r}").into(),
         }
     }
 }
@@ -85,4 +86,41 @@ impl VacationResponseProperty {
             b"htmlBody" => VacationResponseProperty::HtmlBody,
         )
     }
+}
+
+impl serde::Serialize for VacationResponseProperty {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.to_cow().as_ref())
+    }
+}
+
+impl FromStr for VacationResponseProperty {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        VacationResponseProperty::parse(s).ok_or(())
+    }
+}
+
+impl JmapObject for VacationResponse {
+    type Property = VacationResponseProperty;
+
+    type Element = VacationResponseValue;
+
+    type Id = Id;
+
+    type Filter = ();
+
+    type Comparator = ();
+
+    type GetArguments = ();
+
+    type SetArguments = ();
+
+    type QueryArguments = ();
+
+    type CopyArguments = ();
 }

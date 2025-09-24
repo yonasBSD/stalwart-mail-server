@@ -8,16 +8,14 @@ use super::{Response, ResponseMethod};
 use crate::{
     error::set::SetError,
     method::{copy::CopyResponse, set::SetResponse, upload::DataSourceObject},
-    request::{
-        RequestMethod,
-        reference::{MaybeReference, ResultReference},
-    },
+    request::{RequestMethod, reference::ResultReference},
 };
 use compact_str::format_compact;
 use std::collections::HashMap;
 use types::id::Id;
 use utils::map::vec_map::VecMap;
 
+/*
 enum EvalResult {
     Properties(Vec<Property>),
     Values(Vec<Value>),
@@ -532,10 +530,6 @@ mod tests {
     use crate::{
         request::{Request, RequestMethod},
         response::Response,
-        types::{
-            property::Property,
-            value::{SetValue, Value},
-        },
     };
     use std::collections::HashMap;
 
@@ -888,3 +882,5 @@ mod tests {
         }
     }
 }
+
+*/

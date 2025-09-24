@@ -131,14 +131,14 @@ impl<T: Property> SetError<T> {
         self
     }
 
-    pub fn with_property(mut self, property: impl Into<InvalidProperty>) -> Self {
+    pub fn with_property(mut self, property: impl Into<InvalidProperty<T>>) -> Self {
         self.properties = vec![property.into()].into();
         self
     }
 
     pub fn with_properties(
         mut self,
-        properties: impl IntoIterator<Item = impl Into<InvalidProperty>>,
+        properties: impl IntoIterator<Item = impl Into<InvalidProperty<T>>>,
     ) -> Self {
         self.properties = properties
             .into_iter()
@@ -188,13 +188,13 @@ impl<T: Property> SetError<T> {
 
 impl<T: Property> From<T> for InvalidProperty<T> {
     fn from(property: T) -> Self {
-        InvalidProperty::Property(property)
+        InvalidProperty::Property(Key::Property(property))
     }
 }
 
 impl<T: Property> From<(T, T)> for InvalidProperty<T> {
     fn from((a, b): (T, T)) -> Self {
-        InvalidProperty::Path(vec![a, b])
+        InvalidProperty::Path(vec![Key::Property(a), Key::Property(b)])
     }
 }
 
@@ -212,7 +212,7 @@ impl<T: Property> serde::Serialize for InvalidProperty<T> {
                     if i > 0 {
                         path.push('/');
                     }
-                    let _ = write!(path, "{}", p);
+                    let _ = write!(path, "{}", p.to_string());
                 }
                 path.serialize(serializer)
             }

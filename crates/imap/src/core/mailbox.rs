@@ -9,7 +9,6 @@ use crate::core::Mailbox;
 use ahash::AHashMap;
 use common::{
     auth::AccessToken,
-    config::jmap::settings::SpecialUse,
     listener::{SessionStream, limiter::InFlight},
     sharing::EffectiveAcl,
 };
@@ -25,7 +24,7 @@ use std::{
     sync::{Arc, atomic::Ordering},
 };
 use trc::AddContext;
-use types::{acl::Acl, collection::Collection, id::Id, keyword::Keyword};
+use types::{acl::Acl, collection::Collection, id::Id, keyword::Keyword, special_use::SpecialUse};
 
 impl<T: SessionStream> SessionData<T> {
     pub async fn new(

@@ -8,6 +8,11 @@ use jmap_tools::{Element, Key, Property};
 use std::{borrow::Cow, str::FromStr};
 use types::id::Id;
 
+use crate::object::JmapObject;
+
+#[derive(Debug, Clone, Default)]
+pub struct Principal;
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PrincipalProperty {
     Id,
@@ -35,7 +40,7 @@ pub enum PrincipalType {
 }
 
 impl Property for PrincipalProperty {
-    fn try_parse(key: Option<&Key<'_, Self>>, value: &str) -> Option<Self> {
+    fn try_parse(_: Option<&Key<'_, Self>>, value: &str) -> Option<Self> {
         PrincipalProperty::parse(value)
     }
 
@@ -58,7 +63,7 @@ impl Element for PrincipalValue {
 
     fn try_parse<P>(key: &Key<'_, Self::Property>, value: &str) -> Option<Self> {
         if let Key::Property(prop) = key {
-            match prop.patch_or_prop() {
+            match prop {
                 PrincipalProperty::Id => Id::from_str(value).ok().map(PrincipalValue::Id),
                 PrincipalProperty::Type => PrincipalType::parse(value).map(PrincipalValue::Type),
                 _ => None,
@@ -110,4 +115,41 @@ impl PrincipalType {
             PrincipalType::Other => "other",
         }
     }
+}
+
+impl serde::Serialize for PrincipalProperty {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.to_cow().as_ref())
+    }
+}
+
+impl FromStr for PrincipalProperty {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        PrincipalProperty::parse(s).ok_or(())
+    }
+}
+
+impl JmapObject for Principal {
+    type Property = PrincipalProperty;
+
+    type Element = PrincipalValue;
+
+    type Id = Id;
+
+    type Filter = ();
+
+    type Comparator = ();
+
+    type GetArguments = ();
+
+    type SetArguments = ();
+
+    type QueryArguments = ();
+
+    type CopyArguments = ();
 }

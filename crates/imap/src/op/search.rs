@@ -22,7 +22,7 @@ use imap_proto::{
 };
 use mail_parser::HeaderName;
 use nlp::language::Language;
-use std::{sync::Arc, time::Instant};
+use std::{str::FromStr, sync::Arc, time::Instant};
 use store::{
     SerializeInfallible,
     fts::{Field, FilterGroup, FtsFilter, IntoFilterGroup},
@@ -650,7 +650,7 @@ impl<T: SessionStream> SessionData<T> {
                         include_highest_modseq = true;
                     }
                     search::Filter::EmailId(id) => {
-                        if let Some(id) = Id::from_bytes(id.as_bytes()) {
+                        if let Ok(id) = Id::from_str(&id) {
                             filters.push(query::Filter::is_in_set(
                                 RoaringBitmap::from_sorted_iter([id.document_id()]).unwrap(),
                             ));
@@ -661,7 +661,7 @@ impl<T: SessionStream> SessionData<T> {
                         }
                     }
                     search::Filter::ThreadId(id) => {
-                        if let Some(id) = Id::from_bytes(id.as_bytes()) {
+                        if let Ok(id) = Id::from_str(&id) {
                             filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
                                 cache.in_thread(id.document_id()).map(|m| m.document_id),
                             )));

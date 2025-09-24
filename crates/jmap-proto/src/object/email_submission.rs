@@ -6,17 +6,20 @@
 
 use crate::{
     object::{
-        MaybeReference,
+        JmapObject, MaybeReference,
         email::{EmailProperty, EmailValue},
         parse_ref,
     },
-    request::reference::MaybeIdReference,
+    request::{deserialize::DeserializeArguments, reference::MaybeIdReference},
     types::date::UTCDate,
 };
 use jmap_tools::{Element, JsonPointer, JsonPointerItem, Key, Property, Value};
-use std::borrow::Cow;
+use std::{borrow::Cow, str::FromStr};
 use types::{blob::BlobId, id::Id};
 use utils::map::vec_map::VecMap;
+
+#[derive(Debug, Clone, Default)]
+pub struct EmailSubmission;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum EmailSubmissionProperty {
@@ -74,7 +77,7 @@ pub enum Displayed {
 
 impl Property for EmailSubmissionProperty {
     fn try_parse(key: Option<&Key<'_, Self>>, value: &str) -> Option<Self> {
-        EmailSubmissionProperty::from_str(value, key.is_none())
+        EmailSubmissionProperty::parse(value, key.is_none())
     }
 
     fn to_cow(&self) -> Cow<'static, str> {
@@ -250,29 +253,66 @@ impl Displayed {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct SetArguments<'x> {
+pub struct EmailSubmissionSetArguments<'x> {
     pub on_success_update_email:
-        Option<VecMap<MaybeReference<Id>, Value<'x, EmailProperty, EmailValue>>>,
+        Option<VecMap<MaybeIdReference<Id>, Value<'x, EmailProperty, EmailValue>>>,
     pub on_success_destroy_email: Option<Vec<MaybeIdReference<Id>>>,
 }
 
-/*impl RequestPropertyParser for SetArguments {
-    fn parse(&mut self, parser: &mut Parser, property: RequestProperty) -> trc::Result<bool> {
-        if property.hash[0] == 0x4565_7461_6470_5573_7365_6363_7553_6e6f
-            && property.hash[1] == 0x6c69_616d
-        {
-            self.on_success_update_email =
-                <Option<VecMap<MaybeReference<Id, String>, Value<'x, P, E>>>>::parse(parser)?;
-            Ok(true)
-        } else if property.hash[0] == 0x796f_7274_7365_4473_7365_6363_7553_6e6f
-            && property.hash[1] == 0x006c_6961_6d45
-        {
-            self.on_success_destroy_email =
-                <Option<Vec<MaybeReference<Id, String>>>>::parse(parser)?;
-            Ok(true)
-        } else {
-            Ok(false)
-        }
+impl<'x> DeserializeArguments<'x> for EmailSubmissionSetArguments<'x> {
+    fn deserialize_argument<A>(&mut self, key: &str, map: &mut A) -> Result<(), A::Error>
+    where
+        A: serde::de::MapAccess<'x>,
+    {
+        hashify::fnc_map!(key.as_bytes(),
+            b"onSuccessUpdateEmail" => {
+                self.on_success_update_email = map.next_value()?;
+            },
+            b"onSuccessDestroyEmail" => {
+                self.on_success_destroy_email = map.next_value()?;
+            },
+            _ => {
+                let _ = map.next_value::<serde::de::IgnoredAny>()?;
+            }
+        );
+
+        Ok(())
     }
 }
-*/
+
+impl serde::Serialize for EmailSubmissionProperty {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.to_cow().as_ref())
+    }
+}
+
+impl FromStr for EmailSubmissionProperty {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        EmailSubmissionProperty::parse(s, false).ok_or(())
+    }
+}
+
+impl JmapObject for EmailSubmission {
+    type Property = EmailSubmissionProperty;
+
+    type Element = EmailSubmissionValue;
+
+    type Id = Id;
+
+    type Filter = ();
+
+    type Comparator = ();
+
+    type GetArguments = ();
+
+    type SetArguments = ();
+
+    type QueryArguments = ();
+
+    type CopyArguments = ();
+}

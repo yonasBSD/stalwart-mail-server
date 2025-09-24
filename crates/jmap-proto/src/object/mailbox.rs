@@ -4,12 +4,18 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::borrow::Cow;
+use std::{borrow::Cow, str::FromStr};
 
 use jmap_tools::{Element, JsonPointer, JsonPointerItem, Key, Property};
 use types::{id::Id, special_use::SpecialUse};
 
-use crate::object::{MaybeReference, parse_ref};
+use crate::{
+    object::{JmapObject, MaybeReference, parse_ref},
+    request::deserialize::DeserializeArguments,
+};
+
+#[derive(Debug, Clone, Default)]
+pub struct Mailbox;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum MailboxProperty {
@@ -89,7 +95,7 @@ impl Element for MailboxValue {
                     MaybeReference::Reference(v) => Some(MailboxValue::IdReference(v)),
                     MaybeReference::ParseError => None,
                 },
-                MailboxProperty::Role => SpecialUse::from_str(value).ok().map(MailboxValue::Role),
+                MailboxProperty::Role => SpecialUse::parse(value).map(MailboxValue::Role),
                 _ => None,
             }
         } else {
@@ -151,49 +157,85 @@ impl MailboxProperty {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct SetArguments {
+pub struct MailboxSetArguments {
     pub on_destroy_remove_emails: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct QueryArguments {
+pub struct MailboxQueryArguments {
     pub sort_as_tree: Option<bool>,
     pub filter_as_tree: Option<bool>,
 }
 
-/*
-impl RequestPropertyParser for SetArguments {
-    fn parse(&mut self, parser: &mut Parser, property: RequestProperty) -> trc::Result<bool> {
-        if property.hash[0] == 0x4565_766f_6d65_5279_6f72_7473_6544_6e6f
-            && property.hash[1] == 0x0073_6c69_616d
-        {
-            self.on_destroy_remove_emails = parser
-                .next_token::<Ignore>()?
-                .unwrap_bool_or_null("onDestroyRemoveEmails")?;
-            Ok(true)
+impl<'de> DeserializeArguments<'de> for MailboxSetArguments {
+    fn deserialize_argument<A>(&mut self, key: &str, map: &mut A) -> Result<(), A::Error>
+    where
+        A: serde::de::MapAccess<'de>,
+    {
+        if key == "onDestroyRemoveEmails" {
+            self.on_destroy_remove_emails = map.next_value()?;
         } else {
-            Ok(false)
+            let _ = map.next_value::<serde::de::IgnoredAny>()?;
         }
+
+        Ok(())
     }
 }
 
-impl RequestPropertyParser for QueryArguments {
-    fn parse(&mut self, parser: &mut Parser, property: RequestProperty) -> trc::Result<bool> {
-        match &property.hash[0] {
-            0x6565_7254_7341_7472_6f73 => {
-                self.sort_as_tree = parser
-                    .next_token::<Ignore>()?
-                    .unwrap_bool_or_null("sortAsTree")?;
+impl<'de> DeserializeArguments<'de> for MailboxQueryArguments {
+    fn deserialize_argument<A>(&mut self, key: &str, map: &mut A) -> Result<(), A::Error>
+    where
+        A: serde::de::MapAccess<'de>,
+    {
+        hashify::fnc_map!(key.as_bytes(),
+            b"sortAsTree" => {
+                self.sort_as_tree = map.next_value()?;
+            },
+            b"filterAsTree" => {
+                self.filter_as_tree = map.next_value()?;
+            },
+            _ => {
+                let _ = map.next_value::<serde::de::IgnoredAny>()?;
             }
-            0x6565_7254_7341_7265_746c_6966 => {
-                self.filter_as_tree = parser
-                    .next_token::<Ignore>()?
-                    .unwrap_bool_or_null("filterAsTree")?;
-            }
-            _ => return Ok(false),
-        }
+        );
 
-        Ok(true)
+        Ok(())
     }
 }
-*/
+
+impl FromStr for MailboxProperty {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        MailboxProperty::parse(s, false).ok_or(())
+    }
+}
+
+impl serde::Serialize for MailboxProperty {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.to_cow().as_ref())
+    }
+}
+
+impl JmapObject for Mailbox {
+    type Property = MailboxProperty;
+
+    type Element = MailboxValue;
+
+    type Id = Id;
+
+    type Filter = ();
+
+    type Comparator = ();
+
+    type GetArguments = ();
+
+    type SetArguments = MailboxSetArguments;
+
+    type QueryArguments = MailboxQueryArguments;
+
+    type CopyArguments = ();
+}

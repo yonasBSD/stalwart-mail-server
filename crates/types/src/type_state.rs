@@ -6,10 +6,10 @@
 
 use crate::collection::SyncCollection;
 use serde::Serialize;
-use std::fmt::Display;
+use std::{fmt::Display, str::FromStr};
 use utils::map::bitmap::{Bitmap, BitmapItem};
 
-#[derive(Debug, Eq, PartialEq, Hash, Clone, Copy, Serialize)]
+#[derive(Debug, Eq, PartialEq, Hash, Clone, Copy, Serialize, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum DataType {
     #[serde(rename = "Email")]
@@ -196,6 +196,14 @@ impl DataType {
             DataType::FileNode => "FileNode",
             DataType::None => "",
         }
+    }
+}
+
+impl FromStr for DataType {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        DataType::parse(s).ok_or(())
     }
 }
 

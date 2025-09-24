@@ -8,6 +8,11 @@ use jmap_tools::{Element, Key, Property};
 use std::{borrow::Cow, str::FromStr};
 use types::id::Id;
 
+use crate::object::JmapObject;
+
+#[derive(Debug, Clone, Default)]
+pub struct Thread;
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ThreadProperty {
     Id,
@@ -20,7 +25,7 @@ pub enum ThreadValue {
 }
 
 impl Property for ThreadProperty {
-    fn try_parse(key: Option<&Key<'_, Self>>, value: &str) -> Option<Self> {
+    fn try_parse(_: Option<&Key<'_, Self>>, value: &str) -> Option<Self> {
         ThreadProperty::parse(value)
     }
 
@@ -37,13 +42,8 @@ impl Element for ThreadValue {
     type Property = ThreadProperty;
 
     fn try_parse<P>(key: &Key<'_, Self::Property>, value: &str) -> Option<Self> {
-        if let Key::Property(prop) = key {
-            match prop.patch_or_prop() {
-                ThreadProperty::Id | ThreadProperty::EmailIds => {
-                    Id::from_str(value).ok().map(ThreadValue::Id)
-                }
-                _ => None,
-            }
+        if let Key::Property(_) = key {
+            Id::from_str(value).ok().map(ThreadValue::Id)
         } else {
             None
         }
@@ -63,4 +63,41 @@ impl ThreadProperty {
             b"emailIds" => ThreadProperty::EmailIds,
         )
     }
+}
+
+impl serde::Serialize for ThreadProperty {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.to_cow().as_ref())
+    }
+}
+
+impl FromStr for ThreadProperty {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        ThreadProperty::parse(s).ok_or(())
+    }
+}
+
+impl JmapObject for Thread {
+    type Property = ThreadProperty;
+
+    type Element = ThreadValue;
+
+    type Id = Id;
+
+    type Filter = ();
+
+    type Comparator = ();
+
+    type GetArguments = ();
+
+    type SetArguments = ();
+
+    type QueryArguments = ();
+
+    type CopyArguments = ();
 }

@@ -8,6 +8,10 @@ use jmap_tools::{Element, Key, Property};
 use std::{borrow::Cow, str::FromStr};
 use types::id::Id;
 
+#[derive(Debug, Clone, Default)]
+pub struct SearchSnippet;
+
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SearchSnippetProperty {
     EmailId,
@@ -21,7 +25,7 @@ pub enum SearchSnippetValue {
 }
 
 impl Property for SearchSnippetProperty {
-    fn try_parse(key: Option<&Key<'_, Self>>, value: &str) -> Option<Self> {
+    fn try_parse(_: Option<&Key<'_, Self>>, value: &str) -> Option<Self> {
         SearchSnippetProperty::parse(value)
     }
 
@@ -40,7 +44,7 @@ impl Element for SearchSnippetValue {
 
     fn try_parse<P>(key: &Key<'_, Self::Property>, value: &str) -> Option<Self> {
         if let Key::Property(prop) = key {
-            match prop.patch_or_prop() {
+            match prop {
                 SearchSnippetProperty::EmailId => {
                     Id::from_str(value).ok().map(SearchSnippetValue::Id)
                 }

@@ -4,9 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::str::FromStr;
-
+use crate::request::deserialize::DeserializeArguments;
 use jmap_tools::{Element, Property};
+use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 
 pub mod blob;
 pub mod email;
@@ -22,17 +23,17 @@ pub mod thread;
 pub mod vacation_response;
 
 pub trait JmapObject {
-    type Property: Property;
-    type Element: Element;
-    type Id: FromStr;
+    type Property: Property + FromStr + Serialize;
+    type Element: Element<Property = Self::Property>;
+    type Id: FromStr + Serialize;
 
-    type Filter;
-    type Comparator;
+    type Filter: for<'de> Deserialize<'de>;
+    type Comparator: for<'de> Deserialize<'de>;
 
-    type GetArguments;
-    type SetArguments;
-    type QueryArguments;
-    type CopyArguments;
+    type GetArguments: Default + for<'de> DeserializeArguments<'de>;
+    type SetArguments: Default + for<'de> DeserializeArguments<'de>;
+    type QueryArguments: Default + for<'de> DeserializeArguments<'de>;
+    type CopyArguments: Default + for<'de> DeserializeArguments<'de>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

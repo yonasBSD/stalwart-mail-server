@@ -15,7 +15,7 @@ use crate::blob_hash::BlobHash;
 const B_LINKED: u8 = 0x10;
 const B_RESERVED: u8 = 0x20;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum BlobClass {
     Reserved {
         account_id: u32,
@@ -65,14 +65,14 @@ impl BlobClass {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BlobId {
     pub hash: BlobHash,
     pub class: BlobClass,
     pub section: Option<BlobSection>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BlobSection {
     pub offset_start: usize,
     pub size: usize,
@@ -126,7 +126,7 @@ impl BlobId {
     }
 
     #[allow(clippy::should_implement_trait)]
-    fn from_iter<T, U>(it: &mut T) -> Option<Self>
+    pub fn from_iter<T, U>(it: &mut T) -> Option<Self>
     where
         T: Iterator<Item = U> + Leb128Iterator<U>,
         U: Borrow<u8>,

@@ -10,6 +10,7 @@ use crate::{
     object::JmapObject,
     request::{
         MaybeInvalid,
+        deserialize::{DeserializeArguments, deserialize_request},
         method::MethodObject,
         reference::{MaybeResultReference, ResultReference},
     },
@@ -19,10 +20,12 @@ use crate::{
 use ahash::AHashMap;
 use compact_str::format_compact;
 use jmap_tools::Value;
+use serde::{Deserialize, Deserializer};
 use types::{acl::Acl, blob::BlobId, id::Id, keyword::Keyword};
 use utils::map::{bitmap::Bitmap, vec_map::VecMap};
 
 #[derive(Debug, Clone)]
+#[allow(clippy::type_complexity)]
 pub struct SetRequest<'x, T: JmapObject> {
     pub account_id: Id,
     pub if_in_state: Option<State>,
@@ -31,17 +34,6 @@ pub struct SetRequest<'x, T: JmapObject> {
     pub destroy: Option<MaybeResultReference<Vec<MaybeInvalid<Id>>>>,
     pub arguments: T::SetArguments,
 }
-
-/*#[derive(Debug, Clone)]
-pub enum RequestArguments {
-    Email,
-    Mailbox(mailbox::SetArguments),
-    Identity,
-    EmailSubmission(email_submission::SetArguments),
-    PushSubscription,
-    SieveScript(sieve::SetArguments),
-    VacationResponse,
-}*/
 
 #[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct SetResponse<T: JmapObject> {
@@ -82,306 +74,67 @@ pub struct SetResponse<T: JmapObject> {
     pub not_destroyed: VecMap<MaybeInvalid<Id>, SetError<T::Property>>,
 }
 
-impl JsonObjectParser for SetRequest<RequestArguments> {
-    fn parse(parser: &mut Parser) -> trc::Result<Self>
+impl<'de, T: JmapObject> DeserializeArguments<'de> for SetRequest<'de, T> {
+    fn deserialize_argument<A>(&mut self, key: &str, map: &mut A) -> Result<(), A::Error>
     where
-        Self: Sized,
+        A: serde::de::MapAccess<'de>,
     {
-        let mut request = SetRequest {
-            arguments: match &parser.ctx {
-                MethodObject::Email => RequestArguments::Email,
-                MethodObject::Mailbox => RequestArguments::Mailbox(Default::default()),
-                MethodObject::Identity => RequestArguments::Identity,
-                MethodObject::EmailSubmission => {
-                    RequestArguments::EmailSubmission(Default::default())
-                }
-                MethodObject::PushSubscription => RequestArguments::PushSubscription,
-                MethodObject::VacationResponse => RequestArguments::VacationResponse,
-                MethodObject::SieveScript => RequestArguments::SieveScript(Default::default()),
-                _ => {
-                    return Err(trc::JmapEvent::UnknownMethod
-                        .into_err()
-                        .details(format_compact!("{}/set", parser.ctx)));
-                }
+        hashify::fnc_map!(key.as_bytes(),
+            b"accountId" => {
+                self.account_id = map.next_value()?;
             },
+            b"ifInState" => {
+                self.if_in_state = map.next_value()?;
+            },
+            b"create" => {
+                self.create = map.next_value()?;
+            },
+            b"update" => {
+                self.update = map.next_value()?;
+            },
+            b"destroy" => {
+                self.destroy = map.next_value::<Option<Vec<MaybeInvalid<Id>>>>()?.map(MaybeResultReference::Value);
+            },
+            b"#destroy" => {
+                self.destroy = Some(MaybeResultReference::Reference(map.next_value::<ResultReference>()?));
+            }
+            _ => {
+                self.arguments.deserialize_argument(key, map)?;
+            }
+        );
+
+        Ok(())
+    }
+}
+
+impl<'de, T: JmapObject> Deserialize<'de> for SetRequest<'de, T> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserialize_request(deserializer)
+    }
+}
+
+impl<'x, T: JmapObject> Default for SetRequest<'x, T> {
+    fn default() -> Self {
+        Self {
             account_id: Id::default(),
             if_in_state: None,
             create: None,
             update: None,
             destroy: None,
-        };
-
-        parser
-            .next_token::<String>()?
-            .assert_jmap(Token::DictStart)?;
-
-        while let Some(key) = parser.next_dict_key::<RequestProperty>()? {
-            match &key.hash[0] {
-                0x0064_4974_6e75_6f63_6361 if !key.is_ref => {
-                    request.account_id = parser.next_token::<Id>()?.unwrap_string("accountId")?;
-                }
-                0x6574_6165_7263 if !key.is_ref => {
-                    request.create = <Option<VecMap<String, Value<'x, P, E>>>>::parse(parser)?;
-                }
-                0x6574_6164_7075 if !key.is_ref => {
-                    request.update = <Option<VecMap<Id, Value<'x, P, E>>>>::parse(parser)?;
-                }
-                0x0079_6f72_7473_6564 => {
-                    request.destroy = if !key.is_ref {
-                        <Option<Vec<Id>>>::parse(parser)?.map(MaybeReference::Value)
-                    } else {
-                        Some(MaybeReference::Reference(ResultReference::parse(parser)?))
-                    };
-                }
-                0x0065_7461_7453_6e49_6669 if !key.is_ref => {
-                    request.if_in_state = parser
-                        .next_token::<State>()?
-                        .unwrap_string_or_null("ifInState")?;
-                }
-                _ => {
-                    if !request.arguments.parse(parser, key)? {
-                        parser.skip_token(parser.depth_array, parser.depth_dict)?;
-                    }
-                }
-            }
-        }
-
-        Ok(request)
-    }
-}
-
-impl JsonObjectParser for Value<'x, P, E> {
-    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
-    where
-        Self: Sized,
-    {
-        let mut obj = Object(VecMap::with_capacity(8));
-
-        parser
-            .next_token::<String>()?
-            .assert_jmap(Token::DictStart)?;
-
-        while let Some(mut key) = parser.next_dict_key::<SetProperty>()? {
-            let value = if !key.is_ref {
-                match &key.property {
-                    Property::Id | Property::ThreadId => parser
-                        .next_token::<Id>()?
-                        .unwrap_string_or_null("")?
-                        .map(|id| SetValue::Value(Value::Id(id)))
-                        .unwrap_or(SetValue::Value(Value::Null)),
-                    Property::BlobId | Property::Picture => parser
-                        .next_token::<MaybeReference<BlobId, String>>()?
-                        .unwrap_string_or_null("")?
-                        .map(SetValue::from)
-                        .unwrap_or(SetValue::Value(Value::Null)),
-                    Property::SentAt
-                    | Property::ReceivedAt
-                    | Property::Expires
-                    | Property::FromDate
-                    | Property::ToDate => parser
-                        .next_token::<UTCDate>()?
-                        .unwrap_string_or_null("")?
-                        .map(|date| SetValue::Value(Value::Date(date)))
-                        .unwrap_or(SetValue::Value(Value::Null)),
-                    Property::Subject
-                    | Property::Preview
-                    | Property::Name
-                    | Property::Description
-                    | Property::Timezone
-                    | Property::Email
-                    | Property::Secret
-                    | Property::DeviceClientId
-                    | Property::Url
-                    | Property::VerificationCode
-                    | Property::HtmlSignature
-                    | Property::TextSignature
-                    | Property::Type
-                    | Property::Charset
-                    | Property::Disposition
-                    | Property::Language
-                    | Property::Location
-                    | Property::Cid
-                    | Property::Role
-                    | Property::PartId => parser
-                        .next_token::<String>()?
-                        .unwrap_string_or_null("")?
-                        .map(|text| SetValue::Value(Value::Text(text)))
-                        .unwrap_or(SetValue::Value(Value::Null)),
-                    Property::TextBody | Property::HtmlBody => {
-                        if let MethodObject::Email = &parser.ctx {
-                            SetValue::Value(Value::parse::<ObjectProperty, String>(
-                                parser.next_token()?,
-                                parser,
-                            )?)
-                        } else {
-                            parser
-                                .next_token::<String>()?
-                                .unwrap_string_or_null("")?
-                                .map(|text| SetValue::Value(Value::Text(text)))
-                                .unwrap_or(SetValue::Value(Value::Null))
-                        }
-                    }
-                    Property::HasAttachment
-                    | Property::IsSubscribed
-                    | Property::IsEnabled
-                    | Property::IsActive => parser
-                        .next_token::<String>()?
-                        .unwrap_bool_or_null("")?
-                        .map(|bool| SetValue::Value(Value::Bool(bool)))
-                        .unwrap_or(SetValue::Value(Value::Null)),
-                    Property::Size | Property::SortOrder | Property::Quota => parser
-                        .next_token::<String>()?
-                        .unwrap_uint_or_null("")?
-                        .map(|uint| SetValue::Value(Value::UnsignedInt(uint)))
-                        .unwrap_or(SetValue::Value(Value::Null)),
-                    Property::ParentId | Property::EmailId | Property::IdentityId => parser
-                        .next_token::<MaybeReference<Id, String>>()?
-                        .unwrap_string_or_null("")?
-                        .map(SetValue::from)
-                        .unwrap_or(SetValue::Value(Value::Null)),
-                    Property::MailboxIds => {
-                        if key.patch.is_empty() {
-                            SetValue::from(
-                                <SetValueMap<MaybeReference<Id, String>>>::parse(parser)?.values,
-                            )
-                        } else {
-                            key.patch.push(Value::Bool(bool::parse(parser)?));
-                            SetValue::Patch(key.patch)
-                        }
-                    }
-                    Property::Keywords => {
-                        if key.patch.is_empty() {
-                            SetValue::Value(Value::List(
-                                <SetValueMap<Keyword>>::parse(parser)?
-                                    .values
-                                    .into_iter()
-                                    .map(Value::Keyword)
-                                    .collect(),
-                            ))
-                        } else {
-                            key.patch.push(Value::Bool(bool::parse(parser)?));
-                            SetValue::Patch(key.patch)
-                        }
-                    }
-
-                    Property::Acl => match key.patch.len() {
-                        0 => {
-                            parser
-                                .next_token::<String>()?
-                                .assert_jmap(Token::DictStart)?;
-                            let mut acls = Vec::new();
-                            while let Some(account) = parser.next_dict_key::<String>()? {
-                                acls.push(Value::Text(account));
-                                acls.push(Value::UnsignedInt(<Bitmap<Acl>>::parse(parser)?.into()));
-                            }
-                            SetValue::Value(Value::List(acls))
-                        }
-                        1 => {
-                            key.patch
-                                .push(Value::UnsignedInt(<Bitmap<Acl>>::parse(parser)?.into()));
-                            SetValue::Patch(key.patch)
-                        }
-                        2 => {
-                            key.patch.push(Value::Bool(bool::parse(parser)?));
-                            SetValue::Patch(key.patch)
-                        }
-                        _ => unreachable!(),
-                    },
-                    Property::Aliases
-                    | Property::Attachments
-                    | Property::Bcc
-                    | Property::BodyStructure
-                    | Property::BodyValues
-                    | Property::Capabilities
-                    | Property::Cc
-                    | Property::Envelope
-                    | Property::From
-                    | Property::Headers
-                    | Property::InReplyTo
-                    | Property::Keys
-                    | Property::MessageId
-                    | Property::References
-                    | Property::ReplyTo
-                    | Property::Sender
-                    | Property::SubParts
-                    | Property::To
-                    | Property::UndoStatus
-                    | Property::Types => SetValue::Value(Value::parse::<ObjectProperty, String>(
-                        parser.next_token()?,
-                        parser,
-                    )?),
-                    Property::Parameters => SetValue::Value(Value::parse::<String, String>(
-                        parser.next_token()?,
-                        parser,
-                    )?),
-                    Property::Members => SetValue::Value(Value::parse::<ObjectProperty, Id>(
-                        parser.next_token()?,
-                        parser,
-                    )?),
-                    Property::Header(h) => SetValue::Value(if matches!(h.form, HeaderForm::Date) {
-                        Value::parse::<ObjectProperty, UTCDate>(parser.next_token()?, parser)
-                    } else {
-                        Value::parse::<ObjectProperty, String>(parser.next_token()?, parser)
-                    }?),
-
-                    _ => {
-                        parser.skip_token(parser.depth_array, parser.depth_dict)?;
-                        SetValue::Value(Value::Null)
-                    }
-                }
-            } else {
-                SetValue::ResultReference(ResultReference::parse(parser)?)
-            };
-
-            obj.0.append(key.property, value);
-        }
-
-        Ok(obj)
-    }
-}
-
-impl<T: Into<AnyId>> From<MaybeReference<T, String>> for SetValue {
-    fn from(reference: MaybeReference<T, String>) -> Self {
-        match reference {
-            MaybeReference::Value(id) => SetValue::IdReference(MaybeReference::Value(id.into())),
-            MaybeReference::Reference(reference) => {
-                SetValue::IdReference(MaybeReference::Reference(reference))
-            }
+            arguments: T::SetArguments::default(),
         }
     }
 }
 
-impl<T: Into<AnyId>> From<Vec<MaybeReference<T, String>>> for SetValue {
-    fn from(value: Vec<MaybeReference<T, String>>) -> Self {
-        SetValue::IdReferences(
-            value
-                .into_iter()
-                .map(|reference| match reference {
-                    MaybeReference::Value(id) => MaybeReference::Value(id.into()),
-                    MaybeReference::Reference(reference) => MaybeReference::Reference(reference),
-                })
-                .collect(),
-        )
-    }
-}
-
-impl RequestPropertyParser for RequestArguments {
-    fn parse(&mut self, parser: &mut Parser, property: RequestProperty) -> trc::Result<bool> {
-        match self {
-            RequestArguments::Mailbox(args) => args.parse(parser, property),
-            RequestArguments::EmailSubmission(args) => args.parse(parser, property),
-            RequestArguments::SieveScript(args) => args.parse(parser, property),
-            _ => Ok(false),
-        }
-    }
-}
-
-impl<T> SetRequest<T> {
+impl<'x, T: JmapObject> SetRequest<'x, T> {
     pub fn validate(&self, max_objects_in_set: usize) -> trc::Result<()> {
         if self.create.as_ref().map_or(0, |objs| objs.len())
             + self.update.as_ref().map_or(0, |objs| objs.len())
             + self.destroy.as_ref().map_or(0, |objs| {
-                if let MaybeReference::Value(ids) = objs {
+                if let MaybeResultReference::Value(ids) = objs {
                     ids.len()
                 } else {
                     0
@@ -403,45 +156,31 @@ impl<T> SetRequest<T> {
         self.create.as_ref().is_some_and(|objs| !objs.is_empty())
     }
 
-    pub fn unwrap_create(&mut self) -> VecMap<String, Value<'x, P, E>> {
+    pub fn unwrap_create(&mut self) -> VecMap<String, Value<'x, T::Property, T::Element>> {
         self.create.take().unwrap_or_default()
     }
 
-    pub fn unwrap_update(&mut self) -> VecMap<Id, Value<'x, P, E>> {
+    pub fn unwrap_update(
+        &mut self,
+    ) -> VecMap<MaybeInvalid<Id>, Value<'x, T::Property, T::Element>> {
         self.update.take().unwrap_or_default()
     }
 
-    pub fn unwrap_destroy(&mut self) -> Vec<Id> {
+    /*pub fn unwrap_destroy(&mut self) -> Vec<Id> {
         self.destroy
             .take()
             .map(|ids| ids.unwrap())
             .unwrap_or_default()
-    }
+    }*/
 }
 
-impl SetRequest<RequestArguments> {
-    pub fn take_arguments(&mut self) -> RequestArguments {
-        std::mem::replace(&mut self.arguments, RequestArguments::VacationResponse)
-    }
-
-    pub fn with_arguments<T>(self, arguments: T) -> SetRequest<T> {
-        SetRequest {
-            account_id: self.account_id,
-            if_in_state: self.if_in_state,
-            create: self.create,
-            update: self.update,
-            destroy: self.destroy,
-            arguments,
-        }
-    }
-}
-
-impl SetResponse {
-    pub fn from_request<T>(request: &SetRequest<T>, max_objects: usize) -> trc::Result<Self> {
+/*
+impl<T: JmapObject> SetResponse<T> {
+    pub fn from_request(request: &SetRequest<T>, max_objects: usize) -> trc::Result<Self> {
         let n_create = request.create.as_ref().map_or(0, |objs| objs.len());
         let n_update = request.update.as_ref().map_or(0, |objs| objs.len());
         let n_destroy = request.destroy.as_ref().map_or(0, |objs| {
-            if let MaybeReference::Value(ids) = objs {
+            if let MaybeResultReference::Value(ids) = objs {
                 ids.len()
             } else {
                 0
@@ -527,3 +266,4 @@ impl SetResponse {
         !self.created.is_empty() || !self.updated.is_empty() || !self.destroyed.is_empty()
     }
 }
+*/

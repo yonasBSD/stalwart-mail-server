@@ -5,7 +5,7 @@
  */
 
 use crate::Session;
-use common::{config::jmap::settings::SpecialUse, listener::SessionStream};
+use common::listener::SessionStream;
 use email::{
     cache::{MessageCacheFetch, mailbox::MailboxCacheAccess},
     mailbox::INBOX_ID,
@@ -16,7 +16,7 @@ use store::{
     write::key::DeserializeBigEndian,
 };
 use trc::AddContext;
-use types::{collection::Collection, field::EmailField};
+use types::{collection::Collection, field::EmailField, special_use::SpecialUse};
 
 #[derive(Default)]
 pub struct Mailbox {

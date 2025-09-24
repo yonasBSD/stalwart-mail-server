@@ -4,10 +4,16 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::object::{MaybeReference, parse_ref};
+use crate::{
+    object::{JmapObject, MaybeReference, parse_ref},
+    request::deserialize::DeserializeArguments,
+};
 use jmap_tools::{Element, Key, Property};
-use std::borrow::Cow;
+use std::{borrow::Cow, str::FromStr};
 use types::blob::BlobId;
+
+#[derive(Debug, Clone, Default)]
+pub struct Blob;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum BlobProperty {
@@ -21,14 +27,14 @@ pub enum BlobProperty {
     IsTruncated,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum DigestProperty {
     Sha,
     Sha256,
     Sha512,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum DataProperty {
     AsText,
     AsBase64,
@@ -42,7 +48,7 @@ pub enum BlobValue {
 }
 
 impl Property for BlobProperty {
-    fn try_parse(key: Option<&Key<'_, Self>>, value: &str) -> Option<Self> {
+    fn try_parse(_: Option<&Key<'_, Self>>, value: &str) -> Option<Self> {
         BlobProperty::parse(value)
     }
 
@@ -74,12 +80,7 @@ impl Element for BlobValue {
 
     fn try_parse<P>(key: &Key<'_, Self::Property>, value: &str) -> Option<Self> {
         if let Key::Property(prop) = key {
-            match prop.patch_or_prop() {
-                BlobProperty::Id => match parse_ref(value) {
-                    MaybeReference::Value(v) => Some(BlobValue::Id(v)),
-                    MaybeReference::Reference(v) => Some(BlobValue::IdReference(v)),
-                    MaybeReference::ParseError => None,
-                },
+            match prop {
                 BlobProperty::BlobId => match parse_ref(value) {
                     MaybeReference::Value(v) => Some(BlobValue::BlobId(v)),
                     MaybeReference::Reference(v) => Some(BlobValue::IdReference(v)),
@@ -119,33 +120,66 @@ impl BlobProperty {
     }
 }
 
+impl FromStr for BlobProperty {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        BlobProperty::parse(s).ok_or(())
+    }
+}
+
 #[derive(Debug, Clone, Default)]
-pub struct GetArguments {
+pub struct BlobGetArguments {
     pub offset: Option<usize>,
     pub length: Option<usize>,
 }
 
-/*
-
-impl RequestPropertyParser for GetArguments {
-    fn parse(&mut self, parser: &mut Parser, property: RequestProperty) -> trc::Result<bool> {
-        match &property.hash[0] {
-            0x7465_7366_666f => {
-                self.offset = parser
-                    .next_token::<Ignore>()?
-                    .unwrap_usize_or_null("offset")?;
+impl<'de> DeserializeArguments<'de> for BlobGetArguments {
+    fn deserialize_argument<A>(&mut self, key: &str, map: &mut A) -> Result<(), A::Error>
+    where
+        A: serde::de::MapAccess<'de>,
+    {
+        hashify::fnc_map!(key.as_bytes(),
+             b"offset" => {
+                self.offset = map.next_value()?;
+            },
+            b"length" => {
+                self.length = map.next_value()?;
+            },
+            _ => {
+                let _ = map.next_value::<serde::de::IgnoredAny>()?;
             }
-            0x6874_676e_656c => {
-                self.length = parser
-                    .next_token::<Ignore>()?
-                    .unwrap_usize_or_null("length")?;
-            }
-            _ => return Ok(false),
-        }
+        );
 
-        Ok(true)
+        Ok(())
     }
 }
 
+impl serde::Serialize for BlobProperty {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.to_cow().as_ref())
+    }
+}
 
-*/
+impl JmapObject for Blob {
+    type Property = BlobProperty;
+
+    type Element = BlobValue;
+
+    type Id = BlobId;
+
+    type Filter = ();
+
+    type Comparator = ();
+
+    type GetArguments = BlobGetArguments;
+
+    type SetArguments = ();
+
+    type QueryArguments = ();
+
+    type CopyArguments = ();
+}

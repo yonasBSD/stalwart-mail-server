@@ -8,6 +8,11 @@ use jmap_tools::{Element, Key, Property};
 use std::{borrow::Cow, str::FromStr};
 use types::{id::Id, type_state::DataType};
 
+use crate::object::JmapObject;
+
+#[derive(Debug, Clone, Default)]
+pub struct Quota;
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum QuotaProperty {
     Id,
@@ -29,7 +34,7 @@ pub enum QuotaValue {
 }
 
 impl Property for QuotaProperty {
-    fn try_parse(key: Option<&Key<'_, Self>>, value: &str) -> Option<Self> {
+    fn try_parse(_: Option<&Key<'_, Self>>, value: &str) -> Option<Self> {
         QuotaProperty::parse(value)
     }
 
@@ -72,7 +77,7 @@ impl Element for QuotaValue {
 
     fn try_parse<P>(key: &Key<'_, Self::Property>, value: &str) -> Option<Self> {
         if let Key::Property(prop) = key {
-            match prop.patch_or_prop() {
+            match prop {
                 QuotaProperty::Id => Id::from_str(value).ok().map(QuotaValue::Id),
                 QuotaProperty::Types => DataType::parse(value).map(QuotaValue::Types),
                 _ => None,
@@ -88,4 +93,41 @@ impl Element for QuotaValue {
             QuotaValue::Types(data_type) => data_type.as_str().into(),
         }
     }
+}
+
+impl serde::Serialize for QuotaProperty {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.to_cow().as_ref())
+    }
+}
+
+impl FromStr for QuotaProperty {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        QuotaProperty::parse(s).ok_or(())
+    }
+}
+
+impl JmapObject for Quota {
+    type Property = QuotaProperty;
+
+    type Element = QuotaValue;
+
+    type Id = Id;
+
+    type Filter = ();
+
+    type Comparator = ();
+
+    type GetArguments = ();
+
+    type SetArguments = ();
+
+    type QueryArguments = ();
+
+    type CopyArguments = ();
 }

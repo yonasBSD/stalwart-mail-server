@@ -45,13 +45,13 @@ impl State {
         let mut it = value.as_bytes().iter();
 
         match it.next()? {
-            b'n' => Ok(State::Initial),
+            b'n' => Some(State::Initial),
             b's' => {
-                let mut reader = Base32Reader::new(it);
+                let mut reader = Base32Reader::from_iter(it);
                 reader.next_leb128::<ChangeId>().map(State::Exact)
             }
             b'r' => {
-                let mut it = Base32Reader::new(it);
+                let mut it = Base32Reader::from_iter(it);
 
                 if let (Some(from_id), Some(to_id), Some(items_sent)) = (
                     it.next_leb128::<ChangeId>(),
@@ -59,7 +59,7 @@ impl State {
                     it.next_leb128::<usize>(),
                 ) {
                     if items_sent > 0 {
-                        Ok(State::Intermediate(JMAPIntermediateState {
+                        Some(State::Intermediate(JMAPIntermediateState {
                             from_id,
                             to_id: from_id.saturating_add(to_id),
                             items_sent,
@@ -115,7 +115,7 @@ impl<'de> serde::Deserialize<'de> for State {
         D: serde::Deserializer<'de>,
     {
         State::parse(<&str>::deserialize(deserializer)?)
-            .map_err(|_| serde::de::Error::custom("invalid JMAP State"))
+            .ok_or_else(|| serde::de::Error::custom("invalid JMAP State"))
     }
 }
 

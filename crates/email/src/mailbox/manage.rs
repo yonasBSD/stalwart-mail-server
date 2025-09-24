@@ -6,7 +6,7 @@
 
 use super::*;
 use crate::cache::MessageCacheFetch;
-use common::{Server, config::jmap::settings::SpecialUse, storage::index::ObjectIndexBuilder};
+use common::{Server, storage::index::ObjectIndexBuilder};
 use std::future::Future;
 use store::write::BatchBuilder;
 use trc::AddContext;

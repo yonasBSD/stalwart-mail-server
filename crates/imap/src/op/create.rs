@@ -9,9 +9,7 @@ use crate::{
     op::ImapContext,
     spawn_op,
 };
-use common::{
-    config::jmap::settings::SpecialUse, listener::SessionStream, storage::index::ObjectIndexBuilder,
-};
+use common::{listener::SessionStream, storage::index::ObjectIndexBuilder};
 use directory::Permission;
 use email::cache::{MessageCacheFetch, mailbox::MailboxCacheAccess};
 use imap_proto::{
@@ -22,7 +20,7 @@ use imap_proto::{
 use std::time::Instant;
 use store::write::BatchBuilder;
 use trc::AddContext;
-use types::{acl::Acl, collection::Collection, id::Id};
+use types::{acl::Acl, collection::Collection, id::Id, special_use::SpecialUse};
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_create(&mut self, requests: Vec<Request<Command>>) -> trc::Result<()> {

@@ -132,6 +132,15 @@ impl<'x> Base32Reader<'x> {
         }
     }
 
+    #[allow(clippy::should_implement_trait)]
+    pub fn from_iter(bytes: Iter<'x, u8>) -> Self {
+        Base32Reader {
+            bytes,
+            pos: 0,
+            last_byte: 0,
+        }
+    }
+
     #[inline(always)]
     fn map_byte(&mut self) -> Option<u8> {
         match self.bytes.next() {

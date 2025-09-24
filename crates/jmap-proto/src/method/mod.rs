@@ -20,6 +20,6 @@ pub mod upload;
 pub mod validate;
 
 #[inline(always)]
-pub fn ahash_is_empty<K, V>(map: &AHashMap<K, V>) -> bool {
+fn ahash_is_empty<K, V>(map: &AHashMap<K, V>) -> bool {
     map.is_empty()
 }
