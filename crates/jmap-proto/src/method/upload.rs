@@ -174,15 +174,15 @@ impl<'de> DeserializeArguments<'de> for DataSourceObject {
     }
 }
 
-/*impl BlobUploadResponse {
+impl BlobUploadResponse {
     pub fn update_created_ids(&self, response: &mut Response) {
         for (user_id, obj) in &self.created {
             response
                 .created_ids
-                .insert(user_id.clone(), obj.id.clone().into());
+                .insert(user_id.clone(), obj.id.to_string());
         }
     }
-}*/
+}
 
 impl<'de> Deserialize<'de> for DataSourceObject {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>

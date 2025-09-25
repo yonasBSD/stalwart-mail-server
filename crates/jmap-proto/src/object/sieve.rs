@@ -140,9 +140,9 @@ impl JmapObject for Sieve {
 
     type Id = Id;
 
-    type Filter = ();
+    type Filter = SieveFilter;
 
-    type Comparator = ();
+    type Comparator = SieveComparator;
 
     type GetArguments = ();
 
@@ -151,4 +151,86 @@ impl JmapObject for Sieve {
     type QueryArguments = ();
 
     type CopyArguments = ();
+
+    const ID_PROPERTY: Self::Property = SieveProperty::Id;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SieveFilter {
+    Name(String),
+    IsActive(bool),
+    _T(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SieveComparator {
+    Name,
+    IsActive,
+    _T(String),
+}
+
+impl<'de> DeserializeArguments<'de> for SieveFilter {
+    fn deserialize_argument<A>(&mut self, key: &str, map: &mut A) -> Result<(), A::Error>
+    where
+        A: serde::de::MapAccess<'de>,
+    {
+        hashify::fnc_map!(key.as_bytes(),
+            b"name" => {
+                *self = SieveFilter::Name(map.next_value()?);
+            },
+            b"isActive" => {
+                *self = SieveFilter::IsActive(map.next_value()?);
+            },
+            _ => {
+                *self = SieveFilter::_T(key.to_string());
+                let _ = map.next_value::<serde::de::IgnoredAny>()?;
+            }
+        );
+
+        Ok(())
+    }
+}
+
+impl<'de> DeserializeArguments<'de> for SieveComparator {
+    fn deserialize_argument<A>(&mut self, key: &str, map: &mut A) -> Result<(), A::Error>
+    where
+        A: serde::de::MapAccess<'de>,
+    {
+        if key == "property" {
+            let value = map.next_value::<Cow<str>>()?;
+            hashify::fnc_map!(value.as_bytes(),
+                b"name" => {
+                    *self = SieveComparator::Name;
+                },
+                b"isActive" => {
+                    *self = SieveComparator::IsActive;
+                },
+                _ => {
+                    *self = SieveComparator::_T(key.to_string());
+                }
+            );
+        } else {
+            let _ = map.next_value::<serde::de::IgnoredAny>()?;
+        }
+
+        Ok(())
+    }
+}
+
+impl Default for SieveFilter {
+    fn default() -> Self {
+        SieveFilter::_T("".to_string())
+    }
+}
+
+impl Default for SieveComparator {
+    fn default() -> Self {
+        SieveComparator::_T("".to_string())
+    }
+}
+
+impl From<Id> for SieveValue {
+    fn from(id: Id) -> Self {
+        SieveValue::Id(id)
+    }
 }

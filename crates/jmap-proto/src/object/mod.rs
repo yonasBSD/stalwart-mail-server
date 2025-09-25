@@ -6,7 +6,7 @@
 
 use crate::request::deserialize::DeserializeArguments;
 use jmap_tools::{Element, Property};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::str::FromStr;
 
 pub mod blob;
@@ -24,16 +24,18 @@ pub mod vacation_response;
 
 pub trait JmapObject {
     type Property: Property + FromStr + Serialize;
-    type Element: Element<Property = Self::Property>;
+    type Element: Element<Property = Self::Property> + From<Self::Id>;
     type Id: FromStr + Serialize;
 
-    type Filter: for<'de> Deserialize<'de>;
-    type Comparator: for<'de> Deserialize<'de>;
+    type Filter: Default + for<'de> DeserializeArguments<'de>;
+    type Comparator: Default + for<'de> DeserializeArguments<'de>;
 
     type GetArguments: Default + for<'de> DeserializeArguments<'de>;
     type SetArguments: Default + for<'de> DeserializeArguments<'de>;
     type QueryArguments: Default + for<'de> DeserializeArguments<'de>;
     type CopyArguments: Default + for<'de> DeserializeArguments<'de>;
+
+    const ID_PROPERTY: Self::Property;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

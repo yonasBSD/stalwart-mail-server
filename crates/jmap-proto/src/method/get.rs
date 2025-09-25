@@ -13,9 +13,9 @@ use crate::{
     },
     types::state::State,
 };
-use jmap_tools::{Property, Value};
+use jmap_tools::Value;
 use serde::{Deserialize, Deserializer};
-use types::{blob::BlobId, id::Id};
+use types::id::Id;
 
 #[derive(Debug, Clone)]
 pub struct GetRequest<T: JmapObject> {
@@ -90,14 +90,26 @@ impl<T: JmapObject> Default for GetRequest<T> {
     }
 }
 
-/*
 impl<T: JmapObject> GetRequest<T> {
     pub fn unwrap_properties(&mut self, default: &[T::Property]) -> Vec<T::Property> {
-        if let Some(mut properties) = self.properties.take().map(|p| p.unwrap()) {
-            // Add Id Property
-            if !properties.contains(&Property::Id) {
-                properties.push(Property::Id);
+        if let Some(properties_) = self.properties.take().map(|p| p.unwrap()) {
+            let mut properties = Vec::with_capacity(properties_.len());
+            let id_prop = T::ID_PROPERTY;
+            let mut has_id = false;
+
+            for prop in properties_ {
+                if let MaybeInvalid::Value(p) = prop {
+                    if p == id_prop {
+                        has_id = true;
+                    }
+                    properties.push(p);
+                }
             }
+
+            if !has_id {
+                properties.push(id_prop);
+            }
+
             properties
         } else {
             default.to_vec()
@@ -110,27 +122,7 @@ impl<T: JmapObject> GetRequest<T> {
             if ids.len() <= max_objects_in_get {
                 Ok(Some(
                     ids.into_iter()
-                        .filter_map(|id| id.try_unwrap().and_then(|id| id.into_id()))
-                        .collect::<Vec<_>>(),
-                ))
-            } else {
-                Err(trc::JmapEvent::RequestTooLarge.into_err())
-            }
-        } else {
-            Ok(None)
-        }
-    }
-
-    pub fn unwrap_blob_ids(
-        &mut self,
-        max_objects_in_get: usize,
-    ) -> trc::Result<Option<Vec<BlobId>>> {
-        if let Some(ids) = self.ids.take() {
-            let ids = ids.unwrap();
-            if ids.len() <= max_objects_in_get {
-                Ok(Some(
-                    ids.into_iter()
-                        .filter_map(|id| id.try_unwrap().and_then(|id| id.into_blob_id()))
+                        .filter_map(|id| id.try_unwrap())
                         .collect::<Vec<_>>(),
                 ))
             } else {
@@ -141,4 +133,3 @@ impl<T: JmapObject> GetRequest<T> {
         }
     }
 }
-*/

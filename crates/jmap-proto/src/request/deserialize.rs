@@ -11,7 +11,7 @@ use serde::{
     de::{self, MapAccess, Visitor},
 };
 
-pub(crate) trait DeserializeArguments<'de> {
+pub trait DeserializeArguments<'de> {
     fn deserialize_argument<A>(&mut self, key: &str, map: &mut A) -> Result<(), A::Error>
     where
         A: MapAccess<'de>;

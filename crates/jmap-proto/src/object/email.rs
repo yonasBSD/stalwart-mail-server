@@ -12,6 +12,7 @@ use crate::{
 use jmap_tools::{Element, JsonPointer, JsonPointerItem, Key, Property};
 use mail_parser::HeaderName;
 use std::{borrow::Cow, fmt::Display, str::FromStr};
+use store::fts::{FilterItem, FilterType};
 use types::{blob::BlobId, id::Id, keyword::Keyword};
 
 #[derive(Debug, Clone, Default)]
@@ -318,7 +319,7 @@ impl HeaderProperty {
                         }
                     );
                 }
-                2 if value == "all" && result.all == false => {
+                2 if value == "all" && !result.all => {
                     result.all = true;
                 }
                 _ => return None,
@@ -438,9 +439,9 @@ impl JmapObject for Email {
 
     type Id = Id;
 
-    type Filter = ();
+    type Filter = EmailFilter;
 
-    type Comparator = ();
+    type Comparator = EmailComparator;
 
     type GetArguments = EmailGetArguments;
 
@@ -449,4 +450,345 @@ impl JmapObject for Email {
     type QueryArguments = ();
 
     type CopyArguments = ();
+
+    const ID_PROPERTY: Self::Property = EmailProperty::Id;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EmailFilter {
+    InMailbox(Id),
+    InMailboxOtherThan(Vec<Id>),
+    Before(UTCDate),
+    After(UTCDate),
+    MinSize(u32),
+    MaxSize(u32),
+    AllInThreadHaveKeyword(Keyword),
+    SomeInThreadHaveKeyword(Keyword),
+    NoneInThreadHaveKeyword(Keyword),
+    HasKeyword(Keyword),
+    NotKeyword(Keyword),
+    HasAttachment(bool),
+    From(String),
+    To(String),
+    Cc(String),
+    Bcc(String),
+    Subject(String),
+    Body(String),
+    Header(Vec<String>),
+    Text(String),
+    SentBefore(UTCDate),
+    SentAfter(UTCDate),
+    InThread(Id),
+    Id(Vec<Id>),
+    _T(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EmailComparator {
+    ReceivedAt,
+    Size,
+    From,
+    To,
+    Subject,
+    Cc,
+    SentAt,
+    ThreadId,
+    HasKeyword(Keyword),
+    AllInThreadHaveKeyword(Keyword),
+    SomeInThreadHaveKeyword(Keyword),
+    _T(String),
+}
+
+impl<'de> DeserializeArguments<'de> for EmailFilter {
+    fn deserialize_argument<A>(&mut self, key: &str, map: &mut A) -> Result<(), A::Error>
+    where
+        A: serde::de::MapAccess<'de>,
+    {
+        hashify::fnc_map!(key.as_bytes(),
+            b"inMailbox" => {
+                *self = EmailFilter::InMailbox(map.next_value()?);
+            },
+            b"inMailboxOtherThan" => {
+                *self = EmailFilter::InMailboxOtherThan(map.next_value()?);
+            },
+            b"before" => {
+                *self = EmailFilter::Before(map.next_value()?);
+            },
+            b"after" => {
+                *self = EmailFilter::After(map.next_value()?);
+            },
+            b"minSize" => {
+                *self = EmailFilter::MinSize(map.next_value()?);
+            },
+            b"maxSize" => {
+                *self = EmailFilter::MaxSize(map.next_value()?);
+            },
+            b"allInThreadHaveKeyword" => {
+                *self = EmailFilter::AllInThreadHaveKeyword(map.next_value()?);
+            },
+            b"someInThreadHaveKeyword" => {
+                *self = EmailFilter::SomeInThreadHaveKeyword(map.next_value()?);
+            },
+            b"noneInThreadHaveKeyword" => {
+                *self = EmailFilter::NoneInThreadHaveKeyword(map.next_value()?);
+            },
+            b"hasKeyword" => {
+                *self = EmailFilter::HasKeyword(map.next_value()?);
+            },
+            b"notKeyword" => {
+                *self = EmailFilter::NotKeyword(map.next_value()?);
+            },
+            b"hasAttachment" => {
+                *self = EmailFilter::HasAttachment(map.next_value()?);
+            },
+            b"from" => {
+                *self = EmailFilter::From(map.next_value()?);
+            },
+            b"to" => {
+                *self = EmailFilter::To(map.next_value()?);
+            },
+            b"cc" => {
+                *self = EmailFilter::Cc(map.next_value()?);
+            },
+            b"bcc" => {
+                *self = EmailFilter::Bcc(map.next_value()?);
+            },
+            b"subject" => {
+                *self = EmailFilter::Subject(map.next_value()?);
+            },
+            b"body" => {
+                *self = EmailFilter::Body(map.next_value()?);
+            },
+            b"header" => {
+                *self = EmailFilter::Header(map.next_value()?);
+            },
+            b"text" => {
+                *self = EmailFilter::Text(map.next_value()?);
+            },
+            b"sentBefore" => {
+                *self = EmailFilter::SentBefore(map.next_value()?);
+            },
+            b"sentAfter" => {
+                *self = EmailFilter::SentAfter(map.next_value()?);
+            },
+            b"inThread" => {
+                *self = EmailFilter::InThread(map.next_value()?);
+            },
+            b"id" => {
+                *self = EmailFilter::Id(map.next_value()?);
+            },
+            _ => {
+                *self = EmailFilter::_T(key.to_string());
+                let _ = map.next_value::<serde::de::IgnoredAny>()?;
+            }
+        );
+
+        Ok(())
+    }
+}
+
+impl<'de> DeserializeArguments<'de> for EmailComparator {
+    fn deserialize_argument<A>(&mut self, key: &str, map: &mut A) -> Result<(), A::Error>
+    where
+        A: serde::de::MapAccess<'de>,
+    {
+        if key == "property" {
+            let value = map.next_value::<Cow<str>>()?;
+            hashify::fnc_map!(value.as_bytes(),
+                b"receivedAt" => {
+                    *self = EmailComparator::ReceivedAt;
+                },
+                b"size" => {
+                    *self = EmailComparator::Size;
+                },
+                b"from" => {
+                    *self = EmailComparator::From;
+                },
+                b"to" => {
+                    *self = EmailComparator::To;
+                },
+                b"cc" => {
+                    *self = EmailComparator::Cc;
+                },
+                b"subject" => {
+                    *self = EmailComparator::Subject;
+                },
+                b"sentAt" => {
+                    *self = EmailComparator::SentAt;
+                },
+                b"threadId" => {
+                    *self = EmailComparator::ThreadId;
+                },
+                b"hasKeyword" => {
+                    *self = EmailComparator::HasKeyword(self.take_keyword());
+                },
+                b"allInThreadHaveKeyword" => {
+                    *self = EmailComparator::AllInThreadHaveKeyword(self.take_keyword());
+                },
+                b"someInThreadHaveKeyword" => {
+                    *self = EmailComparator::SomeInThreadHaveKeyword(self.take_keyword());
+                },
+                _ => {
+                    *self = EmailComparator::_T(key.to_string());
+                }
+            );
+        } else if key == "keyword" {
+            let keyword: Keyword = map.next_value()?;
+            match self {
+                EmailComparator::HasKeyword(_) => *self = EmailComparator::HasKeyword(keyword),
+                EmailComparator::AllInThreadHaveKeyword(_) => {
+                    *self = EmailComparator::AllInThreadHaveKeyword(keyword)
+                }
+                EmailComparator::SomeInThreadHaveKeyword(_) => {
+                    *self = EmailComparator::SomeInThreadHaveKeyword(keyword)
+                }
+                _ => {
+                    *self = EmailComparator::HasKeyword(keyword);
+                }
+            }
+        } else {
+            let _ = map.next_value::<serde::de::IgnoredAny>()?;
+        }
+
+        Ok(())
+    }
+}
+
+impl Default for EmailFilter {
+    fn default() -> Self {
+        EmailFilter::_T("".to_string())
+    }
+}
+
+impl Default for EmailComparator {
+    fn default() -> Self {
+        EmailComparator::_T("".to_string())
+    }
+}
+
+impl EmailComparator {
+    fn take_keyword(&mut self) -> Keyword {
+        match self {
+            EmailComparator::HasKeyword(k) => std::mem::replace(k, Keyword::Other(String::new())),
+            EmailComparator::AllInThreadHaveKeyword(k) => {
+                std::mem::replace(k, Keyword::Other(String::new()))
+            }
+            EmailComparator::SomeInThreadHaveKeyword(k) => {
+                std::mem::replace(k, Keyword::Other(String::new()))
+            }
+            _ => Keyword::Other(String::new()),
+        }
+    }
+}
+
+impl Display for EmailFilter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            EmailFilter::InMailbox(_) => "inMailbox",
+            EmailFilter::InMailboxOtherThan(_) => "inMailboxOtherThan",
+            EmailFilter::Before(_) => "before",
+            EmailFilter::After(_) => "after",
+            EmailFilter::MinSize(_) => "minSize",
+            EmailFilter::MaxSize(_) => "maxSize",
+            EmailFilter::AllInThreadHaveKeyword(_) => "allInThreadHaveKeyword",
+            EmailFilter::SomeInThreadHaveKeyword(_) => "someInThreadHaveKeyword",
+            EmailFilter::NoneInThreadHaveKeyword(_) => "noneInThreadHaveKeyword",
+            EmailFilter::HasKeyword(_) => "hasKeyword",
+            EmailFilter::NotKeyword(_) => "notKeyword",
+            EmailFilter::HasAttachment(_) => "hasAttachment",
+            EmailFilter::From(_) => "from",
+            EmailFilter::To(_) => "to",
+            EmailFilter::Cc(_) => "cc",
+            EmailFilter::Bcc(_) => "bcc",
+            EmailFilter::Subject(_) => "subject",
+            EmailFilter::Body(_) => "body",
+            EmailFilter::Header(_) => "header",
+            EmailFilter::Text(_) => "text",
+            EmailFilter::SentBefore(_) => "sentBefore",
+            EmailFilter::SentAfter(_) => "sentAfter",
+            EmailFilter::InThread(_) => "inThread",
+            EmailFilter::Id(_) => "id",
+            EmailFilter::_T(v) => v.as_str(),
+        })
+    }
+}
+
+impl Display for EmailComparator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            EmailComparator::ReceivedAt => "receivedAt",
+            EmailComparator::Size => "size",
+            EmailComparator::From => "from",
+            EmailComparator::To => "to",
+            EmailComparator::Subject => "subject",
+            EmailComparator::Cc => "cc",
+            EmailComparator::SentAt => "sentAt",
+            EmailComparator::ThreadId => "threadId",
+            EmailComparator::HasKeyword(_) => "hasKeyword",
+            EmailComparator::AllInThreadHaveKeyword(_) => "allInThreadHaveKeyword",
+            EmailComparator::SomeInThreadHaveKeyword(_) => "someInThreadHaveKeyword",
+            EmailComparator::_T(v) => v.as_str(),
+        })
+    }
+}
+
+impl EmailFilter {
+    pub fn is_immutable(&self) -> bool {
+        matches!(
+            self,
+            EmailFilter::Before(_)
+                | EmailFilter::After(_)
+                | EmailFilter::MinSize(_)
+                | EmailFilter::MaxSize(_)
+                | EmailFilter::HasAttachment(_)
+                | EmailFilter::From(_)
+                | EmailFilter::To(_)
+                | EmailFilter::Cc(_)
+                | EmailFilter::Bcc(_)
+                | EmailFilter::Subject(_)
+                | EmailFilter::Body(_)
+                | EmailFilter::Header(_)
+                | EmailFilter::Text(_)
+                | EmailFilter::Id(_)
+                | EmailFilter::SentBefore(_)
+                | EmailFilter::SentAfter(_)
+        )
+    }
+}
+
+impl EmailComparator {
+    pub fn is_immutable(&self) -> bool {
+        matches!(
+            self,
+            EmailComparator::ReceivedAt
+                | EmailComparator::Size
+                | EmailComparator::From
+                | EmailComparator::To
+                | EmailComparator::Subject
+                | EmailComparator::Cc
+                | EmailComparator::SentAt
+        )
+    }
+}
+
+impl FilterItem for EmailFilter {
+    fn filter_type(&self) -> FilterType {
+        match self {
+            EmailFilter::From(_)
+            | EmailFilter::To(_)
+            | EmailFilter::Cc(_)
+            | EmailFilter::Bcc(_)
+            | EmailFilter::Subject(_)
+            | EmailFilter::Body(_)
+            | EmailFilter::Header(_)
+            | EmailFilter::Text(_) => FilterType::Fts,
+            _ => FilterType::Store,
+        }
+    }
+}
+
+impl From<Id> for EmailValue {
+    fn from(id: Id) -> Self {
+        EmailValue::Id(id)
+    }
 }

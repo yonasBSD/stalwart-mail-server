@@ -462,6 +462,45 @@ mod tests {
       }
     "#;
 
+    const TEST1: &str = r#"
+    {
+    "using": [
+        "urn:ietf:params:jmap:core",
+        "urn:ietf:params:jmap:mail"
+    ],
+    "methodCalls": [
+        [
+        "Email/query",
+        {
+            "accountId": "0",
+            "filter": { "conditions": [ { "hasKeyword": "music" }, { "hasKeyword": "video" }, { "operator": "AND", "conditions": [ { "subject": "test" }, { "minSize": 100 } ] } ], "operator": "OR" },
+            "sort": [
+            {
+                "property": "subject",
+                "isAscending": true
+            },
+            {
+                "property": "allInThreadHaveKeyword",
+                "isAscending": false,
+                "keyword": "$seen"
+            },
+            {
+                "keyword": "$junk",
+                "property": "someInThreadHaveKeyword",
+                "collation": "i;octet",
+                "isAscending": false
+            }
+            ],
+            "position": 0,
+            "limit": 10
+        },
+        "c1"
+        ]
+    ],
+    "createdIds": {}
+    }
+    "#;
+
     const TEST2: &str = r##"
     {
         "using": [
@@ -557,6 +596,7 @@ mod tests {
     #[test]
     fn parse_request() {
         println!("{:#?}", Request::parse(TEST.as_bytes(), 10, 10240));
+        println!("{:#?}", Request::parse(TEST1.as_bytes(), 10, 10240));
         println!("{:#?}", Request::parse(TEST2.as_bytes(), 10, 10240));
     }
 }

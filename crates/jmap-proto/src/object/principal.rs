@@ -8,7 +8,7 @@ use jmap_tools::{Element, Key, Property};
 use std::{borrow::Cow, str::FromStr};
 use types::id::Id;
 
-use crate::object::JmapObject;
+use crate::{object::JmapObject, request::deserialize::DeserializeArguments};
 
 #[derive(Debug, Clone, Default)]
 pub struct Principal;
@@ -141,9 +141,9 @@ impl JmapObject for Principal {
 
     type Id = Id;
 
-    type Filter = ();
+    type Filter = PrincipalFilter;
 
-    type Comparator = ();
+    type Comparator = PrincipalComparator;
 
     type GetArguments = ();
 
@@ -152,4 +152,116 @@ impl JmapObject for Principal {
     type QueryArguments = ();
 
     type CopyArguments = ();
+
+    const ID_PROPERTY: Self::Property = PrincipalProperty::Id;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PrincipalFilter {
+    AccountIds(Vec<Id>),
+    Email(String),
+    Name(String),
+    Text(String),
+    Type(PrincipalType),
+    Timezone(String),
+    _T(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PrincipalComparator {
+    Name,
+    Email,
+    Type,
+    _T(String),
+}
+
+impl<'de> DeserializeArguments<'de> for PrincipalFilter {
+    fn deserialize_argument<A>(&mut self, key: &str, map: &mut A) -> Result<(), A::Error>
+    where
+        A: serde::de::MapAccess<'de>,
+    {
+        hashify::fnc_map!(key.as_bytes(),
+            b"accountIds" => {
+                *self = PrincipalFilter::AccountIds(map.next_value()?);
+            },
+            b"email" => {
+                *self = PrincipalFilter::Email(map.next_value()?);
+            },
+            b"name" => {
+                *self = PrincipalFilter::Name(map.next_value()?);
+            },
+            b"text" => {
+                *self = PrincipalFilter::Text(map.next_value()?);
+            },
+            b"type" => {
+                *self = PrincipalFilter::Type(map.next_value()?);
+            },
+            b"timezone" => {
+                *self = PrincipalFilter::Timezone(map.next_value()?);
+            },
+            _ => {
+                *self = PrincipalFilter::_T(key.to_string());
+                let _ = map.next_value::<serde::de::IgnoredAny>()?;
+            }
+        );
+
+        Ok(())
+    }
+}
+
+impl<'de> DeserializeArguments<'de> for PrincipalComparator {
+    fn deserialize_argument<A>(&mut self, key: &str, map: &mut A) -> Result<(), A::Error>
+    where
+        A: serde::de::MapAccess<'de>,
+    {
+        if key == "property" {
+            let value = map.next_value::<Cow<str>>()?;
+            hashify::fnc_map!(value.as_bytes(),
+                b"name" => {
+                    *self = PrincipalComparator::Name;
+                },
+                b"email" => {
+                    *self = PrincipalComparator::Email;
+                },
+                b"type" => {
+                    *self = PrincipalComparator::Type;
+                },
+                _ => {
+                    *self = PrincipalComparator::_T(key.to_string());
+                }
+            );
+        } else {
+            let _ = map.next_value::<serde::de::IgnoredAny>()?;
+        }
+
+        Ok(())
+    }
+}
+
+impl Default for PrincipalFilter {
+    fn default() -> Self {
+        PrincipalFilter::_T("".to_string())
+    }
+}
+
+impl Default for PrincipalComparator {
+    fn default() -> Self {
+        PrincipalComparator::_T("".to_string())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for PrincipalType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        PrincipalType::parse(<&str>::deserialize(deserializer)?)
+            .ok_or_else(|| serde::de::Error::custom("invalid JMAP PrincipalType"))
+    }
+}
+
+impl From<Id> for PrincipalValue {
+    fn from(id: Id) -> Self {
+        PrincipalValue::Id(id)
+    }
 }

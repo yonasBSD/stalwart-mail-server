@@ -323,6 +323,26 @@ impl SieveScriptSet for Server {
                 self.sieve_activate_script(account_id, None).await?
             };
 
+            /*
+
+                        pub fn get_object_by_id(&mut self, id: Id) -> Option<&mut Value<'x, P, E>> {
+                if let Some(obj) = self.updated.get_mut(&id) {
+                    if let Some(obj) = obj {
+                        return Some(obj);
+                    } else {
+                        *obj = Some(Object::with_capacity(1));
+                        return obj.as_mut().unwrap().into();
+                    }
+                }
+
+                (&mut self.created)
+                    .into_iter()
+                    .map(|(_, obj)| obj)
+                    .find(|obj| obj.0.get(&Property::Id) == Some(&Value::Id(id)))
+            }
+
+                     */
+
             if !changed_ids.is_empty() {
                 for (document_id, is_active) in changed_ids {
                     if let Some(obj) = ctx.response.get_object_by_id(Id::from(document_id)) {

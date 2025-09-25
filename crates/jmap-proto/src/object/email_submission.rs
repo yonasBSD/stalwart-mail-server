@@ -297,6 +297,16 @@ impl FromStr for EmailSubmissionProperty {
     }
 }
 
+impl<'de> serde::Deserialize<'de> for UndoStatus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        UndoStatus::parse(<&str>::deserialize(deserializer)?)
+            .ok_or_else(|| serde::de::Error::custom("invalid JMAP UndoStatus"))
+    }
+}
+
 impl JmapObject for EmailSubmission {
     type Property = EmailSubmissionProperty;
 
@@ -304,9 +314,9 @@ impl JmapObject for EmailSubmission {
 
     type Id = Id;
 
-    type Filter = ();
+    type Filter = EmailSubmissionFilter;
 
-    type Comparator = ();
+    type Comparator = EmailSubmissionComparator;
 
     type GetArguments = ();
 
@@ -315,4 +325,107 @@ impl JmapObject for EmailSubmission {
     type QueryArguments = ();
 
     type CopyArguments = ();
+
+    const ID_PROPERTY: Self::Property = EmailSubmissionProperty::Id;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EmailSubmissionFilter {
+    IdentityIds(Vec<Id>),
+    EmailIds(Vec<Id>),
+    ThreadIds(Vec<Id>),
+    Before(UTCDate),
+    After(UTCDate),
+    UndoStatus(UndoStatus),
+    _T(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EmailSubmissionComparator {
+    EmailId,
+    ThreadId,
+    SentAt,
+    _T(String),
+}
+
+impl<'de> DeserializeArguments<'de> for EmailSubmissionFilter {
+    fn deserialize_argument<A>(&mut self, key: &str, map: &mut A) -> Result<(), A::Error>
+    where
+        A: serde::de::MapAccess<'de>,
+    {
+        hashify::fnc_map!(key.as_bytes(),
+            b"identityIds" => {
+                *self = EmailSubmissionFilter::IdentityIds(map.next_value()?);
+            },
+            b"emailIds" => {
+                *self = EmailSubmissionFilter::EmailIds(map.next_value()?);
+            },
+            b"threadIds" => {
+                *self = EmailSubmissionFilter::ThreadIds(map.next_value()?);
+            },
+            b"before" => {
+                *self = EmailSubmissionFilter::Before(map.next_value()?);
+            },
+            b"after" => {
+                *self = EmailSubmissionFilter::After(map.next_value()?);
+            },
+            b"undoStatus" => {
+                *self = EmailSubmissionFilter::UndoStatus(map.next_value()?);
+            },
+            _ => {
+                *self = EmailSubmissionFilter::_T(key.to_string());
+                let _ = map.next_value::<serde::de::IgnoredAny>()?;
+            }
+        );
+
+        Ok(())
+    }
+}
+
+impl<'de> DeserializeArguments<'de> for EmailSubmissionComparator {
+    fn deserialize_argument<A>(&mut self, key: &str, map: &mut A) -> Result<(), A::Error>
+    where
+        A: serde::de::MapAccess<'de>,
+    {
+        if key == "property" {
+            let value = map.next_value::<Cow<str>>()?;
+            hashify::fnc_map!(value.as_bytes(),
+
+                b"emailId" => {
+                    *self = EmailSubmissionComparator::EmailId;
+                },
+                b"threadId" => {
+                    *self = EmailSubmissionComparator::ThreadId;
+                },
+                b"sentAt" => {
+                    *self = EmailSubmissionComparator::SentAt;
+                },
+                _ => {
+                    *self = EmailSubmissionComparator::_T(key.to_string());
+                }
+            );
+        } else {
+            let _ = map.next_value::<serde::de::IgnoredAny>()?;
+        }
+
+        Ok(())
+    }
+}
+
+impl Default for EmailSubmissionFilter {
+    fn default() -> Self {
+        EmailSubmissionFilter::_T("".to_string())
+    }
+}
+
+impl Default for EmailSubmissionComparator {
+    fn default() -> Self {
+        EmailSubmissionComparator::_T("".to_string())
+    }
+}
+
+impl From<Id> for EmailSubmissionValue {
+    fn from(id: Id) -> Self {
+        EmailSubmissionValue::Id(id)
+    }
 }

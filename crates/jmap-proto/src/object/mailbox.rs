@@ -227,9 +227,9 @@ impl JmapObject for Mailbox {
 
     type Id = Id;
 
-    type Filter = ();
+    type Filter = MailboxFilter;
 
-    type Comparator = ();
+    type Comparator = MailboxComparator;
 
     type GetArguments = ();
 
@@ -238,4 +238,115 @@ impl JmapObject for Mailbox {
     type QueryArguments = MailboxQueryArguments;
 
     type CopyArguments = ();
+
+    const ID_PROPERTY: Self::Property = MailboxProperty::Id;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MailboxFilter {
+    Name(String),
+    ParentId(Option<Id>),
+    Role(Option<SpecialUse>),
+    HasAnyRole(bool),
+    IsSubscribed(bool),
+    _T(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MailboxComparator {
+    SortOrder,
+    Name,
+    ParentId,
+    _T(String),
+}
+
+impl<'de> DeserializeArguments<'de> for MailboxFilter {
+    fn deserialize_argument<A>(&mut self, key: &str, map: &mut A) -> Result<(), A::Error>
+    where
+        A: serde::de::MapAccess<'de>,
+    {
+        hashify::fnc_map!(key.as_bytes(),
+            b"name" => {
+                *self = MailboxFilter::Name(map.next_value()?);
+            },
+            b"parentId" => {
+                *self = MailboxFilter::ParentId(map.next_value()?);
+            },
+            b"role" => {
+                *self = MailboxFilter::Role(map.next_value::<Option<RoleWrapper>>()?.map(|r| r.0));
+            },
+            b"hasAnyRole" => {
+                *self = MailboxFilter::HasAnyRole(map.next_value()?);
+            },
+            b"isSubscribed" => {
+                *self = MailboxFilter::IsSubscribed(map.next_value()?);
+            },
+            _ => {
+                *self = MailboxFilter::_T(key.to_string());
+                let _ = map.next_value::<serde::de::IgnoredAny>()?;
+            }
+        );
+
+        Ok(())
+    }
+}
+
+impl<'de> DeserializeArguments<'de> for MailboxComparator {
+    fn deserialize_argument<A>(&mut self, key: &str, map: &mut A) -> Result<(), A::Error>
+    where
+        A: serde::de::MapAccess<'de>,
+    {
+        if key == "property" {
+            let value = map.next_value::<Cow<str>>()?;
+            hashify::fnc_map!(value.as_bytes(),
+                b"sortOrder" => {
+                    *self = MailboxComparator::SortOrder;
+                },
+                b"name" => {
+                    *self = MailboxComparator::Name;
+                },
+                b"parentId" => {
+                    *self = MailboxComparator::ParentId;
+                },
+                _ => {
+                    *self = MailboxComparator::_T(key.to_string());
+                }
+            );
+        } else {
+            let _ = map.next_value::<serde::de::IgnoredAny>()?;
+        }
+
+        Ok(())
+    }
+}
+
+impl Default for MailboxFilter {
+    fn default() -> Self {
+        MailboxFilter::_T("".to_string())
+    }
+}
+
+impl Default for MailboxComparator {
+    fn default() -> Self {
+        MailboxComparator::_T("".to_string())
+    }
+}
+
+struct RoleWrapper(SpecialUse);
+
+impl<'de> serde::Deserialize<'de> for RoleWrapper {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        SpecialUse::parse(<&str>::deserialize(deserializer)?)
+            .map(RoleWrapper)
+            .ok_or_else(|| serde::de::Error::custom("invalid JMAP role"))
+    }
+}
+
+impl From<Id> for MailboxValue {
+    fn from(id: Id) -> Self {
+        MailboxValue::Id(id)
+    }
 }

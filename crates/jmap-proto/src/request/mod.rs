@@ -61,7 +61,7 @@ pub enum RequestMethod<'x> {
     ParseEmail(ParseEmailRequest),
     Query(QueryRequestMethod),
     QueryChanges(QueryChangesRequestMethod),
-    SearchSnippet(GetSearchSnippetRequest<()>),
+    SearchSnippet(GetSearchSnippetRequest),
     ValidateScript(ValidateSieveScriptRequest),
     LookupBlob(BlobLookupRequest),
     UploadBlob(BlobUploadRequest),
@@ -167,6 +167,18 @@ impl Default for Request<'_> {
             using: CapabilityIds::default(),
             method_calls: Vec::new(),
             created_ids: None,
+        }
+    }
+}
+
+impl<T> MaybeInvalid<T>
+where
+    T: FromStr,
+{
+    pub fn try_unwrap(self) -> Option<T> {
+        match self {
+            MaybeInvalid::Value(id) => Some(id),
+            MaybeInvalid::Invalid(_) => None,
         }
     }
 }

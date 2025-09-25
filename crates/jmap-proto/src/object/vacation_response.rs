@@ -123,4 +123,12 @@ impl JmapObject for VacationResponse {
     type QueryArguments = ();
 
     type CopyArguments = ();
+
+    const ID_PROPERTY: Self::Property = VacationResponseProperty::Id;
+}
+
+impl From<Id> for VacationResponseValue {
+    fn from(id: Id) -> Self {
+        VacationResponseValue::Id(id)
+    }
 }

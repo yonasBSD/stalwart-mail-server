@@ -5,6 +5,7 @@
  */
 
 use crate::{
+    method::query::{Comparator, Filter, FilterWrapper},
     object::JmapObject,
     request::deserialize::{DeserializeArguments, deserialize_request},
     types::state::State,
@@ -15,8 +16,8 @@ use types::id::Id;
 #[derive(Debug, Clone)]
 pub struct QueryChangesRequest<T: JmapObject> {
     pub account_id: Id,
-    pub filter: Vec<T::Filter>,
-    pub sort: Option<Vec<T::Comparator>>,
+    pub filter: Vec<Filter<T::Filter>>,
+    pub sort: Option<Vec<Comparator<T::Comparator>>>,
     pub since_query_state: State,
     pub max_changes: Option<usize>,
     pub up_to_id: Option<Id>,
@@ -68,7 +69,7 @@ impl<'de, T: JmapObject> DeserializeArguments<'de> for QueryChangesRequest<T> {
                 self.account_id = map.next_value()?;
             },
             b"filter" => {
-                self.filter = map.next_value()?;
+                self.filter = map.next_value::<FilterWrapper<T::Filter>>()?.0;
             },
             b"sort" => {
                 self.sort = map.next_value()?;

@@ -4,11 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::{object::JmapObject, request::deserialize::DeserializeArguments};
 use jmap_tools::{Element, Key, Property};
 use std::{borrow::Cow, str::FromStr};
 use types::{id::Id, type_state::DataType};
-
-use crate::object::JmapObject;
 
 #[derive(Debug, Clone, Default)]
 pub struct Quota;
@@ -119,9 +118,9 @@ impl JmapObject for Quota {
 
     type Id = Id;
 
-    type Filter = ();
+    type Filter = QuotaFilter;
 
-    type Comparator = ();
+    type Comparator = QuotaComparator;
 
     type GetArguments = ();
 
@@ -130,4 +129,98 @@ impl JmapObject for Quota {
     type QueryArguments = ();
 
     type CopyArguments = ();
+
+    const ID_PROPERTY: Self::Property = QuotaProperty::Id;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum QuotaFilter {
+    Name(String),
+    Type(String),
+    Scope(String),
+    ResourceType(String),
+    _T(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum QuotaComparator {
+    Name,
+    Type,
+    Used,
+    _T(String),
+}
+
+impl<'de> DeserializeArguments<'de> for QuotaFilter {
+    fn deserialize_argument<A>(&mut self, key: &str, map: &mut A) -> Result<(), A::Error>
+    where
+        A: serde::de::MapAccess<'de>,
+    {
+        hashify::fnc_map!(key.as_bytes(),
+            b"name" => {
+                *self = QuotaFilter::Name(map.next_value()?);
+            },
+            b"type" => {
+                *self = QuotaFilter::Type(map.next_value()?);
+            },
+            b"scope" => {
+                *self = QuotaFilter::Scope(map.next_value()?);
+            },
+            b"resourceType" => {
+                *self = QuotaFilter::ResourceType(map.next_value()?);
+            },
+            _ => {
+                *self = QuotaFilter::_T(key.to_string());
+                let _ = map.next_value::<serde::de::IgnoredAny>()?;
+            }
+        );
+
+        Ok(())
+    }
+}
+
+impl<'de> DeserializeArguments<'de> for QuotaComparator {
+    fn deserialize_argument<A>(&mut self, key: &str, map: &mut A) -> Result<(), A::Error>
+    where
+        A: serde::de::MapAccess<'de>,
+    {
+        if key == "property" {
+            let value = map.next_value::<Cow<str>>()?;
+            hashify::fnc_map!(value.as_bytes(),
+                b"name" => {
+                    *self = QuotaComparator::Name;
+                },
+                b"type" => {
+                    *self = QuotaComparator::Type;
+                },
+                b"used" => {
+                    *self = QuotaComparator::Used;
+                },
+                _ => {
+                    *self = QuotaComparator::_T(key.to_string());
+                }
+            );
+        } else {
+            let _ = map.next_value::<serde::de::IgnoredAny>()?;
+        }
+
+        Ok(())
+    }
+}
+
+impl Default for QuotaFilter {
+    fn default() -> Self {
+        QuotaFilter::_T("".to_string())
+    }
+}
+
+impl Default for QuotaComparator {
+    fn default() -> Self {
+        QuotaComparator::_T("".to_string())
+    }
+}
+
+impl From<Id> for QuotaValue {
+    fn from(id: Id) -> Self {
+        QuotaValue::Id(id)
+    }
 }

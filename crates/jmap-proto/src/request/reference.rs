@@ -87,3 +87,21 @@ impl<V: Default> Default for MaybeResultReference<V> {
         MaybeResultReference::Value(V::default())
     }
 }
+
+impl<T: Default> MaybeResultReference<T> {
+    pub fn unwrap(self) -> T {
+        match self {
+            MaybeResultReference::Value(v) => v,
+            MaybeResultReference::Reference(_) => T::default(),
+        }
+    }
+}
+
+impl<T: FromStr> MaybeIdReference<T> {
+    pub fn try_unwrap(self) -> Option<T> {
+        match self {
+            MaybeIdReference::Id(id) => Some(id),
+            _ => None,
+        }
+    }
+}

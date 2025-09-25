@@ -100,4 +100,12 @@ impl JmapObject for Thread {
     type QueryArguments = ();
 
     type CopyArguments = ();
+
+    const ID_PROPERTY: Self::Property = ThreadProperty::Id;
+}
+
+impl From<Id> for ThreadValue {
+    fn from(id: Id) -> Self {
+        ThreadValue::Id(id)
+    }
 }

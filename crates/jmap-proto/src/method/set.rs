@@ -11,18 +11,16 @@ use crate::{
     request::{
         MaybeInvalid,
         deserialize::{DeserializeArguments, deserialize_request},
-        method::MethodObject,
         reference::{MaybeResultReference, ResultReference},
     },
     response::Response,
-    types::{date::UTCDate, state::State},
+    types::state::State,
 };
 use ahash::AHashMap;
-use compact_str::format_compact;
-use jmap_tools::Value;
+use jmap_tools::{Key, Map, Value};
 use serde::{Deserialize, Deserializer};
-use types::{acl::Acl, blob::BlobId, id::Id, keyword::Keyword};
-use utils::map::{bitmap::Bitmap, vec_map::VecMap};
+use types::id::Id;
+use utils::map::vec_map::VecMap;
 
 #[derive(Debug, Clone)]
 #[allow(clippy::type_complexity)]
@@ -36,6 +34,7 @@ pub struct SetRequest<'x, T: JmapObject> {
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize)]
+#[allow(clippy::type_complexity)]
 pub struct SetResponse<T: JmapObject> {
     #[serde(rename = "accountId")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -166,15 +165,14 @@ impl<'x, T: JmapObject> SetRequest<'x, T> {
         self.update.take().unwrap_or_default()
     }
 
-    /*pub fn unwrap_destroy(&mut self) -> Vec<Id> {
+    pub fn unwrap_destroy(&mut self) -> Vec<MaybeInvalid<Id>> {
         self.destroy
             .take()
             .map(|ids| ids.unwrap())
             .unwrap_or_default()
-    }*/
+    }
 }
 
-/*
 impl<T: JmapObject> SetResponse<T> {
     pub fn from_request(request: &SetRequest<T>, max_objects: usize) -> trc::Result<Self> {
         let n_create = request.create.as_ref().map_or(0, |objs| objs.len());
@@ -213,14 +211,21 @@ impl<T: JmapObject> SetResponse<T> {
         self
     }
 
-    pub fn created(&mut self, id: String, document_id: u32) {
+    pub fn created(&mut self, id: String, document_id: impl Into<T::Id>) {
         self.created.insert(
             id,
-            Object::with_capacity(1).with_property(Property::Id, Value::Id(document_id.into())),
+            Value::Object(Map::from(vec![(
+                Key::Property(T::ID_PROPERTY),
+                Value::Element(T::Element::from(document_id.into())),
+            )])),
         );
     }
 
-    pub fn invalid_property_create(&mut self, id: String, property: impl Into<InvalidProperty>) {
+    pub fn invalid_property_create(
+        &mut self,
+        id: String,
+        property: impl Into<InvalidProperty<T::Property>>,
+    ) {
         self.not_created.append(
             id,
             SetError::invalid_properties()
@@ -229,7 +234,11 @@ impl<T: JmapObject> SetResponse<T> {
         );
     }
 
-    pub fn invalid_property_update(&mut self, id: Id, property: impl Into<InvalidProperty>) {
+    pub fn invalid_property_update(
+        &mut self,
+        id: MaybeInvalid<Id>,
+        property: impl Into<InvalidProperty<T::Property>>,
+    ) {
         self.not_updated.append(
             id,
             SetError::invalid_properties()
@@ -240,30 +249,15 @@ impl<T: JmapObject> SetResponse<T> {
 
     pub fn update_created_ids(&self, response: &mut Response) {
         for (user_id, obj) in &self.created {
-            if let Some(id) = obj.get(&Property::Id).as_id() {
-                response.created_ids.insert(user_id.clone(), (*id).into());
+            if let Value::Object(obj) = obj
+                && let Some(id) = obj.get(&Key::Property(T::ID_PROPERTY))
+            {
+                response.created_ids.insert(user_id.clone(), id.to_string());
             }
         }
-    }
-
-    pub fn get_object_by_id(&mut self, id: Id) -> Option<&mut Value<'x, P, E>> {
-        if let Some(obj) = self.updated.get_mut(&id) {
-            if let Some(obj) = obj {
-                return Some(obj);
-            } else {
-                *obj = Some(Object::with_capacity(1));
-                return obj.as_mut().unwrap().into();
-            }
-        }
-
-        (&mut self.created)
-            .into_iter()
-            .map(|(_, obj)| obj)
-            .find(|obj| obj.0.get(&Property::Id) == Some(&Value::Id(id)))
     }
 
     pub fn has_changes(&self) -> bool {
         !self.created.is_empty() || !self.updated.is_empty() || !self.destroyed.is_empty()
     }
 }
-*/

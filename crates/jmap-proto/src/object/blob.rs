@@ -182,4 +182,12 @@ impl JmapObject for Blob {
     type QueryArguments = ();
 
     type CopyArguments = ();
+
+    const ID_PROPERTY: Self::Property = BlobProperty::Id;
+}
+
+impl From<BlobId> for BlobValue {
+    fn from(id: BlobId) -> Self {
+        BlobValue::BlobId(id)
+    }
 }

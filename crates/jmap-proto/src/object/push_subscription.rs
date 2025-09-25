@@ -161,4 +161,12 @@ impl JmapObject for PushSubscription {
     type QueryArguments = ();
 
     type CopyArguments = ();
+
+    const ID_PROPERTY: Self::Property = PushSubscriptionProperty::Id;
+}
+
+impl From<Id> for PushSubscriptionValue {
+    fn from(id: Id) -> Self {
+        PushSubscriptionValue::Id(id)
+    }
 }

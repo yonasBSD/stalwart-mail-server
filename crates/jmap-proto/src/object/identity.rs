@@ -142,4 +142,12 @@ impl JmapObject for Identity {
     type QueryArguments = ();
 
     type CopyArguments = ();
+
+    const ID_PROPERTY: Self::Property = IdentityProperty::Id;
+}
+
+impl From<Id> for IdentityValue {
+    fn from(id: Id) -> Self {
+        IdentityValue::Id(id)
+    }
 }

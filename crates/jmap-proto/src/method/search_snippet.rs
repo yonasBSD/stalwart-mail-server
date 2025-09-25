@@ -5,18 +5,22 @@
  */
 
 use super::query::Filter;
-use crate::request::{
-    MaybeInvalid,
-    deserialize::{DeserializeArguments, deserialize_request},
-    reference::{MaybeResultReference, ResultReference},
+use crate::{
+    method::query::FilterWrapper,
+    object::email::EmailFilter,
+    request::{
+        MaybeInvalid,
+        deserialize::{DeserializeArguments, deserialize_request},
+        reference::{MaybeResultReference, ResultReference},
+    },
 };
-use serde::{Deserialize, Deserializer, de::DeserializeOwned};
+use serde::{Deserialize, Deserializer};
 use types::id::Id;
 
 #[derive(Debug, Clone)]
-pub struct GetSearchSnippetRequest<T> {
+pub struct GetSearchSnippetRequest {
     pub account_id: Id,
-    pub filter: Vec<Filter<T>>,
+    pub filter: Vec<Filter<EmailFilter>>,
     pub email_ids: MaybeResultReference<Vec<MaybeInvalid<Id>>>,
 }
 
@@ -45,7 +49,7 @@ pub struct SearchSnippet {
     pub preview: Option<String>,
 }
 
-impl<'de, T: DeserializeOwned> DeserializeArguments<'de> for GetSearchSnippetRequest<T> {
+impl<'de> DeserializeArguments<'de> for GetSearchSnippetRequest {
     fn deserialize_argument<A>(&mut self, key: &str, map: &mut A) -> Result<(), A::Error>
     where
         A: serde::de::MapAccess<'de>,
@@ -55,7 +59,7 @@ impl<'de, T: DeserializeOwned> DeserializeArguments<'de> for GetSearchSnippetReq
                 self.account_id = map.next_value()?;
             },
             b"filter" => {
-                self.filter = map.next_value()?;
+                self.filter = map.next_value::<FilterWrapper<EmailFilter>>()?.0;
             },
             b"emailIds" => {
                 self.email_ids = MaybeResultReference::Value(map.next_value::<Vec<MaybeInvalid<Id>>>()?);
@@ -72,7 +76,7 @@ impl<'de, T: DeserializeOwned> DeserializeArguments<'de> for GetSearchSnippetReq
     }
 }
 
-impl<'de, T: DeserializeOwned> Deserialize<'de> for GetSearchSnippetRequest<T> {
+impl<'de> Deserialize<'de> for GetSearchSnippetRequest {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -81,7 +85,7 @@ impl<'de, T: DeserializeOwned> Deserialize<'de> for GetSearchSnippetRequest<T> {
     }
 }
 
-impl<T> Default for GetSearchSnippetRequest<T> {
+impl Default for GetSearchSnippetRequest {
     fn default() -> Self {
         Self {
             account_id: Id::default(),
