@@ -5,6 +5,7 @@
  */
 
 use crate::{
+    method::PropertyWrapper,
     object::JmapObject,
     request::deserialize::{DeserializeArguments, deserialize_request},
     types::state::State,
@@ -41,7 +42,7 @@ pub struct ChangesResponse<T: JmapObject> {
 
     #[serde(rename = "updatedProperties")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub updated_properties: Option<Vec<T::Property>>,
+    pub updated_properties: Option<Vec<PropertyWrapper<T::Property>>>,
 }
 
 impl<'de> DeserializeArguments<'de> for ChangesRequest {

@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-pub mod references;
 pub mod serialize;
 pub mod status;
 
@@ -26,7 +25,7 @@ use crate::{
         validate::ValidateSieveScriptResponse,
     },
     object::{
-        blob::Blob, email::Email, email_submission::EmailSubmission, identity::Identity,
+        AnyId, blob::Blob, email::Email, email_submission::EmailSubmission, identity::Identity,
         mailbox::Mailbox, principal::Principal, push_subscription::PushSubscription, quota::Quota,
         sieve::Sieve, thread::Thread, vacation_response::VacationResponse,
     },
@@ -111,11 +110,11 @@ pub struct Response<'x> {
 
     #[serde(rename = "createdIds")]
     #[serde(skip_serializing_if = "HashMap::is_empty")]
-    pub created_ids: HashMap<String, String>,
+    pub created_ids: HashMap<String, AnyId>,
 }
 
 impl<'x> Response<'x> {
-    pub fn new(session_state: u32, created_ids: HashMap<String, String>, capacity: usize) -> Self {
+    pub fn new(session_state: u32, created_ids: HashMap<String, AnyId>, capacity: usize) -> Self {
         Response {
             session_state,
             created_ids,
@@ -144,7 +143,7 @@ impl<'x> Response<'x> {
         });
     }
 
-    pub fn push_created_id(&mut self, create_id: String, id: impl Into<String>) {
+    pub fn push_created_id(&mut self, create_id: String, id: impl Into<AnyId>) {
         self.created_ids.insert(create_id, id.into());
     }
 }

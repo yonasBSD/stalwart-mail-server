@@ -5,7 +5,7 @@
  */
 
 use crate::{
-    object::{DeserializeArguments, JmapObject, MaybeReference, parse_ref},
+    object::{AnyId, DeserializeArguments, JmapObject, JmapObjectId, MaybeReference, parse_ref},
     request::reference::MaybeIdReference,
 };
 use jmap_tools::{Element, Key, Property};
@@ -232,5 +232,41 @@ impl Default for SieveComparator {
 impl From<Id> for SieveValue {
     fn from(id: Id) -> Self {
         SieveValue::Id(id)
+    }
+}
+
+impl JmapObjectId for SieveValue {
+    fn as_id(&self) -> Option<Id> {
+        match self {
+            SieveValue::Id(id) => Some(*id),
+            _ => None,
+        }
+    }
+
+    fn as_any_id(&self) -> Option<AnyId> {
+        match self {
+            SieveValue::Id(id) => Some(AnyId::Id(*id)),
+            SieveValue::BlobId(id) => Some(AnyId::BlobId(id.clone())),
+            SieveValue::IdReference(_) => None,
+        }
+    }
+
+    fn as_id_ref(&self) -> Option<&str> {
+        if let SieveValue::IdReference(r) = self {
+            Some(r)
+        } else {
+            None
+        }
+    }
+}
+
+impl TryFrom<AnyId> for SieveValue {
+    type Error = ();
+
+    fn try_from(value: AnyId) -> Result<Self, Self::Error> {
+        match value {
+            AnyId::Id(id) => Ok(SieveValue::Id(id)),
+            AnyId::BlobId(id) => Ok(SieveValue::BlobId(id)),
+        }
     }
 }

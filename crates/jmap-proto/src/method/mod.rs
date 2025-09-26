@@ -5,6 +5,7 @@
  */
 
 use ahash::AHashMap;
+use jmap_tools::Property;
 
 pub mod changes;
 pub mod copy;
@@ -22,4 +23,17 @@ pub mod validate;
 #[inline(always)]
 fn ahash_is_empty<K, V>(map: &AHashMap<K, V>) -> bool {
     map.is_empty()
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(transparent)]
+#[repr(transparent)]
+pub struct PropertyWrapper<T>(pub T)
+where
+    T: serde::Serialize + Property;
+
+impl<T: Property + serde::Serialize> From<T> for PropertyWrapper<T> {
+    fn from(value: T) -> Self {
+        Self(value)
+    }
 }

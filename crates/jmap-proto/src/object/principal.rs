@@ -8,7 +8,10 @@ use jmap_tools::{Element, Key, Property};
 use std::{borrow::Cow, str::FromStr};
 use types::id::Id;
 
-use crate::{object::JmapObject, request::deserialize::DeserializeArguments};
+use crate::{
+    object::{AnyId, JmapObject, JmapObjectId},
+    request::deserialize::DeserializeArguments,
+};
 
 #[derive(Debug, Clone, Default)]
 pub struct Principal;
@@ -263,5 +266,39 @@ impl<'de> serde::Deserialize<'de> for PrincipalType {
 impl From<Id> for PrincipalValue {
     fn from(id: Id) -> Self {
         PrincipalValue::Id(id)
+    }
+}
+
+impl JmapObjectId for PrincipalValue {
+    fn as_id(&self) -> Option<Id> {
+        if let PrincipalValue::Id(id) = self {
+            Some(*id)
+        } else {
+            None
+        }
+    }
+
+    fn as_any_id(&self) -> Option<AnyId> {
+        if let PrincipalValue::Id(id) = self {
+            Some(AnyId::Id(*id))
+        } else {
+            None
+        }
+    }
+
+    fn as_id_ref(&self) -> Option<&str> {
+        None
+    }
+}
+
+impl TryFrom<AnyId> for PrincipalValue {
+    type Error = ();
+
+    fn try_from(value: AnyId) -> Result<Self, Self::Error> {
+        if let AnyId::Id(id) = value {
+            Ok(PrincipalValue::Id(id))
+        } else {
+            Err(())
+        }
     }
 }

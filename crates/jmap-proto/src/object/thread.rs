@@ -8,7 +8,7 @@ use jmap_tools::{Element, Key, Property};
 use std::{borrow::Cow, str::FromStr};
 use types::id::Id;
 
-use crate::object::JmapObject;
+use crate::object::{AnyId, JmapObject, JmapObjectId};
 
 #[derive(Debug, Clone, Default)]
 pub struct Thread;
@@ -107,5 +107,32 @@ impl JmapObject for Thread {
 impl From<Id> for ThreadValue {
     fn from(id: Id) -> Self {
         ThreadValue::Id(id)
+    }
+}
+
+impl JmapObjectId for ThreadValue {
+    fn as_id(&self) -> Option<Id> {
+        match self {
+            ThreadValue::Id(id) => Some(*id),
+        }
+    }
+
+    fn as_any_id(&self) -> Option<AnyId> {
+        self.as_id().map(AnyId::Id)
+    }
+
+    fn as_id_ref(&self) -> Option<&str> {
+        None
+    }
+}
+
+impl TryFrom<AnyId> for ThreadValue {
+    type Error = ();
+
+    fn try_from(value: AnyId) -> Result<Self, Self::Error> {
+        match value {
+            AnyId::Id(id) => Ok(ThreadValue::Id(id)),
+            _ => Err(()),
+        }
     }
 }

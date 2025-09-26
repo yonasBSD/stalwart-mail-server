@@ -7,7 +7,7 @@
 use super::ahash_is_empty;
 use crate::{
     error::set::{InvalidProperty, SetError},
-    object::JmapObject,
+    object::{JmapObject, JmapObjectId},
     request::{
         MaybeInvalid,
         deserialize::{DeserializeArguments, deserialize_request},
@@ -250,9 +250,10 @@ impl<T: JmapObject> SetResponse<T> {
     pub fn update_created_ids(&self, response: &mut Response) {
         for (user_id, obj) in &self.created {
             if let Value::Object(obj) = obj
-                && let Some(id) = obj.get(&Key::Property(T::ID_PROPERTY))
+                && let Some(Value::Element(id)) = obj.get(&Key::Property(T::ID_PROPERTY))
+                && let Some(id) = id.as_any_id()
             {
-                response.created_ids.insert(user_id.clone(), id.to_string());
+                response.created_ids.insert(user_id.clone(), id);
             }
         }
     }

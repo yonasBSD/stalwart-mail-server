@@ -4,7 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{object::JmapObject, types::date::UTCDate};
+use crate::{
+    object::{AnyId, JmapObject, JmapObjectId},
+    types::date::UTCDate,
+};
 use jmap_tools::{Element, Key, Property};
 use std::{borrow::Cow, str::FromStr};
 use types::id::Id;
@@ -130,5 +133,36 @@ impl JmapObject for VacationResponse {
 impl From<Id> for VacationResponseValue {
     fn from(id: Id) -> Self {
         VacationResponseValue::Id(id)
+    }
+}
+
+impl JmapObjectId for VacationResponseValue {
+    fn as_id(&self) -> Option<Id> {
+        match self {
+            VacationResponseValue::Id(id) => Some(*id),
+            _ => None,
+        }
+    }
+
+    fn as_any_id(&self) -> Option<AnyId> {
+        match self {
+            VacationResponseValue::Id(id) => Some(AnyId::Id(*id)),
+            _ => None,
+        }
+    }
+
+    fn as_id_ref(&self) -> Option<&str> {
+        None
+    }
+}
+
+impl TryFrom<AnyId> for VacationResponseValue {
+    type Error = ();
+
+    fn try_from(value: AnyId) -> Result<Self, Self::Error> {
+        match value {
+            AnyId::Id(id) => Ok(VacationResponseValue::Id(id)),
+            _ => Err(()),
+        }
     }
 }

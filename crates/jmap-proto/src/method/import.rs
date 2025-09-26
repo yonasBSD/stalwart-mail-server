@@ -6,7 +6,10 @@
 
 use crate::{
     error::set::SetError,
-    object::email::{EmailProperty, EmailValue},
+    object::{
+        AnyId,
+        email::{EmailProperty, EmailValue},
+    },
     request::{
         MaybeInvalid,
         deserialize::{DeserializeArguments, deserialize_request},
@@ -135,7 +138,7 @@ impl ImportEmailResponse {
                 && let Some(Value::Element(EmailValue::Id(id))) =
                     obj.get(&Key::Property(EmailProperty::Id))
             {
-                response.created_ids.insert(user_id.clone(), (*id).into());
+                response.created_ids.insert(user_id.clone(), AnyId::Id(*id));
             }
         }
     }

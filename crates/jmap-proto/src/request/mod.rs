@@ -28,7 +28,7 @@ use crate::{
         validate::ValidateSieveScriptRequest,
     },
     object::{
-        blob::Blob, email::Email, email_submission::EmailSubmission, identity::Identity,
+        AnyId, blob::Blob, email::Email, email_submission::EmailSubmission, identity::Identity,
         mailbox::Mailbox, principal::Principal, push_subscription::PushSubscription, quota::Quota,
         sieve::Sieve, thread::Thread, vacation_response::VacationResponse,
     },
@@ -41,7 +41,7 @@ use std::{collections::HashMap, fmt::Debug, str::FromStr};
 pub struct Request<'x> {
     pub using: CapabilityIds,
     pub method_calls: Vec<Call<RequestMethod<'x>>>,
-    pub created_ids: Option<HashMap<String, String>>,
+    pub created_ids: Option<HashMap<String, AnyId>>,
 }
 
 #[derive(Debug)]

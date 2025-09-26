@@ -7,6 +7,7 @@
 use super::Request;
 use crate::{
     error::request::{RequestError, RequestErrorType, RequestLimitError},
+    object::AnyId,
     request::{Call, deserialize::DeserializeArguments},
     response::{Response, ResponseMethod, serialize::serialize_hex},
     types::state::State,
@@ -39,7 +40,7 @@ pub struct WebSocketResponse<'x> {
 
     #[serde(rename(deserialize = "createdIds"))]
     #[serde(skip_serializing_if = "HashMap::is_empty")]
-    created_ids: HashMap<String, String>,
+    created_ids: HashMap<String, AnyId>,
 
     #[serde(rename = "requestId")]
     #[serde(skip_serializing_if = "Option::is_none")]

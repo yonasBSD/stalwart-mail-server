@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::object::JmapObject;
+use crate::object::{AnyId, JmapObject, JmapObjectId};
 use crate::types::date::UTCDate;
 use jmap_tools::{Element, JsonPointer, JsonPointerItem};
 use jmap_tools::{Key, Property};
@@ -168,5 +168,36 @@ impl JmapObject for PushSubscription {
 impl From<Id> for PushSubscriptionValue {
     fn from(id: Id) -> Self {
         PushSubscriptionValue::Id(id)
+    }
+}
+
+impl JmapObjectId for PushSubscriptionValue {
+    fn as_id(&self) -> Option<Id> {
+        match self {
+            PushSubscriptionValue::Id(id) => Some(*id),
+            _ => None,
+        }
+    }
+
+    fn as_any_id(&self) -> Option<AnyId> {
+        match self {
+            PushSubscriptionValue::Id(id) => Some(AnyId::Id(*id)),
+            _ => None,
+        }
+    }
+
+    fn as_id_ref(&self) -> Option<&str> {
+        None
+    }
+}
+
+impl TryFrom<AnyId> for PushSubscriptionValue {
+    type Error = ();
+
+    fn try_from(value: AnyId) -> Result<Self, Self::Error> {
+        match value {
+            AnyId::Id(id) => Ok(PushSubscriptionValue::Id(id)),
+            _ => Err(()),
+        }
     }
 }

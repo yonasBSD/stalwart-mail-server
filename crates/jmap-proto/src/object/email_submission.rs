@@ -6,7 +6,7 @@
 
 use crate::{
     object::{
-        JmapObject, MaybeReference,
+        AnyId, JmapObject, JmapObjectId, MaybeReference,
         email::{EmailProperty, EmailValue},
         parse_ref,
     },
@@ -427,5 +427,41 @@ impl Default for EmailSubmissionComparator {
 impl From<Id> for EmailSubmissionValue {
     fn from(id: Id) -> Self {
         EmailSubmissionValue::Id(id)
+    }
+}
+
+impl JmapObjectId for EmailSubmissionValue {
+    fn as_id(&self) -> Option<Id> {
+        match self {
+            EmailSubmissionValue::Id(id) => Some(*id),
+            _ => None,
+        }
+    }
+
+    fn as_any_id(&self) -> Option<AnyId> {
+        match self {
+            EmailSubmissionValue::Id(id) => Some(AnyId::Id(*id)),
+            EmailSubmissionValue::BlobId(blob_id) => Some(AnyId::BlobId(blob_id.clone())),
+            _ => None,
+        }
+    }
+
+    fn as_id_ref(&self) -> Option<&str> {
+        if let EmailSubmissionValue::IdReference(r) = self {
+            Some(r)
+        } else {
+            None
+        }
+    }
+}
+
+impl TryFrom<AnyId> for EmailSubmissionValue {
+    type Error = ();
+
+    fn try_from(value: AnyId) -> Result<Self, Self::Error> {
+        match value {
+            AnyId::Id(id) => Ok(EmailSubmissionValue::Id(id)),
+            AnyId::BlobId(blob_id) => Ok(EmailSubmissionValue::BlobId(blob_id)),
+        }
     }
 }

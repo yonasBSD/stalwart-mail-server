@@ -8,7 +8,7 @@ use jmap_tools::{Element, JsonPointer, JsonPointerItem, Key, Property};
 use std::{borrow::Cow, str::FromStr};
 use types::id::Id;
 
-use crate::object::JmapObject;
+use crate::object::{AnyId, JmapObject, JmapObjectId};
 
 #[derive(Debug, Clone, Default)]
 pub struct Identity;
@@ -149,5 +149,34 @@ impl JmapObject for Identity {
 impl From<Id> for IdentityValue {
     fn from(id: Id) -> Self {
         IdentityValue::Id(id)
+    }
+}
+
+impl JmapObjectId for IdentityValue {
+    fn as_id(&self) -> Option<Id> {
+        match self {
+            IdentityValue::Id(id) => Some(*id),
+        }
+    }
+
+    fn as_any_id(&self) -> Option<AnyId> {
+        match self {
+            IdentityValue::Id(id) => Some(AnyId::Id(*id)),
+        }
+    }
+
+    fn as_id_ref(&self) -> Option<&str> {
+        None
+    }
+}
+
+impl TryFrom<AnyId> for IdentityValue {
+    type Error = ();
+
+    fn try_from(value: AnyId) -> Result<Self, Self::Error> {
+        match value {
+            AnyId::Id(id) => Ok(IdentityValue::Id(id)),
+            _ => Err(()),
+        }
     }
 }

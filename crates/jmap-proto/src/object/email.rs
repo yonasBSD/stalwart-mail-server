@@ -5,7 +5,7 @@
  */
 
 use crate::{
-    object::{JmapObject, MaybeReference, parse_ref},
+    object::{AnyId, JmapObject, JmapObjectId, MaybeReference, parse_ref},
     request::{MaybeInvalid, deserialize::DeserializeArguments},
     types::date::UTCDate,
 };
@@ -790,5 +790,42 @@ impl FilterItem for EmailFilter {
 impl From<Id> for EmailValue {
     fn from(id: Id) -> Self {
         EmailValue::Id(id)
+    }
+}
+
+impl JmapObjectId for EmailValue {
+    fn as_id(&self) -> Option<Id> {
+        if let EmailValue::Id(id) = self {
+            Some(*id)
+        } else {
+            None
+        }
+    }
+
+    fn as_any_id(&self) -> Option<AnyId> {
+        match self {
+            EmailValue::Id(id) => Some(AnyId::Id(*id)),
+            EmailValue::BlobId(id) => Some(AnyId::BlobId(id.clone())),
+            _ => None,
+        }
+    }
+
+    fn as_id_ref(&self) -> Option<&str> {
+        if let EmailValue::IdReference(r) = self {
+            Some(r)
+        } else {
+            None
+        }
+    }
+}
+
+impl TryFrom<AnyId> for EmailValue {
+    type Error = ();
+
+    fn try_from(value: AnyId) -> Result<Self, Self::Error> {
+        match value {
+            AnyId::Id(id) => Ok(EmailValue::Id(id)),
+            AnyId::BlobId(id) => Ok(EmailValue::BlobId(id)),
+        }
     }
 }

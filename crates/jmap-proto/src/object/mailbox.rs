@@ -10,7 +10,7 @@ use jmap_tools::{Element, JsonPointer, JsonPointerItem, Key, Property};
 use types::{id::Id, special_use::SpecialUse};
 
 use crate::{
-    object::{JmapObject, MaybeReference, parse_ref},
+    object::{AnyId, JmapObject, JmapObjectId, MaybeReference, parse_ref},
     request::deserialize::DeserializeArguments,
 };
 
@@ -348,5 +348,43 @@ impl<'de> serde::Deserialize<'de> for RoleWrapper {
 impl From<Id> for MailboxValue {
     fn from(id: Id) -> Self {
         MailboxValue::Id(id)
+    }
+}
+
+impl JmapObjectId for MailboxValue {
+    fn as_id(&self) -> Option<Id> {
+        if let MailboxValue::Id(id) = self {
+            Some(*id)
+        } else {
+            None
+        }
+    }
+
+    fn as_any_id(&self) -> Option<AnyId> {
+        if let MailboxValue::Id(id) = self {
+            Some(AnyId::Id(*id))
+        } else {
+            None
+        }
+    }
+
+    fn as_id_ref(&self) -> Option<&str> {
+        if let MailboxValue::IdReference(r) = self {
+            Some(r)
+        } else {
+            None
+        }
+    }
+}
+
+impl TryFrom<AnyId> for MailboxValue {
+    type Error = ();
+
+    fn try_from(value: AnyId) -> Result<Self, Self::Error> {
+        if let AnyId::Id(id) = value {
+            Ok(MailboxValue::Id(id))
+        } else {
+            Err(())
+        }
     }
 }

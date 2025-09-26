@@ -4,7 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{object::JmapObject, request::deserialize::DeserializeArguments};
+use crate::{
+    object::{AnyId, JmapObject, JmapObjectId},
+    request::deserialize::DeserializeArguments,
+};
 use jmap_tools::{Element, Key, Property};
 use std::{borrow::Cow, str::FromStr};
 use types::{id::Id, type_state::DataType};
@@ -222,5 +225,35 @@ impl Default for QuotaComparator {
 impl From<Id> for QuotaValue {
     fn from(id: Id) -> Self {
         QuotaValue::Id(id)
+    }
+}
+
+impl JmapObjectId for QuotaValue {
+    fn as_id(&self) -> Option<Id> {
+        if let QuotaValue::Id(id) = self {
+            Some(*id)
+        } else {
+            None
+        }
+    }
+
+    fn as_any_id(&self) -> Option<AnyId> {
+        self.as_id().map(AnyId::Id)
+    }
+
+    fn as_id_ref(&self) -> Option<&str> {
+        None
+    }
+}
+
+impl TryFrom<AnyId> for QuotaValue {
+    type Error = ();
+
+    fn try_from(value: AnyId) -> Result<Self, Self::Error> {
+        if let AnyId::Id(id) = value {
+            Ok(QuotaValue::Id(id))
+        } else {
+            Err(())
+        }
     }
 }

@@ -9,7 +9,7 @@ use std::borrow::Cow;
 use super::ahash_is_empty;
 use crate::{
     error::set::SetError,
-    object::blob::BlobProperty,
+    object::{AnyId, blob::BlobProperty},
     request::{
         deserialize::{DeserializeArguments, deserialize_request},
         reference::MaybeIdReference,
@@ -179,7 +179,7 @@ impl BlobUploadResponse {
         for (user_id, obj) in &self.created {
             response
                 .created_ids
-                .insert(user_id.clone(), obj.id.to_string());
+                .insert(user_id.clone(), AnyId::BlobId(obj.id.clone()));
         }
     }
 }

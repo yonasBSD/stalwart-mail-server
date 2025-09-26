@@ -5,12 +5,12 @@
  */
 
 use crate::{
-    object::{JmapObject, MaybeReference, parse_ref},
+    object::{AnyId, JmapObject, JmapObjectId, MaybeReference, parse_ref},
     request::deserialize::DeserializeArguments,
 };
 use jmap_tools::{Element, Key, Property};
 use std::{borrow::Cow, str::FromStr};
-use types::blob::BlobId;
+use types::{blob::BlobId, id::Id};
 
 #[derive(Debug, Clone, Default)]
 pub struct Blob;
@@ -189,5 +189,37 @@ impl JmapObject for Blob {
 impl From<BlobId> for BlobValue {
     fn from(id: BlobId) -> Self {
         BlobValue::BlobId(id)
+    }
+}
+
+impl JmapObjectId for BlobValue {
+    fn as_id(&self) -> Option<Id> {
+        None
+    }
+
+    fn as_any_id(&self) -> Option<AnyId> {
+        match self {
+            BlobValue::BlobId(id) => Some(AnyId::BlobId(id.clone())),
+            _ => None,
+        }
+    }
+
+    fn as_id_ref(&self) -> Option<&str> {
+        if let BlobValue::IdReference(r) = self {
+            Some(r)
+        } else {
+            None
+        }
+    }
+}
+
+impl TryFrom<AnyId> for BlobValue {
+    type Error = ();
+
+    fn try_from(value: AnyId) -> Result<Self, Self::Error> {
+        match value {
+            AnyId::BlobId(id) => Ok(BlobValue::BlobId(id)),
+            _ => Err(()),
+        }
     }
 }
