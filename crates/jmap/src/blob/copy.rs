@@ -56,6 +56,32 @@ impl BlobCopy for Server {
             };
 
             if self.has_access_blob(&blob_id, access_token).await? {
+                // Enforce quota
+                let used = self
+                    .core
+                    .storage
+                    .data
+                    .blob_quota(account_id)
+                    .await
+                    .caused_by(trc::location!())?;
+
+                if ((self.core.jmap.upload_tmp_quota_size > 0
+                    && used.bytes >= self.core.jmap.upload_tmp_quota_size)
+                    || (self.core.jmap.upload_tmp_quota_amount > 0
+                        && used.count + 1 > self.core.jmap.upload_tmp_quota_amount))
+                    && !access_token.has_permission(Permission::UnlimitedUploads)
+                {
+                    response.not_copied.append(
+                        MaybeInvalid::Value(blob_id),
+                        SetError::over_quota().with_description(format!(
+                            "You have exceeded the blob quota of {} files or {} bytes.",
+                            self.core.jmap.upload_tmp_quota_amount,
+                            self.core.jmap.upload_tmp_quota_size
+                        )),
+                    );
+                    continue;
+                }
+
                 let mut batch = BatchBuilder::new();
                 let until = now() + self.core.jmap.upload_tmp_ttl;
                 batch.with_account_id(account_id).set(
