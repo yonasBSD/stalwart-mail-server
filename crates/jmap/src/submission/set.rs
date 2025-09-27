@@ -19,18 +19,12 @@ use email::{
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
     method::set::{self, SetRequest, SetResponse},
-    object::email_submission::SetArguments,
+    object::email_submission,
     request::{
         Call, RequestMethod,
         method::{MethodFunction, MethodName, MethodObject},
-        reference::MaybeReference,
     },
-    response::references::EvalObjectReferences,
-    types::{
-        property::Property,
-        state::State,
-        value::{MaybePatchValue, Object, SetValue, Value},
-    },
+    types::state::State,
 };
 use mail_parser::{ArchivedHeaderName, ArchivedHeaderValue};
 use smtp::{
@@ -46,29 +40,29 @@ use types::{blob_hash::BlobHash, collection::Collection, field::EmailField, id::
 use utils::{map::vec_map::VecMap, sanitize_email};
 
 pub trait EmailSubmissionSet: Sync + Send {
-    fn email_submission_set(
+    fn email_submission_set<'x>(
         &self,
-        request: SetRequest<SetArguments>,
+        request: SetRequest<'x, email_submission::EmailSubmission>,
         instance: &Arc<ServerInstance>,
         next_call: &mut Option<Call<RequestMethod>>,
-    ) -> impl Future<Output = trc::Result<SetResponse>> + Send;
+    ) -> impl Future<Output = trc::Result<SetResponse<email_submission::EmailSubmission>>> + Send;
 
     fn send_message(
         &self,
         account_id: u32,
-        response: &SetResponse,
+        response: &SetResponse<email_submission::EmailSubmission>,
         instance: &Arc<ServerInstance>,
         object: Object<SetValue>,
     ) -> impl Future<Output = trc::Result<Result<EmailSubmission, SetError>>> + Send;
 }
 
 impl EmailSubmissionSet for Server {
-    async fn email_submission_set(
+    async fn email_submission_set<'x>(
         &self,
-        mut request: SetRequest<SetArguments>,
+        mut request: SetRequest<'x, email_submission::EmailSubmission>,
         instance: &Arc<ServerInstance>,
-        next_call: &mut Option<Call<RequestMethod>>,
-    ) -> trc::Result<SetResponse> {
+        next_call: &mut Option<Call<RequestMethod<'x>>>,
+    ) -> trc::Result<SetResponse<email_submission::EmailSubmission>> {
         let account_id = request.account_id.document_id();
         let mut response = SetResponse::from_request(&request, self.core.jmap.set_max_objects)?;
         let will_destroy = request.unwrap_destroy();
@@ -144,7 +138,7 @@ impl EmailSubmissionSet for Server {
                 };
                 if let (
                     Property::UndoStatus,
-                    MaybePatchValue::Value(Value::Text(undo_status_)),
+                    MaybePatchValue::Value(Value::Str(undo_status_)),
                     Some(queue_id_),
                 ) = (&property, value, submission.inner.queue_id)
                 {
@@ -154,7 +148,7 @@ impl EmailSubmissionSet for Server {
                     response.not_updated.append(
                         id,
                         SetError::invalid_properties()
-                            .with_property(property)
+                            .with_key_value(property)
                             .with_description("Field could not be set."),
                     );
                     continue 'update;
@@ -197,7 +191,7 @@ impl EmailSubmissionSet for Server {
                     response.not_updated.append(
                         id,
                         SetError::invalid_properties()
-                            .with_property(Property::UndoStatus)
+                            .with_key_value(Property::UndoStatus)
                             .with_description("Email submissions can only be cancelled."),
                     );
                 }
@@ -309,7 +303,7 @@ impl EmailSubmissionSet for Server {
     async fn send_message(
         &self,
         account_id: u32,
-        response: &SetResponse,
+        response: &SetResponse<email_submission::EmailSubmission>,
         instance: &Arc<ServerInstance>,
         object: Object<SetValue>,
     ) -> trc::Result<Result<EmailSubmission, SetError>> {
@@ -360,7 +354,7 @@ impl EmailSubmissionSet for Server {
                                         }
                                         Err(err) => {
                                             return Ok(Err(SetError::invalid_properties()
-                                                .with_property(Property::Envelope)
+                                                .with_key_value(Property::Envelope)
                                                 .with_description(format!(
                                                     "Failed to parse mailFrom parameters: {err}."
                                                 ))));
@@ -371,7 +365,7 @@ impl EmailSubmissionSet for Server {
                                     return Ok(Err(err));
                                 }
                             },
-                            (Property::RcptTo, Value::List(value)) => {
+                            (Property::RcptTo, Value::Array(value)) => {
                                 for addr in value {
                                     match parse_envelope_address(addr) {
                                         Ok((addr, params, smtp_params)) => {
@@ -400,7 +394,7 @@ impl EmailSubmissionSet for Server {
                                                 }
                                                 Err(err) => {
                                                     return Ok(Err(SetError::invalid_properties()
-                                                        .with_property(Property::Envelope)
+                                                        .with_key_value(Property::Envelope)
                                                         .with_description(format!(
                                                         "Failed to parse rcptTo parameters: {err}."
                                                     ))));
@@ -415,7 +409,7 @@ impl EmailSubmissionSet for Server {
                             }
                             _ => {
                                 return Ok(Err(SetError::invalid_properties()
-                                    .with_property(Property::Envelope)
+                                    .with_key_value(Property::Envelope)
                                     .with_description(format!(
                                         "Invalid object property {property}."
                                     ))));
@@ -426,10 +420,10 @@ impl EmailSubmissionSet for Server {
                 (Property::Envelope, MaybePatchValue::Value(Value::Null)) => {
                     continue;
                 }
-                (Property::UndoStatus, MaybePatchValue::Value(Value::Text(_))) => continue,
+                (Property::UndoStatus, MaybePatchValue::Value(Value::Str(_))) => continue,
                 _ => {
                     return Ok(Err(SetError::invalid_properties()
-                        .with_property(property)
+                        .with_key_value(property)
                         .with_description("Field could not be set.")));
                 }
             }
@@ -456,7 +450,7 @@ impl EmailSubmissionSet for Server {
                 .to_string()
         } else {
             return Ok(Err(SetError::invalid_properties()
-                .with_property(Property::IdentityId)
+                .with_key_value(Property::IdentityId)
                 .with_description("Identity not found.")));
         };
 
@@ -493,7 +487,7 @@ impl EmailSubmissionSet for Server {
             metadata
         } else {
             return Ok(Err(SetError::invalid_properties()
-                .with_property(Property::EmailId)
+                .with_key_value(Property::EmailId)
                 .with_description("Email not found.")));
         };
         let metadata = metadata_
@@ -566,7 +560,7 @@ impl EmailSubmissionSet for Server {
             message
         } else {
             return Ok(Err(SetError::invalid_properties()
-                .with_property(Property::EmailId)
+                .with_key_value(Property::EmailId)
                 .with_description("Blob for email not found.")));
         };
 
@@ -691,7 +685,7 @@ fn parse_envelope_address(
     SetError,
 > {
     if let Value::Object(mut envelope) = envelope {
-        if let Some(Value::Text(addr)) = envelope.0.remove(&Property::Email) {
+        if let Some(Value::Str(addr)) = envelope.0.remove(&Property::Email) {
             if let Some(addr) = sanitize_email(&addr) {
                 if let Some(Value::Object(params)) = envelope.0.remove(&Property::Parameters) {
                     let mut params_text = String::new();
@@ -705,7 +699,7 @@ fn parse_envelope_address(
                                 params_text.push(' ');
                             }
                             params_text.push_str(&k);
-                            if let Value::Text(v) = v {
+                            if let Value::Str(v) = v {
                                 params_text.push('=');
                                 params_text.push_str(&v);
                                 params_list.append(k, Some(v));
@@ -722,17 +716,17 @@ fn parse_envelope_address(
                 }
             } else {
                 Err(SetError::invalid_properties()
-                    .with_property(Property::Envelope)
+                    .with_key_value(Property::Envelope)
                     .with_description(format!("Invalid e-mail address {addr:?}.")))
             }
         } else {
             Err(SetError::invalid_properties()
-                .with_property(Property::Envelope)
+                .with_key_value(Property::Envelope)
                 .with_description("Missing e-mail address field."))
         }
     } else {
         Err(SetError::invalid_properties()
-            .with_property(Property::Envelope)
+            .with_key_value(Property::Envelope)
             .with_description("Invalid envelope object."))
     }
 }

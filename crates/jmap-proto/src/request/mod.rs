@@ -32,7 +32,7 @@ use crate::{
         mailbox::Mailbox, principal::Principal, push_subscription::PushSubscription, quota::Quota,
         sieve::Sieve, thread::Thread, vacation_response::VacationResponse,
     },
-    request::capability::CapabilityIds,
+    request::{capability::CapabilityIds, reference::MaybeIdReference},
 };
 use jmap_tools::{Null, Value};
 use std::{collections::HashMap, fmt::Debug, str::FromStr};
@@ -180,5 +180,27 @@ where
             MaybeInvalid::Value(id) => Some(id),
             MaybeInvalid::Invalid(_) => None,
         }
+    }
+}
+
+pub trait IntoValid {
+    type Item;
+
+    fn into_valid(self) -> impl Iterator<Item = Self::Item>;
+}
+
+impl<T: FromStr> IntoValid for Vec<MaybeInvalid<T>> {
+    type Item = T;
+
+    fn into_valid(self) -> impl Iterator<Item = Self::Item> {
+        self.into_iter().filter_map(|v| v.try_unwrap())
+    }
+}
+
+impl<T: FromStr> IntoValid for Vec<MaybeIdReference<T>> {
+    type Item = T;
+
+    fn into_valid(self) -> impl Iterator<Item = Self::Item> {
+        self.into_iter().filter_map(|v| v.try_unwrap())
     }
 }

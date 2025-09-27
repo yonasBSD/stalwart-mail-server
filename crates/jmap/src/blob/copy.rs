@@ -6,9 +6,11 @@
 
 use super::download::BlobDownload;
 use common::{Server, auth::AccessToken};
+use directory::Permission;
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
     method::copy::{CopyBlobRequest, CopyBlobResponse},
+    request::MaybeInvalid,
 };
 use std::future::Future;
 use store::{
@@ -42,6 +44,17 @@ impl BlobCopy for Server {
         let account_id = request.account_id.document_id();
 
         for blob_id in request.blob_ids {
+            let blob_id = match blob_id {
+                MaybeInvalid::Value(blob_id) => blob_id,
+                MaybeInvalid::Invalid(_) => {
+                    response.not_copied.append(
+                        blob_id,
+                        SetError::invalid_properties().with_description("Invalid blobId."),
+                    );
+                    continue;
+                }
+            };
+
             if self.has_access_blob(&blob_id, access_token).await? {
                 let mut batch = BatchBuilder::new();
                 let until = now() + self.core.jmap.upload_tmp_ttl;
@@ -56,6 +69,7 @@ impl BlobCopy for Server {
                     .write(batch.build_all())
                     .await
                     .caused_by(trc::location!())?;
+
                 let dest_blob_id = BlobId {
                     hash: blob_id.hash.clone(),
                     class: BlobClass::Reserved {
@@ -68,7 +82,7 @@ impl BlobCopy for Server {
                 response.copied.append(blob_id, dest_blob_id);
             } else {
                 response.not_copied.append(
-                    blob_id,
+                    MaybeInvalid::Value(blob_id),
                     SetError::new(SetErrorType::BlobNotFound).with_description(
                         "blobId does not exist or not enough permissions to access it.",
                     ),

@@ -6,6 +6,8 @@
 
 use std::fmt::Display;
 
+use jmap_tools::{Element, Property, Value};
+
 pub const SEEN: usize = 0;
 pub const DRAFT: usize = 1;
 pub const FLAGGED: usize = 2;
@@ -259,5 +261,11 @@ impl<'de> serde::Deserialize<'de> for Keyword {
         D: serde::Deserializer<'de>,
     {
         Ok(Keyword::parse(<&str>::deserialize(deserializer)?))
+    }
+}
+
+impl<'x, P: Property, E: Element + From<Keyword>> From<Keyword> for Value<'x, P, E> {
+    fn from(id: Keyword) -> Self {
+        Value::Element(E::from(id))
     }
 }

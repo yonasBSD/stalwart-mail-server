@@ -14,7 +14,7 @@ use jmap_proto::{
     method::upload::{
         BlobUploadRequest, BlobUploadResponse, BlobUploadResponseObject, DataSourceObject,
     },
-    request::reference::MaybeReference,
+    request::reference::MaybeIdReference,
 };
 use std::future::Future;
 use trc::AddContext;
@@ -64,8 +64,8 @@ impl BlobUpload for Server {
                 let bytes = match data_source {
                     DataSourceObject::Id { id, length, offset } => {
                         let id = match id {
-                            MaybeReference::Value(id) => id,
-                            MaybeReference::Reference(reference) => {
+                            MaybeIdReference::Id(id) => id,
+                            MaybeIdReference::Reference(reference) => {
                                 if let Some(obj) = response.created.get(&reference) {
                                     obj.id.clone()
                                 } else {
@@ -77,6 +77,14 @@ impl BlobUpload for Server {
                                     );
                                     continue 'outer;
                                 }
+                            }
+                            MaybeIdReference::Invalid(id) => {
+                                response.not_created.append(
+                                    create_id,
+                                    SetError::invalid_properties()
+                                        .with_description(format!("Invalid blobId {id}.")),
+                                );
+                                continue 'outer;
                             }
                         };
 
@@ -122,6 +130,14 @@ impl BlobUpload for Server {
                         }
                     }
                     DataSourceObject::Value(bytes) => bytes,
+                    DataSourceObject::Null => {
+                        response.not_created.append(
+                            create_id,
+                            SetError::invalid_properties()
+                                .with_description("Invalid DataSourceObject."),
+                        );
+                        continue 'outer;
+                    }
                 };
 
                 if bytes.len() + data.len() < self.core.jmap.upload_max_size {

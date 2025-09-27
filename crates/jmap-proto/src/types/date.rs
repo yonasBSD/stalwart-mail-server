@@ -5,7 +5,6 @@
  */
 
 use std::{fmt::Display, str::FromStr};
-use store::SerializeInfallible;
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct UTCDate {
@@ -223,12 +222,6 @@ impl<'de> serde::Deserialize<'de> for UTCDate {
     {
         UTCDate::from_str(<&str>::deserialize(deserializer)?)
             .map_err(|_| serde::de::Error::custom("invalid JMAP UTCDate"))
-    }
-}
-
-impl SerializeInfallible for UTCDate {
-    fn serialize(&self) -> Vec<u8> {
-        (self.timestamp() as u64).serialize()
     }
 }
 

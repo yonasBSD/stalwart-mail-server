@@ -5,7 +5,7 @@
  */
 
 use crate::{
-    method::query::{Comparator, Filter, FilterWrapper},
+    method::query::{Comparator, Filter, FilterWrapper, QueryRequest},
     object::JmapObject,
     request::deserialize::{DeserializeArguments, deserialize_request},
     types::state::State,
@@ -114,6 +114,22 @@ impl<T: JmapObject> Default for QueryChangesRequest<T> {
             max_changes: None,
             up_to_id: None,
             calculate_total: None,
+            arguments: T::QueryArguments::default(),
+        }
+    }
+}
+
+impl<T: JmapObject> From<QueryChangesRequest<T>> for QueryRequest<T> {
+    fn from(request: QueryChangesRequest<T>) -> Self {
+        QueryRequest {
+            account_id: request.account_id,
+            filter: request.filter,
+            sort: request.sort,
+            position: None,
+            anchor: None,
+            anchor_offset: None,
+            limit: None,
+            calculate_total: request.calculate_total,
             arguments: T::QueryArguments::default(),
         }
     }

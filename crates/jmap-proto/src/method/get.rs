@@ -7,7 +7,7 @@
 use crate::{
     object::JmapObject,
     request::{
-        MaybeInvalid,
+        IntoValid, MaybeInvalid,
         deserialize::{DeserializeArguments, deserialize_request},
         reference::{MaybeIdReference, MaybeResultReference, ResultReference},
     },
@@ -37,7 +37,7 @@ pub struct GetResponse<T: JmapObject> {
     pub list: Vec<Value<'static, T::Property, T::Element>>,
 
     #[serde(rename = "notFound")]
-    pub not_found: Vec<MaybeInvalid<T::Id>>,
+    pub not_found: Vec<T::Id>,
 }
 
 impl<'de, T: JmapObject> DeserializeArguments<'de> for GetRequest<T> {
@@ -120,11 +120,7 @@ impl<T: JmapObject> GetRequest<T> {
         if let Some(ids) = self.ids.take() {
             let ids = ids.unwrap();
             if ids.len() <= max_objects_in_get {
-                Ok(Some(
-                    ids.into_iter()
-                        .filter_map(|id| id.try_unwrap())
-                        .collect::<Vec<_>>(),
-                ))
+                Ok(Some(ids.into_valid().collect::<Vec<_>>()))
             } else {
                 Err(trc::JmapEvent::RequestTooLarge.into_err())
             }

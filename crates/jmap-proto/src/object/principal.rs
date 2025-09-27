@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use jmap_tools::{Element, Key, Property};
-use std::{borrow::Cow, str::FromStr};
+use jmap_tools::{Element, Key, Null, Property};
+use std::{borrow::Cow, fmt::Display, str::FromStr};
 use types::id::Id;
 
 use crate::{
@@ -143,6 +143,8 @@ impl JmapObject for Principal {
     type Element = PrincipalValue;
 
     type Id = Id;
+
+    type Right = Null;
 
     type Filter = PrincipalFilter;
 
@@ -300,5 +302,25 @@ impl TryFrom<AnyId> for PrincipalValue {
         } else {
             Err(())
         }
+    }
+}
+
+impl Display for PrincipalFilter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            PrincipalFilter::AccountIds(_) => "accountIds",
+            PrincipalFilter::Email(_) => "email",
+            PrincipalFilter::Name(_) => "name",
+            PrincipalFilter::Text(_) => "text",
+            PrincipalFilter::Type(_) => "type",
+            PrincipalFilter::Timezone(_) => "timezone",
+            PrincipalFilter::_T(other) => other,
+        })
+    }
+}
+
+impl From<Null> for PrincipalProperty {
+    fn from(_: Null) -> Self {
+        unimplemented!()
     }
 }

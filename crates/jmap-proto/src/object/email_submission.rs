@@ -13,7 +13,7 @@ use crate::{
     request::{deserialize::DeserializeArguments, reference::MaybeIdReference},
     types::date::UTCDate,
 };
-use jmap_tools::{Element, JsonPointer, JsonPointerItem, Key, Property, Value};
+use jmap_tools::{Element, JsonPointer, JsonPointerItem, Key, Null, Property, Value};
 use std::{borrow::Cow, str::FromStr};
 use types::{blob::BlobId, id::Id};
 use utils::map::vec_map::VecMap;
@@ -26,6 +26,7 @@ pub enum EmailSubmissionProperty {
     Id,
     IdentityId,
     ThreadId,
+    EmailId,
     Envelope,
     MailFrom,
     RcptTo,
@@ -98,6 +99,7 @@ impl Property for EmailSubmissionProperty {
             EmailSubmissionProperty::Displayed => "displayed",
             EmailSubmissionProperty::MailFrom => "mailFrom",
             EmailSubmissionProperty::RcptTo => "rcptTo",
+            EmailSubmissionProperty::EmailId => "emailId",
             EmailSubmissionProperty::Pointer(json_pointer) => {
                 return json_pointer.to_string().into();
             }
@@ -164,6 +166,7 @@ impl EmailSubmissionProperty {
             "id" => EmailSubmissionProperty::Id,
             "identityId" => EmailSubmissionProperty::IdentityId,
             "threadId" => EmailSubmissionProperty::ThreadId,
+            "emailId" => EmailSubmissionProperty::EmailId,
             "envelope" => EmailSubmissionProperty::Envelope,
             "mailFrom" => EmailSubmissionProperty::MailFrom,
             "rcptTo" => EmailSubmissionProperty::RcptTo,
@@ -314,6 +317,8 @@ impl JmapObject for EmailSubmission {
 
     type Id = Id;
 
+    type Right = Null;
+
     type Filter = EmailSubmissionFilter;
 
     type Comparator = EmailSubmissionComparator;
@@ -463,5 +468,11 @@ impl TryFrom<AnyId> for EmailSubmissionValue {
             AnyId::Id(id) => Ok(EmailSubmissionValue::Id(id)),
             AnyId::BlobId(blob_id) => Ok(EmailSubmissionValue::BlobId(blob_id)),
         }
+    }
+}
+
+impl From<Null> for EmailSubmissionProperty {
+    fn from(_: Null) -> Self {
+        unimplemented!()
     }
 }

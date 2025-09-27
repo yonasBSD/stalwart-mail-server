@@ -16,7 +16,7 @@ use http_proto::HttpSessionData;
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
     method::import::{ImportEmailRequest, ImportEmailResponse},
-    types::{property::Property, state::State},
+    types::state::State,
 };
 use mail_parser::MessageParser;
 use std::future::Future;
@@ -89,7 +89,7 @@ impl EmailImport for Server {
                 response.not_created.append(
                     id,
                     SetError::invalid_properties()
-                        .with_property(Property::MailboxIds)
+                        .with_key_value(Property::MailboxIds)
                         .with_description("Message must belong to at least one mailbox."),
                 );
                 continue;
@@ -99,7 +99,7 @@ impl EmailImport for Server {
                     response.not_created.append(
                         id,
                         SetError::invalid_properties()
-                            .with_property(Property::MailboxIds)
+                            .with_key_value(Property::MailboxIds)
                             .with_description(format!(
                                 "Mailbox {} does not exist.",
                                 Id::from(*mailbox_id)

@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use jmap_tools::{Element, Property, Value};
 use utils::config::utils::ParseValue;
 
 #[derive(
@@ -96,5 +97,11 @@ impl From<&ArchivedSpecialUse> for SpecialUse {
 impl ParseValue for SpecialUse {
     fn parse_value(value: &str) -> Result<Self, String> {
         SpecialUse::parse(value).ok_or_else(|| format!("Unknown folder role {:?}", value))
+    }
+}
+
+impl<'x, P: Property, E: Element + From<SpecialUse>> From<SpecialUse> for Value<'x, P, E> {
+    fn from(id: SpecialUse) -> Self {
+        Value::Element(E::from(id))
     }
 }

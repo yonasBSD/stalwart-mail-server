@@ -17,14 +17,8 @@ use http_proto::HttpSessionData;
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
     method::set::{SetRequest, SetResponse},
-    object::sieve::SetArguments,
-    request::reference::MaybeReference,
-    response::references::EvalObjectReferences,
-    types::{
-        property::Property,
-        state::State,
-        value::{MaybePatchValue, Object, SetValue, Value},
-    },
+    object::sieve::Sieve,
+    types::state::State,
 };
 use rand::distr::Alphanumeric;
 use sieve::compiler::ErrorType;
@@ -46,16 +40,16 @@ use types::{
 pub struct SetContext<'x> {
     resource_token: ResourceToken,
     access_token: &'x AccessToken,
-    response: SetResponse,
+    response: SetResponse<Sieve>,
 }
 
 pub trait SieveScriptSet: Sync + Send {
     fn sieve_script_set(
         &self,
-        request: SetRequest<SetArguments>,
+        request: SetRequest<'_, Sieve>,
         access_token: &AccessToken,
         session: &HttpSessionData,
-    ) -> impl Future<Output = trc::Result<SetResponse>> + Send;
+    ) -> impl Future<Output = trc::Result<SetResponse<Sieve>>> + Send;
 
     #[allow(clippy::type_complexity)]
     fn sieve_set_item<'x>(
@@ -138,9 +132,9 @@ impl SieveScriptSet for Server {
                         // Add result with updated blobId
                         ctx.response.created.insert(
                             id,
-                            Object::with_capacity(1)
-                                .with_property(Property::Id, Value::Id(document_id.into()))
-                                .with_property(
+                            Map::with_capacity(1)
+                                .with_key_value(Property::Id, Value::Id(document_id.into()))
+                                .with_key_value(
                                     Property::BlobId,
                                     BlobId {
                                         hash: blob_hash,
@@ -243,7 +237,7 @@ impl SieveScriptSet for Server {
                         ctx.response.updated.append(
                             id,
                             blob_id.map(|blob_id| {
-                                Object::with_capacity(1).with_property(Property::BlobId, blob_id)
+                                Map::with_capacity(1).with_key_value(Property::BlobId, blob_id)
                             }),
                         );
                     }
@@ -330,7 +324,7 @@ impl SieveScriptSet for Server {
                     if let Some(obj) = obj {
                         return Some(obj);
                     } else {
-                        *obj = Some(Object::with_capacity(1));
+                        *obj = Some(Map::with_capacity(1));
                         return obj.as_mut().unwrap().into();
                     }
                 }
@@ -399,14 +393,14 @@ impl SieveScriptSet for Server {
                 }
             };
             match (&property, value) {
-                (Property::Name, MaybePatchValue::Value(Value::Text(value))) => {
+                (Property::Name, MaybePatchValue::Value(Value::Str(value))) => {
                     if value.len() > self.core.jmap.sieve_max_script_name {
                         return Ok(Err(SetError::invalid_properties()
-                            .with_property(property)
+                            .with_key_value(property)
                             .with_description("Script name is too long.")));
                     } else if value.eq_ignore_ascii_case("vacation") {
                         return Ok(Err(SetError::forbidden()
-                            .with_property(property)
+                            .with_key_value(property)
                             .with_description(
                                 "The 'vacation' name is reserved, please use a different name.",
                             )));
@@ -442,7 +436,7 @@ impl SieveScriptSet for Server {
                 }
                 _ => {
                     return Ok(Err(SetError::invalid_properties()
-                        .with_property(property)
+                        .with_key_value(property)
                         .with_description("Invalid property or value.".to_string())));
                 }
             }
@@ -506,7 +500,7 @@ impl SieveScriptSet for Server {
                     }
                 } else {
                     return Ok(Err(SetError::new(SetErrorType::BlobNotFound)
-                        .with_property(Property::BlobId)
+                        .with_key_value(Property::BlobId)
                         .with_description("Blob does not exist.")));
                 }
             } else {
@@ -514,7 +508,7 @@ impl SieveScriptSet for Server {
             }
         } else if update.is_none() {
             return Ok(Err(SetError::invalid_properties()
-                .with_property(Property::BlobId)
+                .with_key_value(Property::BlobId)
                 .with_description("Missing blobId.")));
         } else {
             None

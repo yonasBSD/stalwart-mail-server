@@ -4,8 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, collections::HashMap};
-
 use super::headers::{BuildHeader, ValueToHeader};
 use crate::{
     JmapMethods, blob::download::BlobDownload, changes::state::MessageCacheState,
@@ -24,13 +22,9 @@ use email::{
 use http_proto::HttpSessionData;
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
-    method::set::{RequestArguments, SetRequest, SetResponse},
-    response::references::EvalObjectReferences,
-    types::{
-        property::Property,
-        state::State,
-        value::{MaybePatchValue, SetValue, Value},
-    },
+    method::set::{SetRequest, SetResponse},
+    object::email::Email,
+    types::state::State,
 };
 use mail_builder::{
     MessageBuilder,
@@ -42,6 +36,7 @@ use mail_builder::{
 };
 use mail_parser::MessageParser;
 use std::future::Future;
+use std::{borrow::Cow, collections::HashMap};
 use store::{ahash::AHashMap, roaring::RoaringBitmap, write::BatchBuilder};
 use trc::AddContext;
 use types::{
@@ -54,19 +49,19 @@ use types::{
 pub trait EmailSet: Sync + Send {
     fn email_set(
         &self,
-        request: SetRequest<RequestArguments>,
+        request: SetRequest<'_, Email>,
         access_token: &AccessToken,
         session: &HttpSessionData,
-    ) -> impl Future<Output = trc::Result<SetResponse>> + Send;
+    ) -> impl Future<Output = trc::Result<SetResponse<Email>>> + Send;
 }
 
 impl EmailSet for Server {
     async fn email_set(
         &self,
-        mut request: SetRequest<RequestArguments>,
+        mut request: SetRequest<'_, Email>,
         access_token: &AccessToken,
         session: &HttpSessionData,
-    ) -> trc::Result<SetResponse> {
+    ) -> trc::Result<SetResponse<Email>> {
         // Prepare response
         let account_id = request.account_id.document_id();
         let cache = self.get_cached_messages(account_id).await?;
@@ -127,7 +122,7 @@ impl EmailSet for Server {
                     let mut values = HashMap::with_capacity(obj.0.len());
                     for (key, value) in obj.0 {
                         if let (Property::_T(id), Value::Object(mut bv)) = (key, value) {
-                            values.insert(id, bv.0.remove(&Property::Value)?.try_unwrap_string()?);
+                            values.insert(id, bv.0.remove(&Property::Value)?.into_string()?);
                         } else {
                             return None;
                         }
@@ -149,7 +144,7 @@ impl EmailSet for Server {
                     }
                 };
                 match (property, value) {
-                    (Property::MailboxIds, MaybePatchValue::Value(Value::List(ids))) => {
+                    (Property::MailboxIds, MaybePatchValue::Value(Value::Array(ids))) => {
                         mailboxes = ids
                             .into_iter()
                             .filter_map(|id| id.try_unwrap_id()?.document_id().into())
@@ -170,7 +165,7 @@ impl EmailSet for Server {
                         }
                     }
 
-                    (Property::Keywords, MaybePatchValue::Value(Value::List(keywords_))) => {
+                    (Property::Keywords, MaybePatchValue::Value(Value::Array(keywords_))) => {
                         keywords = keywords_
                             .into_iter()
                             .filter_map(|keyword| keyword.try_unwrap_keyword())
@@ -192,14 +187,14 @@ impl EmailSet for Server {
 
                     (
                         header @ (Property::MessageId | Property::InReplyTo | Property::References),
-                        MaybePatchValue::Value(Value::List(values)),
+                        MaybePatchValue::Value(Value::Array(values)),
                     ) => {
                         builder = builder.header(
                             header.as_rfc_header(),
                             MessageId {
                                 id: values
                                     .into_iter()
-                                    .filter_map(|value| value.try_unwrap_string())
+                                    .filter_map(|value| value.into_string())
                                     .map(|value| value.into())
                                     .collect(),
                             },
@@ -223,7 +218,7 @@ impl EmailSet for Server {
                             continue 'create;
                         }
                     }
-                    (Property::Subject, MaybePatchValue::Value(Value::Text(value))) => {
+                    (Property::Subject, MaybePatchValue::Value(Value::Str(value))) => {
                         builder = builder.subject(value);
                     }
 
@@ -246,7 +241,7 @@ impl EmailSet for Server {
                         let (values, expected_content_type) = match property {
                             Property::BodyStructure => (vec![value], None),
                             Property::TextBody | Property::HtmlBody if !has_body_structure => {
-                                let values = value.try_unwrap_list().unwrap_or_default();
+                                let values = value.into_array().unwrap_or_default();
                                 if values.len() <= 1 {
                                     (
                                         values,
@@ -260,14 +255,14 @@ impl EmailSet for Server {
                                     response.not_created.append(
                                         id,
                                         SetError::invalid_properties()
-                                            .with_property(property)
+                                            .with_key_value(property)
                                             .with_description("Only one part is allowed."),
                                     );
                                     continue 'create;
                                 }
                             }
                             Property::Attachments if !has_body_structure => {
-                                (value.try_unwrap_list().unwrap_or_default(), None)
+                                (value.into_array().unwrap_or_default(), None)
                             }
                             _ => {
                                 response.not_created.append(
@@ -298,34 +293,34 @@ impl EmailSet for Server {
                                 let mut has_size = false;
                                 let mut headers: Vec<(Cow<str>, HeaderType)> = Vec::new();
 
-                                if let Some(obj) = value.try_unwrap_object() {
+                                if let Some(obj) = value.into_object() {
                                     for (body_property, value) in obj.0 {
                                         match (body_property, value) {
-                                            (Property::Type, Value::Text(value)) => {
+                                            (Property::Type, Value::Str(value)) => {
                                                 content_type = value.into();
                                             }
-                                            (Property::PartId, Value::Text(value)) => {
+                                            (Property::PartId, Value::Str(value)) => {
                                                 part_id = value.into();
                                             }
                                             (Property::BlobId, Value::BlobId(value)) => {
                                                 blob_id = value.into();
                                             }
-                                            (Property::Disposition, Value::Text(value)) => {
+                                            (Property::Disposition, Value::Str(value)) => {
                                                 content_disposition = value.into();
                                             }
-                                            (Property::Name, Value::Text(value)) => {
+                                            (Property::Name, Value::Str(value)) => {
                                                 name = value.into();
                                             }
-                                            (Property::Charset, Value::Text(value)) => {
+                                            (Property::Charset, Value::Str(value)) => {
                                                 charset = value.into();
                                             }
-                                            (Property::Language, Value::List(values)) => {
+                                            (Property::Language, Value::Array(values)) => {
                                                 headers.push((
                                                     "Content-Language".into(),
                                                     Text::new(
                                                         values
                                                             .into_iter()
-                                                            .filter_map(|v| v.try_unwrap_string())
+                                                            .filter_map(|v| v.into_string())
                                                             .fold(
                                                                 String::with_capacity(64),
                                                                 |mut h, v| {
@@ -340,19 +335,19 @@ impl EmailSet for Server {
                                                     .into(),
                                                 ));
                                             }
-                                            (Property::Cid, Value::Text(value)) => {
+                                            (Property::Cid, Value::Str(value)) => {
                                                 headers.push((
                                                     "Content-ID".into(),
                                                     MessageId::new(value).into(),
                                                 ));
                                             }
-                                            (Property::Location, Value::Text(value)) => {
+                                            (Property::Location, Value::Str(value)) => {
                                                 headers.push((
                                                     "Content-Location".into(),
                                                     Text::new(value).into(),
                                                 ));
                                             }
-                                            (Property::Header(header), Value::Text(value))
+                                            (Property::Header(header), Value::Str(value))
                                                 if !header.header.eq_ignore_ascii_case(
                                                     "content-transfer-encoding",
                                                 ) =>
@@ -362,13 +357,13 @@ impl EmailSet for Server {
                                                     Raw::from(value).into(),
                                                 ));
                                             }
-                                            (Property::Header(header), Value::List(values))
+                                            (Property::Header(header), Value::Array(values))
                                                 if !header.header.eq_ignore_ascii_case(
                                                     "content-transfer-encoding",
                                                 ) =>
                                             {
                                                 for value in values {
-                                                    if let Some(value) = value.try_unwrap_string() {
+                                                    if let Some(value) = value.into_string() {
                                                         headers.push((
                                                             header.header.clone().into(),
                                                             Raw::from(value).into(),
@@ -380,7 +375,7 @@ impl EmailSet for Server {
                                                 response.not_created.append(
                                                     id,
                                                     SetError::invalid_properties()
-                                                        .with_property((
+                                                        .with_key_value((
                                                             property,
                                                             Property::Headers,
                                                         ))
@@ -393,14 +388,14 @@ impl EmailSet for Server {
                                             (Property::Size, _) => {
                                                 has_size = true;
                                             }
-                                            (Property::SubParts, Value::List(values)) => {
+                                            (Property::SubParts, Value::Array(values)) => {
                                                 subparts = values.into();
                                             }
                                             (body_property, value) if value != Value::Null => {
                                                 response.not_created.append(
                                                     id,
                                                     SetError::invalid_properties()
-                                                        .with_property((property, body_property))
+                                                        .with_key_value((property, body_property))
                                                         .with_description("Cannot set property."),
                                                 );
                                                 continue 'create;
@@ -419,7 +414,7 @@ impl EmailSet for Server {
                                         response.not_created.append(
                                             id,
                                             SetError::invalid_properties()
-                                                .with_property((property, Property::Type))
+                                                .with_key_value((property, Property::Type))
                                                 .with_description("Multiparts can only be set with bodyStructure."),
                                         );
                                         continue 'create;
@@ -431,7 +426,7 @@ impl EmailSet for Server {
                                     response.not_created.append(
                                         id,
                                         SetError::invalid_properties()
-                                            .with_property((property, Property::Type))
+                                            .with_key_value((property, Property::Type))
                                             .with_description(format!(
                                                 "Expected one body part of type \"{}\"",
                                                 expected_content_type.unwrap()
@@ -465,7 +460,7 @@ impl EmailSet for Server {
                                         response.not_created.append(
                                         id,
                                         SetError::invalid_properties()
-                                            .with_property((property, Property::Size))
+                                            .with_key_value((property, Property::Size))
                                             .with_description(
                                                 "Cannot specify \"size\" when providing a \"partId\".",
                                             ),
@@ -498,7 +493,7 @@ impl EmailSet for Server {
                                             response.not_created.append(
                                             id,
                                             SetError::invalid_properties()
-                                                .with_property((property, Property::Charset))
+                                                .with_key_value((property, Property::Charset))
                                                 .with_description(
                                                     "Cannot specify a character set when providing a \"partId\".",
                                                 ),
@@ -571,7 +566,7 @@ impl EmailSet for Server {
                                                 response.not_created.append(
                                                     id,
                                                     SetError::invalid_properties()
-                                                        .with_property((property, Property::PartId))
+                                                        .with_key_value((property, Property::PartId))
                                                         .with_description(format!(
                                                         "Missing body value for partId {part_id:?}"
                                                     )),
@@ -596,7 +591,7 @@ impl EmailSet for Server {
                                         response.not_created.append(
                                             id,
                                             SetError::invalid_properties()
-                                                .with_property(property)
+                                                .with_key_value(property)
                                                 .with_description(format!(
                                                     "Message exceeds maximum size of {} bytes.",
                                                     self.core.jmap.mail_attachments_max_size
@@ -664,7 +659,7 @@ impl EmailSet for Server {
                 response.not_created.append(
                     id,
                     SetError::invalid_properties()
-                        .with_property(Property::MailboxIds)
+                        .with_key_value(Property::MailboxIds)
                         .with_description("Message has to belong to at least one mailbox."),
                 );
                 continue 'create;
@@ -676,7 +671,7 @@ impl EmailSet for Server {
                     response.not_created.append(
                         id,
                         SetError::invalid_properties()
-                            .with_property(Property::MailboxIds)
+                            .with_key_value(Property::MailboxIds)
                             .with_description(format!("mailboxId {mailbox_id} does not exist.")),
                     );
                     continue 'create;
@@ -791,7 +786,7 @@ impl EmailSet for Server {
                     }
                 };
                 match (property, value) {
-                    (Property::MailboxIds, MaybePatchValue::Value(Value::List(ids))) => {
+                    (Property::MailboxIds, MaybePatchValue::Value(Value::Array(ids))) => {
                         new_data.set_mailboxes(
                             ids.into_iter()
                                 .filter_map(|id| {
@@ -811,7 +806,7 @@ impl EmailSet for Server {
                             }
                         }
                     }
-                    (Property::Keywords, MaybePatchValue::Value(Value::List(keywords_))) => {
+                    (Property::Keywords, MaybePatchValue::Value(Value::Array(keywords_))) => {
                         new_data.set_keywords(
                             keywords_
                                 .into_iter()
@@ -880,7 +875,7 @@ impl EmailSet for Server {
                     response.not_updated.append(
                         id,
                         SetError::invalid_properties()
-                            .with_property(Property::MailboxIds)
+                            .with_key_value(Property::MailboxIds)
                             .with_description("Message has to belong to at least one mailbox."),
                     );
                     continue 'update;
@@ -907,7 +902,7 @@ impl EmailSet for Server {
                         response.not_updated.append(
                             id,
                             SetError::invalid_properties()
-                                .with_property(Property::MailboxIds)
+                                .with_key_value(Property::MailboxIds)
                                 .with_description(format!(
                                     "mailboxId {} does not exist.",
                                     mailbox_id.mailbox_id

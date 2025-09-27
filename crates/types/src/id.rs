@@ -5,6 +5,7 @@
  */
 
 use crate::DocumentId;
+use jmap_tools::{Element, Property, Value};
 use std::{ops::Deref, str::FromStr};
 use utils::codec::base32_custom::{BASE32_ALPHABET, BASE32_INVERSE};
 
@@ -202,6 +203,12 @@ impl<'de> serde::Deserialize<'de> for Id {
 impl std::fmt::Display for Id {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.as_string())
+    }
+}
+
+impl<'x, P: Property, E: Element + From<Id>> From<Id> for Value<'x, P, E> {
+    fn from(id: Id) -> Self {
+        Value::Element(E::from(id))
     }
 }
 

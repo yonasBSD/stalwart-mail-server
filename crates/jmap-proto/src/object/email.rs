@@ -5,11 +5,12 @@
  */
 
 use crate::{
+    method::query::{Comparator, Filter},
     object::{AnyId, JmapObject, JmapObjectId, MaybeReference, parse_ref},
     request::{MaybeInvalid, deserialize::DeserializeArguments},
     types::date::UTCDate,
 };
-use jmap_tools::{Element, JsonPointer, JsonPointerItem, Key, Property};
+use jmap_tools::{Element, JsonPointer, JsonPointerItem, Key, Null, Property};
 use mail_parser::HeaderName;
 use std::{borrow::Cow, fmt::Display, str::FromStr};
 use store::fts::{FilterItem, FilterType};
@@ -75,6 +76,7 @@ pub enum EmailProperty {
 
     // Other
     Keyword(Keyword),
+    IdValue(Id),
     Pointer(JsonPointer<EmailProperty>),
 }
 
@@ -85,7 +87,7 @@ pub struct HeaderProperty {
     pub all: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum HeaderForm {
     Raw,
     Text,
@@ -161,6 +163,7 @@ impl Property for EmailProperty {
             EmailProperty::IsTruncated => "isTruncated",
             EmailProperty::Header(header) => return header.to_string().into(),
             EmailProperty::Keyword(keyword) => return keyword.to_string().into(),
+            EmailProperty::IdValue(id) => return id.to_string().into(),
             EmailProperty::Pointer(json_pointer) => return json_pointer.to_string().into(),
         }
         .into()
@@ -439,6 +442,8 @@ impl JmapObject for Email {
 
     type Id = Id;
 
+    type Right = Null;
+
     type Filter = EmailFilter;
 
     type Comparator = EmailComparator;
@@ -447,7 +452,7 @@ impl JmapObject for Email {
 
     type SetArguments = ();
 
-    type QueryArguments = ();
+    type QueryArguments = EmailQueryArguments;
 
     type CopyArguments = ();
 
@@ -732,6 +737,15 @@ impl Display for EmailComparator {
     }
 }
 
+impl Filter<EmailFilter> {
+    pub fn is_immutable(&self) -> bool {
+        match self {
+            Filter::Property(f) => f.is_immutable(),
+            Filter::And | Filter::Or | Filter::Not | Filter::Close => true,
+        }
+    }
+}
+
 impl EmailFilter {
     pub fn is_immutable(&self) -> bool {
         matches!(
@@ -753,6 +767,12 @@ impl EmailFilter {
                 | EmailFilter::SentBefore(_)
                 | EmailFilter::SentAfter(_)
         )
+    }
+}
+
+impl Comparator<EmailComparator> {
+    pub fn is_immutable(&self) -> bool {
+        self.property.is_immutable()
     }
 }
 
@@ -784,12 +804,6 @@ impl FilterItem for EmailFilter {
             | EmailFilter::Text(_) => FilterType::Fts,
             _ => FilterType::Store,
         }
-    }
-}
-
-impl From<Id> for EmailValue {
-    fn from(id: Id) -> Self {
-        EmailValue::Id(id)
     }
 }
 
@@ -827,5 +841,29 @@ impl TryFrom<AnyId> for EmailValue {
             AnyId::Id(id) => Ok(EmailValue::Id(id)),
             AnyId::BlobId(id) => Ok(EmailValue::BlobId(id)),
         }
+    }
+}
+
+impl From<Id> for EmailValue {
+    fn from(id: Id) -> Self {
+        EmailValue::Id(id)
+    }
+}
+
+impl From<BlobId> for EmailValue {
+    fn from(id: BlobId) -> Self {
+        EmailValue::BlobId(id)
+    }
+}
+
+impl From<UTCDate> for EmailValue {
+    fn from(date: UTCDate) -> Self {
+        EmailValue::Date(date)
+    }
+}
+
+impl From<Null> for EmailProperty {
+    fn from(_: Null) -> Self {
+        unimplemented!()
     }
 }

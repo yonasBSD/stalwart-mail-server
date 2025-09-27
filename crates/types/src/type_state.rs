@@ -5,6 +5,7 @@
  */
 
 use crate::collection::SyncCollection;
+use jmap_tools::{Element, Property, Value};
 use serde::Serialize;
 use std::{fmt::Display, str::FromStr};
 use utils::map::bitmap::{Bitmap, BitmapItem};
@@ -220,5 +221,11 @@ impl<'de> serde::Deserialize<'de> for DataType {
     {
         DataType::parse(<&str>::deserialize(deserializer)?)
             .ok_or_else(|| serde::de::Error::custom("invalid JMAP data type"))
+    }
+}
+
+impl<'x, P: Property, E: Element + From<DataType>> From<DataType> for Value<'x, P, E> {
+    fn from(id: DataType) -> Self {
+        Value::Element(E::from(id))
     }
 }

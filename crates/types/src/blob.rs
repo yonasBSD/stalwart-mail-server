@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use jmap_tools::{Element, Property, Value};
 use std::{borrow::Borrow, str::FromStr, time::SystemTime};
 use utils::codec::{
     base32_custom::{Base32Reader, Base32Writer},
@@ -238,5 +239,11 @@ impl std::fmt::Display for BlobId {
         let mut writer = Base32Writer::with_capacity(std::mem::size_of::<BlobId>() * 2);
         self.serialize_as(&mut writer);
         f.write_str(&writer.finalize())
+    }
+}
+
+impl<'x, P: Property, E: Element + From<BlobId>> From<BlobId> for Value<'x, P, E> {
+    fn from(id: BlobId) -> Self {
+        Value::Element(E::from(id))
     }
 }

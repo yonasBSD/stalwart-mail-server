@@ -14,18 +14,13 @@ use http_proto::HttpSessionData;
 use jmap_proto::{
     error::set::SetError,
     method::{
-        copy::{CopyRequest, CopyResponse, RequestArguments},
+        copy::{CopyRequest, CopyResponse},
         set::{self, SetRequest},
     },
+    object::email::{Email, EmailProperty},
     request::{
         Call, RequestMethod,
         method::{MethodFunction, MethodName, MethodObject},
-        reference::MaybeReference,
-    },
-    response::references::EvalObjectReferences,
-    types::{
-        property::Property,
-        value::{MaybePatchValue, Value},
     },
 };
 use std::future::Future;
@@ -34,23 +29,23 @@ use types::acl::Acl;
 use utils::map::vec_map::VecMap;
 
 pub trait JmapEmailCopy: Sync + Send {
-    fn email_copy(
+    fn email_copy<'x>(
         &self,
-        request: CopyRequest<RequestArguments>,
+        request: CopyRequest<'x, Email>,
         access_token: &AccessToken,
-        next_call: &mut Option<Call<RequestMethod>>,
+        next_call: &mut Option<Call<RequestMethod<'x>>>,
         session: &HttpSessionData,
-    ) -> impl Future<Output = trc::Result<CopyResponse>> + Send;
+    ) -> impl Future<Output = trc::Result<CopyResponse<Email>>> + Send;
 }
 
 impl JmapEmailCopy for Server {
-    async fn email_copy(
+    async fn email_copy<'x>(
         &self,
-        request: CopyRequest<RequestArguments>,
+        request: CopyRequest<'x, Email>,
         access_token: &AccessToken,
-        next_call: &mut Option<Call<RequestMethod>>,
+        next_call: &mut Option<Call<RequestMethod<'x>>>,
         session: &HttpSessionData,
-    ) -> trc::Result<CopyResponse> {
+    ) -> trc::Result<CopyResponse<Email>> {
         let account_id = request.account_id.document_id();
         let from_account_id = request.from_account_id.document_id();
 
@@ -119,14 +114,14 @@ impl JmapEmailCopy for Server {
                 };
 
                 match (property, value) {
-                    (Property::MailboxIds, MaybePatchValue::Value(Value::List(ids))) => {
+                    (EmailProperty::MailboxIds, MaybePatchValue::Value(Value::Array(ids))) => {
                         mailboxes = ids
                             .into_iter()
                             .filter_map(|id| id.try_unwrap_id()?.document_id().into())
                             .collect();
                     }
 
-                    (Property::MailboxIds, MaybePatchValue::Patch(patch)) => {
+                    (EmailProperty::MailboxIds, MaybePatchValue::Patch(patch)) => {
                         let mut patch = patch.into_iter();
                         if let Some(id) = patch.next().unwrap().try_unwrap_id() {
                             let document_id = id.document_id();
@@ -140,14 +135,14 @@ impl JmapEmailCopy for Server {
                         }
                     }
 
-                    (Property::Keywords, MaybePatchValue::Value(Value::List(keywords_))) => {
+                    (EmailProperty::Keywords, MaybePatchValue::Value(Value::Array(keywords_))) => {
                         keywords = keywords_
                             .into_iter()
                             .filter_map(|keyword| keyword.try_unwrap_keyword())
                             .collect();
                     }
 
-                    (Property::Keywords, MaybePatchValue::Patch(patch)) => {
+                    (EmailProperty::Keywords, MaybePatchValue::Patch(patch)) => {
                         let mut patch = patch.into_iter();
                         if let Some(keyword) = patch.next().unwrap().try_unwrap_keyword() {
                             if patch.next().unwrap().try_unwrap_bool().unwrap_or_default() {
@@ -159,14 +154,14 @@ impl JmapEmailCopy for Server {
                             }
                         }
                     }
-                    (Property::ReceivedAt, MaybePatchValue::Value(Value::Date(value))) => {
+                    (EmailProperty::ReceivedAt, MaybePatchValue::Value(Value::Date(value))) => {
                         received_at = value.into();
                     }
                     (property, _) => {
                         response.not_created.append(
                             id,
                             SetError::invalid_properties()
-                                .with_property(property)
+                                .with_key_value(property)
                                 .with_description("Invalid property or value.".to_string()),
                         );
                         continue 'create;
@@ -179,7 +174,7 @@ impl JmapEmailCopy for Server {
                 response.not_created.append(
                     id,
                     SetError::invalid_properties()
-                        .with_property(Property::MailboxIds)
+                        .with_key_value(EmailProperty::MailboxIds)
                         .with_description("Message has to belong to at least one mailbox."),
                 );
                 continue 'create;
@@ -191,7 +186,7 @@ impl JmapEmailCopy for Server {
                     response.not_created.append(
                         id,
                         SetError::invalid_properties()
-                            .with_property(Property::MailboxIds)
+                            .with_key_value(EmailProperty::MailboxIds)
                             .with_description(format!("mailboxId {mailbox_id} does not exist.")),
                     );
                     continue 'create;

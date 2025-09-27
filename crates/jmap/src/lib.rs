@@ -12,6 +12,7 @@ use jmap_proto::{
         query::{QueryRequest, QueryResponse},
         set::{SetRequest, SetResponse},
     },
+    object::JmapObject,
     types::state::State,
 };
 use std::{fmt::Display, future::Future};
@@ -39,11 +40,11 @@ pub mod vacation;
 pub mod websocket;
 
 impl JmapMethods for Server {
-    async fn prepare_set_response<T: Sync + Send>(
+    async fn prepare_set_response<T: JmapObject + Sync + Send>(
         &self,
-        request: &SetRequest<T>,
+        request: &SetRequest<'_, T>,
         asserted_state: State,
-    ) -> trc::Result<SetResponse> {
+    ) -> trc::Result<SetResponse<T>> {
         Ok(
             SetResponse::from_request(request, self.core.jmap.set_max_objects)?
                 .with_state(asserted_state),
@@ -86,7 +87,7 @@ impl JmapMethods for Server {
             })
     }
 
-    async fn build_query_response<T: Sync + Send>(
+    async fn build_query_response<T: JmapObject + Sync + Send>(
         &'_ self,
         result_set: &ResultSet,
         query_state: State,
@@ -162,11 +163,11 @@ impl JmapMethods for Server {
 }
 
 pub trait JmapMethods: Sync + Send {
-    fn prepare_set_response<T: Sync + Send>(
+    fn prepare_set_response<T: JmapObject + Sync + Send>(
         &self,
         request: &SetRequest<T>,
         asserted_state: State,
-    ) -> impl Future<Output = trc::Result<SetResponse>> + Send;
+    ) -> impl Future<Output = trc::Result<SetResponse<T>>> + Send;
 
     fn filter(
         &self,
@@ -182,7 +183,7 @@ pub trait JmapMethods: Sync + Send {
         filters: Vec<FtsFilter<T>>,
     ) -> impl Future<Output = trc::Result<RoaringBitmap>> + Send;
 
-    fn build_query_response<T: Sync + Send>(
+    fn build_query_response<T: JmapObject + Sync + Send>(
         &'_ self,
         result_set: &ResultSet,
         query_state: State,

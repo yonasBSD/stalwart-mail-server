@@ -12,13 +12,9 @@ use email::sieve::{
 };
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
-    method::set::{RequestArguments, SetRequest, SetResponse},
-    response::references::EvalObjectReferences,
-    types::{
-        date::UTCDate,
-        property::Property,
-        value::{MaybePatchValue, Object, Value},
-    },
+    method::set::{SetRequest, SetResponse},
+    object::vacation_response,
+    types::date::UTCDate,
 };
 use mail_builder::MessageBuilder;
 use mail_parser::decoders::html::html_to_text;
@@ -37,9 +33,9 @@ use types::{
 pub trait VacationResponseSet: Sync + Send {
     fn vacation_response_set(
         &self,
-        request: SetRequest<RequestArguments>,
+        request: SetRequest<'_, vacation_response::VacationResponse>,
         access_token: &AccessToken,
-    ) -> impl Future<Output = trc::Result<SetResponse>> + Send;
+    ) -> impl Future<Output = trc::Result<SetResponse<vacation_response::VacationResponse>>> + Send;
 
     fn build_script(&self, obj: &mut SieveScript) -> trc::Result<Vec<u8>>;
 }
@@ -47,9 +43,9 @@ pub trait VacationResponseSet: Sync + Send {
 impl VacationResponseSet for Server {
     async fn vacation_response_set(
         &self,
-        mut request: SetRequest<RequestArguments>,
+        mut request: SetRequest<'_, vacation_response::VacationResponse>,
         access_token: &AccessToken,
-    ) -> trc::Result<SetResponse> {
+    ) -> trc::Result<SetResponse<vacation_response::VacationResponse>> {
         let account_id = request.account_id.document_id();
         let mut response = self
             .prepare_set_response(
@@ -177,19 +173,19 @@ impl VacationResponseSet for Server {
                     }
                 };
                 match (&property, value) {
-                    (Property::Subject, MaybePatchValue::Value(Value::Text(value)))
+                    (Property::Subject, MaybePatchValue::Value(Value::Str(value)))
                         if value.len() < 512 =>
                     {
                         build_script = true;
                         vacation.subject = Some(value);
                     }
-                    (Property::HtmlBody, MaybePatchValue::Value(Value::Text(value)))
+                    (Property::HtmlBody, MaybePatchValue::Value(Value::Str(value)))
                         if value.len() < 2048 =>
                     {
                         build_script = true;
                         vacation.html_body = Some(value);
                     }
-                    (Property::TextBody, MaybePatchValue::Value(Value::Text(value)))
+                    (Property::TextBody, MaybePatchValue::Value(Value::Str(value)))
                         if value.len() < 2048 =>
                     {
                         build_script = true;
@@ -244,7 +240,7 @@ impl VacationResponseSet for Server {
                             response,
                             create_id,
                             SetError::invalid_properties()
-                                .with_property(property)
+                                .with_key_value(property)
                                 .with_description("Field could not be set."),
                         ));
                     }
@@ -310,7 +306,7 @@ impl VacationResponseSet for Server {
             if let Some(create_id) = create_id {
                 response.created.insert(
                     create_id,
-                    Object::with_capacity(1).with_property(Property::Id, Id::singleton()),
+                    Map::with_capacity(1).with_key_value(Property::Id, Id::singleton()),
                 );
             } else {
                 response.updated.append(Id::singleton(), None);

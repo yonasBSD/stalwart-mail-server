@@ -2,10 +2,9 @@ use common::{Server, auth::AccessToken};
 use directory::{Permission, QueryParams, backend::internal::manage::ManageDirectory};
 use jmap_proto::{
     error::set::SetError,
-    request::RequestMethod,
-    types::{
-        property::Property,
-        value::{MaybePatchValue, Value},
+    request::{
+        CopyRequestMethod, GetRequestMethod, QueryChangesRequestMethod, QueryRequestMethod,
+        RequestMethod, SetRequestMethod, method::MethodObject,
     },
 };
 use types::{
@@ -16,12 +15,6 @@ use types::{
 use utils::map::bitmap::Bitmap;
 
 pub trait JmapAcl {
-    fn acl_get(
-        &self,
-        value: &[AclGrant],
-        access_token: &AccessToken,
-        account_id: u32,
-    ) -> impl Future<Output = Value> + Send;
     fn acl_set(
         &self,
         changes: &mut Vec<AclGrant>,
@@ -40,46 +33,16 @@ pub trait JmapAcl {
 
 pub trait JmapAuthorization {
     fn assert_is_member(&self, account_id: Id) -> trc::Result<&Self>;
-    fn assert_has_jmap_permission(&self, request: &RequestMethod) -> trc::Result<()>;
+    fn assert_has_jmap_permission(
+        &self,
+        request: &RequestMethod,
+        object: MethodObject,
+    ) -> trc::Result<()>;
     fn assert_has_access(&self, to_account_id: Id, to_collection: Collection)
     -> trc::Result<&Self>;
 }
 
 impl JmapAcl for Server {
-    async fn acl_get(
-        &self,
-        value: &[AclGrant],
-        access_token: &AccessToken,
-        account_id: u32,
-    ) -> Value {
-        if access_token.is_member(account_id)
-            || value.iter().any(|item| {
-                access_token.is_member(item.account_id) && item.grants.contains(Acl::Administer)
-            })
-        {
-            let mut acl_obj = jmap_proto::types::value::Object::with_capacity(value.len() / 2);
-            for item in value {
-                if let Some(name) = self
-                    .store()
-                    .get_principal(item.account_id)
-                    .await
-                    .unwrap_or_default()
-                {
-                    acl_obj.append(
-                        Property::_T(name.name),
-                        item.grants
-                            .map(|acl_item| Value::Text(acl_item.to_string()))
-                            .collect::<Vec<_>>(),
-                    );
-                }
-            }
-
-            Value::Object(acl_obj)
-        } else {
-            Value::Null
-        }
-    }
-
     async fn acl_set(
         &self,
         changes: &mut Vec<AclGrant>,
@@ -87,7 +50,7 @@ impl JmapAcl for Server {
         acl_changes: MaybePatchValue,
     ) -> Result<(), SetError> {
         match acl_changes {
-            MaybePatchValue::Value(Value::List(values)) => {
+            MaybePatchValue::Value(Value::Array(values)) => {
                 *changes = self.map_acl_set(values).await?;
             }
             MaybePatchValue::Patch(patch) => {
@@ -130,7 +93,7 @@ impl JmapAcl for Server {
             }
             _ => {
                 return Err(SetError::invalid_properties()
-                    .with_property(Property::Acl)
+                    .with_key_value(Property::Acl)
                     .with_description("Invalid ACL property."));
             }
         }
@@ -140,7 +103,7 @@ impl JmapAcl for Server {
     async fn map_acl_set(&self, acl_set: Vec<Value>) -> Result<Vec<AclGrant>, SetError> {
         let mut acls = Vec::with_capacity(acl_set.len() / 2);
         for item in acl_set.chunks_exact(2) {
-            if let (Value::Text(account_name), Value::UnsignedInt(grants)) = (&item[0], &item[1]) {
+            if let (Value::Str(account_name), Value::Number(grants)) = (&item[0], &item[1]) {
                 match self
                     .core
                     .storage
@@ -156,18 +119,18 @@ impl JmapAcl for Server {
                     }
                     Ok(None) => {
                         return Err(SetError::invalid_properties()
-                            .with_property(Property::Acl)
+                            .with_key_value(Property::Acl)
                             .with_description(format!("Account {account_name} does not exist.")));
                     }
                     _ => {
                         return Err(SetError::forbidden()
-                            .with_property(Property::Acl)
+                            .with_key_value(Property::Acl)
                             .with_description("Temporary server failure during lookup"));
                     }
                 }
             } else {
                 return Err(SetError::invalid_properties()
-                    .with_property(Property::Acl)
+                    .with_key_value(Property::Acl)
                     .with_description("Invalid ACL value found."));
             }
         }
@@ -179,9 +142,7 @@ impl JmapAcl for Server {
         &self,
         acl_patch: Vec<Value>,
     ) -> Result<(AclGrant, Option<bool>), SetError> {
-        if let (Value::Text(account_name), Value::UnsignedInt(grants)) =
-            (&acl_patch[0], &acl_patch[1])
-        {
+        if let (Value::Str(account_name), Value::Number(grants)) = (&acl_patch[0], &acl_patch[1]) {
             match self
                 .core
                 .storage
@@ -197,15 +158,15 @@ impl JmapAcl for Server {
                     acl_patch.get(2).map(|v| v.as_bool().unwrap_or(false)),
                 )),
                 Ok(None) => Err(SetError::invalid_properties()
-                    .with_property(Property::Acl)
+                    .with_key_value(Property::Acl)
                     .with_description(format!("Account {account_name} does not exist."))),
                 _ => Err(SetError::forbidden()
-                    .with_property(Property::Acl)
+                    .with_key_value(Property::Acl)
                     .with_description("Temporary server failure during lookup")),
             }
         } else {
             Err(SetError::invalid_properties()
-                .with_property(Property::Acl)
+                .with_key_value(Property::Acl)
                 .with_description("Invalid ACL value found."))
         }
     }
@@ -237,109 +198,72 @@ impl JmapAuthorization for AccessToken {
         }
     }
 
-    fn assert_has_jmap_permission(&self, request: &RequestMethod) -> trc::Result<()> {
+    fn assert_has_jmap_permission(
+        &self,
+        request: &RequestMethod,
+        object: MethodObject,
+    ) -> trc::Result<()> {
         let permission = match request {
-            RequestMethod::Get(m) => match &m.arguments {
-                jmap_proto::method::get::RequestArguments::Email(_) => Permission::JmapEmailGet,
-                jmap_proto::method::get::RequestArguments::Mailbox => Permission::JmapMailboxGet,
-                jmap_proto::method::get::RequestArguments::Thread => Permission::JmapThreadGet,
-                jmap_proto::method::get::RequestArguments::Identity => Permission::JmapIdentityGet,
-                jmap_proto::method::get::RequestArguments::EmailSubmission => {
-                    Permission::JmapEmailSubmissionGet
-                }
-                jmap_proto::method::get::RequestArguments::PushSubscription => {
-                    Permission::JmapPushSubscriptionGet
-                }
-                jmap_proto::method::get::RequestArguments::SieveScript => {
-                    Permission::JmapSieveScriptGet
-                }
-                jmap_proto::method::get::RequestArguments::VacationResponse => {
-                    Permission::JmapVacationResponseGet
-                }
-                jmap_proto::method::get::RequestArguments::Principal => {
-                    Permission::JmapPrincipalGet
-                }
-                jmap_proto::method::get::RequestArguments::Quota => Permission::JmapQuotaGet,
-                jmap_proto::method::get::RequestArguments::Blob(_) => Permission::JmapBlobGet,
+            RequestMethod::Get(m) => match &m {
+                GetRequestMethod::Email(_) => Permission::JmapEmailGet,
+                GetRequestMethod::Mailbox(_) => Permission::JmapMailboxGet,
+                GetRequestMethod::Thread(_) => Permission::JmapThreadGet,
+                GetRequestMethod::Identity(_) => Permission::JmapIdentityGet,
+                GetRequestMethod::EmailSubmission(_) => Permission::JmapEmailSubmissionGet,
+                GetRequestMethod::PushSubscription(_) => Permission::JmapPushSubscriptionGet,
+                GetRequestMethod::Sieve(_) => Permission::JmapSieveScriptGet,
+                GetRequestMethod::VacationResponse(_) => Permission::JmapVacationResponseGet,
+                GetRequestMethod::Principal(_) => Permission::JmapPrincipalGet,
+                GetRequestMethod::Quota(_) => Permission::JmapQuotaGet,
+                GetRequestMethod::Blob(_) => Permission::JmapBlobGet,
             },
-            RequestMethod::Set(m) => match &m.arguments {
-                jmap_proto::method::set::RequestArguments::Email => Permission::JmapEmailSet,
-                jmap_proto::method::set::RequestArguments::Mailbox(_) => Permission::JmapMailboxSet,
-                jmap_proto::method::set::RequestArguments::Identity => Permission::JmapIdentitySet,
-                jmap_proto::method::set::RequestArguments::EmailSubmission(_) => {
-                    Permission::JmapEmailSubmissionSet
-                }
-                jmap_proto::method::set::RequestArguments::PushSubscription => {
-                    Permission::JmapPushSubscriptionSet
-                }
-                jmap_proto::method::set::RequestArguments::SieveScript(_) => {
-                    Permission::JmapSieveScriptSet
-                }
-                jmap_proto::method::set::RequestArguments::VacationResponse => {
-                    Permission::JmapVacationResponseSet
-                }
+            RequestMethod::Set(m) => match &m {
+                SetRequestMethod::Email(_) => Permission::JmapEmailSet,
+                SetRequestMethod::Mailbox(_) => Permission::JmapMailboxSet,
+                SetRequestMethod::Identity(_) => Permission::JmapIdentitySet,
+                SetRequestMethod::EmailSubmission(_) => Permission::JmapEmailSubmissionSet,
+                SetRequestMethod::PushSubscription(_) => Permission::JmapPushSubscriptionSet,
+                SetRequestMethod::Sieve(_) => Permission::JmapSieveScriptSet,
+                SetRequestMethod::VacationResponse(_) => Permission::JmapVacationResponseSet,
             },
-            RequestMethod::Changes(m) => match m.arguments {
-                jmap_proto::method::changes::RequestArguments::Email => {
-                    Permission::JmapEmailChanges
-                }
-                jmap_proto::method::changes::RequestArguments::Mailbox => {
-                    Permission::JmapMailboxChanges
-                }
-                jmap_proto::method::changes::RequestArguments::Thread => {
-                    Permission::JmapThreadChanges
-                }
-                jmap_proto::method::changes::RequestArguments::Identity => {
-                    Permission::JmapIdentityChanges
-                }
-                jmap_proto::method::changes::RequestArguments::EmailSubmission => {
-                    Permission::JmapEmailSubmissionChanges
-                }
-                jmap_proto::method::changes::RequestArguments::Quota => {
-                    Permission::JmapQuotaChanges
-                }
+            RequestMethod::Changes(_) => match object {
+                MethodObject::Email => Permission::JmapEmailChanges,
+                MethodObject::Mailbox => Permission::JmapMailboxChanges,
+                MethodObject::Thread => Permission::JmapThreadChanges,
+                MethodObject::Identity => Permission::JmapIdentityChanges,
+                MethodObject::EmailSubmission => Permission::JmapEmailSubmissionChanges,
+                MethodObject::Quota => Permission::JmapQuotaChanges,
+                MethodObject::Core
+                | MethodObject::Blob
+                | MethodObject::PushSubscription
+                | MethodObject::SearchSnippet
+                | MethodObject::VacationResponse
+                | MethodObject::SieveScript
+                | MethodObject::Principal => Permission::JmapEmailChanges, // Unimplemented
             },
-            RequestMethod::Copy(m) => match m.arguments {
-                jmap_proto::method::copy::RequestArguments::Email => Permission::JmapEmailCopy,
+            RequestMethod::Copy(m) => match &m {
+                CopyRequestMethod::Email(_) => Permission::JmapEmailCopy,
+                CopyRequestMethod::Blob(_) => Permission::JmapBlobCopy,
             },
-            RequestMethod::CopyBlob(_) => Permission::JmapBlobCopy,
             RequestMethod::ImportEmail(_) => Permission::JmapEmailImport,
             RequestMethod::ParseEmail(_) => Permission::JmapEmailParse,
-            RequestMethod::QueryChanges(m) => match m.arguments {
-                jmap_proto::method::query::RequestArguments::Email(_) => {
-                    Permission::JmapEmailQueryChanges
-                }
-                jmap_proto::method::query::RequestArguments::Mailbox(_) => {
-                    Permission::JmapMailboxQueryChanges
-                }
-                jmap_proto::method::query::RequestArguments::EmailSubmission => {
+            RequestMethod::QueryChanges(m) => match m {
+                QueryChangesRequestMethod::Email(_) => Permission::JmapEmailQueryChanges,
+                QueryChangesRequestMethod::Mailbox(_) => Permission::JmapMailboxQueryChanges,
+                QueryChangesRequestMethod::EmailSubmission(_) => {
                     Permission::JmapEmailSubmissionQueryChanges
                 }
-                jmap_proto::method::query::RequestArguments::SieveScript => {
-                    Permission::JmapSieveScriptQueryChanges
-                }
-                jmap_proto::method::query::RequestArguments::Principal => {
-                    Permission::JmapPrincipalQueryChanges
-                }
-                jmap_proto::method::query::RequestArguments::Quota => {
-                    Permission::JmapQuotaQueryChanges
-                }
+                QueryChangesRequestMethod::Sieve(_) => Permission::JmapSieveScriptQueryChanges,
+                QueryChangesRequestMethod::Principal(_) => Permission::JmapPrincipalQueryChanges,
+                QueryChangesRequestMethod::Quota(_) => Permission::JmapQuotaQueryChanges,
             },
-            RequestMethod::Query(m) => match m.arguments {
-                jmap_proto::method::query::RequestArguments::Email(_) => Permission::JmapEmailQuery,
-                jmap_proto::method::query::RequestArguments::Mailbox(_) => {
-                    Permission::JmapMailboxQuery
-                }
-                jmap_proto::method::query::RequestArguments::EmailSubmission => {
-                    Permission::JmapEmailSubmissionQuery
-                }
-                jmap_proto::method::query::RequestArguments::SieveScript => {
-                    Permission::JmapSieveScriptQuery
-                }
-                jmap_proto::method::query::RequestArguments::Principal => {
-                    Permission::JmapPrincipalQuery
-                }
-                jmap_proto::method::query::RequestArguments::Quota => Permission::JmapQuotaQuery,
+            RequestMethod::Query(m) => match m {
+                QueryRequestMethod::Email(_) => Permission::JmapEmailQuery,
+                QueryRequestMethod::Mailbox(_) => Permission::JmapMailboxQuery,
+                QueryRequestMethod::EmailSubmission(_) => Permission::JmapEmailSubmissionQuery,
+                QueryRequestMethod::Sieve(_) => Permission::JmapSieveScriptQuery,
+                QueryRequestMethod::Principal(_) => Permission::JmapPrincipalQuery,
+                QueryRequestMethod::Quota(_) => Permission::JmapQuotaQuery,
             },
             RequestMethod::SearchSnippet(_) => Permission::JmapSearchSnippet,
             RequestMethod::ValidateScript(_) => Permission::JmapSieveScriptValidate,

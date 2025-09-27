@@ -10,13 +10,9 @@ use common::{Server, auth::AccessToken};
 use email::push::{Keys, PushSubscription};
 use jmap_proto::{
     error::set::SetError,
-    method::set::{RequestArguments, SetRequest, SetResponse},
-    response::references::EvalObjectReferences,
-    types::{
-        date::UTCDate,
-        property::Property,
-        value::{MaybePatchValue, Object, Value},
-    },
+    method::set::{SetRequest, SetResponse},
+    object::push_subscription,
+    types::date::UTCDate,
 };
 use rand::distr::Alphanumeric;
 use std::future::Future;
@@ -35,17 +31,17 @@ const VERIFICATION_CODE_LEN: usize = 32;
 pub trait PushSubscriptionSet: Sync + Send {
     fn push_subscription_set(
         &self,
-        request: SetRequest<RequestArguments>,
+        request: SetRequest<'_, push_subscription::PushSubscription>,
         access_token: &AccessToken,
-    ) -> impl Future<Output = trc::Result<SetResponse>> + Send;
+    ) -> impl Future<Output = trc::Result<SetResponse<push_subscription::PushSubscription>>> + Send;
 }
 
 impl PushSubscriptionSet for Server {
     async fn push_subscription_set(
         &self,
-        mut request: SetRequest<RequestArguments>,
+        mut request: SetRequest<'_, push_subscription::PushSubscription>,
         access_token: &AccessToken,
-    ) -> trc::Result<SetResponse> {
+    ) -> trc::Result<SetResponse<push_subscription::PushSubscription>> {
         let account_id = access_token.primary_id();
         let push_ids = self
             .get_document_ids(account_id, Collection::PushSubscription)
@@ -118,10 +114,10 @@ impl PushSubscriptionSet for Server {
                 .commit_point();
             response.created.insert(
                 id,
-                Object::with_capacity(1)
-                    .with_property(Property::Id, Value::Id(document_id.into()))
-                    .with_property(Property::Keys, Value::Null)
-                    .with_property(Property::Expires, expires),
+                Map::with_capacity(1)
+                    .with_key_value(Property::Id, Value::Id(document_id.into()))
+                    .with_key_value(Property::Keys, Value::Null)
+                    .with_key_value(Property::Expires, expires),
             );
         }
 
@@ -209,12 +205,12 @@ fn validate_push_value(
     is_create: bool,
 ) -> Result<(), SetError> {
     match (property, value) {
-        (Property::DeviceClientId, MaybePatchValue::Value(Value::Text(value)))
+        (Property::DeviceClientId, MaybePatchValue::Value(Value::Str(value)))
             if is_create && value.len() < 255 =>
         {
             push.device_client_id = value;
         }
-        (Property::Url, MaybePatchValue::Value(Value::Text(value)))
+        (Property::Url, MaybePatchValue::Value(Value::Str(value)))
             if is_create && value.len() < 512 && value.starts_with("https://") =>
         {
             push.url = value;
@@ -235,7 +231,7 @@ fn validate_push_value(
                 push.keys = Some(Keys { auth, p256dh });
             } else {
                 return Err(SetError::invalid_properties()
-                    .with_property(property.clone())
+                    .with_key_value(property.clone())
                     .with_description("Failed to decode keys."));
             }
         }
@@ -251,7 +247,7 @@ fn validate_push_value(
         (Property::Expires, MaybePatchValue::Value(Value::Null)) => {
             push.expires = now() + EXPIRES_MAX as u64;
         }
-        (Property::Types, MaybePatchValue::Value(Value::List(value))) => {
+        (Property::Types, MaybePatchValue::Value(Value::Array(value))) => {
             push.types.clear();
 
             for item in value {
@@ -262,17 +258,17 @@ fn validate_push_value(
                     push.types.insert(dt);
                 } else {
                     return Err(SetError::invalid_properties()
-                        .with_property(property.clone())
+                        .with_key_value(property.clone())
                         .with_description("Invalid data type."));
                 }
             }
         }
-        (Property::VerificationCode, MaybePatchValue::Value(Value::Text(value))) if !is_create => {
+        (Property::VerificationCode, MaybePatchValue::Value(Value::Str(value))) if !is_create => {
             if push.verification_code == value {
                 push.verified = true;
             } else {
                 return Err(SetError::invalid_properties()
-                    .with_property(property.clone())
+                    .with_key_value(property.clone())
                     .with_description("Verification code does not match.".to_string()));
             }
         }
@@ -285,7 +281,7 @@ fn validate_push_value(
         (Property::VerificationCode, MaybePatchValue::Value(Value::Null)) => {}
         (property, _) => {
             return Err(SetError::invalid_properties()
-                .with_property(property.clone())
+                .with_key_value(property.clone())
                 .with_description("Field could not be set."));
         }
     }

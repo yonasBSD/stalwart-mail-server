@@ -7,10 +7,10 @@
 use std::{borrow::Cow, str::FromStr};
 
 use jmap_tools::{Element, JsonPointer, JsonPointerItem, Key, Property};
-use types::{id::Id, special_use::SpecialUse};
+use types::{acl::Acl, id::Id, special_use::SpecialUse};
 
 use crate::{
-    object::{AnyId, JmapObject, JmapObjectId, MaybeReference, parse_ref},
+    object::{AnyId, JmapObject, JmapObjectId, JmapRight, MaybeReference, parse_ref},
     request::deserialize::DeserializeArguments,
 };
 
@@ -30,6 +30,16 @@ pub enum MailboxProperty {
     UnreadThreads,
     ShareWith,
     MyRights,
+    IsSubscribed,
+
+    // Other
+    IdValue(Id),
+    Rights(MailboxRight),
+    Pointer(JsonPointer<MailboxProperty>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum MailboxRight {
     MayReadItems,
     MayAddItems,
     MayRemoveItems,
@@ -38,10 +48,7 @@ pub enum MailboxProperty {
     MayCreateChild,
     MayRename,
     MaySubmit,
-    IsSubscribed,
-
-    // Other
-    Pointer(JsonPointer<MailboxProperty>),
+    MayDelete,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -53,7 +60,11 @@ pub enum MailboxValue {
 
 impl Property for MailboxProperty {
     fn try_parse(key: Option<&Key<'_, Self>>, value: &str) -> Option<Self> {
-        MailboxProperty::parse(value, key.is_none())
+        if let Some(Key::Property(MailboxProperty::ShareWith)) = key {
+            Id::from_str(value).ok().map(MailboxProperty::IdValue)
+        } else {
+            MailboxProperty::parse(value, key.is_none())
+        }
     }
 
     fn to_cow(&self) -> Cow<'static, str> {
@@ -69,18 +80,28 @@ impl Property for MailboxProperty {
             MailboxProperty::TotalThreads => "totalThreads",
             MailboxProperty::UnreadEmails => "unreadEmails",
             MailboxProperty::UnreadThreads => "unreadThreads",
-            MailboxProperty::MayReadItems => "mayReadItems",
-            MailboxProperty::MayAddItems => "mayAddItems",
-            MailboxProperty::MayRemoveItems => "mayRemoveItems",
-            MailboxProperty::MaySetSeen => "maySetSeen",
-            MailboxProperty::MaySetKeywords => "maySetKeywords",
-            MailboxProperty::MayCreateChild => "mayCreateChild",
-            MailboxProperty::MayRename => "mayRename",
-            MailboxProperty::MaySubmit => "maySubmit",
             MailboxProperty::ShareWith => "shareWith",
+            MailboxProperty::Rights(mailbox_right) => mailbox_right.as_str(),
             MailboxProperty::Pointer(json_pointer) => return json_pointer.to_string().into(),
+            MailboxProperty::IdValue(id) => return id.to_string().into(),
         }
         .into()
+    }
+}
+
+impl MailboxRight {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            MailboxRight::MayReadItems => "mayReadItems",
+            MailboxRight::MayAddItems => "mayAddItems",
+            MailboxRight::MayRemoveItems => "mayRemoveItems",
+            MailboxRight::MaySetSeen => "maySetSeen",
+            MailboxRight::MaySetKeywords => "maySetKeywords",
+            MailboxRight::MayCreateChild => "mayCreateChild",
+            MailboxRight::MayRename => "mayRename",
+            MailboxRight::MaySubmit => "maySubmit",
+            MailboxRight::MayDelete => "mayDelete",
+        }
     }
 }
 
@@ -126,14 +147,15 @@ impl MailboxProperty {
             b"unreadThreads" => MailboxProperty::UnreadThreads,
             b"shareWith" => MailboxProperty::ShareWith,
             b"myRights" => MailboxProperty::MyRights,
-            b"mayReadItems" => MailboxProperty::MayReadItems,
-            b"mayAddItems" => MailboxProperty::MayAddItems,
-            b"mayRemoveItems" => MailboxProperty::MayRemoveItems,
-            b"maySetSeen" => MailboxProperty::MaySetSeen,
-            b"maySetKeywords" => MailboxProperty::MaySetKeywords,
-            b"mayCreateChild" => MailboxProperty::MayCreateChild,
-            b"mayRename" => MailboxProperty::MayRename,
-            b"maySubmit" => MailboxProperty::MaySubmit,
+            b"mayReadItems" => MailboxProperty::Rights(MailboxRight::MayReadItems),
+            b"mayAddItems" => MailboxProperty::Rights(MailboxRight::MayAddItems),
+            b"mayRemoveItems" => MailboxProperty::Rights(MailboxRight::MayRemoveItems),
+            b"maySetSeen" => MailboxProperty::Rights(MailboxRight::MaySetSeen),
+            b"maySetKeywords" => MailboxProperty::Rights(MailboxRight::MaySetKeywords),
+            b"mayCreateChild" => MailboxProperty::Rights(MailboxRight::MayCreateChild),
+            b"mayRename" => MailboxProperty::Rights(MailboxRight::MayRename),
+            b"maySubmit" => MailboxProperty::Rights(MailboxRight::MaySubmit),
+            b"mayDelete" => MailboxProperty::Rights(MailboxRight::MayDelete),
             b"isSubscribed" => MailboxProperty::IsSubscribed,
         )
         .or_else(|| {
@@ -226,6 +248,8 @@ impl JmapObject for Mailbox {
     type Element = MailboxValue;
 
     type Id = Id;
+
+    type Right = MailboxRight;
 
     type Filter = MailboxFilter;
 
@@ -386,5 +410,55 @@ impl TryFrom<AnyId> for MailboxValue {
         } else {
             Err(())
         }
+    }
+}
+
+impl JmapRight for MailboxRight {
+    fn from_acl(acl: Acl) -> &'static [Self] {
+        match acl {
+            Acl::ReadItems => &[MailboxRight::MayReadItems],
+            Acl::AddItems => &[MailboxRight::MayAddItems],
+            Acl::RemoveItems => &[MailboxRight::MayRemoveItems],
+            Acl::ModifyItems => &[MailboxRight::MaySetSeen, MailboxRight::MaySetKeywords],
+            Acl::CreateChild => &[MailboxRight::MayCreateChild],
+            Acl::Modify => &[MailboxRight::MayRename],
+            Acl::Submit => &[MailboxRight::MaySubmit],
+            Acl::Delete => &[MailboxRight::MayDelete],
+            _ => &[],
+        }
+    }
+
+    fn to_acl(&self) -> Acl {
+        match self {
+            MailboxRight::MayReadItems => Acl::ReadItems,
+            MailboxRight::MayAddItems => Acl::AddItems,
+            MailboxRight::MayRemoveItems => Acl::RemoveItems,
+            MailboxRight::MaySetSeen => Acl::ModifyItems,
+            MailboxRight::MaySetKeywords => Acl::ModifyItems,
+            MailboxRight::MayCreateChild => Acl::CreateChild,
+            MailboxRight::MayRename => Acl::Modify,
+            MailboxRight::MaySubmit => Acl::Submit,
+            MailboxRight::MayDelete => Acl::Delete,
+        }
+    }
+
+    fn all_rights() -> &'static [Self] {
+        &[
+            MailboxRight::MayReadItems,
+            MailboxRight::MayAddItems,
+            MailboxRight::MayRemoveItems,
+            MailboxRight::MaySetSeen,
+            MailboxRight::MaySetKeywords,
+            MailboxRight::MayCreateChild,
+            MailboxRight::MayRename,
+            MailboxRight::MaySubmit,
+            MailboxRight::MayDelete,
+        ]
+    }
+}
+
+impl From<MailboxRight> for MailboxProperty {
+    fn from(right: MailboxRight) -> Self {
+        MailboxProperty::Rights(right)
     }
 }

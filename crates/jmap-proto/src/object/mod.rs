@@ -5,10 +5,10 @@
  */
 
 use crate::request::deserialize::DeserializeArguments;
-use jmap_tools::{Element, Property};
+use jmap_tools::{Element, Null, Property};
 use serde::Serialize;
 use std::{fmt::Debug, str::FromStr};
-use types::{blob::BlobId, id::Id};
+use types::{acl::Acl, blob::BlobId, id::Id};
 
 pub mod blob;
 pub mod email;
@@ -24,19 +24,32 @@ pub mod thread;
 pub mod vacation_response;
 
 pub trait JmapObject: std::fmt::Debug {
-    type Property: Property + FromStr + Serialize + Debug;
-    type Element: Element<Property = Self::Property> + From<Self::Id> + JmapObjectId + Debug;
-    type Id: FromStr + TryFrom<AnyId> + Serialize + Debug;
+    type Property: Property + FromStr + Serialize + Debug + Sync + Send;
+    type Element: Element<Property = Self::Property>
+        + From<Self::Id>
+        + JmapObjectId
+        + Debug
+        + Sync
+        + Send;
+    type Id: FromStr + TryFrom<AnyId> + Serialize + Debug + Sync + Send;
 
-    type Filter: Default + for<'de> DeserializeArguments<'de> + Debug;
-    type Comparator: Default + for<'de> DeserializeArguments<'de> + Debug;
+    type Filter: Default + for<'de> DeserializeArguments<'de> + Debug + Sync + Send;
+    type Comparator: Default + for<'de> DeserializeArguments<'de> + Debug + Sync + Send;
 
-    type GetArguments: Default + for<'de> DeserializeArguments<'de> + Debug;
-    type SetArguments: Default + for<'de> DeserializeArguments<'de> + Debug;
-    type QueryArguments: Default + for<'de> DeserializeArguments<'de> + Debug;
-    type CopyArguments: Default + for<'de> DeserializeArguments<'de> + Debug;
+    type Right: JmapRight + Into<Self::Property> + Debug + Sync + Send;
+
+    type GetArguments: Default + for<'de> DeserializeArguments<'de> + Debug + Sync + Send;
+    type SetArguments: Default + for<'de> DeserializeArguments<'de> + Debug + Sync + Send;
+    type QueryArguments: Default + for<'de> DeserializeArguments<'de> + Debug + Sync + Send;
+    type CopyArguments: Default + for<'de> DeserializeArguments<'de> + Debug + Sync + Send;
 
     const ID_PROPERTY: Self::Property;
+}
+
+pub trait JmapRight: Clone + Copy + Sized + 'static {
+    fn from_acl(acl: Acl) -> &'static [Self];
+    fn all_rights() -> &'static [Self];
+    fn to_acl(&self) -> Acl;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -121,5 +134,70 @@ impl<'de> serde::Deserialize<'de> for AnyId {
                 value
             )))
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+pub struct NullObject;
+
+impl JmapObject for NullObject {
+    type Property = Null;
+    type Element = Null;
+    type Id = Null;
+
+    type Filter = ();
+    type Comparator = ();
+
+    type Right = Null;
+
+    type GetArguments = ();
+    type SetArguments = ();
+    type QueryArguments = ();
+    type CopyArguments = ();
+
+    const ID_PROPERTY: Self::Property = Null;
+}
+
+impl JmapRight for Null {
+    fn from_acl(_: Acl) -> &'static [Self] {
+        unreachable!()
+    }
+
+    fn all_rights() -> &'static [Self] {
+        unreachable!()
+    }
+
+    fn to_acl(&self) -> Acl {
+        unreachable!()
+    }
+}
+
+impl FromStr for NullObject {
+    type Err = ();
+
+    fn from_str(_: &str) -> Result<Self, Self::Err> {
+        unreachable!()
+    }
+}
+
+impl JmapObjectId for Null {
+    fn as_id(&self) -> Option<Id> {
+        unreachable!()
+    }
+
+    fn as_any_id(&self) -> Option<AnyId> {
+        unreachable!()
+    }
+
+    fn as_id_ref(&self) -> Option<&str> {
+        unreachable!()
+    }
+}
+
+impl TryFrom<AnyId> for Null {
+    type Error = ();
+
+    fn try_from(_: AnyId) -> Result<Self, Self::Error> {
+        unreachable!()
     }
 }

@@ -9,13 +9,9 @@ use directory::QueryParams;
 use email::identity::{EmailAddress, Identity};
 use jmap_proto::{
     error::set::SetError,
-    method::set::{RequestArguments, SetRequest, SetResponse},
-    response::references::EvalObjectReferences,
-    types::{
-        property::Property,
-        state::State,
-        value::{MaybePatchValue, Value},
-    },
+    method::set::{SetRequest, SetResponse},
+    object::identity,
+    types::state::State,
 };
 use std::future::Future;
 use store::write::BatchBuilder;
@@ -29,15 +25,15 @@ use utils::sanitize_email;
 pub trait IdentitySet: Sync + Send {
     fn identity_set(
         &self,
-        request: SetRequest<RequestArguments>,
-    ) -> impl Future<Output = trc::Result<SetResponse>> + Send;
+        request: SetRequest<'_, identity::Identity>,
+    ) -> impl Future<Output = trc::Result<SetResponse<identity::Identity>>> + Send;
 }
 
 impl IdentitySet for Server {
     async fn identity_set(
         &self,
-        mut request: SetRequest<RequestArguments>,
-    ) -> trc::Result<SetResponse> {
+        mut request: SetRequest<'_, identity::Identity>,
+    ) -> trc::Result<SetResponse<identity::Identity>> {
         let account_id = request.account_id.document_id();
         let identity_ids = self
             .get_document_ids(account_id, Collection::Identity)
@@ -71,7 +67,7 @@ impl IdentitySet for Server {
                     response.not_created.append(
                         id,
                         SetError::invalid_properties()
-                            .with_property(Property::Email)
+                            .with_key_value(Property::Email)
                             .with_description(
                                 "E-mail address not configured for this account.".to_string(),
                             ),
@@ -82,7 +78,7 @@ impl IdentitySet for Server {
                 response.not_created.append(
                     id,
                     SetError::invalid_properties()
-                        .with_property(Property::Email)
+                        .with_key_value(Property::Email)
                         .with_description("Missing e-mail address."),
                 );
                 continue 'create;
@@ -194,29 +190,29 @@ fn validate_identity_value(
     is_create: bool,
 ) -> Result<(), SetError> {
     match (property, value) {
-        (Property::Name, MaybePatchValue::Value(Value::Text(value))) if value.len() < 255 => {
+        (Property::Name, MaybePatchValue::Value(Value::Str(value))) if value.len() < 255 => {
             identity.name = value;
         }
-        (Property::Email, MaybePatchValue::Value(Value::Text(value)))
+        (Property::Email, MaybePatchValue::Value(Value::Str(value)))
             if is_create && value.len() < 255 =>
         {
             identity.email = sanitize_email(&value).ok_or_else(|| {
                 SetError::invalid_properties()
-                    .with_property(Property::Email)
+                    .with_key_value(Property::Email)
                     .with_description("Invalid e-mail address.")
             })?;
         }
-        (Property::TextSignature, MaybePatchValue::Value(Value::Text(value)))
+        (Property::TextSignature, MaybePatchValue::Value(Value::Str(value)))
             if value.len() < 2048 =>
         {
             identity.text_signature = value;
         }
-        (Property::HtmlSignature, MaybePatchValue::Value(Value::Text(value)))
+        (Property::HtmlSignature, MaybePatchValue::Value(Value::Str(value)))
             if value.len() < 2048 =>
         {
             identity.html_signature = value;
         }
-        (Property::ReplyTo | Property::Bcc, MaybePatchValue::Value(Value::List(value))) => {
+        (Property::ReplyTo | Property::Bcc, MaybePatchValue::Value(Value::Array(value))) => {
             let mut addresses = Vec::with_capacity(value.len());
             for addr in value {
                 let mut address = EmailAddress {
@@ -227,11 +223,11 @@ fn validate_identity_value(
                 if let Value::Object(obj) = addr {
                     for (key, value) in obj.0 {
                         match (key, value) {
-                            (Property::Email, Value::Text(value)) if value.len() < 255 => {
+                            (Property::Email, Value::Str(value)) if value.len() < 255 => {
                                 is_valid = true;
                                 address.email = value;
                             }
-                            (Property::Name, Value::Text(value)) if value.len() < 255 => {
+                            (Property::Name, Value::Str(value)) if value.len() < 255 => {
                                 address.name = Some(value);
                             }
                             (Property::Name, Value::Null) => (),
@@ -247,7 +243,7 @@ fn validate_identity_value(
                     addresses.push(address);
                 } else {
                     return Err(SetError::invalid_properties()
-                        .with_property(property.clone())
+                        .with_key_value(property.clone())
                         .with_description("Invalid e-mail address object."));
                 }
             }
@@ -275,7 +271,7 @@ fn validate_identity_value(
         (Property::Bcc, MaybePatchValue::Value(Value::Null)) => identity.bcc = None,
         (property, _) => {
             return Err(SetError::invalid_properties()
-                .with_property(property.clone())
+                .with_key_value(property.clone())
                 .with_description("Field could not be set."));
         }
     }
