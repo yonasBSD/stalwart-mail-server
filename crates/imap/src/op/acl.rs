@@ -40,7 +40,7 @@ use utils::map::bitmap::Bitmap;
 impl<T: SessionStream> Session<T> {
     pub async fn handle_get_acl(&mut self, request: Request<Command>) -> trc::Result<()> {
         // Validate access
-        self.assert_has_permission(Permission::ImapAuthenticate)?;
+        self.assert_has_permission(Permission::ImapAclGet)?;
 
         let op_start = Instant::now();
         let arguments = request.parse_acl(self.is_utf8)?;
