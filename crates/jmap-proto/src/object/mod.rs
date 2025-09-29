@@ -45,7 +45,7 @@ pub trait JmapObject: std::fmt::Debug {
 }
 
 pub trait JmapSharedObject: JmapObject {
-    type Right: JmapRight + Into<Self::Property> + Debug + Sync + Send;
+    type Right: JmapRight + Into<Self::Property> + Debug + Clone + Copy + Sync + Send;
 
     const SHARE_WITH_PROPERTY: Self::Property;
 }
@@ -53,7 +53,7 @@ pub trait JmapSharedObject: JmapObject {
 pub trait JmapRight: Clone + Copy + Sized + 'static {
     fn from_acl(acl: Acl) -> &'static [Self];
     fn all_rights() -> &'static [Self];
-    fn to_acl(&self) -> Acl;
+    fn to_acl(&self) -> &'static [Acl];
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -169,7 +169,7 @@ impl JmapRight for Null {
         unreachable!()
     }
 
-    fn to_acl(&self) -> Acl {
+    fn to_acl(&self) -> &'static [Acl] {
         unreachable!()
     }
 }

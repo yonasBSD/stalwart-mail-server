@@ -51,6 +51,7 @@ pub enum MailboxRight {
     MayRename,
     MaySubmit,
     MayDelete,
+    MayShare,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -62,10 +63,16 @@ pub enum MailboxValue {
 
 impl Property for MailboxProperty {
     fn try_parse(key: Option<&Key<'_, Self>>, value: &str) -> Option<Self> {
-        if let Some(Key::Property(MailboxProperty::ShareWith)) = key {
-            Id::from_str(value).ok().map(MailboxProperty::IdValue)
+        let allow_patch = key.is_none();
+        if let Some(Key::Property(key)) = key {
+            match key.patch_or_prop() {
+                MailboxProperty::ShareWith => {
+                    Id::from_str(value).ok().map(MailboxProperty::IdValue)
+                }
+                _ => MailboxProperty::parse(value, allow_patch),
+            }
         } else {
-            MailboxProperty::parse(value, key.is_none())
+            MailboxProperty::parse(value, allow_patch)
         }
     }
 
@@ -103,6 +110,7 @@ impl MailboxRight {
             MailboxRight::MayRename => "mayRename",
             MailboxRight::MaySubmit => "maySubmit",
             MailboxRight::MayDelete => "mayDelete",
+            MailboxRight::MayShare => "mayShare",
         }
     }
 }
@@ -158,6 +166,7 @@ impl MailboxProperty {
             b"mayRename" => MailboxProperty::Rights(MailboxRight::MayRename),
             b"maySubmit" => MailboxProperty::Rights(MailboxRight::MaySubmit),
             b"mayDelete" => MailboxProperty::Rights(MailboxRight::MayDelete),
+            b"mayShare" => MailboxProperty::Rights(MailboxRight::MayShare),
             b"isSubscribed" => MailboxProperty::IsSubscribed,
         )
         .or_else(|| {
@@ -460,21 +469,23 @@ impl JmapRight for MailboxRight {
             Acl::Modify => &[MailboxRight::MayRename],
             Acl::Submit => &[MailboxRight::MaySubmit],
             Acl::Delete => &[MailboxRight::MayDelete],
+            Acl::Administer => &[MailboxRight::MayShare],
             _ => &[],
         }
     }
 
-    fn to_acl(&self) -> Acl {
+    fn to_acl(&self) -> &'static [Acl] {
         match self {
-            MailboxRight::MayReadItems => Acl::ReadItems,
-            MailboxRight::MayAddItems => Acl::AddItems,
-            MailboxRight::MayRemoveItems => Acl::RemoveItems,
-            MailboxRight::MaySetSeen => Acl::ModifyItems,
-            MailboxRight::MaySetKeywords => Acl::ModifyItems,
-            MailboxRight::MayCreateChild => Acl::CreateChild,
-            MailboxRight::MayRename => Acl::Modify,
-            MailboxRight::MaySubmit => Acl::Submit,
-            MailboxRight::MayDelete => Acl::Delete,
+            MailboxRight::MayReadItems => &[Acl::Read, Acl::ReadItems],
+            MailboxRight::MayAddItems => &[Acl::AddItems],
+            MailboxRight::MayRemoveItems => &[Acl::RemoveItems],
+            MailboxRight::MaySetSeen => &[Acl::ModifyItems],
+            MailboxRight::MaySetKeywords => &[Acl::ModifyItems],
+            MailboxRight::MayCreateChild => &[Acl::CreateChild],
+            MailboxRight::MayRename => &[Acl::Modify],
+            MailboxRight::MaySubmit => &[Acl::Submit],
+            MailboxRight::MayDelete => &[Acl::Delete],
+            MailboxRight::MayShare => &[Acl::Administer],
         }
     }
 
@@ -489,6 +500,7 @@ impl JmapRight for MailboxRight {
             MailboxRight::MayRename,
             MailboxRight::MaySubmit,
             MailboxRight::MayDelete,
+            MailboxRight::MayShare,
         ]
     }
 }

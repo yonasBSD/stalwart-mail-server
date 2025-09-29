@@ -114,13 +114,14 @@ impl Element for EmailSubmissionValue {
     fn try_parse<P>(key: &Key<'_, Self::Property>, value: &str) -> Option<Self> {
         if let Key::Property(prop) = key {
             match prop.patch_or_prop() {
-                EmailSubmissionProperty::Id | EmailSubmissionProperty::ThreadId => {
-                    match parse_ref(value) {
-                        MaybeReference::Value(v) => Some(EmailSubmissionValue::Id(v)),
-                        MaybeReference::Reference(v) => Some(EmailSubmissionValue::IdReference(v)),
-                        MaybeReference::ParseError => None,
-                    }
-                }
+                EmailSubmissionProperty::Id
+                | EmailSubmissionProperty::ThreadId
+                | EmailSubmissionProperty::IdentityId
+                | EmailSubmissionProperty::EmailId => match parse_ref(value) {
+                    MaybeReference::Value(v) => Some(EmailSubmissionValue::Id(v)),
+                    MaybeReference::Reference(v) => Some(EmailSubmissionValue::IdReference(v)),
+                    MaybeReference::ParseError => None,
+                },
                 EmailSubmissionProperty::MdnBlobIds | EmailSubmissionProperty::DsnBlobIds => {
                     match parse_ref(value) {
                         MaybeReference::Value(v) => Some(EmailSubmissionValue::BlobId(v)),

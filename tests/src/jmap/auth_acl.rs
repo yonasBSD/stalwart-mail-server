@@ -172,7 +172,7 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Jane grants Inbox ReadItems access to John
     jane_client
-        .mailbox_update_acl(&inbox_id, "jdoe@example.com", [ACL::ReadItems])
+        .mailbox_update_acl(&inbox_id, &john_id.to_string(), [ACL::ReadItems])
         .await
         .unwrap();
 
@@ -256,15 +256,9 @@ pub async fn test(params: &mut JMAPTest) {
             .await,
     );
 
-    // John only has ReadItems access to Inbox but no Read access
-    assert_forbidden(
-        john_client
-            .set_default_account_id(jane_id.to_string())
-            .mailbox_get(&inbox_id, [mailbox::Property::MyRights].into())
-            .await,
-    );
+    // John only has ReadItems access to Inbox
     jane_client
-        .mailbox_update_acl(&inbox_id, "jdoe@example.com", [ACL::Read, ACL::ReadItems])
+        .mailbox_update_acl(&inbox_id, &john_id.to_string(), [ACL::ReadItems])
         .await
         .unwrap();
     assert_eq!(
@@ -331,8 +325,8 @@ pub async fn test(params: &mut JMAPTest) {
     jane_client
         .mailbox_update_acl(
             &inbox_id,
-            "jdoe@example.com",
-            [ACL::Read, ACL::ReadItems, ACL::AddItems],
+            &john_id.to_string(),
+            [ACL::ReadItems, ACL::AddItems],
         )
         .await
         .unwrap();
@@ -396,8 +390,8 @@ pub async fn test(params: &mut JMAPTest) {
     jane_client
         .mailbox_update_acl(
             &inbox_id,
-            "jdoe@example.com",
-            [ACL::Read, ACL::ReadItems, ACL::AddItems, ACL::RemoveItems],
+            &john_id.to_string(),
+            [ACL::ReadItems, ACL::AddItems, ACL::RemoveItems],
         )
         .await
         .unwrap();
@@ -417,13 +411,12 @@ pub async fn test(params: &mut JMAPTest) {
     jane_client
         .mailbox_update_acl(
             &inbox_id,
-            "jdoe@example.com",
+            &john_id.to_string(),
             [
-                ACL::Read,
                 ACL::ReadItems,
                 ACL::AddItems,
                 ACL::RemoveItems,
-                ACL::ModifyItems,
+                ACL::SetKeywords,
             ],
         )
         .await
@@ -449,13 +442,12 @@ pub async fn test(params: &mut JMAPTest) {
     jane_client
         .mailbox_update_acl(
             &inbox_id,
-            "jdoe@example.com",
+            &john_id.to_string(),
             [
-                ACL::Read,
                 ACL::ReadItems,
                 ACL::AddItems,
                 ACL::RemoveItems,
-                ACL::ModifyItems,
+                ACL::SetKeywords,
                 ACL::CreateChild,
             ],
         )
@@ -478,8 +470,8 @@ pub async fn test(params: &mut JMAPTest) {
     jane_client
         .mailbox_update_acl(
             &mailbox_id,
-            "jdoe@example.com",
-            [ACL::Read, ACL::ReadItems, ACL::Modify],
+            &john_id.to_string(),
+            [ACL::ReadItems, ACL::Rename],
         )
         .await
         .unwrap();
@@ -499,8 +491,8 @@ pub async fn test(params: &mut JMAPTest) {
     jane_client
         .mailbox_update_acl(
             &mailbox_id,
-            "jdoe@example.com",
-            [ACL::Read, ACL::ReadItems, ACL::Modify, ACL::AddItems],
+            &john_id.to_string(),
+            [ACL::ReadItems, ACL::Rename, ACL::AddItems],
         )
         .await
         .unwrap();
@@ -520,14 +512,8 @@ pub async fn test(params: &mut JMAPTest) {
     jane_client
         .mailbox_update_acl(
             &mailbox_id,
-            "jdoe@example.com",
-            [
-                ACL::Read,
-                ACL::ReadItems,
-                ACL::Modify,
-                ACL::AddItems,
-                ACL::Delete,
-            ],
+            &john_id.to_string(),
+            [ACL::ReadItems, ACL::Rename, ACL::AddItems, ACL::Delete],
         )
         .await
         .unwrap();
@@ -540,11 +526,10 @@ pub async fn test(params: &mut JMAPTest) {
     jane_client
         .mailbox_update_acl(
             &mailbox_id,
-            "jdoe@example.com",
+            &john_id.to_string(),
             [
-                ACL::Read,
                 ACL::ReadItems,
-                ACL::Modify,
+                ACL::Rename,
                 ACL::AddItems,
                 ACL::Delete,
                 ACL::RemoveItems,
@@ -562,7 +547,7 @@ pub async fn test(params: &mut JMAPTest) {
     assert_forbidden(
         john_client
             .set_default_account_id(jane_id.to_string())
-            .mailbox_update_acl(&inbox_id, "bill@example.com", [ACL::Read, ACL::ReadItems])
+            .mailbox_update_acl(&inbox_id, &bill_id.to_string(), [ACL::ReadItems])
             .await,
     );
     assert_forbidden(
@@ -574,15 +559,14 @@ pub async fn test(params: &mut JMAPTest) {
     jane_client
         .mailbox_update_acl(
             &inbox_id,
-            "jdoe@example.com",
+            &john_id.to_string(),
             [
-                ACL::Read,
                 ACL::ReadItems,
                 ACL::AddItems,
                 ACL::RemoveItems,
-                ACL::ModifyItems,
+                ACL::SetKeywords,
                 ACL::CreateChild,
-                ACL::Modify,
+                ACL::Rename,
                 ACL::Administer,
             ],
         )
@@ -602,14 +586,15 @@ pub async fn test(params: &mut JMAPTest) {
             ACL::ReadItems,
             ACL::AddItems,
             ACL::RemoveItems,
-            ACL::ModifyItems,
+            ACL::SetSeen,
+            ACL::SetKeywords,
             ACL::CreateChild,
-            ACL::Modify
+            ACL::Rename
         ]
     );
     john_client
         .set_default_account_id(jane_id.to_string())
-        .mailbox_update_acl(&inbox_id, "bill@example.com", [ACL::Read, ACL::ReadItems])
+        .mailbox_update_acl(&inbox_id, &bill_id.to_string(), [ACL::ReadItems])
         .await
         .unwrap();
     assert_eq!(
@@ -630,7 +615,7 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Revoke all access to John
     jane_client
-        .mailbox_update_acl(&inbox_id, "jdoe@example.com", [])
+        .mailbox_update_acl(&inbox_id, &john_id.to_string(), [])
         .await
         .unwrap();
     assert_forbidden(

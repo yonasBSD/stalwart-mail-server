@@ -112,6 +112,7 @@ impl Property for EmailProperty {
         if let Some(Key::Property(key)) = key {
             match key.patch_or_prop() {
                 EmailProperty::Keywords => EmailProperty::Keyword(Keyword::parse(value)).into(),
+                EmailProperty::MailboxIds => Id::from_str(value).ok().map(EmailProperty::IdValue),
                 _ => EmailProperty::parse(value, allow_patch),
             }
         } else {

@@ -168,7 +168,7 @@ impl<'de> Visitor<'de> for WebSocketMessageVisitor {
                     message_type = MessageType::parse(map.next_value()?);
                 },
                 b"dataTypes" => {
-                    push_enable.data_types = map.next_value()?;
+                    push_enable.data_types = map.next_value::<Option<Vec<DataType>>>()?.unwrap_or_default();
                     found_push_keys = true;
                 },
                 b"pushState" => {

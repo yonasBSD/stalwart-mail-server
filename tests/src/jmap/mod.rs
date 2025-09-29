@@ -109,7 +109,7 @@ async fn jmap_tests() {
     vacation_response::test(&mut params).await;
     email_submission::test(&mut params).await;
     websocket::test(&mut params).await;
-    quota::test(&mut params).await;
+    quota::test(&mut params).await;*
     crypto::test(&mut params).await;
     blob::test(&mut params).await;*/
     permissions::test(&params).await;
@@ -991,6 +991,7 @@ type = "console"
 level = "{LEVEL}"
 multiline = false
 ansi = true
+#disabled-events = ["network.*", "telemetry.webhook-error"]
 disabled-events = ["network.*", "telemetry.webhook-error", "http.request-body"]
 
 [webhook."test"]

@@ -175,7 +175,7 @@ impl<'de> Visitor<'de> for CallVisitor {
                 }
             },
             (MethodFunction::Get, MethodObject::Blob) => match seq.next_element() {
-                Ok(Some(value)) => RequestMethod::Get(GetRequestMethod::Email(value)),
+                Ok(Some(value)) => RequestMethod::Get(GetRequestMethod::Blob(value)),
                 Err(err) => RequestMethod::invalid(err),
                 Ok(None) => {
                     return Err(de::Error::invalid_length(1, &self));

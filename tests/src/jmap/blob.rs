@@ -175,7 +175,8 @@ pub async fn test(params: &mut JMAPTest) {
                 })
                 .unwrap_or_default(),
             expected,
-            "Pointer {pointer:?} Response: {response:?}",
+            "Pointer {pointer:?} Response: {}",
+            serde_json::to_string_pretty(&response).unwrap()
         );
     }
 

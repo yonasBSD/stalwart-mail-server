@@ -23,7 +23,7 @@ use crate::{
     response::Response,
 };
 use compact_str::format_compact;
-use jmap_tools::{Element, Property, Value};
+use jmap_tools::{Element, Key, Property, Value};
 use std::collections::HashMap;
 use types::id::Id;
 
@@ -310,6 +310,8 @@ where
     fn get_created_id(&self, id_ref: &str) -> Option<AnyId> {
         self.created
             .get(id_ref)
+            .and_then(|v| v.as_object())
+            .and_then(|v| v.get(&Key::Property(T::ID_PROPERTY)))
             .and_then(|v| v.as_element())
             .and_then(|v| v.as_any_id())
     }
