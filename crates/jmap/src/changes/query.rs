@@ -6,7 +6,8 @@
 
 use super::get::ChangesLookup;
 use crate::{
-    email::query::EmailQuery, mailbox::query::MailboxQuery, sieve::query::SieveScriptQuery,
+    api::request::set_account_id_if_missing, email::query::EmailQuery,
+    mailbox::query::MailboxQuery, sieve::query::SieveScriptQuery,
     submission::query::EmailSubmissionQuery,
 };
 use common::{Server, auth::AccessToken};
@@ -42,8 +43,9 @@ impl QueryChanges for Server {
         let up_to_id;
 
         match request {
-            QueryChangesRequestMethod::Email(request) => {
+            QueryChangesRequestMethod::Email(mut request) => {
                 // Query changes
+                set_account_id_if_missing(&mut request.account_id, access_token);
                 changes = self
                     .changes(
                         build_changes_request(&request),
@@ -69,8 +71,9 @@ impl QueryChanges for Server {
 
                 results = self.email_query(request.into(), access_token).await?;
             }
-            QueryChangesRequestMethod::Mailbox(request) => {
+            QueryChangesRequestMethod::Mailbox(mut request) => {
                 // Query changes
+                set_account_id_if_missing(&mut request.account_id, access_token);
                 changes = self
                     .changes(
                         build_changes_request(&request),
@@ -90,8 +93,9 @@ impl QueryChanges for Server {
                 up_to_id = request.up_to_id;
                 results = self.mailbox_query(request.into(), access_token).await?;
             }
-            QueryChangesRequestMethod::EmailSubmission(request) => {
+            QueryChangesRequestMethod::EmailSubmission(mut request) => {
                 // Query changes
+                set_account_id_if_missing(&mut request.account_id, access_token);
                 changes = self
                     .changes(
                         build_changes_request(&request),
@@ -111,8 +115,9 @@ impl QueryChanges for Server {
                 up_to_id = request.up_to_id;
                 results = self.email_submission_query(request.into()).await?;
             }
-            QueryChangesRequestMethod::Sieve(request) => {
+            QueryChangesRequestMethod::Sieve(mut request) => {
                 // Query changes
+                set_account_id_if_missing(&mut request.account_id, access_token);
                 changes = self
                     .changes(
                         build_changes_request(&request),
