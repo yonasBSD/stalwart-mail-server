@@ -44,11 +44,11 @@ pub enum EmailField {
     To,
     Cc,
     Bcc,
-    ReplyTo,
-    Sender,
-    InReplyTo,
-    MessageId,
-    EmailIds,
+    //ReplyTo,
+    //Sender,
+    //InReplyTo,
+    //MessageId,
+    //EmailIds,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -108,24 +108,24 @@ impl From<CalendarField> for u8 {
 impl From<EmailField> for u8 {
     fn from(value: EmailField) -> Self {
         match value {
+            EmailField::From => 87,
+            EmailField::To => 35,
+            EmailField::Cc => 74,
+            EmailField::Bcc => 69,
+            EmailField::Subject => 29,
             EmailField::Size => 27,
             EmailField::Metadata => 71,
-            EmailField::Subject => 29,
             EmailField::References => 20,
             EmailField::MailboxIds => 7,
             EmailField::ReceivedAt => 19,
-            EmailField::MessageId => 11,
-            EmailField::ReplyTo => 21,
-            EmailField::Sender => 25,
             EmailField::SentAt => 26,
-            EmailField::To => 35,
-            EmailField::Bcc => 69,
-            EmailField::Cc => 74,
-            EmailField::EmailIds => 84,
-            EmailField::From => 87,
             EmailField::HasAttachment => 89,
-            EmailField::InReplyTo => 96,
             EmailField::Archive => ARCHIVE_FIELD,
+            //EmailField::MessageId => 11,
+            //EmailField::ReplyTo => 21,
+            //EmailField::Sender => 25,
+            //EmailField::EmailIds => 84,
+            //EmailField::InReplyTo => 96,
         }
     }
 }
