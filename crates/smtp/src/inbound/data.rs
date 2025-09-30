@@ -8,10 +8,7 @@ use super::{ArcSeal, AuthResult, DkimSign};
 use crate::{
     core::{Session, SessionAddress, State},
     inbound::milter::Modification,
-    queue::{
-        self, DomainPart, Message, MessageSource, MessageWrapper, QueueEnvelope,
-        quota::HasQueueQuota,
-    },
+    queue::{self, Message, MessageSource, MessageWrapper, QueueEnvelope, quota::HasQueueQuota},
     reporting::analysis::AnalyzeReport,
     scripts::ScriptResult,
 };
@@ -44,7 +41,7 @@ use std::{
     time::{Instant, SystemTime},
 };
 use trc::SmtpEvent;
-use utils::config::Rate;
+use utils::{DomainPart, config::Rate};
 
 impl<T: SessionStream> Session<T> {
     pub async fn queue_message(&mut self) -> Cow<'static, [u8]> {
