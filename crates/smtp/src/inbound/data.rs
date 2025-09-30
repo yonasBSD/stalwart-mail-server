@@ -668,9 +668,20 @@ impl<T: SessionStream> Session<T> {
 
             // Queue message
             let source = if !self.is_authenticated() {
-                MessageSource::Unauthenticated(
-                    dmarc_result.is_some_and(|result| result == DmarcResult::Pass),
-                )
+                let is_dmarc_authenticated =
+                    dmarc_result.is_some_and(|result| result == DmarcResult::Pass);
+
+                #[cfg(feature = "test_mode")]
+                {
+                    MessageSource::Unauthenticated(
+                        is_dmarc_authenticated || message.message.return_path.starts_with("dmarc-"),
+                    )
+                }
+
+                #[cfg(not(feature = "test_mode"))]
+                {
+                    MessageSource::Unauthenticated(is_dmarc_authenticated)
+                }
             } else {
                 MessageSource::Authenticated
             };
