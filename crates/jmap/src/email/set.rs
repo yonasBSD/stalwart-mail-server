@@ -820,7 +820,6 @@ impl EmailSet for Server {
                                 .collect(),
                         );
                     }
-
                     (Key::Property(EmailProperty::Keywords), Value::Object(keywords_)) => {
                         new_data.set_keywords(
                             keywords_
@@ -861,11 +860,7 @@ impl EmailSet for Server {
             let has_keyword_changes = new_data.has_keyword_changes(data.inner);
             let has_mailbox_changes = new_data.has_mailbox_changes(data.inner);
             if !has_keyword_changes && !has_mailbox_changes {
-                response.not_updated.append(
-                    id,
-                    SetError::invalid_properties()
-                        .with_description("No changes found in request.".to_string()),
-                );
+                response.updated.append(id, None);
                 continue 'update;
             }
 

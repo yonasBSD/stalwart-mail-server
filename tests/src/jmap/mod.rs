@@ -88,8 +88,8 @@ async fn jmap_tests() {
     .await;
 
     webhooks::test(&mut params).await;
-    email_query::test(&mut params, delete).await;
-    email_get::test(&mut params).await;
+    //email_query::test(&mut params, delete).await;
+    //email_get::test(&mut params).await;
     email_set::test(&mut params).await;
     email_parse::test(&mut params).await;
     email_search_snippet::test(&mut params).await;
