@@ -3940,6 +3940,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "jmap-client"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b0a269c4668bc7c12c61bf142f4f30c8d568d5afa8472f9dd881d83d2551323a"
+dependencies = [
+ "ahash",
+ "async-stream",
+ "base64 0.13.1",
+ "chrono",
+ "futures-util",
+ "maybe-async",
+ "parking_lot",
+ "reqwest 0.12.23",
+ "rustls 0.23.32",
+ "rustls-pki-types",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-tungstenite",
+]
+
+[[package]]
 name = "jmap-tools"
 version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7797,7 +7819,7 @@ dependencies = [
  "futures",
  "human-size",
  "indicatif",
- "jmap-client",
+ "jmap-client 0.3.3",
  "mail-auth",
  "mail-parser",
  "num_cpus",
@@ -8058,7 +8080,7 @@ dependencies = [
  "imap_proto",
  "jemallocator",
  "jmap",
- "jmap-client",
+ "jmap-client 0.4.0",
  "jmap_proto",
  "mail-auth",
  "mail-parser",

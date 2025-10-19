@@ -10,7 +10,9 @@ use super::{
 };
 use crate::{
     DavResourceName, DestroyArchive, RFC_3986,
-    calendar::{ArchivedCalendarEventNotification, CalendarEventNotification},
+    calendar::{
+        ArchivedCalendarEventNotification, CalendarEventNotification, alarm::CalendarAlarmType,
+    },
     scheduling::{ItipMessages, event_cancel::itip_cancel},
 };
 use calcard::common::timezone::Tz;
@@ -470,19 +472,42 @@ impl DestroyArchive<Archive<&ArchivedCalendarEventNotification>> {
 
 impl CalendarAlarm {
     pub fn write_task(&self, batch: &mut BatchBuilder) {
-        batch.set(
-            ValueClass::TaskQueue(TaskQueueClass::SendAlarm {
-                due: self.alarm_time as u64,
-                event_id: self.event_id,
-                alarm_id: self.alarm_id,
-            }),
-            KeySerializer::new((U64_LEN * 2) + (U16_LEN * 2))
-                .write(self.event_start as u64)
-                .write(self.event_end as u64)
-                .write(self.event_start_tz)
-                .write(self.event_end_tz)
-                .finalize(),
-        );
+        match &self.typ {
+            CalendarAlarmType::Email {
+                event_start,
+                event_start_tz,
+                event_end,
+                event_end_tz,
+            } => {
+                batch.set(
+                    ValueClass::TaskQueue(TaskQueueClass::SendAlarm {
+                        due: self.alarm_time as u64,
+                        event_id: self.event_id,
+                        alarm_id: self.alarm_id,
+                        is_email_alert: true,
+                    }),
+                    KeySerializer::new((U64_LEN * 2) + (U16_LEN * 2))
+                        .write(*event_start as u64)
+                        .write(*event_end as u64)
+                        .write(*event_start_tz)
+                        .write(*event_end_tz)
+                        .finalize(),
+                );
+            }
+            CalendarAlarmType::Display { recurrence_id } => {
+                batch.set(
+                    ValueClass::TaskQueue(TaskQueueClass::SendAlarm {
+                        due: self.alarm_time as u64,
+                        event_id: self.event_id,
+                        alarm_id: self.alarm_id,
+                        is_email_alert: false,
+                    }),
+                    KeySerializer::new(U64_LEN)
+                        .write(recurrence_id.unwrap_or_default() as u64)
+                        .finalize(),
+                );
+            }
+        }
     }
 
     pub fn delete_task(&self, batch: &mut BatchBuilder) {
@@ -490,6 +515,7 @@ impl CalendarAlarm {
             due: self.alarm_time as u64,
             event_id: self.event_id,
             alarm_id: self.alarm_id,
+            is_email_alert: matches!(self.typ, CalendarAlarmType::Email { .. }),
         }));
     }
 }

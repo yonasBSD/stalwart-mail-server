@@ -875,6 +875,13 @@ impl ManageDirectory for Store {
             });
         }
 
+        // Delete push subscriptions
+        if matches!(typ, Type::Individual) {
+            batch
+                .with_collection(Collection::PushSubscription)
+                .delete_document(principal_id);
+        }
+
         self.write(batch.build_all())
             .await
             .caused_by(trc::location!())?;

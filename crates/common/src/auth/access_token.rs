@@ -352,7 +352,7 @@ impl Server {
 
         // Invalidate DAV caches
         if !changed_names.is_empty() {
-            self.cluster_broadcast(BroadcastEvent::InvalidateDavCache(changed_names))
+            self.cluster_broadcast(BroadcastEvent::InvalidateGroupwareCache(changed_names))
                 .await;
         }
     }
@@ -418,6 +418,12 @@ impl AccessToken {
         self.member_of
             .iter()
             .chain(self.access_to.iter().map(|(id, _)| id))
+    }
+
+    pub fn member_ids(&self) -> impl Iterator<Item = u32> {
+        [self.primary_id]
+            .into_iter()
+            .chain(self.member_of.iter().copied())
     }
 
     pub fn all_ids(&self) -> impl Iterator<Item = u32> {

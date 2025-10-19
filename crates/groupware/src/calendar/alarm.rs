@@ -17,15 +17,25 @@ use std::str::FromStr;
 use store::write::bitpack::BitpackIterator;
 use utils::codec::leb128::Leb128Reader;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CalendarAlarm {
     pub alarm_id: u16,
     pub event_id: u16,
     pub alarm_time: i64,
-    pub event_start: i64,
-    pub event_start_tz: u16,
-    pub event_end: i64,
-    pub event_end_tz: u16,
+    pub typ: CalendarAlarmType,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum CalendarAlarmType {
+    Email {
+        event_start: i64,
+        event_start_tz: u16,
+        event_end: i64,
+        event_end_tz: u16,
+    },
+    Display {
+        recurrence_id: Option<i64>,
+    },
 }
 
 impl ArchivedCalendarEventData {
@@ -39,11 +49,7 @@ impl ArchivedCalendarEventData {
 
         'outer: for range in self.time_ranges.iter() {
             let comp_id = range.id.to_native();
-            let Some(alarm) = self
-                .alarms
-                .iter()
-                .find(|a| a.is_email_alert && a.parent_id == comp_id)
-            else {
+            let Some(alarm) = self.alarms.iter().find(|a| a.parent_id == comp_id) else {
                 continue;
             };
 
@@ -83,30 +89,34 @@ impl ArchivedCalendarEventData {
 
                     if let Some(alarm_time) = alarm.delta.to_timestamp(start, end, default_tz)
                         && alarm_time > start_time
+                        && next_alarm
+                            .as_ref()
+                            .is_none_or(|next| alarm_time < next.alarm_time)
                     {
-                        if let Some(next) = next_alarm {
-                            if alarm_time < next.alarm_time {
-                                next_alarm = Some(CalendarAlarm {
-                                    alarm_id: alarm.id.to_native(),
-                                    event_id: alarm.parent_id.to_native(),
-                                    alarm_time,
+                        next_alarm = Some(CalendarAlarm {
+                            alarm_id: alarm.id.to_native(),
+                            event_id: alarm.parent_id.to_native(),
+                            alarm_time,
+                            typ: if alarm.is_email_alert {
+                                CalendarAlarmType::Email {
                                     event_start: start_date_naive,
                                     event_start_tz: start_tz.as_id(),
                                     event_end: end_date_naive,
                                     event_end_tz: end_tz.as_id(),
-                                });
-                            }
-                        } else {
-                            next_alarm = Some(CalendarAlarm {
-                                alarm_id: alarm.id.to_native(),
-                                event_id: alarm.parent_id.to_native(),
-                                alarm_time,
-                                event_start: start_date_naive,
-                                event_start_tz: start_tz.as_id(),
-                                event_end: end_date_naive,
-                                event_end_tz: end_tz.as_id(),
-                            });
-                        }
+                                }
+                            } else {
+                                let comp =
+                                    &self.event.components[alarm.parent_id.to_native() as usize];
+
+                                CalendarAlarmType::Display {
+                                    recurrence_id: if comp.is_recurrent_or_override() {
+                                        start_date_naive.into()
+                                    } else {
+                                        None
+                                    },
+                                }
+                            },
+                        });
                         continue 'outer;
                     }
                 }
@@ -129,30 +139,33 @@ impl ArchivedCalendarEventData {
 
                 if let Some(alarm_time) = alarm.delta.to_timestamp(start, end, default_tz)
                     && alarm_time > start_time
+                    && next_alarm
+                        .as_ref()
+                        .is_none_or(|next| alarm_time < next.alarm_time)
                 {
-                    if let Some(next) = next_alarm {
-                        if alarm_time < next.alarm_time {
-                            next_alarm = Some(CalendarAlarm {
-                                alarm_id: alarm.id.to_native(),
-                                event_id: alarm.parent_id.to_native(),
-                                alarm_time,
+                    next_alarm = Some(CalendarAlarm {
+                        alarm_id: alarm.id.to_native(),
+                        event_id: alarm.parent_id.to_native(),
+                        alarm_time,
+                        typ: if alarm.is_email_alert {
+                            CalendarAlarmType::Email {
                                 event_start: start_date_naive,
                                 event_start_tz: start_tz.as_id(),
                                 event_end: end_date_naive,
                                 event_end_tz: end_tz.as_id(),
-                            });
-                        }
-                    } else {
-                        next_alarm = Some(CalendarAlarm {
-                            alarm_id: alarm.id.to_native(),
-                            event_id: alarm.parent_id.to_native(),
-                            alarm_time,
-                            event_start: start_date_naive,
-                            event_start_tz: start_tz.as_id(),
-                            event_end: end_date_naive,
-                            event_end_tz: end_tz.as_id(),
-                        });
-                    }
+                            }
+                        } else {
+                            let comp = &self.event.components[alarm.parent_id.to_native() as usize];
+
+                            CalendarAlarmType::Display {
+                                recurrence_id: if comp.is_recurrent_or_override() {
+                                    start_date_naive.into()
+                                } else {
+                                    None
+                                },
+                            }
+                        },
+                    });
                 }
             }
         }

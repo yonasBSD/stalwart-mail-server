@@ -302,10 +302,11 @@ impl ValueClass {
                     due,
                     event_id,
                     alarm_id,
+                    is_email_alert,
                 } => serializer
                     .write(*due)
                     .write(account_id)
-                    .write(3u8)
+                    .write(if *is_email_alert { 3u8 } else { 6u8 })
                     .write(document_id)
                     .write(*event_id)
                     .write(*alarm_id),

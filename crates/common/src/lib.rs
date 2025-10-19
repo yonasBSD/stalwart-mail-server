@@ -24,7 +24,7 @@ use config::{
     storage::Storage,
     telemetry::Metrics,
 };
-use ipc::{BroadcastEvent, HousekeeperEvent, QueueEvent, ReportingEvent, StateEvent};
+use ipc::{BroadcastEvent, HousekeeperEvent, PushEvent, QueueEvent, ReportingEvent};
 use listener::{asn::AsnGeoLookupData, blocked::Security, tls::AcmeProviders};
 use mail_auth::{MX, Txt};
 use manager::webadmin::{Resource, WebAdminManager};
@@ -244,7 +244,7 @@ pub struct HttpAuthCache {
 }
 
 pub struct Ipc {
-    pub state_tx: mpsc::Sender<StateEvent>,
+    pub push_tx: mpsc::Sender<PushEvent>,
     pub housekeeper_tx: mpsc::Sender<HousekeeperEvent>,
     pub task_tx: Arc<Notify>,
     pub queue_tx: mpsc::Sender<QueueEvent>,
@@ -503,7 +503,7 @@ impl Default for Caches {
 impl Default for Ipc {
     fn default() -> Self {
         Self {
-            state_tx: mpsc::channel(IPC_CHANNEL_BUFFER).0,
+            push_tx: mpsc::channel(IPC_CHANNEL_BUFFER).0,
             housekeeper_tx: mpsc::channel(IPC_CHANNEL_BUFFER).0,
             task_tx: Default::default(),
             queue_tx: mpsc::channel(IPC_CHANNEL_BUFFER).0,

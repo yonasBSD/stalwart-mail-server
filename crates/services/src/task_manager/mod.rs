@@ -13,7 +13,7 @@ use common::listener::limiter::ConcurrencyLimiter;
 use common::listener::{ServerInstance, TcpAcceptor};
 use common::{Inner, KV_LOCK_TASK, Server, core::BuildServer};
 use fts::FtsIndexTask;
-use groupware::calendar::alarm::CalendarAlarm;
+use groupware::calendar::alarm::{CalendarAlarm, CalendarAlarmType};
 use std::collections::hash_map::Entry;
 use std::future::Future;
 use std::time::Duration;
@@ -95,21 +95,33 @@ pub fn spawn_task_manager(inner: Arc<Inner>) {
     for mut rx_index in [rx_index_1, rx_index_2, rx_index_3, rx_index_4] {
         let inner = inner.clone();
         let server_instance = server_instance.clone();
+        let todo = "shard tasks based on config";
 
         tokio::spawn(async move {
-            while let Some(task) = rx_index.recv().await {
+            while let Some(mut task) = rx_index.recv().await {
                 let server = inner.build_server();
                 // Lock task
                 if server.try_lock_task(&task).await {
-                    let success = match &task.action {
-                        TaskAction::Index { hash } => server.fts_index(&task, hash).await,
+                    let success = match &mut task.action {
+                        TaskAction::Index { hash } => {
+                            server
+                                .fts_index(task.account_id, task.document_id, hash)
+                                .await
+                        }
                         TaskAction::BayesTrain { hash, learn_spam } => {
-                            server.bayes_train(&task, hash, *learn_spam).await
+                            server
+                                .bayes_train(task.account_id, task.document_id, hash, *learn_spam)
+                                .await
                         }
                         TaskAction::SendAlarm { alarm } => {
                             if server.core.groupware.alarms_enabled {
                                 server
-                                    .send_alarm(&task, alarm, server_instance.clone())
+                                    .send_alarm(
+                                        task.account_id,
+                                        task.document_id,
+                                        alarm,
+                                        server_instance.clone(),
+                                    )
                                     .await
                             } else {
                                 true
@@ -117,7 +129,14 @@ pub fn spawn_task_manager(inner: Arc<Inner>) {
                         }
                         TaskAction::SendImip => {
                             if server.core.groupware.itip_enabled {
-                                server.send_imip(&task, server_instance.clone()).await
+                                server
+                                    .send_imip(
+                                        task.account_id,
+                                        task.document_id,
+                                        task.due,
+                                        server_instance.clone(),
+                                    )
+                                    .await
                             } else {
                                 true
                             }
@@ -206,9 +225,7 @@ impl TaskQueueManager for Server {
         let mut next_event = None;
         ipc.revision += 1;
         let _ = self
-            .core
-            .storage
-            .data
+            .store()
             .iterate(
                 IterateParams::new(from_key, to_key).ascending(),
                 |key, value| {
@@ -386,6 +403,7 @@ impl Task {
                     event_id: alarm.event_id,
                     alarm_id: alarm.alarm_id,
                     due: self.due,
+                    is_email_alert: matches!(alarm.typ, CalendarAlarmType::Email { .. }),
                 },
                 TaskAction::SendImip => TaskQueueClass::SendImip {
                     due: self.due,
@@ -418,18 +436,8 @@ impl Task {
                         .and_then(|bytes| BlobHash::try_from_hash_slice(bytes).ok())
                         .ok_or_else(|| trc::Error::corrupted_key(key, None, trc::location!()))?,
                 },
-                Some(1) => TaskAction::BayesTrain {
-                    learn_spam: true,
-                    hash: key
-                        .get(
-                            U64_LEN + U32_LEN + U32_LEN + 1
-                                ..U64_LEN + U32_LEN + U32_LEN + BLOB_HASH_LEN + 1,
-                        )
-                        .and_then(|bytes| BlobHash::try_from_hash_slice(bytes).ok())
-                        .ok_or_else(|| trc::Error::corrupted_key(key, None, trc::location!()))?,
-                },
-                Some(2) => TaskAction::BayesTrain {
-                    learn_spam: false,
+                Some(v @ (1 | 2)) => TaskAction::BayesTrain {
+                    learn_spam: *v == 1,
                     hash: key
                         .get(
                             U64_LEN + U32_LEN + U32_LEN + 1
@@ -443,13 +451,34 @@ impl Task {
                         event_id: key.deserialize_be_u16(U64_LEN + U32_LEN + U32_LEN + 1)?,
                         alarm_id: key
                             .deserialize_be_u16(U64_LEN + U32_LEN + U32_LEN + U16_LEN + 1)?,
-                        event_start: value.deserialize_be_u64(0)? as i64,
-                        event_end: value.deserialize_be_u64(U64_LEN)? as i64,
-                        event_start_tz: value.deserialize_be_u16(U64_LEN * 2)?,
-                        event_end_tz: value.deserialize_be_u16((U64_LEN * 2) + U16_LEN)?,
                         alarm_time: 0,
+                        typ: CalendarAlarmType::Email {
+                            event_start: value.deserialize_be_u64(0)? as i64,
+                            event_end: value.deserialize_be_u64(U64_LEN)? as i64,
+                            event_start_tz: value.deserialize_be_u16(U64_LEN * 2)?,
+                            event_end_tz: value.deserialize_be_u16((U64_LEN * 2) + U16_LEN)?,
+                        },
                     },
                 },
+                Some(6) => {
+                    let recurrence_id = value.deserialize_be_u64(0)? as i64;
+
+                    TaskAction::SendAlarm {
+                        alarm: CalendarAlarm {
+                            event_id: key.deserialize_be_u16(U64_LEN + U32_LEN + U32_LEN + 1)?,
+                            alarm_id: key
+                                .deserialize_be_u16(U64_LEN + U32_LEN + U32_LEN + U16_LEN + 1)?,
+                            alarm_time: 0,
+                            typ: CalendarAlarmType::Display {
+                                recurrence_id: if recurrence_id != 0 {
+                                    Some(recurrence_id)
+                                } else {
+                                    None
+                                },
+                            },
+                        },
+                    }
+                }
                 Some(4) => TaskAction::SendImip,
                 _ => return Err(trc::Error::corrupted_key(key, None, trc::location!())),
             },

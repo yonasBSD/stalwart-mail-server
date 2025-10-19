@@ -57,7 +57,9 @@ pub enum DataType {
     ShareNotification = 20,
     #[serde(rename = "ParticipantIdentity")]
     ParticipantIdentity = 21,
-    None = 22,
+    #[serde(rename = "CalendarAlert")]
+    CalendarAlert = 22,
+    None = 23,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -68,10 +70,10 @@ pub struct StateChange {
 }
 
 impl StateChange {
-    pub fn new(account_id: u32, change_id: u64) -> Self {
+    pub fn new(account_id: u32) -> Self {
         Self {
             account_id,
-            change_id,
+            change_id: 0,
             types: Default::default(),
         }
     }
@@ -82,6 +84,11 @@ impl StateChange {
 
     pub fn with_change(mut self, type_state: DataType) -> Self {
         self.set_change(type_state);
+        self
+    }
+
+    pub fn with_change_id(mut self, change_id: u64) -> Self {
+        self.change_id = change_id;
         self
     }
 
@@ -125,6 +132,7 @@ impl From<u64> for DataType {
             19 => DataType::Principal,
             20 => DataType::ShareNotification,
             21 => DataType::ParticipantIdentity,
+            22 => DataType::CalendarAlert,
             _ => {
                 debug_assert!(false, "Invalid type_state value: {}", value);
                 DataType::None
@@ -183,6 +191,7 @@ impl DataType {
             b"Principal" => DataType::Principal,
             b"ShareNotification" => DataType::ShareNotification,
             b"ParticipantIdentity" => DataType::ParticipantIdentity,
+            b"CalendarAlert" => DataType::CalendarAlert,
         )
     }
 
@@ -210,6 +219,7 @@ impl DataType {
             DataType::Principal => "Principal",
             DataType::ShareNotification => "ShareNotification",
             DataType::ParticipantIdentity => "ParticipantIdentity",
+            DataType::CalendarAlert => "CalendarAlert",
             DataType::None => "",
         }
     }

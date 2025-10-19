@@ -379,6 +379,24 @@ impl BatchBuilder {
         self
     }
 
+    pub fn log_share_notification(
+        &mut self,
+        notification_id: u64,
+        notify_account_id: u32,
+        value: impl SerializeInfallible,
+    ) -> &mut Self {
+        self.changed_collections
+            .get_mut_or_insert(notify_account_id)
+            .share_notification_id = Some(notification_id);
+        self.set(
+            ValueClass::ShareNotification {
+                notification_id,
+                notify_account_id,
+            },
+            value.serialize(),
+        )
+    }
+
     fn serialize_changes(&mut self) {
         if !self.changes.is_empty() {
             for (account_id, changelog) in std::mem::take(&mut self.changes) {

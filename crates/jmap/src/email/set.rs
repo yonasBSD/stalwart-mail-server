@@ -11,7 +11,9 @@ use crate::{
     changes::state::JmapCacheState,
     email::{PatchResult, handle_email_patch, ingested_into_object},
 };
-use common::{Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
+use common::{
+    Server, auth::AccessToken, ipc::PushNotification, storage::index::ObjectIndexBuilder,
+};
 use email::{
     cache::{MessageCacheFetch, email::MessageCacheAccess, mailbox::MailboxCacheAccess},
     mailbox::UidMailbox,
@@ -1107,12 +1109,13 @@ impl EmailSet for Server {
         if let Some(change_id) = last_change_id {
             if response.updated.is_empty() && response.destroyed.is_empty() {
                 // Message ingest does not broadcast state changes
-                self.broadcast_state_change(
-                    StateChange::new(account_id, change_id)
+                self.broadcast_push_notification(PushNotification::StateChange(
+                    StateChange::new(account_id)
+                        .with_change_id(change_id)
                         .with_change(DataType::Email)
                         .with_change(DataType::Mailbox)
                         .with_change(DataType::Thread),
-                )
+                ))
                 .await;
             }
 

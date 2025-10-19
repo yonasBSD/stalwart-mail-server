@@ -14,10 +14,7 @@ use rkyv::{
 use std::{borrow::Cow, fmt::Debug};
 use store::{
     Serialize, SerializeInfallible,
-    write::{
-        Archive, Archiver, BatchBuilder, BlobOp, DirectoryClass, IntoOperations, TagValue,
-        ValueClass,
-    },
+    write::{Archive, Archiver, BatchBuilder, BlobOp, DirectoryClass, IntoOperations, TagValue},
 };
 use types::{
     acl::AclGrant,
@@ -411,11 +408,9 @@ fn build_index(
             for item in value.as_ref() {
                 if set {
                     batch.acl_grant(item.account_id, item.grants.bitmap.serialize());
-                    batch.set(
-                        ValueClass::ShareNotification {
-                            notification_id,
-                            notify_account_id: item.account_id,
-                        },
+                    batch.log_share_notification(
+                        notification_id,
+                        item.account_id,
                         ShareNotification {
                             object_account_id,
                             object_id,
@@ -424,16 +419,13 @@ fn build_index(
                             old_rights: Default::default(),
                             new_rights: item.grants,
                             name: Default::default(),
-                        }
-                        .serialize(),
+                        },
                     );
                 } else {
                     batch.acl_revoke(item.account_id);
-                    batch.set(
-                        ValueClass::ShareNotification {
-                            notification_id,
-                            notify_account_id: item.account_id,
-                        },
+                    batch.log_share_notification(
+                        notification_id,
+                        item.account_id,
                         ShareNotification {
                             object_account_id,
                             object_id,
@@ -442,8 +434,7 @@ fn build_index(
                             old_rights: item.grants,
                             new_rights: Default::default(),
                             name: Default::default(),
-                        }
-                        .serialize(),
+                        },
                     );
                 }
             }
@@ -584,11 +575,9 @@ fn merge_index(
                             .any(|item| item.account_id == current_item.account_id)
                         {
                             batch.acl_revoke(current_item.account_id);
-                            batch.set(
-                                ValueClass::ShareNotification {
-                                    notification_id,
-                                    notify_account_id: current_item.account_id,
-                                },
+                            batch.log_share_notification(
+                                notification_id,
+                                current_item.account_id,
                                 ShareNotification {
                                     object_account_id,
                                     object_id,
@@ -597,8 +586,7 @@ fn merge_index(
                                     old_rights: current_item.grants,
                                     new_rights: Default::default(),
                                     name: Default::default(),
-                                }
-                                .serialize(),
+                                },
                             );
                         }
                     }
@@ -619,11 +607,9 @@ fn merge_index(
                         }
                         if add_item {
                             batch.acl_grant(item.account_id, item.grants.bitmap.serialize());
-                            batch.set(
-                                ValueClass::ShareNotification {
-                                    notification_id,
-                                    notify_account_id: item.account_id,
-                                },
+                            batch.log_share_notification(
+                                notification_id,
+                                item.account_id,
                                 ShareNotification {
                                     object_account_id,
                                     object_id,
@@ -632,8 +618,7 @@ fn merge_index(
                                     old_rights,
                                     new_rights: item.grants,
                                     name: Default::default(),
-                                }
-                                .serialize(),
+                                },
                             );
                         }
                     }
@@ -642,11 +627,9 @@ fn merge_index(
                     // Add all ACLs
                     for item in new_acl.as_ref() {
                         batch.acl_grant(item.account_id, item.grants.bitmap.serialize());
-                        batch.set(
-                            ValueClass::ShareNotification {
-                                notification_id,
-                                notify_account_id: item.account_id,
-                            },
+                        batch.log_share_notification(
+                            notification_id,
+                            item.account_id,
                             ShareNotification {
                                 object_account_id,
                                 object_id,
@@ -655,8 +638,7 @@ fn merge_index(
                                 old_rights: Default::default(),
                                 new_rights: item.grants,
                                 name: Default::default(),
-                            }
-                            .serialize(),
+                            },
                         );
                     }
                 }
@@ -664,11 +646,9 @@ fn merge_index(
                     // Remove all ACLs
                     for item in old_acl.as_ref() {
                         batch.acl_revoke(item.account_id);
-                        batch.set(
-                            ValueClass::ShareNotification {
-                                notification_id,
-                                notify_account_id: item.account_id,
-                            },
+                        batch.log_share_notification(
+                            notification_id,
+                            item.account_id,
                             ShareNotification {
                                 object_account_id,
                                 object_id,
@@ -677,8 +657,7 @@ fn merge_index(
                                 old_rights: item.grants,
                                 new_rights: Default::default(),
                                 name: Default::default(),
-                            }
-                            .serialize(),
+                            },
                         );
                     }
                 }

@@ -8,7 +8,7 @@ use crate::jmap::JMAPTest;
 use ahash::AHashSet;
 use futures::StreamExt;
 use jmap_client::{
-    TypeState,
+    DataType, PushObject,
     client_ws::WebSocketMessage,
     core::{
         response::{Response, TaggedMethodResponse},
@@ -66,7 +66,7 @@ pub async fn test(params: &mut JMAPTest) {
         .mailbox_update_sort_order(&mailbox_id, 1)
         .await
         .unwrap();
-    assert_state(&mut stream_rx, account.id_string(), &[TypeState::Mailbox]).await;
+    assert_state(&mut stream_rx, account.id_string(), &[DataType::Mailbox]).await;
 
     // Multiple changes should be grouped and delivered in intervals
     for num in 0..5 {
@@ -76,7 +76,7 @@ pub async fn test(params: &mut JMAPTest) {
             .unwrap();
     }
     tokio::time::sleep(Duration::from_millis(500)).await;
-    assert_state(&mut stream_rx, account.id_string(), &[TypeState::Mailbox]).await;
+    assert_state(&mut stream_rx, account.id_string(), &[DataType::Mailbox]).await;
     expect_nothing(&mut stream_rx).await;
 
     // Disable push notifications
@@ -117,18 +117,18 @@ async fn expect_response(
 async fn assert_state(
     stream_rx: &mut mpsc::Receiver<WebSocketMessage>,
     id: &str,
-    state: &[TypeState],
+    state: &[DataType],
 ) {
     match tokio::time::timeout(Duration::from_millis(700), stream_rx.recv()).await {
         Ok(Some(message)) => match message {
-            WebSocketMessage::StateChange(changes) => {
+            WebSocketMessage::PushNotification(PushObject::StateChange { changed }) => {
                 assert_eq!(
-                    changes
-                        .changes(id)
+                    changed
+                        .get(id)
                         .unwrap()
-                        .map(|x| x.0)
-                        .collect::<AHashSet<&TypeState>>(),
-                    state.iter().collect::<AHashSet<&TypeState>>()
+                        .keys()
+                        .collect::<AHashSet<&DataType>>(),
+                    state.iter().collect::<AHashSet<&DataType>>()
                 );
             }
             _ => panic!("Expected state change, got: {:?}", message),

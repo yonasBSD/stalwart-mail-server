@@ -12,7 +12,7 @@ use http_proto::{HtmlResponse, ToHttpResponse, request::fetch_body};
 use hyper::{StatusCode, body, header::CONTENT_ENCODING, server::conn::http1, service::service_fn};
 use hyper_util::rt::TokioIo;
 use jmap_client::{mailbox::Role, push_subscription::Keys};
-use jmap_proto::response::status::StateChangeResponse;
+use jmap_proto::{response::status::PushObject, types::state::State};
 use services::state_manager::ece::ece_encrypt;
 use std::{
     sync::{
@@ -24,7 +24,7 @@ use std::{
 use store::ahash::AHashSet;
 use tokio::sync::mpsc;
 use types::{id::Id, type_state::DataType};
-use utils::config::Config;
+use utils::{config::Config, map::vec_map::VecMap};
 
 const SERVER: &str = r#"
 [server]
@@ -125,7 +125,7 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Receive states just for the requested types
     client
-        .push_subscription_update_types(&push_id, [jmap_client::TypeState::Email].into())
+        .push_subscription_update_types(&push_id, [jmap_client::DataType::Email].into())
         .await
         .unwrap();
     client
@@ -224,15 +224,15 @@ pub struct PushServer {
 #[derive(serde::Deserialize, Debug)]
 #[serde(untagged)]
 enum PushMessage {
-    StateChange(StateChangeResponse),
+    PushObject(PushObject),
     Verification(PushVerification),
 }
 
 impl PushMessage {
-    pub fn unwrap_state_change(self) -> StateChangeResponse {
+    pub fn unwrap_state_change(self) -> VecMap<Id, VecMap<DataType, State>> {
         match self {
-            PushMessage::StateChange(state_change) => state_change,
-            _ => panic!("Expected StateChange"),
+            PushMessage::PushObject(PushObject::StateChange { changed }) => changed,
+            _ => panic!("Expected PushObject"),
         }
     }
 
@@ -348,7 +348,6 @@ async fn assert_state(event_rx: &mut mpsc::Receiver<PushMessage>, id: &Id, state
         expect_push(event_rx)
             .await
             .unwrap_state_change()
-            .changed
             .get(id)
             .unwrap()
             .iter()

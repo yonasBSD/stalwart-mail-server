@@ -14,7 +14,7 @@ use crate::{
             QueueStrategy, RequireOptional, RoutingStrategy, TlsStrategy, VirtualQueue,
         },
     },
-    ipc::{BroadcastEvent, StateEvent},
+    ipc::{BroadcastEvent, PushEvent, PushNotification},
 };
 use directory::{Directory, QueryParams, Type, backend::internal::manage::ManageDirectory};
 use mail_auth::IpLookupStrategy;
@@ -41,7 +41,7 @@ use types::{
     field::{EmailField, Field},
     type_state::{DataType, StateChange},
 };
-use utils::snowflake::SnowflakeIdGenerator;
+use utils::{map::bitmap::Bitmap, snowflake::SnowflakeIdGenerator};
 
 impl Server {
     #[inline(always)]
@@ -345,7 +345,6 @@ impl Server {
 
     pub async fn recalculate_quota(&self, account_id: u32) -> trc::Result<()> {
         let mut quota = 0i64;
-        let todo = "include sieve scripts and calendars, contacts, files in quota";
 
         self.store()
             .iterate(
@@ -651,8 +650,7 @@ impl Server {
 
         if let Some(changes) = builder.changes() {
             for (account_id, changed_collections) in changes {
-                let mut state_change =
-                    StateChange::new(account_id, assigned_ids.last_change_id(account_id)?);
+                let mut state_change = StateChange::new(account_id);
                 for changed_collection in changed_collections.changed_containers {
                     if let Some(data_type) = DataType::try_from_sync(changed_collection, true) {
                         state_change.set_change(data_type);
@@ -664,7 +662,18 @@ impl Server {
                     }
                 }
                 if state_change.has_changes() {
-                    self.broadcast_state_change(state_change).await;
+                    self.broadcast_push_notification(PushNotification::StateChange(
+                        state_change.with_change_id(assigned_ids.last_change_id(account_id)?),
+                    ))
+                    .await;
+                }
+                if let Some(change_id) = changed_collections.share_notification_id {
+                    self.broadcast_push_notification(PushNotification::StateChange(StateChange {
+                        account_id,
+                        change_id,
+                        types: Bitmap::from_iter([DataType::ShareNotification]),
+                    }))
+                    .await;
                 }
             }
         }
@@ -800,14 +809,14 @@ impl Server {
         Ok(())
     }
 
-    pub async fn broadcast_state_change(&self, state_change: StateChange) -> bool {
+    pub async fn broadcast_push_notification(&self, notification: PushNotification) -> bool {
         match self
             .inner
             .ipc
-            .state_tx
+            .push_tx
             .clone()
-            .send(StateEvent::Publish {
-                state_change,
+            .send(PushEvent::Publish {
+                notification,
                 broadcast: true,
             })
             .await

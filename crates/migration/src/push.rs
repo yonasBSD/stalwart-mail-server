@@ -21,6 +21,7 @@ pub(crate) async fn migrate_push_subscriptions(
     account_id: u32,
 ) -> trc::Result<u64> {
     // Obtain email ids
+    let todo = "fix";
     let push_subscription_ids = server
         .get_document_ids(account_id, Collection::PushSubscription)
         .await
@@ -121,6 +122,7 @@ impl FromLegacy for PushSubscription {
             .unwrap_or_default();
 
         PushSubscription {
+            id: 0,
             url: legacy
                 .get(&Property::Url)
                 .as_string()
@@ -147,6 +149,7 @@ impl FromLegacy for PushSubscription {
                 .filter_map(|v| v.as_string().and_then(DataType::parse))
                 .collect(),
             keys: convert_keys(legacy.get(&Property::Keys)),
+            email_push: vec![],
         }
     }
 }

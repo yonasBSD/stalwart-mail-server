@@ -78,11 +78,12 @@ async fn jmap_tests() {
     )
     .await;
 
-    /*server::webhooks::test(&mut params).await;
-    mail::query::test(&mut params, delete).await;
+    server::webhooks::test(&mut params).await;
+
     mail::get::test(&mut params).await;
     mail::set::test(&mut params).await;
     mail::parse::test(&mut params).await;
+    mail::query::test(&mut params, delete).await;
     mail::search_snippet::test(&mut params).await;
     mail::changes::test(&mut params).await;
     mail::query_changes::test(&mut params).await;
@@ -92,20 +93,20 @@ async fn jmap_tests() {
     mail::mailbox::test(&mut params).await;
     mail::delivery::test(&mut params).await;
     mail::acl::test(&mut params).await;
-    auth::limits::test(&mut params).await;
-    auth::oauth::test(&mut params).await;
-    core::event_source::test(&mut params).await;
-    core::push_subscription::test(&mut params).await;
     mail::sieve_script::test(&mut params).await;
     mail::vacation_response::test(&mut params).await;
     mail::submission::test(&mut params).await;
-    core::websocket::test(&mut params).await;
-    auth::quota::test(&mut params).await;
     mail::crypto::test(&mut params).await;
+
+    core::event_source::test(&mut params).await;
+    core::websocket::test(&mut params).await;
+    core::push_subscription::test(&mut params).await;
     core::blob::test(&mut params).await;
+
+    auth::limits::test(&mut params).await;
+    auth::oauth::test(&mut params).await;
+    auth::quota::test(&mut params).await;
     auth::permissions::test(&params).await;
-    server::purge::test(&mut params).await;
-    server::enterprise::test(&mut params).await;*/
 
     contacts::addressbook::test(&mut params).await;
     contacts::contact::test(&mut params).await;
@@ -117,11 +118,16 @@ async fn jmap_tests() {
     calendar::calendars::test(&mut params).await;
     calendar::event::test(&mut params).await;
     calendar::notification::test(&mut params).await;
+    calendar::alarm::test(&mut params).await;
+
     calendar::identity::test(&mut params).await;
     calendar::acl::test(&mut params).await;
 
     principal::get::test(&mut params).await;
     principal::availability::test(&mut params).await;
+
+    server::purge::test(&mut params).await;
+    server::enterprise::test(&mut params).await;
 
     if delete {
         params.temp_dir.delete();
@@ -1690,6 +1696,9 @@ enable = true
 
 [sharing]
 allow-directory-query = true
+
+[calendar.alarms]
+minimum-interval = "1s"
 
 [tracer.console]
 type = "console"

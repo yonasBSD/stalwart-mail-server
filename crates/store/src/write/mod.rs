@@ -119,6 +119,7 @@ pub struct BatchBuilder {
 pub struct ChangedCollection {
     pub changed_containers: Bitmap<SyncCollection>,
     pub changed_items: Bitmap<SyncCollection>,
+    pub share_notification_id: Option<u64>,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -217,6 +218,7 @@ pub enum TaskQueueClass {
         due: u64,
         event_id: u16,
         alarm_id: u16,
+        is_email_alert: bool,
     },
     SendImip {
         due: u64,

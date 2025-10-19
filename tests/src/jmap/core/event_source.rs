@@ -7,7 +7,11 @@
 use crate::jmap::{JMAPTest, mail::delivery::SmtpConnection};
 use email::mailbox::INBOX_ID;
 use futures::StreamExt;
-use jmap_client::{TypeState, event_source::Changes, mailbox::Role};
+use jmap_client::{
+    DataType,
+    event_source::{Changes, PushNotification},
+    mailbox::Role,
+};
 use std::time::Duration;
 use store::ahash::AHashSet;
 use tokio::sync::mpsc;
@@ -29,7 +33,13 @@ pub async fn test(params: &mut JMAPTest) {
 
     tokio::spawn(async move {
         while let Some(change) = changes.next().await {
-            if let Err(_err) = event_tx.send(change.unwrap()).await {
+            if let Err(_err) = event_tx
+                .send(match change.unwrap() {
+                    PushNotification::StateChange(changes) => changes,
+                    PushNotification::CalendarAlert(_) => unreachable!(),
+                })
+                .await
+            {
                 //println!("Error sending event: {}", _err);
                 break;
             }
@@ -44,7 +54,7 @@ pub async fn test(params: &mut JMAPTest) {
         .await
         .unwrap()
         .take_id();
-    assert_state(&mut event_rx, account.id_string(), &[TypeState::Mailbox]).await;
+    assert_state(&mut event_rx, account.id_string(), &[DataType::Mailbox]).await;
 
     // Multiple changes should be grouped and delivered in intervals
     for num in 0..5 {
@@ -53,7 +63,7 @@ pub async fn test(params: &mut JMAPTest) {
             .await
             .unwrap();
     }
-    assert_state(&mut event_rx, account.id_string(), &[TypeState::Mailbox]).await;
+    assert_state(&mut event_rx, account.id_string(), &[DataType::Mailbox]).await;
     assert_ping(&mut event_rx).await; // Pings are only received in cfg(test)
 
     // Ingest email and expect state change
@@ -77,10 +87,10 @@ pub async fn test(params: &mut JMAPTest) {
         &mut event_rx,
         account.id_string(),
         &[
-            TypeState::EmailDelivery,
-            TypeState::Email,
-            TypeState::Thread,
-            TypeState::Mailbox,
+            DataType::EmailDelivery,
+            DataType::Email,
+            DataType::Thread,
+            DataType::Mailbox,
         ],
     )
     .await;
@@ -88,7 +98,7 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Destroy mailbox
     client.mailbox_destroy(&mailbox_id, true).await.unwrap();
-    assert_state(&mut event_rx, account.id_string(), &[TypeState::Mailbox]).await;
+    assert_state(&mut event_rx, account.id_string(), &[DataType::Mailbox]).await;
 
     // Destroy Inbox
     client
@@ -98,7 +108,7 @@ pub async fn test(params: &mut JMAPTest) {
     assert_state(
         &mut event_rx,
         account.id_string(),
-        &[TypeState::Email, TypeState::Thread, TypeState::Mailbox],
+        &[DataType::Email, DataType::Thread, DataType::Mailbox],
     )
     .await;
     assert_ping(&mut event_rx).await;
@@ -111,7 +121,7 @@ pub async fn test(params: &mut JMAPTest) {
 async fn assert_state(
     event_rx: &mut mpsc::Receiver<Changes>,
     account_id: &str,
-    state: &[TypeState],
+    state: &[DataType],
 ) {
     match tokio::time::timeout(Duration::from_millis(700), event_rx.recv()).await {
         Ok(Some(changes)) => {
@@ -120,8 +130,8 @@ async fn assert_state(
                     .changes(account_id)
                     .unwrap()
                     .map(|x| x.0)
-                    .collect::<AHashSet<&TypeState>>(),
-                state.iter().collect::<AHashSet<&TypeState>>()
+                    .collect::<AHashSet<&DataType>>(),
+                state.iter().collect::<AHashSet<&DataType>>()
             );
         }
         result => {
