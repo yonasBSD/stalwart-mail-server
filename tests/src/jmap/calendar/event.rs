@@ -320,9 +320,6 @@ pub async fn test(params: &mut JMAPTest) {
                         "participants/7f2bd210-6c66-5b64-8562-0176b74462b1": {
                             "calendarAddress": "mailto:rupert@example.com",
                             "@type": "Participant",
-                            "roles": {
-                                "attendee": true
-                            },
                             "participationStatus": "needs-action"
                         }
                     }),
@@ -418,7 +415,6 @@ pub async fn test(params: &mut JMAPTest) {
                 "calendarAddress": "mailto:cyrus@example.com",
                 "@type": "Participant",
                 "roles": {
-                    "attendee": true,
                     "owner": true
                 },
                 "participationStatus": "accepted"
@@ -426,9 +422,6 @@ pub async fn test(params: &mut JMAPTest) {
             "7f2bd210-6c66-5b64-8562-0176b74462b1": {
                 "calendarAddress": "mailto:rupert@example.com",
                 "@type": "Participant",
-                "roles": {
-                    "attendee": true
-                },
                 "participationStatus": "needs-action"
             }
         },
@@ -621,7 +614,7 @@ END:VCALENDAR
     "iCalComponent": {
       "convertedProperties": {
         "duration": {
-          "name": "DTEND"
+          "name": "dtend"
         }
       },
       "name": "vevent"
@@ -762,7 +755,6 @@ pub fn test_jscalendar_3() -> Value {
           "calendarAddress": "mailto:cyrus@example.com",
           "@type": "Participant",
           "roles": {
-            "attendee": true,
             "chair": true
           },
           "participationStatus": "accepted"
@@ -770,9 +762,6 @@ pub fn test_jscalendar_3() -> Value {
         "ec5e7db5-22a3-5ed5-89bf-c8894ab86805": {
           "calendarAddress": "mailto:lisa@example.com",
           "@type": "Participant",
-          "roles": {
-            "attendee": true
-          },
           "participationStatus": "needs-action"
         }
       },

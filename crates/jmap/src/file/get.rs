@@ -212,6 +212,9 @@ impl FileNodeGet for Server {
                             ))),
                         );
                     }
+                    FileNodeProperty::IsSubscribed => {
+                        result.insert_unchecked(FileNodeProperty::IsSubscribed, Value::Bool(true));
+                    }
                     property => {
                         result.insert_unchecked(property.clone(), Value::Null);
                     }

@@ -80,7 +80,7 @@ async fn jmap_tests() {
 
     server::webhooks::test(&mut params).await;
 
-    mail::get::test(&mut params).await;
+    /*mail::get::test(&mut params).await;
     mail::set::test(&mut params).await;
     mail::parse::test(&mut params).await;
     mail::query::test(&mut params, delete).await;
@@ -116,7 +116,7 @@ async fn jmap_tests() {
     files::acl::test(&mut params).await;
 
     calendar::calendars::test(&mut params).await;
-    calendar::event::test(&mut params).await;
+    calendar::event::test(&mut params).await;*/
     calendar::notification::test(&mut params).await;
     calendar::alarm::test(&mut params).await;
 

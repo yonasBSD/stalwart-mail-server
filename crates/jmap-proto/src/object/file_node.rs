@@ -33,6 +33,7 @@ pub enum FileNodeProperty {
     Executable,
     MyRights,
     ShareWith,
+    IsSubscribed,
 
     // Other
     IdValue(Id),
@@ -45,7 +46,6 @@ pub enum FileNodeRight {
     MayRead,
     MayWrite,
     MayShare,
-    MayDelete,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -85,6 +85,7 @@ impl Property for FileNodeProperty {
             FileNodeProperty::Executable => "executable",
             FileNodeProperty::MyRights => "myRights",
             FileNodeProperty::ShareWith => "shareWith",
+            FileNodeProperty::IsSubscribed => "isSubscribed",
             FileNodeProperty::Rights(file_right) => file_right.as_str(),
             FileNodeProperty::Pointer(json_pointer) => return json_pointer.to_string().into(),
             FileNodeProperty::IdValue(id) => return id.to_string().into(),
@@ -99,7 +100,6 @@ impl FileNodeRight {
             FileNodeRight::MayRead => "mayRead",
             FileNodeRight::MayWrite => "mayWrite",
             FileNodeRight::MayShare => "mayShare",
-            FileNodeRight::MayDelete => "mayDelete",
         }
     }
 }
@@ -157,10 +157,10 @@ impl FileNodeProperty {
             b"executable" => FileNodeProperty::Executable,
             b"myRights" => FileNodeProperty::MyRights,
             b"shareWith" => FileNodeProperty::ShareWith,
+            b"isSubscribed" => FileNodeProperty::IsSubscribed,
             b"mayRead" => FileNodeProperty::Rights(FileNodeRight::MayRead),
             b"mayWrite" => FileNodeProperty::Rights(FileNodeRight::MayWrite),
             b"mayShare" => FileNodeProperty::Rights(FileNodeRight::MayShare),
-            b"mayDelete" => FileNodeProperty::Rights(FileNodeRight::MayDelete)
         )
         .or_else(|| {
             if allow_patch && value.contains('/') {
@@ -269,10 +269,15 @@ impl From<Id> for FileNodeProperty {
 impl JmapRight for FileNodeRight {
     fn to_acl(&self) -> &'static [Acl] {
         match self {
-            FileNodeRight::MayDelete => &[Acl::Delete, Acl::RemoveItems],
             FileNodeRight::MayShare => &[Acl::Share],
             FileNodeRight::MayRead => &[Acl::Read, Acl::ReadItems],
-            FileNodeRight::MayWrite => &[Acl::Modify, Acl::AddItems, Acl::ModifyItems],
+            FileNodeRight::MayWrite => &[
+                Acl::Modify,
+                Acl::AddItems,
+                Acl::ModifyItems,
+                Acl::Delete,
+                Acl::RemoveItems,
+            ],
         }
     }
 
@@ -280,7 +285,6 @@ impl JmapRight for FileNodeRight {
         &[
             FileNodeRight::MayRead,
             FileNodeRight::MayWrite,
-            FileNodeRight::MayDelete,
             FileNodeRight::MayShare,
         ]
     }
@@ -312,6 +316,8 @@ pub enum FileNodeFilter {
     NameMatch(GlobPattern),
     Type(String),
     TypeMatch(GlobPattern),
+    Text(String),
+    Body(String),
     _T(String),
 }
 
@@ -384,6 +390,12 @@ impl<'de> DeserializeArguments<'de> for FileNodeFilter {
             },
             b"typeMatch" => {
                 *self = FileNodeFilter::TypeMatch(map.next_value()?);
+            },
+            b"body" => {
+                *self = FileNodeFilter::Body(map.next_value()?);
+            },
+            b"text" => {
+                *self = FileNodeFilter::Text(map.next_value()?);
             },
             _ => {
                 *self = FileNodeFilter::_T(key.to_string());
@@ -506,6 +518,8 @@ impl FileNodeFilter {
             FileNodeFilter::NameMatch(_) => "nameMatch",
             FileNodeFilter::Type(_) => "type",
             FileNodeFilter::TypeMatch(_) => "typeMatch",
+            FileNodeFilter::Text(_) => "text",
+            FileNodeFilter::Body(_) => "body",
             FileNodeFilter::_T(s) => return s.into(),
         }
         .into()

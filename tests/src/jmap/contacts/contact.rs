@@ -387,7 +387,7 @@ END:VCARD"#
           "vCard": {
             "properties": [
               [
-                "VERSION",
+                "version",
                 {},
                 "unknown",
                 "4.0"
@@ -1178,7 +1178,7 @@ LANG;TYPE=WORK;PREF=1;PROP-ID=k1:en
 LANG;TYPE=WORK;PREF=2;PROP-ID=k2:fr
 FN:Sarah O'Connor
 N;JSCOMPS=";0;1;2;3;4":O'Connor;Sarah;Marie;Dr.;Ph.D.;;
-KEY;TYPE=pgp;PROP-ID=k1:https://pgp.example.com/pks/lookup?op=get&search=sar
+KEY;TYPE=PGP;PROP-ID=k1:https://pgp.example.com/pks/lookup?op=get&search=sar
  ah.johnson@example.com
 CATEGORIES:Work,Research,VIP
 BDAY;PROP-ID=k1:19850415
@@ -1187,14 +1187,14 @@ URL;TYPE=WORK;PROP-ID=k1:https://www.example.com/staff/sjohnson
 URL;TYPE=HOME;PROP-ID=k2:https://www.sarahjohnson.example.com
 ORG;PROP-ID=k1:Acme Technologies Inc.;Research Department
 EMAIL;TYPE=WORK;PROP-ID=k1:sarah.johnson@example.com
-EMAIL;TYPE=HOME,pref;PROP-ID=k2:sarahjpersonal@example.com
-TEL;TYPE=pref,CELL,VOICE;PROP-ID=k1:+1-555-123-4567
+EMAIL;TYPE=HOME,PREF;PROP-ID=k2:sarahjpersonal@example.com
+TEL;TYPE=PREF,CELL,VOICE;PROP-ID=k1:+1-555-123-4567
 TEL;TYPE=WORK,VOICE;PROP-ID=k2:+1-555-987-6543
 TEL;TYPE=HOME,VOICE;PROP-ID=k3:+1-555-456-7890
 ADR;TYPE=WORK;LABEL="123 Business Ave\nSuite 400\nNew York, NY 10001\nUSA";
  TZ=Etc/GMT+5;GEO="40.7128;-74.0060";PROP-ID=k1;JSCOMPS=";11;3;4;5;6":;;123 B
  usiness Ave;New York;NY;10001;USA;;;;;123 Business Ave;;;;;;
-ADR;TYPE=HOME,pref;LABEL="456 Residential St\nApt 7B\nBrooklyn, NY 11201\nU
+ADR;TYPE=HOME,PREF;LABEL="456 Residential St\nApt 7B\nBrooklyn, NY 11201\nU
  SA";PROP-ID=k2;JSCOMPS=";11;3;4;5;6":;;456 Residential St;Brooklyn;NY;11201;
  USA;;;;;456 Residential St;;;;;;
 TITLE;PROP-ID=k1:Senior Research Scientist

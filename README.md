@@ -61,7 +61,7 @@ Key features:
     - [JMAP for Contacts](https://datatracker.ietf.org/doc/html/rfc9610) support.
   - File storage:
     - [WebDAV](https://datatracker.ietf.org/doc/html/rfc4918) support.
-    - [JMAP for File Storage](https://datatracker.ietf.org/doc/html/draft-ietf-jmap-filenode-02) support.
+    - [JMAP for File Storage](https://datatracker.ietf.org/doc/html/draft-ietf-jmap-filenode-03) support.
   - Sharing with fine-grained access controls:
     - [WebDAV ACL](https://datatracker.ietf.org/doc/html/rfc3744) support.
     - [JMAP Sharing](https://datatracker.ietf.org/doc/html/rfc9670) support.
@@ -151,15 +151,6 @@ The next major milestone is all about refinement: finalizing the database schema
 
 Of course, development doesn’t stop there. The community has contributed hundreds of great ideas for improvements and new features, everything from subtle usability tweaks to entirely new integrations. You can see the full list of proposals over on our [GitHub issues](https://github.com/stalwartlabs/stalwart/issues?q=is%3Aissue+is%3Aopen+sort%3Areactions-%2B1-desc+label%3Aenhancement). If there’s something you’d like to see prioritized, just give it a thumbs up as we plan to implement enhancements based on the community’s votes.
 
-## Funding
-
-Part of the development of this project was funded through:
-
-- [NGI0 Entrust Fund](https://nlnet.nl/entrust), a fund established by [NLnet](https://nlnet.nl/) with financial support from the European Commission's [Next Generation Internet](https://ngi.eu/) programme, under the aegis of DG Communications Networks, Content and Technology under grant agreement No 101069594.
-- [NGI Zero Core](https://nlnet.nl/NGI0/), a fund established by [NLnet](https://nlnet.nl/) with financial support from the European Commission's programme, under the aegis of DG Communications Networks, Content and Technology under grant agreement No 101092990.
-
-If you find the project useful you can help by [becoming a sponsor](https://opencollective.com/stalwart). Thank you!
-
 ## Sponsorship
 
 Your support is crucial in helping us continue to improve the project, add new features, and maintain the highest level of quality. By [becoming a sponsor](https://opencollective.com/stalwart), you help fund the development and future of Stalwart. As a thank-you, sponsors who contribute $5 per month or more will automatically receive a [Enterprise edition](https://stalw.art/enterprise/) license. And, sponsors who contribute $30 per month or more, also have access to [Premium Support](https://stalw.art/support) from Stalwart Labs.
@@ -169,6 +160,15 @@ These are some of our open-source sponsors:
 <!-- sponsors --><a href="https://github.com/kbjr"><img src="https:&#x2F;&#x2F;github.com&#x2F;kbjr.png" width="60px" alt="User avatar: James Brumond" /></a><a href="https://github.com/MailRoute"><img src="https:&#x2F;&#x2F;github.com&#x2F;MailRoute.png" width="60px" alt="User avatar: MailRoute, Inc." /></a><a href="https://github.com/JAMflow-Cloud"><img src="https:&#x2F;&#x2F;github.com&#x2F;JAMflow-Cloud.png" width="60px" alt="User avatar: JAMflow Cloud" /></a><a href="https://github.com/starsong-consulting"><img src="https:&#x2F;&#x2F;github.com&#x2F;starsong-consulting.png" width="60px" alt="User avatar: Starsong GmbH" /></a><a href="https://github.com/mingfu-design"><img src="https:&#x2F;&#x2F;github.com&#x2F;mingfu-design.png" width="60px" alt="User avatar: Ming Fu Design Ltd. 明孚設計有限公司" /></a><a href="https://github.com/tamwuff"><img src="https:&#x2F;&#x2F;github.com&#x2F;tamwuff.png" width="60px" alt="User avatar: Tamino" /></a><a href="https://github.com/panascais"><img src="https:&#x2F;&#x2F;github.com&#x2F;panascais.png" width="60px" alt="User avatar: panascais" /></a><!-- sponsors -->
 
 <br/>If you would like to support our work, please consider [becoming a sponsor](https://opencollective.com/stalwart).
+
+## Funding
+
+Part of the development of this project was funded through:
+
+- [NGI0 Entrust Fund](https://nlnet.nl/entrust), a fund established by [NLnet](https://nlnet.nl/) with financial support from the European Commission's [Next Generation Internet](https://ngi.eu/) programme, under the aegis of DG Communications Networks, Content and Technology under grant agreement No 101069594.
+- [NGI Zero Core](https://nlnet.nl/NGI0/), a fund established by [NLnet](https://nlnet.nl/) with financial support from the European Commission's programme, under the aegis of DG Communications Networks, Content and Technology under grant agreement No 101092990.
+
+If you find the project useful you can help by [becoming a sponsor](https://opencollective.com/stalwart). Thank you!
 
 ## License
 

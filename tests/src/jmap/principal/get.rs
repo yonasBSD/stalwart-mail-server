@@ -114,7 +114,7 @@ pub async fn test(params: &mut JMAPTest) {
             "urn:ietf:params:jmap:sieve": {
               "maxSizeScriptName": 512,
               "maxSizeScript": 1048576,
-              "maxNumberScripts": 256,
+              "maxNumberScripts": 100,
               "maxNumberRedirects": 1,
               "sieveExtensions": [
                 "body",

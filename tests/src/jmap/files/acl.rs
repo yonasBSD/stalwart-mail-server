@@ -49,7 +49,6 @@ pub async fn test(params: &mut JMAPTest) {
         "myRights": {
           "mayRead": true,
           "mayWrite": true,
-          "mayDelete": true,
           "mayShare": true
         },
         "shareWith": {}
@@ -115,7 +114,6 @@ pub async fn test(params: &mut JMAPTest) {
             &jane_id : {
                 "mayRead": true,
                 "mayWrite": false,
-                "mayDelete": false,
                 "mayShare": false
             }
         }
@@ -140,7 +138,6 @@ pub async fn test(params: &mut JMAPTest) {
         "myRights": {
             "mayRead": true,
             "mayWrite": false,
-            "mayDelete": false,
             "mayShare": false
         }
         }));
@@ -182,13 +179,11 @@ pub async fn test(params: &mut JMAPTest) {
           "oldRights": {
             "mayRead": false,
             "mayWrite": false,
-            "mayDelete": false,
             "mayShare": false
           },
           "newRights": {
             "mayRead": true,
             "mayWrite": false,
-            "mayDelete": false,
             "mayShare": false
           },
           "name": null
@@ -227,7 +222,6 @@ pub async fn test(params: &mut JMAPTest) {
             &john_folder_id,
             json!({
                 format!("shareWith/{jane_id}/mayWrite"): true,
-                format!("shareWith/{jane_id}/mayDelete"): true,
             }),
         )],
         Vec::<(&str, &str)>::new(),
@@ -252,7 +246,6 @@ pub async fn test(params: &mut JMAPTest) {
         "myRights": {
             "mayRead": true,
             "mayWrite": true,
-            "mayDelete": true,
             "mayShare": false
         }
         }));
@@ -294,13 +287,11 @@ pub async fn test(params: &mut JMAPTest) {
           "oldRights": {
             "mayRead": true,
             "mayWrite": false,
-            "mayDelete": false,
             "mayShare": false
           },
           "newRights": {
             "mayRead": true,
             "mayWrite": true,
-            "mayDelete": true,
             "mayShare": false
           },
           "name": null
@@ -429,13 +420,11 @@ pub async fn test(params: &mut JMAPTest) {
           "oldRights": {
             "mayRead": true,
             "mayWrite": true,
-            "mayDelete": true,
             "mayShare": false
           },
           "newRights": {
             "mayRead": false,
             "mayWrite": false,
-            "mayDelete": false,
             "mayShare": false
           },
           "name": null
@@ -448,7 +437,7 @@ pub async fn test(params: &mut JMAPTest) {
             &john_folder_id,
             json!({
                 format!("shareWith/{jane_id}/mayRead"): true,
-                format!("shareWith/{jane_id}/mayDelete"): true,
+                format!("shareWith/{jane_id}/mayWrite"): true,
             }),
         )],
         Vec::<(&str, &str)>::new(),

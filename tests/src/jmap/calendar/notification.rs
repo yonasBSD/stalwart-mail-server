@@ -239,7 +239,6 @@ pub async fn test(params: &mut JMAPTest) {
             "calendarAddress": "mailto:jdoe@example.com",
             "@type": "Participant",
             "roles": {
-                "attendee": true,
                 "chair": true
             },
             "participationStatus": "accepted"
@@ -247,18 +246,12 @@ pub async fn test(params: &mut JMAPTest) {
         "a0171748-fe8d-57d8-879e-56036a5251d1": {
             "calendarAddress": "mailto:jane.smith@example.com",
             "@type": "Participant",
-            "roles": {
-                "attendee": true
-            },
             "participationStatus": "accepted",
             "kind": "individual"
         },
         "86720268-d67c-58c3-9217-03df7d7ee4d8": {
             "calendarAddress": "mailto:bill@example.com",
             "@type": "Participant",
-            "roles": {
-                "attendee": true
-            },
             "kind": "individual",
             "participationStatus": "accepted"
         }
@@ -301,7 +294,6 @@ pub async fn test(params: &mut JMAPTest) {
             "calendarAddress": "mailto:jdoe@example.com",
             "@type": "Participant",
             "roles": {
-                "attendee": true,
                 "chair": true
             },
             "participationStatus": "accepted"
@@ -309,18 +301,12 @@ pub async fn test(params: &mut JMAPTest) {
         "a0171748-fe8d-57d8-879e-56036a5251d1": {
             "calendarAddress": "mailto:jane.smith@example.com",
             "@type": "Participant",
-            "roles": {
-                "attendee": true
-            },
             "participationStatus": "declined",
             "kind": "individual"
         },
         "86720268-d67c-58c3-9217-03df7d7ee4d8": {
             "calendarAddress": "mailto:bill@example.com",
             "@type": "Participant",
-            "roles": {
-                "attendee": true
-            },
             "kind": "individual",
             "participationStatus": "accepted"
         }
@@ -421,7 +407,6 @@ fn test_event() -> Value {
           "calendarAddress": "mailto:jdoe@example.com",
           "participationStatus": "accepted",
           "roles": {
-            "attendee": true,
             "chair": true
           },
           "@type": "Participant"
@@ -429,9 +414,6 @@ fn test_event() -> Value {
         "a0171748-fe8d-57d8-879e-56036a5251d1": {
           "calendarAddress": "mailto:jane.smith@example.com",
           "@type": "Participant",
-          "roles": {
-            "attendee": true
-          },
           "participationStatus": "needs-action",
           "kind": "individual"
         },
@@ -439,9 +421,6 @@ fn test_event() -> Value {
           "calendarAddress": "mailto:bill@example.com",
           "participationStatus": "needs-action",
           "@type": "Participant",
-          "roles": {
-            "attendee": true
-          },
           "kind": "individual"
         }
       },
