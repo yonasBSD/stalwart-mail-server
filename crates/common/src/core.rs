@@ -455,7 +455,7 @@ impl Server {
                 .await
                 .add_context(|err| err.caused_by(trc::location!()).account_id(account_id))?
             {
-                quotas.quota = principal.quota();
+                quotas.quota = principal.quota().unwrap_or_default();
 
                 // SPDX-SnippetBegin
                 // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
@@ -476,7 +476,7 @@ impl Server {
                             .add_context(|err| {
                                 err.caused_by(trc::location!()).account_id(tenant_id)
                             })?
-                            .map(|tenant| tenant.quota())
+                            .and_then(|tenant| tenant.quota())
                             .unwrap_or_default(),
                     }
                     .into();

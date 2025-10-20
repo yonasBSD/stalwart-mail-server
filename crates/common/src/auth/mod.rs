@@ -34,6 +34,7 @@ pub struct AccessToken {
     pub locale: Option<String>,
     pub emails: Vec<String>,
     pub quota: u64,
+    pub object_quota: [u32; Collection::MAX],
     pub permissions: Permissions,
     pub tenant: Option<TenantInfo>,
     pub concurrent_http_requests: Option<ConcurrencyLimiter>,

@@ -61,7 +61,7 @@ impl<T: SessionStream> Session<T> {
             .caused_by(trc::location!())?
             .map(|ids| ids.len() as usize)
             .unwrap_or(0)
-            > self.server.core.jmap.sieve_max_scripts
+            > access_token.object_quota(Collection::SieveScript) as usize
         {
             return Err(trc::ManageSieveEvent::Error
                 .into_err()

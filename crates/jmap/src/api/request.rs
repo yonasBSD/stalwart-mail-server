@@ -429,7 +429,7 @@ impl RequestHandler for Server {
                     set_account_id_if_missing(&mut req.account_id, access_token);
                     access_token.assert_is_member(req.account_id)?;
 
-                    self.identity_set(req).await?.into()
+                    self.identity_set(req, access_token).await?.into()
                 }
                 SetRequestMethod::EmailSubmission(mut req) => {
                     set_account_id_if_missing(&mut req.account_id, access_token);
@@ -511,7 +511,9 @@ impl RequestHandler for Server {
                     set_account_id_if_missing(&mut req.account_id, access_token);
                     access_token.assert_is_member(req.account_id)?;
 
-                    self.participant_identity_set(req).await?.into()
+                    self.participant_identity_set(req, access_token)
+                        .await?
+                        .into()
                 }
             },
             RequestMethod::Changes(mut req) => {

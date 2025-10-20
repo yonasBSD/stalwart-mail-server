@@ -12,7 +12,18 @@ use std::{
 };
 use utils::map::bitmap::BitmapItem;
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Default)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Deserialize,
+    rkyv::Serialize,
+    Debug,
+    Clone,
+    Copy,
+    Hash,
+    PartialEq,
+    Eq,
+    Default,
+)]
 #[repr(u8)]
 pub enum Collection {
     Email = 0,
@@ -60,6 +71,8 @@ pub enum VanishedCollection {
 }
 
 impl Collection {
+    pub const MAX: usize = Collection::None as usize;
+
     pub fn main_collection(&self) -> Collection {
         match self {
             Collection::Email => Collection::Mailbox,
@@ -340,6 +353,26 @@ impl Collection {
             Collection::ContactCard => "contactCard",
             Collection::FileNode => "fileNode",
             Collection::CalendarEventNotification => "calendarEventNotification",
+            Collection::None => "",
+        }
+    }
+
+    pub fn as_config_case(&self) -> &'static str {
+        match self {
+            Collection::PushSubscription => "push-subscription",
+            Collection::Email => "email",
+            Collection::Mailbox => "mailbox",
+            Collection::Thread => "thread",
+            Collection::Identity => "identity",
+            Collection::EmailSubmission => "email-submission",
+            Collection::SieveScript => "sieve-script",
+            Collection::Principal => "principal",
+            Collection::Calendar => "calendar",
+            Collection::CalendarEvent => "calendar-event",
+            Collection::AddressBook => "address-book",
+            Collection::ContactCard => "contact-card",
+            Collection::FileNode => "file-node",
+            Collection::CalendarEventNotification => "calendar-event-notification",
             Collection::None => "",
         }
     }

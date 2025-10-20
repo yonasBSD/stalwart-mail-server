@@ -38,24 +38,46 @@ pub enum PrincipalOrId {
 impl Server {
     async fn build_access_token_from_principal(
         &self,
-        mut principal: Principal,
+        principal: Principal,
         revision: u64,
     ) -> trc::Result<AccessToken> {
         let mut role_permissions = RolePermissions::default();
 
-        // Apply role permissions
-        for role_id in principal.roles() {
-            role_permissions.union(self.get_role_permissions(*role_id).await?.as_ref());
-        }
-
-        // Add principal permissions
-        for permission in principal.permissions() {
-            if permission.grant {
-                role_permissions.enabled.set(permission.permission as usize);
-            } else {
-                role_permissions
-                    .disabled
-                    .set(permission.permission as usize);
+        // Extract data
+        let mut object_quota = self.core.jmap.max_objects;
+        let mut description = None;
+        let mut tenant_id = None;
+        let mut quota = None;
+        let mut locale = None;
+        let mut member_of = Vec::new();
+        let mut emails = Vec::new();
+        for data in principal.data {
+            match data {
+                PrincipalData::Tenant(v) => tenant_id = Some(v),
+                PrincipalData::MemberOf(v) => member_of.push(v),
+                PrincipalData::Role(v) => {
+                    role_permissions.union(self.get_role_permissions(v).await?.as_ref());
+                }
+                PrincipalData::Permission {
+                    permission_id,
+                    grant,
+                } => {
+                    if grant {
+                        role_permissions.enabled.set(permission_id as usize);
+                    } else {
+                        role_permissions.disabled.set(permission_id as usize);
+                    }
+                }
+                PrincipalData::DiskQuota(v) => quota = Some(v),
+                PrincipalData::ObjectQuota { quota, typ } => {
+                    object_quota[typ as usize] = quota;
+                }
+                PrincipalData::Description(v) => description = Some(v),
+                PrincipalData::Email(v) => {
+                    emails.push(v);
+                }
+                PrincipalData::Locale(v) => locale = Some(v),
+                _ => (),
             }
         }
 
@@ -69,7 +91,7 @@ impl Server {
 
         #[cfg(feature = "enterprise")]
         if self.is_enterprise_edition()
-            && let Some(tenant_id) = principal.tenant
+            && let Some(tenant_id) = tenant_id
         {
             // Limit tenant permissions
 
@@ -91,7 +113,7 @@ impl Server {
                             .id(tenant_id)
                             .caused_by(trc::location!())
                     })?
-                    .quota
+                    .quota()
                     .unwrap_or_default(),
             });
         }
@@ -99,12 +121,6 @@ impl Server {
         // SPDX-SnippetEnd
 
         // Build member of and e-mail addresses
-        let primary_id = principal.id();
-        let member_of = principal
-            .member_of_mut()
-            .map(std::mem::take)
-            .unwrap_or_default();
-        let mut emails = principal.emails;
         for &group_id in &member_of {
             if let Some(group) = self
                 .store()
@@ -113,28 +129,29 @@ impl Server {
                 .caused_by(trc::location!())?
                 && group.typ == Type::Group
             {
-                emails.extend(group.emails);
+                emails.extend(group.data.into_iter().filter_map(|data| {
+                    if let PrincipalData::Email(email) = data {
+                        Some(email)
+                    } else {
+                        None
+                    }
+                }));
             }
         }
 
         // Build access token
         let mut access_token = AccessToken {
-            primary_id,
+            primary_id: principal.id,
             member_of,
             access_to: VecMap::new(),
             tenant,
             name: principal.name,
-            description: principal.description,
+            description,
             emails,
-            quota: principal.quota.unwrap_or_default(),
-            locale: principal.data.iter().find_map(|data| {
-                if let PrincipalData::Locale(v) = data {
-                    Some(v.to_string())
-                } else {
-                    None
-                }
-            }),
+            quota: quota.unwrap_or_default(),
+            locale,
             permissions,
+            object_quota,
             concurrent_imap_requests: self.core.imap.rate_concurrent.map(ConcurrencyLimiter::new),
             concurrent_http_requests: self
                 .core
@@ -492,6 +509,11 @@ impl AccessToken {
         permissions
     }
 
+    #[inline(always)]
+    pub fn object_quota(&self, collection: Collection) -> u32 {
+        self.object_quota[collection as usize]
+    }
+
     pub fn is_shared(&self, account_id: u32) -> bool {
         !self.is_member(account_id) && self.access_to.iter().any(|(id, _)| *id == account_id)
     }
@@ -552,6 +574,7 @@ impl AccessToken {
             + (self.access_to.len() * (std::mem::size_of::<u32>() + std::mem::size_of::<u64>()))
             + self.name.len()
             + self.description.as_ref().map_or(0, |v| v.len())
+            + self.locale.as_ref().map_or(0, |v| v.len())
             + self.emails.iter().map(|v| v.len()).sum::<usize>()) as u64;
         self
     }

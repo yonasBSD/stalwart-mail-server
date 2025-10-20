@@ -19,7 +19,7 @@ use jmap_proto::{
     },
     types::date::UTCDate,
 };
-use types::type_state::DataType;
+use types::{collection::Collection, type_state::DataType};
 use utils::{config::Config, map::vec_map::VecMap};
 
 impl JmapConfig {
@@ -221,7 +221,7 @@ impl JmapConfig {
                 max_script_size: config
                     .property("sieve.untrusted.max-script-size")
                     .unwrap_or(1024 * 1024),
-                max_scripts: self.sieve_max_scripts,
+                max_scripts: self.max_objects[Collection::SieveScript as usize] as usize,
                 max_redirects: config
                     .property("sieve.untrusted.max-redirects")
                     .unwrap_or(1),

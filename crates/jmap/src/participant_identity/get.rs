@@ -5,7 +5,7 @@
  */
 
 use common::Server;
-use directory::QueryParams;
+use directory::{PrincipalData, QueryParams};
 use groupware::calendar::{ParticipantIdentities, ParticipantIdentity};
 use jmap_proto::{
     method::get::{GetRequest, GetResponse},
@@ -140,15 +140,23 @@ impl ParticipantIdentityGet for Server {
         } else {
             return Ok(None);
         };
-        let num_emails = principal.emails.len();
+        let mut emails = Vec::new();
+        let mut description = None;
+        for data in principal.data {
+            match data {
+                PrincipalData::Email(v) => emails.push(v),
+                PrincipalData::Description(v) => description = Some(v),
+                _ => {}
+            }
+        }
+        let num_emails = emails.len();
         if num_emails == 0 {
             return Ok(None);
         }
 
         // Build identities
         let identities = ParticipantIdentities {
-            identities: principal
-                .emails
+            identities: emails
                 .iter()
                 .enumerate()
                 .map(|(id, email)| ParticipantIdentity {
@@ -158,7 +166,7 @@ impl ParticipantIdentityGet for Server {
                 })
                 .collect(),
             default: 0,
-            default_name: principal.description.unwrap_or(principal.name),
+            default_name: description.unwrap_or(principal.name),
         };
 
         let mut batch = BatchBuilder::new();

@@ -19,7 +19,7 @@ use dav_proto::schema::{
     request::{DavPropertyValue, PropFind},
     response::{Href, MultiStatus, PropStat, Response},
 };
-use directory::{QueryParams, Type, backend::internal::manage::ManageDirectory};
+use directory::{PrincipalData, QueryParams, Type, backend::internal::manage::ManageDirectory};
 use groupware::RFC_3986;
 use groupware::cache::GroupwareCache;
 use hyper::StatusCode;
@@ -124,11 +124,25 @@ impl PrincipalPropFind for Server {
                     .caused_by(trc::location!())?
                     .map(|p| {
                         let name = p.name;
-                        let description = p.description.unwrap_or_else(|| name.clone());
+                        let mut description = None;
+                        let mut emails = Vec::new();
+                        for data in p.data {
+                            match data {
+                                PrincipalData::Description(desc) => {
+                                    description = Some(desc);
+                                }
+                                PrincipalData::Email(email) => {
+                                    emails.push(email);
+                                }
+                                _ => {}
+                            }
+                        }
+
+                        let description = description.unwrap_or_else(|| name.clone());
                         (
                             Cow::Owned(name.to_string()),
-                            description.to_string(),
-                            Cow::Owned(p.emails),
+                            description,
+                            Cow::Owned(emails),
                             p.typ,
                         )
                     })

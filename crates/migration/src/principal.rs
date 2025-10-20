@@ -6,8 +6,7 @@
 
 use common::Server;
 use directory::{
-    Permission, PermissionGrant, Principal, PrincipalData, PrincipalQuota, ROLE_ADMIN, ROLE_USER,
-    Type,
+    Permission, Principal, PrincipalData, ROLE_ADMIN, ROLE_USER, Type,
     backend::internal::{PrincipalField, PrincipalSet},
 };
 use nlp::tokenizers::word::WordTokenizer;
@@ -179,51 +178,51 @@ impl FromLegacy for Principal {
         let mut principal = Principal {
             id: legacy.id,
             typ: legacy.typ,
-            tenant: legacy.tenant(),
             name: legacy.name().to_string(),
-            description: legacy.take_str(PrincipalField::Description),
-            secrets: Default::default(),
-            emails: Default::default(),
-            quota: Default::default(),
             data: Default::default(),
         };
 
         // Map fields
-        principal.secrets = legacy
+        for secret in legacy
             .take_str_array(PrincipalField::Secrets)
-            .unwrap_or_default();
-        principal.emails = legacy
+            .unwrap_or_default()
+        {
+            principal.data.push(PrincipalData::Secret(secret));
+        }
+        for email in legacy
             .take_str_array(PrincipalField::Emails)
-            .unwrap_or_default();
+            .unwrap_or_default()
+        {
+            principal.data.push(PrincipalData::Email(email));
+        }
         if let Some(picture) = legacy.take_str(PrincipalField::Picture) {
             principal.data.push(PrincipalData::Picture(picture));
         }
-        if let Some(urls) = legacy.take_str_array(PrincipalField::Urls) {
-            principal.data.push(PrincipalData::Urls(urls));
+        for url in legacy
+            .take_str_array(PrincipalField::Urls)
+            .unwrap_or_default()
+        {
+            principal.data.push(PrincipalData::Url(url));
         }
-        if let Some(urls) = legacy.take_str_array(PrincipalField::ExternalMembers) {
-            principal.data.push(PrincipalData::ExternalMembers(urls));
+        for member in legacy
+            .take_str_array(PrincipalField::ExternalMembers)
+            .unwrap_or_default()
+        {
+            principal.data.push(PrincipalData::ExternalMember(member));
         }
-        if let Some(quotas) = legacy.take_int_array(PrincipalField::Quota) {
-            let mut principal_quotas = Vec::new();
 
+        if let Some(quotas) = legacy.take_int_array(PrincipalField::Quota) {
             for (idx, quota) in quotas.into_iter().take(Type::MAX_ID + 2).enumerate() {
                 if quota != 0 {
                     if idx != 0 {
-                        principal_quotas.push(PrincipalQuota {
-                            quota,
+                        principal.data.push(PrincipalData::DirectoryQuota {
+                            quota: quota as u32,
                             typ: Type::from_u8((idx - 1) as u8),
                         });
                     } else {
-                        principal.quota = Some(quota);
+                        principal.data.push(PrincipalData::DiskQuota(quota));
                     }
                 }
-            }
-
-            if !principal_quotas.is_empty() {
-                principal
-                    .data
-                    .push(PrincipalData::PrincipalQuota(principal_quotas));
             }
         }
 
@@ -243,15 +242,12 @@ impl FromLegacy for Principal {
             }
         }
         if !permissions.is_empty() {
-            principal.data.push(PrincipalData::Permissions(
-                permissions
-                    .into_iter()
-                    .map(|(k, v)| PermissionGrant {
-                        permission: k,
-                        grant: !v,
-                    })
-                    .collect(),
-            ));
+            for (k, v) in permissions {
+                principal.data.push(PrincipalData::Permission {
+                    permission_id: k,
+                    grant: !v,
+                });
+            }
         }
 
         principal
@@ -363,9 +359,9 @@ fn deserialize_string(bytes: &mut Iter<'_, u8>) -> Option<String> {
 pub(crate) fn build_search_index(batch: &mut BatchBuilder, principal_id: u32, new: &Principal) {
     let mut new_words = AHashSet::new();
 
-    for word in [Some(new.name.as_str()), new.description.as_deref()]
+    for word in [Some(new.name.as_str()), new.description()]
         .into_iter()
-        .chain(new.emails.iter().map(|s| Some(s.as_str())))
+        .chain(new.emails().map(|s| Some(s.as_str())))
         .flatten()
     {
         new_words.extend(WordTokenizer::new(word, MAX_TOKEN_LENGTH).map(|t| t.word));

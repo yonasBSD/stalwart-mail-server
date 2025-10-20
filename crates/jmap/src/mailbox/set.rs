@@ -98,6 +98,18 @@ impl MailboxSet for Server {
                 continue;
             };
 
+            // Validate quota
+            if ctx.mailbox_ids.len() >= access_token.object_quota(Collection::Mailbox) as u64 {
+                ctx.response.not_created.append(
+                    id,
+                    SetError::new(SetErrorType::OverQuota).with_description(concat!(
+                        "There are too many mailboxes, ",
+                        "please delete some before adding a new one."
+                    )),
+                );
+                continue 'create;
+            }
+
             match self.mailbox_set_item(object, None, &ctx).await? {
                 Ok(builder) => {
                     batch

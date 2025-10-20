@@ -93,7 +93,7 @@ impl Server {
                             let mut role_permissions = RolePermissions::default();
 
                             // Obtain principal
-                            let mut principal = self
+                            let principal = self
                                 .store()
                                 .query(QueryParams::id(role_id).with_return_member_of(true))
                                 .await
@@ -122,11 +122,10 @@ impl Server {
                             return_permissions.union(&role_permissions);
 
                             // Add parent roles
-                            if let Some(parent_role_ids) =
-                                principal.roles_mut().filter(|r| !r.is_empty())
-                            {
+                            let mut principal_roles = principal.roles().peekable();
+                            if principal_roles.peek().is_some() {
                                 role_ids_stack.push(role_ids);
-                                role_ids = std::mem::take(parent_role_ids).into_iter();
+                                role_ids = principal_roles.collect::<Vec<_>>().into_iter();
                             } else {
                                 // Cache role
                                 self.inner

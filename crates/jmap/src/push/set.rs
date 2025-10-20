@@ -8,7 +8,7 @@ use base64::{Engine, engine::general_purpose};
 use common::{Server, auth::AccessToken, ipc::PushEvent};
 use email::push::{Keys, PushSubscription, PushSubscriptions};
 use jmap_proto::{
-    error::set::SetError,
+    error::set::{SetError, SetErrorType},
     method::set::{SetRequest, SetResponse},
     object::push_subscription::{self, PushSubscriptionProperty, PushSubscriptionValue},
     references::resolve::ResolveCreatedReference,
@@ -80,8 +80,10 @@ impl PushSubscriptionSet for Server {
         'create: for (id, object) in request.unwrap_create() {
             let mut push = PushSubscription::default();
 
-            if subscriptions.subscriptions.len() >= self.core.jmap.push_max_total {
-                response.not_created.append(id, SetError::forbidden().with_description(
+            if subscriptions.subscriptions.len()
+                >= access_token.object_quota(Collection::PushSubscription) as usize
+            {
+                response.not_created.append(id, SetError::new(SetErrorType::OverQuota).with_description(
                     "There are too many subscriptions, please delete some before adding a new one.",
                 ));
                 continue 'create;

@@ -113,7 +113,7 @@ impl SieveScriptSet for Server {
         // Process creates
         let mut batch = BatchBuilder::new();
         for (id, object) in request.unwrap_create() {
-            if sieve_ids.len() as usize <= self.core.jmap.sieve_max_scripts {
+            if sieve_ids.len() < access_token.object_quota(Collection::SieveScript) as u64 {
                 match self
                     .sieve_set_item(object, None, &ctx, session.session_id)
                     .await?

@@ -5,11 +5,11 @@
  */
 
 use crate::participant_identity::get::ParticipantIdentityGet;
-use common::Server;
+use common::{Server, auth::AccessToken};
 use directory::QueryParams;
 use groupware::calendar::{ParticipantIdentities, ParticipantIdentity};
 use jmap_proto::{
-    error::set::SetError,
+    error::set::{SetError, SetErrorType},
     method::set::{SetRequest, SetResponse},
     object::participant_identity::{self, ParticipantIdentityProperty, ParticipantIdentityValue},
     request::{IntoValid, reference::MaybeIdReference},
@@ -17,6 +17,7 @@ use jmap_proto::{
 use jmap_tools::{Key, Value};
 use store::{
     Serialize,
+    ahash::AHashSet,
     write::{Archiver, BatchBuilder},
 };
 use trc::AddContext;
@@ -27,6 +28,7 @@ pub trait ParticipantIdentitySet: Sync + Send {
     fn participant_identity_set(
         &self,
         request: SetRequest<'_, participant_identity::ParticipantIdentity>,
+        access_token: &AccessToken,
     ) -> impl Future<Output = trc::Result<SetResponse<participant_identity::ParticipantIdentity>>> + Send;
 }
 
@@ -34,6 +36,7 @@ impl ParticipantIdentitySet for Server {
     async fn participant_identity_set(
         &self,
         mut request: SetRequest<'_, participant_identity::ParticipantIdentity>,
+        access_token: &AccessToken,
     ) -> trc::Result<SetResponse<participant_identity::ParticipantIdentity>> {
         let account_id = request.account_id.document_id();
         let mut response = SetResponse::from_request(&request, self.core.jmap.set_max_objects)?;
@@ -55,7 +58,7 @@ impl ParticipantIdentitySet for Server {
             .directory()
             .query(QueryParams::id(account_id).with_return_member_of(false))
             .await?
-            .map(|p| p.emails)
+            .map(|p| p.into_emails().collect::<AHashSet<_>>())
             .unwrap_or_default();
 
         // Process creates
@@ -78,6 +81,20 @@ impl ParticipantIdentitySet for Server {
                     SetError::invalid_properties()
                         .with_property(ParticipantIdentityProperty::CalendarAddress)
                         .with_description("Calendar address already in use.".to_string()),
+                );
+                continue 'create;
+            }
+
+            // Validate quota
+            if identities.identities.len()
+                >= access_token.object_quota(Collection::Identity) as usize
+            {
+                response.not_created.append(
+                    id,
+                    SetError::new(SetErrorType::OverQuota).with_description(concat!(
+                        "There are too many identities, ",
+                        "please delete some before adding a new one."
+                    )),
                 );
                 continue 'create;
             }
@@ -180,7 +197,7 @@ impl ParticipantIdentitySet for Server {
 fn validate_identity_value(
     update: Value<'_, ParticipantIdentityProperty, ParticipantIdentityValue>,
     identity: &mut ParticipantIdentity,
-    allowed_emails: &[String],
+    allowed_emails: &AHashSet<String>,
 ) -> Result<(), SetError<ParticipantIdentityProperty>> {
     let mut changed_address = false;
     for (property, value) in update.into_expanded_object() {
