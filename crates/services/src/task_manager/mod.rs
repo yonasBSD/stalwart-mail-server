@@ -95,14 +95,14 @@ pub fn spawn_task_manager(inner: Arc<Inner>) {
     for mut rx_index in [rx_index_1, rx_index_2, rx_index_3, rx_index_4] {
         let inner = inner.clone();
         let server_instance = server_instance.clone();
-        let todo = "shard tasks based on config";
 
         tokio::spawn(async move {
-            while let Some(mut task) = rx_index.recv().await {
+            while let Some(task) = rx_index.recv().await {
                 let server = inner.build_server();
+
                 // Lock task
                 if server.try_lock_task(&task).await {
-                    let success = match &mut task.action {
+                    let success = match &task.action {
                         TaskAction::Index { hash } => {
                             server
                                 .fts_index(task.account_id, task.document_id, hash)
@@ -262,7 +262,7 @@ impl TaskQueueManager for Server {
             .map_err(|err| {
                 trc::error!(
                     err.caused_by(trc::location!())
-                        .details("Failed to iterate over index emails")
+                        .details("Failed to iterate over task queue.")
                 );
             });
 
@@ -279,12 +279,35 @@ impl TaskQueueManager for Server {
             tasks.shuffle(&mut rand::rng());
         }
 
+        // Dispatch tasks
+        let roles = &self.core.network.roles;
         for event in tasks {
             let tx = match &event.action {
-                TaskAction::Index { .. } => &ipc.tx_fts,
-                TaskAction::BayesTrain { .. } => &ipc.tx_bayes,
-                TaskAction::SendAlarm { .. } => &ipc.tx_alarm,
-                TaskAction::SendImip => &ipc.tx_imip,
+                TaskAction::Index { .. } if roles.fts_indexing.is_enabled_for_hash(&event) => {
+                    &ipc.tx_fts
+                }
+                TaskAction::BayesTrain { .. }
+                    if roles.bayes_training.is_enabled_for_hash(&event) =>
+                {
+                    &ipc.tx_bayes
+                }
+                TaskAction::SendAlarm { .. }
+                    if roles.calendar_alerts.is_enabled_for_hash(&event) =>
+                {
+                    &ipc.tx_alarm
+                }
+                TaskAction::SendImip if roles.imip_processing.is_enabled_for_hash(&event) => {
+                    &ipc.tx_imip
+                }
+                _ => {
+                    trc::event!(
+                        TaskQueue(TaskQueueEvent::TaskIgnored),
+                        AccountId = event.account_id,
+                        DocumentId = event.document_id,
+                    );
+
+                    continue;
+                }
             };
             if tx.send(event).await.is_err() {
                 trc::event!(

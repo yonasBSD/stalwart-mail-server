@@ -41,7 +41,10 @@ pub enum PurgeType {
         store: InMemoryStore,
         prefix: Option<Vec<u8>>,
     },
-    Account(Option<u32>),
+    Account {
+        account_id: Option<u32>,
+        use_roles: bool,
+    },
 }
 
 #[derive(Debug)]

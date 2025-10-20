@@ -4,11 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::time::Duration;
-
 use crate::expr::{if_block::IfBlock, tokenizer::TokenMap};
 use ahash::AHashSet;
-
+use std::time::Duration;
 use utils::config::{Config, Rate, utils::ParseValue};
 
 use super::*;
@@ -356,8 +354,8 @@ impl AsnGeoLookupConfig {
 }
 
 impl ClusterRole {
-    pub fn is_enabled(&self) -> bool {
-        matches!(self, ClusterRole::Enabled)
+    pub fn is_enabled_or_sharded(&self) -> bool {
+        matches!(self, ClusterRole::Enabled | ClusterRole::Sharded { .. })
     }
 
     pub fn is_enabled_for_account(&self, account_id: u32) -> bool {
@@ -368,6 +366,20 @@ impl ClusterRole {
                 shard_id,
                 total_shards,
             } => (account_id % total_shards) == *shard_id,
+        }
+    }
+
+    pub fn is_enabled_for_hash(&self, item: &impl std::hash::Hash) -> bool {
+        match self {
+            ClusterRole::Enabled => true,
+            ClusterRole::Disabled => false,
+            ClusterRole::Sharded {
+                shard_id,
+                total_shards,
+            } => {
+                (ahash::RandomState::new().hash_one(item) % (*total_shards as u64))
+                    == (*shard_id as u64)
+            }
         }
     }
 }
