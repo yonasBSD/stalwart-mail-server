@@ -102,7 +102,7 @@ calendar.end:
   nl: Einde
   da: Slut
   ca: Fi
-  en: Λήξη
+  el: Λήξη
   sv: Slut
 
 calendar.location:
@@ -163,7 +163,7 @@ calendar.date_template_long:
   ca: "%A %-d %B %Y %-Hh"
   # Greek: "Κυριακή 25 Μαΐου 2025 9πμ" (day month year hour)
   el: "%A %-d %B %Y %-H η ώρα"
-  
+
   # Svenska: "söndag 25 maj 2025 kl. 9" (weekday date month year hour)
   sv: "%A %-d. %B %Y kl. %-H"
 
@@ -215,9 +215,8 @@ calendar.cancelled:
   pt: Cancelado
   nl: Geannuleerd
   da: Aflyst
-  ca: Cancel·lat 
-  el: Ακυρώθηκε
   ca: Cancel·lat
+  el: Ακυρώθηκε
   sv: Inställd
 
 calendar.event_cancelled:
