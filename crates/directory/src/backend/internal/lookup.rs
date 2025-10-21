@@ -159,7 +159,9 @@ impl DirectoryStore for Store {
         for account_id in self.get_members(list_id).await? {
             if let Some(email) = self.get_principal(account_id).await?.and_then(|p| {
                 p.data.into_iter().find_map(|data| {
-                    if let PrincipalData::Email(email) = data {
+                    if let PrincipalData::PrimaryEmail(email) | PrincipalData::EmailAlias(email) =
+                        data
+                    {
                         Some(email)
                     } else {
                         None

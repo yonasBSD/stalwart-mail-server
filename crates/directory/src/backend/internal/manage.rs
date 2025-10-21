@@ -206,6 +206,7 @@ impl ManageDirectory for Store {
                 .assert_value(name_key.clone(), ())
                 .create_document(principal_id);
             build_search_index(&mut batch, principal_id, None, Some(&principal));
+            principal.sort();
             batch
                 .set(
                     name_key,
@@ -377,18 +378,19 @@ impl ManageDirectory for Store {
 
         // Set fields
         principal_create.name = name;
-        if let Some(description) = principal_set.take_str(PrincipalField::Description) {
-            principal_create
-                .data
-                .push(PrincipalData::Description(description));
-        }
-
         for secret in principal_set
             .take_str_array(PrincipalField::Secrets)
             .unwrap_or_default()
         {
             principal_create.data.push(PrincipalData::Secret(secret));
         }
+
+        if let Some(description) = principal_set.take_str(PrincipalField::Description) {
+            principal_create
+                .data
+                .push(PrincipalData::Description(description));
+        }
+
         if let Some(picture) = principal_set.take_str(PrincipalField::Picture) {
             principal_create.data.push(PrincipalData::Picture(picture));
         }
@@ -518,9 +520,11 @@ impl ManageDirectory for Store {
 
         // Make sure the e-mail is not taken and validate domain
         if principal_create.typ != Type::OauthClient {
-            for email in principal_set
+            for (idx, email) in principal_set
                 .take_str_array(PrincipalField::Emails)
                 .unwrap_or_default()
+                .into_iter()
+                .enumerate()
             {
                 let email = email.to_lowercase();
                 if self.rcpt(&email).await.caused_by(trc::location!())? != RcptType::Invalid {
@@ -535,7 +539,13 @@ impl ManageDirectory for Store {
                         .filter(|v| v.typ == Type::Domain && v.has_tenant_access(tenant_id))
                         .ok_or_else(|| not_found(domain.to_string()))?;
                 }
-                principal_create.data.push(PrincipalData::Email(email));
+                if idx == 0 {
+                    principal_create
+                        .data
+                        .push(PrincipalData::PrimaryEmail(email));
+                } else {
+                    principal_create.data.push(PrincipalData::EmailAlias(email));
+                }
             }
         }
 
@@ -564,6 +574,7 @@ impl ManageDirectory for Store {
         }
 
         // Serialize
+        principal_create.sort();
         let archiver = Archiver::new(principal_create);
         let principal_bytes = archiver.serialize().caused_by(trc::location!())?;
         let principal_create = archiver.into_inner();
@@ -592,7 +603,7 @@ impl ManageDirectory for Store {
             );
 
         // Write email to id mapping
-        for email in principal_create.emails() {
+        for email in principal_create.email_addresses() {
             batch.set(
                 ValueClass::Directory(DirectoryClass::EmailToId(email.as_bytes().to_vec())),
                 pinfo_email.serialize(),
@@ -830,7 +841,9 @@ impl ManageDirectory for Store {
             .clear(DirectoryClass::UsedQuota(principal_id));
 
         for email in principal.data.iter() {
-            if let ArchivedPrincipalData::Email(email) = email {
+            if let ArchivedPrincipalData::PrimaryEmail(email)
+            | ArchivedPrincipalData::EmailAlias(email) = email
+            {
                 batch.clear(DirectoryClass::EmailToId(email.as_bytes().to_vec()));
             }
         }
@@ -1160,25 +1173,9 @@ impl ManageDirectory for Store {
                     PrincipalValue::String(secret),
                 ) => {
                     if !principal.secrets().any(|v| *v == secret) {
-                        if secret.is_otp_auth() {
-                            // Add OTP Auth URLs to the beginning of the list
-                            principal.data.insert(0, PrincipalData::Secret(secret));
-
-                            // Password changed, update changed principals
-                            changed_principals.add_change(
-                                principal_id,
-                                principal_type,
-                                change.field,
-                            );
-                        } else {
-                            principal.data.push(PrincipalData::Secret(secret));
-                            // Password changed, update changed principals
-                            changed_principals.add_change(
-                                principal_id,
-                                principal_type,
-                                change.field,
-                            );
-                        }
+                        principal.data.push(PrincipalData::Secret(secret));
+                        // Password changed, update changed principals
+                        changed_principals.add_change(principal_id, principal_type, change.field);
                     }
                 }
                 (
@@ -1307,7 +1304,7 @@ impl ManageDirectory for Store {
                         .map(|v| v.to_lowercase())
                         .collect::<Vec<_>>();
                     for email in &emails {
-                        if !principal.emails().any(|v| v == email) {
+                        if !principal.email_addresses().any(|v| v == email) {
                             if validate_emails {
                                 self.validate_email(email, tenant_id, params.create_domains)
                                     .await?;
@@ -1321,7 +1318,7 @@ impl ManageDirectory for Store {
                         }
                     }
 
-                    for email in principal.emails() {
+                    for email in principal.email_addresses() {
                         if !emails.contains(email) {
                             batch.clear(ValueClass::Directory(DirectoryClass::EmailToId(
                                 email.as_bytes().to_vec(),
@@ -1332,11 +1329,18 @@ impl ManageDirectory for Store {
                     // Emails changed, update changed principals
                     changed_principals.add_change(principal_id, principal_type, change.field);
 
-                    principal
-                        .data
-                        .retain(|v| !matches!(v, PrincipalData::Email(_)));
-                    for email in emails {
-                        principal.data.push(PrincipalData::Email(email));
+                    principal.data.retain(|v| {
+                        !matches!(
+                            v,
+                            PrincipalData::PrimaryEmail(_) | PrincipalData::EmailAlias(_)
+                        )
+                    });
+                    for (idx, email) in emails.into_iter().enumerate() {
+                        if idx == 0 {
+                            principal.data.push(PrincipalData::PrimaryEmail(email));
+                        } else {
+                            principal.data.push(PrincipalData::EmailAlias(email));
+                        }
                     }
                 }
                 (
@@ -1345,7 +1349,11 @@ impl ManageDirectory for Store {
                     PrincipalValue::String(email),
                 ) => {
                     let email = email.to_lowercase();
-                    if !principal.emails().any(|v| v == &email) {
+                    let mut emails_iter = principal.email_addresses().peekable();
+                    let has_emails = emails_iter.peek().is_some();
+                    let email_exists = emails_iter.any(|v| v == &email);
+                    drop(emails_iter);
+                    if !email_exists {
                         if validate_emails {
                             self.validate_email(&email, tenant_id, params.create_domains)
                                 .await?;
@@ -1356,7 +1364,11 @@ impl ManageDirectory for Store {
                             )),
                             pinfo_email.clone(),
                         );
-                        principal.data.push(PrincipalData::Email(email));
+                        if has_emails {
+                            principal.data.push(PrincipalData::EmailAlias(email));
+                        } else {
+                            principal.data.push(PrincipalData::PrimaryEmail(email));
+                        }
 
                         // Emails changed, update changed principals
                         changed_principals.add_change(principal_id, principal_type, change.field);
@@ -1368,14 +1380,32 @@ impl ManageDirectory for Store {
                     PrincipalValue::String(email),
                 ) => {
                     let email = email.to_lowercase();
-                    if principal.emails().any(|v| v == &email) {
+                    if principal.email_addresses().any(|v| v == &email) {
+                        let mut deleted_primary = false;
                         principal.data.retain(|v| match v {
-                            PrincipalData::Email(v) => v != &email,
+                            PrincipalData::EmailAlias(v) => v != &email,
+                            PrincipalData::PrimaryEmail(v) => {
+                                if v == &email {
+                                    deleted_primary = true;
+                                    false
+                                } else {
+                                    true
+                                }
+                            }
                             _ => true,
                         });
                         batch.clear(ValueClass::Directory(DirectoryClass::EmailToId(
                             email.as_bytes().to_vec(),
                         )));
+
+                        if deleted_primary {
+                            for data in &mut principal.data {
+                                if let PrincipalData::EmailAlias(email) = data {
+                                    *data = PrincipalData::PrimaryEmail(std::mem::take(email));
+                                    break;
+                                }
+                            }
+                        }
 
                         // Emails changed, update changed principals
                         changed_principals.add_change(principal_id, principal_type, change.field);
@@ -2294,7 +2324,7 @@ impl ManageDirectory for Store {
                         result.append_str(PrincipalField::Secrets, secret);
                     }
                 }
-                PrincipalData::Email(email) => {
+                PrincipalData::PrimaryEmail(email) | PrincipalData::EmailAlias(email) => {
                     if fields.is_empty() || fields.contains(&PrincipalField::Emails) {
                         result.append_str(PrincipalField::Emails, email);
                     }

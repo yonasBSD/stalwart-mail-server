@@ -183,7 +183,7 @@ impl BuildPrincipal for OpenIdResponse {
 
         // Build principal
         let mut data = Vec::with_capacity(3);
-        data.push(PrincipalData::Email(email));
+        data.push(PrincipalData::PrimaryEmail(email));
         if let Some(name) = full_name {
             data.push(PrincipalData::Description(name));
         }

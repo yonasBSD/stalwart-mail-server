@@ -595,7 +595,7 @@ impl From<Principal> for TestPrincipal {
             roles: value.roles().map(|v| v.to_string()).collect(),
             lists: value.lists().map(|v| v.to_string()).collect(),
             secrets: value.secrets().map(|v| v.to_string()).collect(),
-            emails: value.emails().map(|v| v.to_string()).collect(),
+            emails: value.email_addresses().map(|v| v.to_string()).collect(),
             description: value.description().map(|v| v.to_string()),
             name: value.name,
         }

@@ -124,7 +124,7 @@ impl SieveScriptIngest for Server {
             .caused_by(trc::location!())?
             .and_then(|p| {
                 instance.set_user_full_name(p.description().unwrap_or_else(|| p.name()));
-                p.into_emails().next()
+                p.into_primary_email()
             });
 
         // Set account address

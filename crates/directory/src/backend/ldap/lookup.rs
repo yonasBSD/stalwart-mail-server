@@ -431,6 +431,7 @@ impl LdapMappings {
         let mut role = ROLE_USER;
         let mut member_of = vec![];
         let mut description = None;
+        let mut has_primary_email = false;
 
         for (attr, value) in entry.attrs {
             if self.attr_name.contains(&attr) {
@@ -438,9 +439,16 @@ impl LdapMappings {
                     principal.name = value.into_iter().next().unwrap_or_default();
                 } else {
                     for (idx, item) in value.into_iter().enumerate() {
-                        principal
-                            .data
-                            .insert(0, PrincipalData::Email(item.to_lowercase()));
+                        if !has_primary_email {
+                            has_primary_email = true;
+                            principal
+                                .data
+                                .push(PrincipalData::PrimaryEmail(item.to_lowercase()));
+                        } else {
+                            principal
+                                .data
+                                .push(PrincipalData::EmailAlias(item.to_lowercase()));
+                        }
                         if idx == 0 {
                             principal.name = item;
                         }
@@ -461,15 +469,22 @@ impl LdapMappings {
                 }
             } else if self.attr_email_address.contains(&attr) {
                 for item in value {
-                    principal
-                        .data
-                        .insert(0, PrincipalData::Email(item.to_lowercase()));
+                    if !has_primary_email {
+                        has_primary_email = true;
+                        principal
+                            .data
+                            .push(PrincipalData::PrimaryEmail(item.to_lowercase()));
+                    } else {
+                        principal
+                            .data
+                            .push(PrincipalData::EmailAlias(item.to_lowercase()));
+                    }
                 }
             } else if self.attr_email_alias.contains(&attr) {
                 for item in value {
                     principal
                         .data
-                        .push(PrincipalData::Email(item.to_lowercase()));
+                        .push(PrincipalData::EmailAlias(item.to_lowercase()));
                 }
             } else if let Some(idx) = self.attr_description.iter().position(|a| a == &attr) {
                 if (description.is_none() || idx == 0)

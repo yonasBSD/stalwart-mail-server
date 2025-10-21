@@ -144,7 +144,7 @@ impl ParticipantIdentityGet for Server {
         let mut description = None;
         for data in principal.data {
             match data {
-                PrincipalData::Email(v) => emails.push(v),
+                PrincipalData::PrimaryEmail(v) | PrincipalData::EmailAlias(v) => emails.push(v),
                 PrincipalData::Description(v) => description = Some(v),
                 _ => {}
             }

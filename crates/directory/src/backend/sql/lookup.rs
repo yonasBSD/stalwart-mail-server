@@ -158,20 +158,29 @@ impl SqlDirectory {
 
         // Obtain emails
         if !self.mappings.query_emails.is_empty() {
-            let rows = self
+            let mut rows = self
                 .sql_store
                 .sql_query::<Rows>(
                     &self.mappings.query_emails,
                     vec![external_principal.name().into()],
                 )
                 .await
-                .caused_by(trc::location!())?;
-            external_principal.data.extend(
-                rows.rows
-                    .into_iter()
-                    .flat_map(|v| v.values.into_iter().map(|v| v.into_lower_string()))
-                    .map(PrincipalData::Email),
-            );
+                .caused_by(trc::location!())?
+                .rows
+                .into_iter()
+                .flat_map(|v| v.values.into_iter().map(|v| v.into_lower_string()));
+
+            if external_principal.primary_email().is_none()
+                && let Some(email) = rows.next()
+            {
+                external_principal
+                    .data
+                    .push(PrincipalData::PrimaryEmail(email));
+            }
+
+            external_principal
+                .data
+                .extend(rows.map(PrincipalData::EmailAlias));
         }
 
         // Obtain account ID if not available
@@ -271,6 +280,7 @@ impl SqlMappings {
 
         let mut principal = Principal::new(u32::MAX, Type::Individual);
         let mut role = ROLE_USER;
+        let mut has_primary_email = false;
 
         if let Some(row) = rows.rows.into_iter().next() {
             for (name, value) in rows.names.into_iter().zip(row.values) {
@@ -300,9 +310,16 @@ impl SqlMappings {
                     }
                 } else if name.eq_ignore_ascii_case(&self.column_email) {
                     if let Value::Text(text) = value {
-                        principal
-                            .data
-                            .push(PrincipalData::Email(text.to_lowercase()));
+                        if !has_primary_email {
+                            has_primary_email = true;
+                            principal
+                                .data
+                                .push(PrincipalData::PrimaryEmail(text.to_lowercase()));
+                        } else {
+                            principal
+                                .data
+                                .push(PrincipalData::EmailAlias(text.to_lowercase()));
+                        }
                     }
                 } else if name.eq_ignore_ascii_case(&self.column_quota)
                     && let Value::Integer(quota) = value

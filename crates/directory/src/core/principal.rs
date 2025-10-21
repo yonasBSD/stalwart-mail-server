@@ -7,7 +7,9 @@
 use crate::{
     ArchivedPrincipal, ArchivedPrincipalData, FALLBACK_ADMIN_ID, Permission, PermissionGrant,
     Principal, PrincipalData, ROLE_ADMIN, Type,
-    backend::internal::{PrincipalField, PrincipalSet, PrincipalUpdate, PrincipalValue},
+    backend::internal::{
+        PrincipalField, PrincipalSet, PrincipalUpdate, PrincipalValue, SpecialSecrets,
+    },
 };
 use ahash::AHashSet;
 use nlp::tokenizers::word::WordTokenizer;
@@ -104,18 +106,64 @@ impl Principal {
     }
 
     pub fn secrets(&self) -> impl Iterator<Item = &String> {
-        self.data.iter().filter_map(|item| {
-            if let PrincipalData::Secret(secret) = item {
-                Some(secret)
+        let mut found_secret = false;
+        self.data
+            .iter()
+            .take_while(move |item| {
+                if matches!(item, PrincipalData::Secret(_)) {
+                    found_secret = true;
+                    true
+                } else {
+                    !found_secret
+                }
+            })
+            .filter_map(|item| {
+                if let PrincipalData::Secret(secret) = item {
+                    Some(secret)
+                } else {
+                    None
+                }
+            })
+    }
+
+    pub fn primary_email(&self) -> Option<&str> {
+        self.data.iter().find_map(|item| {
+            if let PrincipalData::PrimaryEmail(email) = item {
+                Some(email.as_str())
             } else {
                 None
             }
         })
     }
 
-    pub fn emails(&self) -> impl Iterator<Item = &String> {
-        self.data.iter().filter_map(|item| {
-            if let PrincipalData::Email(email) = item {
+    pub fn email_addresses(&self) -> impl Iterator<Item = &String> {
+        let mut found_email = false;
+        self.data
+            .iter()
+            .take_while(move |item| {
+                if matches!(
+                    item,
+                    PrincipalData::PrimaryEmail(_) | PrincipalData::EmailAlias(_)
+                ) {
+                    found_email = true;
+                    true
+                } else {
+                    !found_email
+                }
+            })
+            .filter_map(|item| {
+                if let PrincipalData::PrimaryEmail(email) | PrincipalData::EmailAlias(email) = item
+                {
+                    Some(email)
+                } else {
+                    None
+                }
+            })
+    }
+
+    pub fn into_primary_email(self) -> Option<String> {
+        self.data.into_iter().find_map(|item| {
+            if let PrincipalData::PrimaryEmail(email) = item {
                 Some(email)
             } else {
                 None
@@ -123,9 +171,9 @@ impl Principal {
         })
     }
 
-    pub fn into_emails(self) -> impl Iterator<Item = String> {
+    pub fn into_email_addresses(self) -> impl Iterator<Item = String> {
         self.data.into_iter().filter_map(|item| {
-            if let PrincipalData::Email(email) = item {
+            if let PrincipalData::PrimaryEmail(email) | PrincipalData::EmailAlias(email) = item {
                 Some(email)
             } else {
                 None
@@ -325,15 +373,27 @@ impl Principal {
         }
 
         // Update emails
-        if update_list(external.emails(), self.emails()) {
+        if update_list(external.email_addresses(), self.email_addresses()) {
             if overwrite_emails {
                 let mut new_emails = Vec::new();
+                self.data.retain(|item| {
+                    !matches!(
+                        item,
+                        PrincipalData::PrimaryEmail(_) | PrincipalData::EmailAlias(_)
+                    )
+                });
                 self.data
-                    .retain(|item| !matches!(item, PrincipalData::Email(_)));
-                self.data.extend(external.emails().map(|email| {
-                    new_emails.push(email.to_string());
-                    PrincipalData::Email(email.to_string())
-                }));
+                    .extend(external.data.iter().filter_map(|v| match v {
+                        PrincipalData::PrimaryEmail(email) => {
+                            new_emails.push(email.clone());
+                            Some(PrincipalData::PrimaryEmail(email.clone()))
+                        }
+                        PrincipalData::EmailAlias(email) => {
+                            new_emails.push(email.clone());
+                            Some(PrincipalData::EmailAlias(email.clone()))
+                        }
+                        _ => None,
+                    }));
                 updates.push(PrincipalUpdate::set(
                     PrincipalField::Emails,
                     PrincipalValue::StringList(new_emails),
@@ -341,16 +401,16 @@ impl Principal {
             } else {
                 // Missing emails are appended to avoid overwriting locally defined aliases
                 // This means that old email addresses need to be deleted either manually or using the API
-                let current_emails = self.emails().collect::<AHashSet<_>>();
+                let current_emails = self.email_addresses().collect::<AHashSet<_>>();
                 let mut new_emails = Vec::new();
-                for email in external.emails() {
+                for email in external.email_addresses() {
                     let email = email.to_lowercase();
                     if !current_emails.contains(&email) {
                         updates.push(PrincipalUpdate::add_item(
                             PrincipalField::Emails,
                             PrincipalValue::String(email.clone()),
                         ));
-                        new_emails.push(PrincipalData::Email(email));
+                        new_emails.push(PrincipalData::EmailAlias(email));
                     }
                 }
                 self.data.extend(new_emails);
@@ -396,6 +456,27 @@ impl Principal {
             ],
         }
     }
+
+    pub fn sort(&mut self) {
+        self.data.sort_unstable_by_key(|d| d.rank());
+    }
+}
+
+impl PrincipalData {
+    fn rank(&self) -> usize {
+        match self {
+            PrincipalData::Secret(v) => {
+                if v.is_otp_auth() {
+                    0
+                } else {
+                    1
+                }
+            }
+            PrincipalData::PrimaryEmail(_) => 2,
+            PrincipalData::EmailAlias(_) => 3,
+            _ => 4,
+        }
+    }
 }
 
 fn update_list<'x>(
@@ -432,7 +513,8 @@ impl PrincipalData {
         match self {
             PrincipalData::Secret(v)
             | PrincipalData::Description(v)
-            | PrincipalData::Email(v)
+            | PrincipalData::PrimaryEmail(v)
+            | PrincipalData::EmailAlias(v)
             | PrincipalData::Picture(v)
             | PrincipalData::ExternalMember(v)
             | PrincipalData::Url(v)
@@ -955,8 +1037,9 @@ pub(crate) fn build_search_index(
         for word in [Some(current.name.as_str())]
             .into_iter()
             .chain(current.data.iter().map(|s| match s {
-                ArchivedPrincipalData::Description(v) => Some(v.as_str()),
-                ArchivedPrincipalData::Email(v) => Some(v.as_str()),
+                ArchivedPrincipalData::Description(v)
+                | ArchivedPrincipalData::PrimaryEmail(v)
+                | ArchivedPrincipalData::EmailAlias(v) => Some(v.as_str()),
                 _ => None,
             }))
             .flatten()
@@ -969,8 +1052,9 @@ pub(crate) fn build_search_index(
         for word in [Some(new.name.as_str())]
             .into_iter()
             .chain(new.data.iter().map(|s| match s {
-                PrincipalData::Description(v) => Some(v.as_str()),
-                PrincipalData::Email(v) => Some(v.as_str()),
+                PrincipalData::Description(v)
+                | PrincipalData::PrimaryEmail(v)
+                | PrincipalData::EmailAlias(v) => Some(v.as_str()),
                 _ => None,
             }))
             .flatten()

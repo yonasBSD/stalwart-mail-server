@@ -189,11 +189,21 @@ impl FromLegacy for Principal {
         {
             principal.data.push(PrincipalData::Secret(secret));
         }
-        for email in legacy
+        for (idx, email) in legacy
             .take_str_array(PrincipalField::Emails)
             .unwrap_or_default()
+            .into_iter()
+            .enumerate()
         {
-            principal.data.push(PrincipalData::Email(email));
+            if idx == 0 {
+                principal
+                    .data
+                    .push(PrincipalData::PrimaryEmail(email.clone()));
+            } else {
+                principal
+                    .data
+                    .push(PrincipalData::EmailAlias(email.clone()));
+            }
         }
         if let Some(picture) = legacy.take_str(PrincipalField::Picture) {
             principal.data.push(PrincipalData::Picture(picture));
@@ -361,7 +371,7 @@ pub(crate) fn build_search_index(batch: &mut BatchBuilder, principal_id: u32, ne
 
     for word in [Some(new.name.as_str()), new.description()]
         .into_iter()
-        .chain(new.emails().map(|s| Some(s.as_str())))
+        .chain(new.email_addresses().map(|s| Some(s.as_str())))
         .flatten()
     {
         new_words.extend(WordTokenizer::new(word, MAX_TOKEN_LENGTH).map(|t| t.word));

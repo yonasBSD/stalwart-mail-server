@@ -108,9 +108,15 @@ impl MemoryDirectory {
                     directory.domains.insert(domain.to_lowercase());
                 }
 
-                principal
-                    .data
-                    .push(PrincipalData::Email(email.to_lowercase()));
+                if pos == 0 {
+                    principal
+                        .data
+                        .push(PrincipalData::PrimaryEmail(email.to_lowercase()));
+                } else {
+                    principal
+                        .data
+                        .push(PrincipalData::EmailAlias(email.to_lowercase()));
+                }
             }
 
             // Parse mailing lists

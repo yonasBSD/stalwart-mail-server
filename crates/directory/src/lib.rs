@@ -60,7 +60,8 @@ pub enum PrincipalData {
 
     // Profile data
     Description(String),
-    Email(String),
+    PrimaryEmail(String),
+    EmailAlias(String),
     Picture(String),
     ExternalMember(String),
     Url(String),

@@ -73,7 +73,14 @@ impl Server {
                     object_quota[typ as usize] = quota;
                 }
                 PrincipalData::Description(v) => description = Some(v),
-                PrincipalData::Email(v) => {
+                PrincipalData::PrimaryEmail(v) => {
+                    if emails.is_empty() {
+                        emails.push(v);
+                    } else {
+                        emails.insert(0, v);
+                    }
+                }
+                PrincipalData::EmailAlias(v) => {
                     emails.push(v);
                 }
                 PrincipalData::Locale(v) => locale = Some(v),
@@ -129,13 +136,7 @@ impl Server {
                 .caused_by(trc::location!())?
                 && group.typ == Type::Group
             {
-                emails.extend(group.data.into_iter().filter_map(|data| {
-                    if let PrincipalData::Email(email) = data {
-                        Some(email)
-                    } else {
-                        None
-                    }
-                }));
+                emails.extend(group.into_email_addresses());
             }
         }
 

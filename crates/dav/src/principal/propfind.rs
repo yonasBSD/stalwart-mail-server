@@ -131,7 +131,14 @@ impl PrincipalPropFind for Server {
                                 PrincipalData::Description(desc) => {
                                     description = Some(desc);
                                 }
-                                PrincipalData::Email(email) => {
+                                PrincipalData::PrimaryEmail(email) => {
+                                    if emails.is_empty() {
+                                        emails.push(email);
+                                    } else {
+                                        emails.insert(0, email);
+                                    }
+                                }
+                                PrincipalData::EmailAlias(email) => {
                                     emails.push(email);
                                 }
                                 _ => {}

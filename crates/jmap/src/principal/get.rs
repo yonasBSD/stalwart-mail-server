@@ -123,8 +123,7 @@ impl PrincipalGet for Server {
                         .map(|v| Value::Str(v.to_string().into()))
                         .unwrap_or(Value::Null),
                     PrincipalProperty::Email => principal
-                        .emails()
-                        .next()
+                        .primary_email()
                         .map(|email| Value::Str(email.to_string().into()))
                         .unwrap_or(Value::Null),
                     PrincipalProperty::Accounts => Value::Object(Map::from(vec![(
@@ -175,8 +174,7 @@ impl PrincipalGet for Server {
                                             Key::Borrowed("calendarAddress"),
                                             Value::Str(
                                                 principal
-                                                    .emails()
-                                                    .next()
+                                                    .primary_email()
                                                     .map(|email| format!("mailto:{}", email))
                                                     .unwrap_or_default()
                                                     .into(),

@@ -58,7 +58,7 @@ impl ParticipantIdentitySet for Server {
             .directory()
             .query(QueryParams::id(account_id).with_return_member_of(false))
             .await?
-            .map(|p| p.into_emails().collect::<AHashSet<_>>())
+            .map(|p| p.into_email_addresses().collect::<AHashSet<_>>())
             .unwrap_or_default();
 
         // Process creates
