@@ -1994,6 +1994,7 @@ impl ManageDirectory for Store {
         }
 
         if update_principal {
+            principal.sort();
             build_search_index(
                 &mut batch,
                 principal_id,
