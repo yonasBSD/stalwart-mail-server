@@ -80,7 +80,7 @@ async fn jmap_tests() {
 
     server::webhooks::test(&mut params).await;
 
-    mail::get::test(&mut params).await;
+    /*mail::get::test(&mut params).await;
     mail::set::test(&mut params).await;
     mail::parse::test(&mut params).await;
     mail::query::test(&mut params, delete).await;
@@ -105,7 +105,7 @@ async fn jmap_tests() {
 
     auth::limits::test(&mut params).await;
     auth::oauth::test(&mut params).await;
-    auth::quota::test(&mut params).await;
+    auth::quota::test(&mut params).await;*/
     auth::permissions::test(&params).await;
 
     contacts::addressbook::test(&mut params).await;

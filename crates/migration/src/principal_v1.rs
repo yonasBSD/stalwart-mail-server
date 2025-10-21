@@ -4,6 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::{
+    email::migrate_emails, encryption::migrate_encryption_params, identity::migrate_identities,
+    mailbox::migrate_mailboxes, push_v1::migrate_push_subscriptions_v011,
+    sieve_v1::migrate_sieve_v011, submission::migrate_email_submissions, threads::migrate_threads,
+};
 use common::Server;
 use directory::{
     Permission, Principal, PrincipalData, ROLE_ADMIN, ROLE_USER, Type,
@@ -22,13 +27,7 @@ use trc::AddContext;
 use types::collection::Collection;
 use utils::codec::leb128::Leb128Iterator;
 
-use crate::{
-    email::migrate_emails, encryption::migrate_encryption_params, identity::migrate_identities,
-    mailbox::migrate_mailboxes, push::migrate_push_subscriptions, sieve::migrate_sieve,
-    submission::migrate_email_submissions, threads::migrate_threads,
-};
-
-pub(crate) async fn migrate_principals(server: &Server) -> trc::Result<RoaringBitmap> {
+pub(crate) async fn migrate_principals_v0_11(server: &Server) -> trc::Result<RoaringBitmap> {
     // Obtain email ids
     let principal_ids = server
         .get_document_ids(u32::MAX, Collection::Principal)
@@ -53,7 +52,8 @@ pub(crate) async fn migrate_principals(server: &Server) -> trc::Result<RoaringBi
             .await
         {
             Ok(Some(legacy)) => {
-                let principal = Principal::from_legacy(legacy);
+                let mut principal = Principal::from_legacy(legacy);
+                principal.sort();
                 let mut batch = BatchBuilder::new();
                 batch
                     .with_account_id(u32::MAX)
@@ -120,7 +120,7 @@ pub(crate) async fn migrate_principals(server: &Server) -> trc::Result<RoaringBi
     Ok(principal_ids)
 }
 
-pub(crate) async fn migrate_principal(server: &Server, account_id: u32) -> trc::Result<()> {
+pub(crate) async fn migrate_principal_v0_11(server: &Server, account_id: u32) -> trc::Result<()> {
     let start_time = Instant::now();
     let num_emails = migrate_emails(server, account_id)
         .await
@@ -131,10 +131,10 @@ pub(crate) async fn migrate_principal(server: &Server, account_id: u32) -> trc::
     let num_params = migrate_encryption_params(server, account_id)
         .await
         .caused_by(trc::location!())?;
-    let num_subscriptions = migrate_push_subscriptions(server, account_id)
+    let num_subscriptions = migrate_push_subscriptions_v011(server, account_id)
         .await
         .caused_by(trc::location!())?;
-    let num_sieve = migrate_sieve(server, account_id)
+    let num_sieve = migrate_sieve_v011(server, account_id)
         .await
         .caused_by(trc::location!())?;
     let num_submissions = migrate_email_submissions(server, account_id)

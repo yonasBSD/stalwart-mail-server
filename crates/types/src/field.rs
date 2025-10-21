@@ -234,6 +234,10 @@ impl From<EmailSubmissionField> for Field {
 
 impl Field {
     pub const ARCHIVE: Field = Field(ARCHIVE_FIELD);
+
+    pub fn new(value: u8) -> Self {
+        Field(value)
+    }
 }
 
 impl FieldType for Field {}

@@ -17,24 +17,11 @@ use store::{
 };
 use trc::{AddContext, StoreEvent};
 use types::{
-    blob_hash::BlobHash,
     collection::Collection,
     field::{Field, PrincipalField, SieveField},
 };
 
-#[derive(
-    rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
-)]
-#[rkyv(derive(Debug))]
-pub struct LegacySieveScript {
-    pub name: String,
-    pub is_active: bool,
-    pub blob_hash: BlobHash,
-    pub size: u32,
-    pub vacation_response: Option<VacationResponse>,
-}
-
-pub(crate) async fn migrate_sieve(server: &Server, account_id: u32) -> trc::Result<u64> {
+pub(crate) async fn migrate_sieve_v011(server: &Server, account_id: u32) -> trc::Result<u64> {
     // Obtain email ids
     let script_ids = server
         .get_document_ids(account_id, Collection::SieveScript)

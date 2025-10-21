@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use calcard::{common::timezone::Tz, icalendar::ICalendar};
 use common::{DavName, Server};
 use groupware::calendar::{AlarmDelta, CalendarEvent, CalendarEventData, ComponentTimeRange};
 use store::{
@@ -14,6 +13,8 @@ use store::{
 };
 use trc::AddContext;
 use types::{collection::Collection, dead_property::DeadProperty, field::Field};
+
+use crate::event_v2::migrate_icalendar_v02;
 
 #[derive(
     rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
@@ -35,14 +36,14 @@ pub struct CalendarEventV1 {
 )]
 pub struct UserProperties {
     pub account_id: u32,
-    pub properties: ICalendar,
+    pub properties: calcard_v01::icalendar::ICalendar,
 }
 
 #[derive(
     rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
 )]
 pub struct CalendarEventDataV1 {
-    pub event: ICalendar,
+    pub event: calcard_v01::icalendar::ICalendar,
     pub time_ranges: Box<[ComponentTimeRange]>,
     pub alarms: Box<[AlarmV1]>,
     pub base_offset: i64,
@@ -59,7 +60,7 @@ pub struct AlarmV1 {
     pub alarms: Box<[AlarmDelta]>,
 }
 
-pub(crate) async fn migrate_calendar_events(server: &Server) -> trc::Result<()> {
+pub(crate) async fn migrate_calendar_events_v012(server: &Server) -> trc::Result<()> {
     // Obtain email ids
     let account_ids = server
         .get_document_ids(u32::MAX, Collection::Principal)
@@ -103,8 +104,8 @@ pub(crate) async fn migrate_calendar_events(server: &Server) -> trc::Result<()> 
                         names: event.names,
                         display_name: event.display_name,
                         data: CalendarEventData::new(
-                            event.data.event,
-                            Tz::Floating,
+                            migrate_icalendar_v02(event.data.event),
+                            calcard_latest::common::timezone::Tz::Floating,
                             server.core.groupware.max_ical_instances,
                             &mut next_email_alarm,
                         ),

@@ -897,6 +897,21 @@ dependencies = [
 
 [[package]]
 name = "calcard"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "720e412adf25f179f643b0753108cb308b812f82e1d34131c06b015c806e3f3c"
+dependencies = [
+ "ahash",
+ "chrono",
+ "chrono-tz",
+ "hashify",
+ "mail-builder",
+ "mail-parser",
+ "rkyv",
+]
+
+[[package]]
+name = "calcard"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2e35c8ab67ac849cc79cd5d888ceac60cd7887d64fb907f5dd29861868706305"
@@ -1165,7 +1180,7 @@ dependencies = [
  "base64 0.22.1",
  "bincode 2.0.1",
  "biscuit",
- "calcard",
+ "calcard 0.3.1",
  "chrono",
  "compact_str",
  "decancer",
@@ -1700,7 +1715,7 @@ checksum = "2a2330da5de22e8a3cb63252ce2abb30116bf5265e89c0e01bc17015ce30a476"
 name = "dav"
 version = "0.14.0"
 dependencies = [
- "calcard",
+ "calcard 0.3.1",
  "chrono",
  "common",
  "compact_str",
@@ -1722,7 +1737,7 @@ dependencies = [
 name = "dav-proto"
 version = "0.14.0"
 dependencies = [
- "calcard",
+ "calcard 0.3.1",
  "chrono",
  "compact_str",
  "hashify",
@@ -2776,7 +2791,7 @@ name = "groupware"
 version = "0.14.0"
 dependencies = [
  "ahash",
- "calcard",
+ "calcard 0.3.1",
  "chrono",
  "common",
  "compact_str",
@@ -3790,7 +3805,7 @@ dependencies = [
  "aes-gcm-siv",
  "async-stream",
  "base64 0.22.1",
- "calcard",
+ "calcard 0.3.1",
  "chrono",
  "common",
  "compact_str",
@@ -3897,7 +3912,7 @@ name = "jmap_proto"
 version = "0.14.0"
 dependencies = [
  "ahash",
- "calcard",
+ "calcard 0.3.1",
  "compact_str",
  "hashify",
  "jmap-tools",
@@ -4459,7 +4474,8 @@ version = "0.14.0"
 dependencies = [
  "base64 0.22.1",
  "bincode 1.3.3",
- "calcard",
+ "calcard 0.1.3",
+ "calcard 0.3.1",
  "common",
  "compact_str",
  "dav-proto",
@@ -4470,6 +4486,7 @@ dependencies = [
  "mail-auth",
  "mail-parser",
  "nlp",
+ "proc_macros",
  "rkyv",
  "serde",
  "serde_json",
@@ -7281,7 +7298,7 @@ dependencies = [
  "aes-gcm",
  "aes-gcm-siv",
  "base64 0.22.1",
- "calcard",
+ "calcard 0.3.1",
  "chrono",
  "common",
  "compact_str",
@@ -7948,7 +7965,7 @@ dependencies = [
  "base64 0.22.1",
  "biscuit",
  "bytes",
- "calcard",
+ "calcard 0.3.1",
  "chrono",
  "common",
  "compact_str",

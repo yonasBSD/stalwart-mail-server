@@ -8,20 +8,23 @@ use super::object::Object;
 use crate::object::{FromLegacy, Property, Value};
 use base64::{Engine, engine::general_purpose};
 use common::Server;
-use email::push::{Keys, PushSubscription};
+use email::push::{Keys, PushSubscription, PushSubscriptions};
 use store::{
     Serialize, ValueKey,
-    write::{AlignedBytes, Archive, Archiver, BatchBuilder, ValueClass},
+    write::{Archiver, BatchBuilder, ValueClass},
 };
 use trc::AddContext;
-use types::{collection::Collection, field::Field, type_state::DataType};
+use types::{
+    collection::Collection,
+    field::{Field, PrincipalField},
+    type_state::DataType,
+};
 
-pub(crate) async fn migrate_push_subscriptions(
+pub(crate) async fn migrate_push_subscriptions_v011(
     server: &Server,
     account_id: u32,
 ) -> trc::Result<u64> {
     // Obtain email ids
-    let todo = "fix";
     let push_subscription_ids = server
         .get_document_ids(account_id, Collection::PushSubscription)
         .await
@@ -31,7 +34,7 @@ pub(crate) async fn migrate_push_subscriptions(
     if num_push_subscriptions == 0 {
         return Ok(0);
     }
-    let mut did_migrate = false;
+    let mut subscriptions = Vec::with_capacity(num_push_subscriptions as usize);
 
     for push_subscription_id in &push_subscription_ids {
         match server
@@ -45,62 +48,50 @@ pub(crate) async fn migrate_push_subscriptions(
             .await
         {
             Ok(Some(legacy)) => {
-                let mut batch = BatchBuilder::new();
-                batch
-                    .with_account_id(account_id)
-                    .with_collection(Collection::PushSubscription)
-                    .update_document(push_subscription_id)
-                    .set(
-                        Field::ARCHIVE,
-                        Archiver::new(PushSubscription::from_legacy(legacy))
-                            .serialize()
-                            .caused_by(trc::location!())?,
-                    );
-                did_migrate = true;
-
-                server
-                    .store()
-                    .write(batch.build_all())
-                    .await
-                    .caused_by(trc::location!())?;
+                let mut subscription = PushSubscription::from_legacy(legacy);
+                subscription.id = push_subscription_id;
+                subscriptions.push(subscription);
             }
             Ok(None) => (),
             Err(err) => {
-                if server
-                    .store()
-                    .get_value::<Archive<AlignedBytes>>(ValueKey {
-                        account_id,
-                        collection: Collection::PushSubscription.into(),
-                        document_id: push_subscription_id,
-                        class: ValueClass::Property(Field::ARCHIVE.into()),
-                    })
-                    .await
-                    .is_err()
-                {
-                    return Err(err
-                        .account_id(account_id)
-                        .document_id(push_subscription_id)
-                        .caused_by(trc::location!()));
-                }
+                return Err(err
+                    .account_id(account_id)
+                    .document_id(push_subscription_id)
+                    .caused_by(trc::location!()));
             }
         }
     }
 
-    // Increment document id counter
-    if did_migrate {
+    if !subscriptions.is_empty() {
+        // Save changes
+        let num_push_subscriptions = subscriptions.len() as u64;
+        let mut batch = BatchBuilder::new();
+
+        batch
+            .with_account_id(u32::MAX)
+            .with_collection(Collection::PushSubscription)
+            .create_document(account_id)
+            .with_account_id(account_id);
+
+        for subscription in &subscriptions {
+            batch.delete_document(subscription.id).clear(Field::ARCHIVE);
+        }
+
+        batch
+            .with_collection(Collection::Principal)
+            .update_document(0)
+            .set(
+                PrincipalField::PushSubscriptions,
+                Archiver::new(PushSubscriptions { subscriptions })
+                    .serialize()
+                    .caused_by(trc::location!())?,
+            );
+
         server
-            .store()
-            .assign_document_ids(
-                account_id,
-                Collection::PushSubscription,
-                push_subscription_ids
-                    .max()
-                    .map(|id| id as u64)
-                    .unwrap_or(num_push_subscriptions)
-                    + 1,
-            )
+            .commit_batch(batch)
             .await
             .caused_by(trc::location!())?;
+
         Ok(num_push_subscriptions)
     } else {
         Ok(0)
