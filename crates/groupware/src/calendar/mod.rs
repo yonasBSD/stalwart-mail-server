@@ -11,9 +11,12 @@ pub mod index;
 pub mod itip;
 pub mod storage;
 
-use calcard::icalendar::{ICalendar, ICalendarComponent, ICalendarDuration, ICalendarEntry};
+use calcard::icalendar::{
+    ICalendar, ICalendarComponent, ICalendarComponentType, ICalendarDuration, ICalendarEntry,
+};
 use common::{DavName, auth::AccessToken};
 use types::{acl::AclGrant, dead_property::DeadProperty};
+use utils::map::bitmap::BitmapItem;
 
 #[derive(
     rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
@@ -22,9 +25,30 @@ pub struct Calendar {
     pub name: String,
     pub preferences: Vec<CalendarPreferences>,
     pub acls: Vec<AclGrant>,
+    pub supported_components: u64,
     pub dead_properties: DeadProperty,
     pub created: i64,
     pub modified: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SupportedComponent {
+    VCalendar,     // [RFC5545, Section 3.4]
+    VEvent,        // [RFC5545, Section 3.6.1]
+    VTodo,         // [RFC5545, Section 3.6.2]
+    VJournal,      // [RFC5545, Section 3.6.3]
+    VFreebusy,     // [RFC5545, Section 3.6.4]
+    VTimezone,     // [RFC5545, Section 3.6.5]
+    VAlarm,        // [RFC5545, Section 3.6.6]
+    Standard,      // [RFC5545, Section 3.6.5]
+    Daylight,      // [RFC5545, Section 3.6.5]
+    VAvailability, // [RFC7953, Section 3.1]
+    Available,     // [RFC7953, Section 3.1]
+    Participant,   // [RFC9073, Section 7.1]
+    VLocation,     // [RFC9073, Section 7.2] [RFC Errata 7381]
+    VResource,     // [RFC9073, Section 7.3]
+    VStatus,       // draft-ietf-calext-ical-tasks-14
+    Other,
 }
 
 pub const CALENDAR_SUBSCRIBED: u16 = 1;
@@ -317,5 +341,107 @@ impl ArchivedCalendarEvent {
 impl Default for ChangedBy {
     fn default() -> Self {
         ChangedBy::CalendarAddress("".into())
+    }
+}
+
+impl From<u64> for SupportedComponent {
+    fn from(value: u64) -> Self {
+        match value {
+            0 => SupportedComponent::VCalendar,
+            1 => SupportedComponent::VEvent,
+            2 => SupportedComponent::VTodo,
+            3 => SupportedComponent::VJournal,
+            4 => SupportedComponent::VFreebusy,
+            5 => SupportedComponent::VTimezone,
+            6 => SupportedComponent::VAlarm,
+            7 => SupportedComponent::Standard,
+            8 => SupportedComponent::Daylight,
+            9 => SupportedComponent::VAvailability,
+            10 => SupportedComponent::Available,
+            11 => SupportedComponent::Participant,
+            12 => SupportedComponent::VLocation,
+            13 => SupportedComponent::VResource,
+            14 => SupportedComponent::VStatus,
+            _ => SupportedComponent::Other,
+        }
+    }
+}
+
+impl From<SupportedComponent> for u64 {
+    fn from(value: SupportedComponent) -> Self {
+        match value {
+            SupportedComponent::VCalendar => 0,
+            SupportedComponent::VEvent => 1,
+            SupportedComponent::VTodo => 2,
+            SupportedComponent::VJournal => 3,
+            SupportedComponent::VFreebusy => 4,
+            SupportedComponent::VTimezone => 5,
+            SupportedComponent::VAlarm => 6,
+            SupportedComponent::Standard => 7,
+            SupportedComponent::Daylight => 8,
+            SupportedComponent::VAvailability => 9,
+            SupportedComponent::Available => 10,
+            SupportedComponent::Participant => 11,
+            SupportedComponent::VLocation => 12,
+            SupportedComponent::VResource => 13,
+            SupportedComponent::VStatus => 14,
+            SupportedComponent::Other => 15,
+        }
+    }
+}
+
+impl BitmapItem for SupportedComponent {
+    fn max() -> u64 {
+        u64::from(SupportedComponent::Other)
+    }
+
+    fn is_valid(&self) -> bool {
+        !matches!(self, SupportedComponent::Other)
+    }
+}
+
+impl From<ICalendarComponentType> for SupportedComponent {
+    fn from(value: ICalendarComponentType) -> Self {
+        match value {
+            ICalendarComponentType::VCalendar => SupportedComponent::VCalendar,
+            ICalendarComponentType::VEvent => SupportedComponent::VEvent,
+            ICalendarComponentType::VTodo => SupportedComponent::VTodo,
+            ICalendarComponentType::VJournal => SupportedComponent::VJournal,
+            ICalendarComponentType::VFreebusy => SupportedComponent::VFreebusy,
+            ICalendarComponentType::VTimezone => SupportedComponent::VTimezone,
+            ICalendarComponentType::VAlarm => SupportedComponent::VAlarm,
+            ICalendarComponentType::Standard => SupportedComponent::Standard,
+            ICalendarComponentType::Daylight => SupportedComponent::Daylight,
+            ICalendarComponentType::VAvailability => SupportedComponent::VAvailability,
+            ICalendarComponentType::Available => SupportedComponent::Available,
+            ICalendarComponentType::Participant => SupportedComponent::Participant,
+            ICalendarComponentType::VLocation => SupportedComponent::VLocation,
+            ICalendarComponentType::VResource => SupportedComponent::VResource,
+            ICalendarComponentType::VStatus => SupportedComponent::VStatus,
+            _ => SupportedComponent::Other,
+        }
+    }
+}
+
+impl From<SupportedComponent> for ICalendarComponentType {
+    fn from(value: SupportedComponent) -> Self {
+        match value {
+            SupportedComponent::VCalendar => ICalendarComponentType::VCalendar,
+            SupportedComponent::VEvent => ICalendarComponentType::VEvent,
+            SupportedComponent::VTodo => ICalendarComponentType::VTodo,
+            SupportedComponent::VJournal => ICalendarComponentType::VJournal,
+            SupportedComponent::VFreebusy => ICalendarComponentType::VFreebusy,
+            SupportedComponent::VTimezone => ICalendarComponentType::VTimezone,
+            SupportedComponent::VAlarm => ICalendarComponentType::VAlarm,
+            SupportedComponent::Standard => ICalendarComponentType::Standard,
+            SupportedComponent::Daylight => ICalendarComponentType::Daylight,
+            SupportedComponent::VAvailability => ICalendarComponentType::VAvailability,
+            SupportedComponent::Available => ICalendarComponentType::Available,
+            SupportedComponent::Participant => ICalendarComponentType::Participant,
+            SupportedComponent::VLocation => ICalendarComponentType::VLocation,
+            SupportedComponent::VResource => ICalendarComponentType::VResource,
+            SupportedComponent::VStatus => ICalendarComponentType::VStatus,
+            SupportedComponent::Other => ICalendarComponentType::Other(Default::default()),
+        }
     }
 }

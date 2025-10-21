@@ -25,7 +25,7 @@ use dav_proto::{
 };
 use groupware::{
     cache::GroupwareCache,
-    calendar::{Calendar, CalendarEvent, Timezone},
+    calendar::{Calendar, CalendarEvent, SupportedComponent, Timezone},
 };
 use http_proto::HttpResponse;
 use hyper::StatusCode;
@@ -36,6 +36,7 @@ use types::{
     acl::Acl,
     collection::{Collection, SyncCollection},
 };
+use utils::map::bitmap::Bitmap;
 
 pub(crate) trait CalendarPropPatchRequestHandler: Sync + Send {
     fn handle_calendar_proppatch_request(
@@ -340,6 +341,39 @@ impl CalendarPropPatchRequestHandler for Server {
                         items.insert_ok(property.property);
                     }
                 }
+                (
+                    DavProperty::CalDav(CalDavProperty::SupportedCalendarComponentSet),
+                    DavValue::Components(components),
+                ) => {
+                    if !is_update {
+                        calendar.supported_components = Bitmap::<SupportedComponent>::from_iter(
+                            components
+                                .0
+                                .into_iter()
+                                .map(|v| SupportedComponent::from(v.0)),
+                        )
+                        .into_inner();
+                        if calendar.supported_components != 0 {
+                            items.insert_ok(property.property);
+                        } else {
+                            items.insert_precondition_failed_with_description(
+                                property.property,
+                                StatusCode::PRECONDITION_FAILED,
+                                CalCondition::SupportedCalendarComponent,
+                                "At least one supported component must be specified",
+                            );
+                            has_errors = true;
+                        }
+                    } else {
+                        items.insert_precondition_failed_with_description(
+                            property.property,
+                            StatusCode::PRECONDITION_FAILED,
+                            CalCondition::SupportedCalendarComponent,
+                            "Property cannot be modified",
+                        );
+                        has_errors = true;
+                    }
+                }
                 (DavProperty::DeadProperty(dead), DavValue::DeadProperty(values))
                     if self.core.groupware.dead_property_size.is_some() =>
                 {
@@ -362,7 +396,7 @@ impl CalendarPropPatchRequestHandler for Server {
                         has_errors = true;
                     }
                 }
-                (_, DavValue::Null | DavValue::Components(_)) => {
+                (_, DavValue::Null) => {
                     items.insert_ok(property.property);
                 }
                 _ => {

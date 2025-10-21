@@ -27,7 +27,7 @@ use crate::{
         propfind::{PrincipalPropFind, build_home_set},
     },
 };
-use calcard::common::timezone::Tz;
+use calcard::{common::timezone::Tz, icalendar::ICalendarComponentType};
 use common::{DavResourcePath, DavResources, Server, auth::AccessToken};
 use dav_proto::{
     Depth, RequestHeaders,
@@ -36,9 +36,9 @@ use dav_proto::{
     schema::{
         Collation, Namespace,
         property::{
-            ActiveLock, CalDavProperty, CardDavProperty, DavProperty, DavValue, PrincipalProperty,
-            Privilege, ReportSet, ResourceType, Rfc1123DateTime, SupportedCollation, SupportedLock,
-            WebDavProperty,
+            ActiveLock, CalDavProperty, CardDavProperty, Comp, DavProperty, DavValue,
+            PrincipalProperty, Privilege, ReportSet, ResourceType, Rfc1123DateTime,
+            SupportedCollation, SupportedLock, WebDavProperty,
         },
         request::{DavDeadProperty, DavPropertyValue, PropFind},
         response::{
@@ -48,7 +48,7 @@ use dav_proto::{
     },
 };
 use directory::{Permission, Type, backend::internal::manage::ManageDirectory};
-use groupware::calendar::SCHEDULE_INBOX_ID;
+use groupware::calendar::{SCHEDULE_INBOX_ID, SupportedComponent};
 use groupware::{
     DavCalendarResource, DavResourceName, cache::GroupwareCache, calendar::ArchivedTimezone,
 };
@@ -67,6 +67,7 @@ use types::{
     collection::{Collection, SyncCollection},
     dead_property::DeadProperty,
 };
+use utils::map::bitmap::Bitmap;
 
 pub(crate) trait PropFindRequestHandler: Sync + Send {
     fn handle_propfind_request(
@@ -898,11 +899,23 @@ impl PropFindRequestHandler for Server {
                         }
                         (
                             CalDavProperty::SupportedCalendarComponentSet,
-                            ArchivedResource::Calendar(_),
+                            ArchivedResource::Calendar(calendar),
                         ) => {
+                            let supported_components =
+                                calendar.inner.supported_components.to_native();
                             fields.push(DavPropertyValue::new(
                                 property.clone(),
-                                DavValue::SupportedCalendarComponentSet,
+                                if supported_components != 0 {
+                                    DavValue::Components(List(
+                                        Bitmap::<SupportedComponent>::from(supported_components)
+                                            .into_iter()
+                                            .map(ICalendarComponentType::from)
+                                            .map(Comp)
+                                            .collect(),
+                                    ))
+                                } else {
+                                    DavValue::all_calendar_components()
+                                },
                             ));
                         }
                         (CalDavProperty::SupportedCalendarData, ArchivedResource::Calendar(_)) => {

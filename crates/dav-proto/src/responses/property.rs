@@ -18,6 +18,7 @@ use crate::{
         Namespace, Namespaces,
     },
 };
+use calcard::icalendar::ICalendarComponentType;
 use mail_parser::{
     parsers::fields::date::{DOW, MONTH},
     DateTime,
@@ -119,29 +120,29 @@ impl Display for DavValue {
                     )
                 )
             }
-            DavValue::SupportedCalendarComponentSet => {
-                write!(
-                    f,
-                    concat!(
-                        "<A:comp name=\"VEVENT\"/>",
-                        "<A:comp name=\"VTODO\"/>",
-                        "<A:comp name=\"VJOURNAL\"/>",
-                        "<A:comp name=\"VFREEBUSY\"/>",
-                        "<A:comp name=\"VTIMEZONE\"/>",
-                        "<A:comp name=\"VALARM\"/>",
-                        "<A:comp name=\"STANDARD\"/>",
-                        "<A:comp name=\"DAYLIGHT\"/>",
-                        "<A:comp name=\"VAVAILABILITY\"/>",
-                        "<A:comp name=\"AVAILABLE\"/>",
-                        "<A:comp name=\"PARTICIPANT\"/>",
-                        "<A:comp name=\"VLOCATION\"/>",
-                        "<A:comp name=\"VRESOURCE\"/>",
-                    )
-                )
-            }
             DavValue::Response(v) => v.fmt(f),
             DavValue::VCard(_) | DavValue::ICalendar(_) | DavValue::Null => Ok(()),
         }
+    }
+}
+
+impl DavValue {
+    pub fn all_calendar_components() -> Self {
+        DavValue::Components(List(vec![
+            Comp(ICalendarComponentType::VEvent),
+            Comp(ICalendarComponentType::VTodo),
+            Comp(ICalendarComponentType::VJournal),
+            Comp(ICalendarComponentType::VFreebusy),
+            Comp(ICalendarComponentType::VTimezone),
+            Comp(ICalendarComponentType::VAlarm),
+            Comp(ICalendarComponentType::Standard),
+            Comp(ICalendarComponentType::Daylight),
+            Comp(ICalendarComponentType::VAvailability),
+            Comp(ICalendarComponentType::Available),
+            Comp(ICalendarComponentType::Participant),
+            Comp(ICalendarComponentType::VLocation),
+            Comp(ICalendarComponentType::VResource),
+        ]))
     }
 }
 

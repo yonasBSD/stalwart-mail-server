@@ -141,7 +141,7 @@ impl Display for SyncToken {
 
 impl Display for Comp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "<A:comp name=\"{}\">", self.0.as_str())
+        write!(f, "<A:comp name=\"{}\"/>", self.0.as_str())
     }
 }
 

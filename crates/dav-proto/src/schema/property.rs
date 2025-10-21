@@ -169,7 +169,6 @@ pub enum DavValue {
     DeadProperty(DeadProperty),
     SupportedAddressData,
     SupportedCalendarData,
-    SupportedCalendarComponentSet,
     Null,
 }
 
