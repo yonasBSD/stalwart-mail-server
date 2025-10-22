@@ -16,6 +16,8 @@ If you are upgrading from v0.13.4 and below, this version includes **breaking ch
 - i18n: Swedish language support (contributed by @purung)
 
 ## Changed
+- Replaced `sieve.untrusted.limits.max-scripts` and `jmap.push.max-total` with `object-quota.*` settings. 
+- Cluster node roles now allow sharding.
 
 ## Fixed
 - Push Subscription: Clean-up of expired subscriptions and cluster notification of changes (#1248)
