@@ -13,7 +13,7 @@ pub mod sql;
 
 use common::{Core, Server, config::smtp::session::AddressMapping};
 use directory::{
-    Directories, Principal, Type,
+    Directories, Principal, PrincipalData, Type,
     backend::internal::{PrincipalField, PrincipalSet, manage::ManageDirectory},
 };
 use mail_send::Credentials;
@@ -594,7 +594,16 @@ impl From<Principal> for TestPrincipal {
             member_of: value.member_of().map(|v| v.to_string()).collect(),
             roles: value.roles().map(|v| v.to_string()).collect(),
             lists: value.lists().map(|v| v.to_string()).collect(),
-            secrets: value.secrets().map(|v| v.to_string()).collect(),
+            secrets: value
+                .data
+                .iter()
+                .filter_map(|v| match v {
+                    PrincipalData::Password(s)
+                    | PrincipalData::AppPassword(s)
+                    | PrincipalData::OtpAuth(s) => Some(s.to_string()),
+                    _ => None,
+                })
+                .collect(),
             emails: value.email_addresses().map(|v| v.to_string()).collect(),
             description: value.description().map(|v| v.to_string()),
             name: value.name,

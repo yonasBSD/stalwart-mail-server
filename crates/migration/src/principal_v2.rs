@@ -7,7 +7,7 @@
 use std::time::Instant;
 
 use common::Server;
-use directory::{Principal, PrincipalData, Type};
+use directory::{Principal, PrincipalData, Type, backend::internal::SpecialSecrets};
 use proc_macros::EnumMethods;
 use store::{
     Serialize, ValueKey,
@@ -59,8 +59,16 @@ pub(crate) async fn migrate_principals_v0_13(server: &Server) -> trc::Result<Roa
                         data: Vec::new(),
                     };
 
+                    let mut has_secret = false;
                     for secret in old_principal.secrets {
-                        principal.data.push(PrincipalData::Secret(secret));
+                        if secret.is_otp_secret() {
+                            principal.data.push(PrincipalData::OtpAuth(secret));
+                        } else if secret.is_app_secret() {
+                            principal.data.push(PrincipalData::AppPassword(secret));
+                        } else if !has_secret {
+                            principal.data.push(PrincipalData::Password(secret));
+                            has_secret = true;
+                        }
                     }
 
                     for (idx, email) in old_principal.emails.into_iter().enumerate() {

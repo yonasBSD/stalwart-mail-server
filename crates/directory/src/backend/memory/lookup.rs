@@ -35,7 +35,7 @@ impl MemoryDirectory {
 
                 for principal in &self.principals {
                     if principal.name() == username {
-                        return if principal.verify_secret(secret, false).await? {
+                        return if principal.verify_secret(secret, false, false).await? {
                             Ok(Some(principal.clone()))
                         } else {
                             Ok(None)

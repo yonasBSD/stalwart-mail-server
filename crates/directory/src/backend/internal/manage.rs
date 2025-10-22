@@ -321,7 +321,7 @@ impl ManageDirectory for Store {
             return Err(err_exists(PrincipalField::Name, name));
         }
 
-        let mut principal_create = Principal::new(0, principal_set.typ());
+        let mut create_principal = Principal::new(0, principal_set.typ());
 
         // SPDX-SnippetBegin
         // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
@@ -352,9 +352,9 @@ impl ManageDirectory for Store {
                 ));
             }
 
-            principal_create.data.push(PrincipalData::Tenant(tenant_id));
+            create_principal.data.push(PrincipalData::Tenant(tenant_id));
 
-            if !matches!(principal_create.typ, Type::Tenant | Type::Domain) {
+            if !matches!(create_principal.typ, Type::Tenant | Type::Domain) {
                 if let Some(domain) = name.try_domain_part()
                     && self
                         .get_principal_info(domain)
@@ -377,37 +377,47 @@ impl ManageDirectory for Store {
         // SPDX-SnippetEnd
 
         // Set fields
-        principal_create.name = name;
+        create_principal.name = name;
+        let mut has_secret = false;
         for secret in principal_set
             .take_str_array(PrincipalField::Secrets)
             .unwrap_or_default()
         {
-            principal_create.data.push(PrincipalData::Secret(secret));
+            if secret.is_otp_secret() {
+                create_principal.data.push(PrincipalData::OtpAuth(secret));
+            } else if secret.is_app_secret() {
+                create_principal
+                    .data
+                    .push(PrincipalData::AppPassword(secret));
+            } else if !has_secret {
+                has_secret = true;
+                create_principal.data.push(PrincipalData::Password(secret));
+            }
         }
 
         if let Some(description) = principal_set.take_str(PrincipalField::Description) {
-            principal_create
+            create_principal
                 .data
                 .push(PrincipalData::Description(description));
         }
 
         if let Some(picture) = principal_set.take_str(PrincipalField::Picture) {
-            principal_create.data.push(PrincipalData::Picture(picture));
+            create_principal.data.push(PrincipalData::Picture(picture));
         }
         if let Some(picture) = principal_set.take_str(PrincipalField::Locale) {
-            principal_create.data.push(PrincipalData::Locale(picture));
+            create_principal.data.push(PrincipalData::Locale(picture));
         }
         for url in principal_set
             .take_str_array(PrincipalField::Urls)
             .unwrap_or_default()
         {
-            principal_create.data.push(PrincipalData::Url(url));
+            create_principal.data.push(PrincipalData::Url(url));
         }
         for member in principal_set
             .take_str_array(PrincipalField::ExternalMembers)
             .unwrap_or_default()
         {
-            principal_create
+            create_principal
                 .data
                 .push(PrincipalData::ExternalMember(member));
         }
@@ -415,12 +425,12 @@ impl ManageDirectory for Store {
             for (idx, quota) in quotas.into_iter().take(Type::MAX_ID + 2).enumerate() {
                 if quota != 0 {
                     if idx != 0 {
-                        principal_create.data.push(PrincipalData::DirectoryQuota {
+                        create_principal.data.push(PrincipalData::DirectoryQuota {
                             quota: quota as u32,
                             typ: Type::from_u8((idx - 1) as u8),
                         });
                     } else {
-                        principal_create.data.push(PrincipalData::DiskQuota(quota));
+                        create_principal.data.push(PrincipalData::DiskQuota(quota));
                     }
                 }
             }
@@ -511,7 +521,7 @@ impl ManageDirectory for Store {
         }
         if !permissions.is_empty() {
             for (permission, v) in permissions {
-                principal_create.data.push(PrincipalData::Permission {
+                create_principal.data.push(PrincipalData::Permission {
                     permission_id: permission.id(),
                     grant: !v,
                 });
@@ -519,7 +529,7 @@ impl ManageDirectory for Store {
         }
 
         // Make sure the e-mail is not taken and validate domain
-        if principal_create.typ != Type::OauthClient {
+        if create_principal.typ != Type::OauthClient {
             for (idx, email) in principal_set
                 .take_str_array(PrincipalField::Emails)
                 .unwrap_or_default()
@@ -540,11 +550,11 @@ impl ManageDirectory for Store {
                         .ok_or_else(|| not_found(domain.to_string()))?;
                 }
                 if idx == 0 {
-                    principal_create
+                    create_principal
                         .data
                         .push(PrincipalData::PrimaryEmail(email));
                 } else {
-                    principal_create.data.push(PrincipalData::EmailAlias(email));
+                    create_principal.data.push(PrincipalData::EmailAlias(email));
                 }
             }
         }
@@ -560,13 +570,13 @@ impl ManageDirectory for Store {
                 .details("ID assignment failed")
                 .caused_by(trc::location!()));
         }
-        principal_create.id = principal_id;
+        create_principal.id = principal_id;
         let mut batch = BatchBuilder::new();
-        let pinfo_name = PrincipalInfo::new(principal_id, principal_create.typ, tenant_id);
-        let pinfo_email = PrincipalInfo::new(principal_id, principal_create.typ, None);
+        let pinfo_name = PrincipalInfo::new(principal_id, create_principal.typ, tenant_id);
+        let pinfo_email = PrincipalInfo::new(principal_id, create_principal.typ, None);
 
         // Validate object size
-        if principal_create.object_size() > 100_000 {
+        if create_principal.object_size() > 100_000 {
             return Err(error(
                 "Invalid parameter",
                 "Principal object size exceeds 100kb safety limit.".into(),
@@ -574,10 +584,10 @@ impl ManageDirectory for Store {
         }
 
         // Serialize
-        principal_create.sort();
-        let archiver = Archiver::new(principal_create);
+        create_principal.sort();
+        let archiver = Archiver::new(create_principal);
         let principal_bytes = archiver.serialize().caused_by(trc::location!())?;
-        let principal_create = archiver.into_inner();
+        let create_principal = archiver.into_inner();
 
         batch
             .with_account_id(u32::MAX)
@@ -585,11 +595,11 @@ impl ManageDirectory for Store {
             .create_document(principal_id)
             .assert_value(
                 ValueClass::Directory(DirectoryClass::NameToId(
-                    principal_create.name().as_bytes().to_vec(),
+                    create_principal.name().as_bytes().to_vec(),
                 )),
                 (),
             );
-        build_search_index(&mut batch, principal_id, None, Some(&principal_create));
+        build_search_index(&mut batch, principal_id, None, Some(&create_principal));
         batch
             .set(
                 ValueClass::Directory(DirectoryClass::Principal(principal_id)),
@@ -597,13 +607,13 @@ impl ManageDirectory for Store {
             )
             .set(
                 ValueClass::Directory(DirectoryClass::NameToId(
-                    principal_create.name.as_bytes().to_vec(),
+                    create_principal.name.as_bytes().to_vec(),
                 )),
                 pinfo_name.serialize(),
             );
 
         // Write email to id mapping
-        for email in principal_create.email_addresses() {
+        for email in create_principal.email_addresses() {
             batch.set(
                 ValueClass::Directory(DirectoryClass::EmailToId(email.as_bytes().to_vec())),
                 pinfo_email.serialize(),
@@ -633,7 +643,7 @@ impl ManageDirectory for Store {
                     principal_id: member.id,
                     member_of: principal_id,
                 }),
-                vec![principal_create.typ as u8],
+                vec![create_principal.typ as u8],
             );
             batch.set(
                 ValueClass::Directory(DirectoryClass::Members {
@@ -1160,11 +1170,24 @@ impl ManageDirectory for Store {
                 ) => {
                     // Password changed, update changed principals
                     changed_principals.add_change(principal_id, principal_type, change.field);
-                    principal
-                        .data
-                        .retain(|v| !matches!(v, PrincipalData::Secret(_)));
+                    principal.data.retain(|v| {
+                        !matches!(
+                            v,
+                            PrincipalData::Password(_)
+                                | PrincipalData::AppPassword(_)
+                                | PrincipalData::OtpAuth(_)
+                        )
+                    });
+                    let mut has_secret = false;
                     for secret in value.into_str_array() {
-                        principal.data.push(PrincipalData::Secret(secret));
+                        if secret.is_otp_secret() {
+                            principal.data.push(PrincipalData::OtpAuth(secret));
+                        } else if secret.is_app_secret() {
+                            principal.data.push(PrincipalData::AppPassword(secret));
+                        } else if !has_secret {
+                            has_secret = true;
+                            principal.data.push(PrincipalData::Password(secret));
+                        }
                     }
                 }
                 (
@@ -1172,8 +1195,26 @@ impl ManageDirectory for Store {
                     PrincipalField::Secrets,
                     PrincipalValue::String(secret),
                 ) => {
-                    if !principal.secrets().any(|v| *v == secret) {
-                        principal.data.push(PrincipalData::Secret(secret));
+                    if !principal.data.iter().any(|v| match v {
+                        PrincipalData::Password(v)
+                        | PrincipalData::AppPassword(v)
+                        | PrincipalData::OtpAuth(v) => *v == secret,
+                        _ => false,
+                    }) {
+                        if secret.is_app_secret() {
+                            principal.data.push(PrincipalData::AppPassword(secret));
+                        } else if secret.is_otp_secret() {
+                            principal
+                                .data
+                                .retain(|v| !matches!(v, PrincipalData::OtpAuth(_)));
+                            principal.data.push(PrincipalData::OtpAuth(secret));
+                        } else {
+                            principal
+                                .data
+                                .retain(|v| !matches!(v, PrincipalData::Password(_)));
+                            principal.data.push(PrincipalData::Password(secret));
+                        }
+
                         // Password changed, update changed principals
                         changed_principals.add_change(principal_id, principal_type, change.field);
                     }
@@ -1186,22 +1227,21 @@ impl ManageDirectory for Store {
                     // Password changed, update changed principals
                     changed_principals.add_change(principal_id, principal_type, change.field);
 
-                    if secret.is_app_password() || secret.is_otp_auth() {
+                    if secret.is_app_secret() || secret.is_otp_secret() {
                         principal.data.retain(|v| match v {
-                            PrincipalData::Secret(v) => {
+                            PrincipalData::AppPassword(v) | PrincipalData::OtpAuth(v) => {
                                 *v != secret && !v.starts_with(secret.as_str())
                             }
                             _ => true,
                         });
                     } else if !secret.is_empty() {
                         principal.data.retain(|v| match v {
-                            PrincipalData::Secret(v) => *v != secret,
+                            PrincipalData::Password(v) => *v != secret,
                             _ => true,
                         });
                     } else {
-                        principal.data.retain(|v| match v {
-                            PrincipalData::Secret(v) => !v.is_password(),
-                            _ => true,
+                        principal.data.retain(|v| {
+                            !matches!(v, PrincipalData::AppPassword(_) | PrincipalData::OtpAuth(_))
                         });
                     }
                 }
@@ -1319,7 +1359,7 @@ impl ManageDirectory for Store {
                     }
 
                     for email in principal.email_addresses() {
-                        if !emails.contains(email) {
+                        if !emails.iter().any(|v| v == email) {
                             batch.clear(ValueClass::Directory(DirectoryClass::EmailToId(
                                 email.as_bytes().to_vec(),
                             )));
@@ -1351,7 +1391,7 @@ impl ManageDirectory for Store {
                     let email = email.to_lowercase();
                     let mut emails_iter = principal.email_addresses().peekable();
                     let has_emails = emails_iter.peek().is_some();
-                    let email_exists = emails_iter.any(|v| v == &email);
+                    let email_exists = emails_iter.any(|v| v == email);
                     drop(emails_iter);
                     if !email_exists {
                         if validate_emails {
@@ -1380,7 +1420,7 @@ impl ManageDirectory for Store {
                     PrincipalValue::String(email),
                 ) => {
                     let email = email.to_lowercase();
-                    if principal.email_addresses().any(|v| v == &email) {
+                    if principal.email_addresses().any(|v| v == email) {
                         let mut deleted_primary = false;
                         principal.data.retain(|v| match v {
                             PrincipalData::EmailAlias(v) => v != &email,
@@ -2320,7 +2360,9 @@ impl ManageDirectory for Store {
                         result.set(PrincipalField::Description, description);
                     }
                 }
-                PrincipalData::Secret(secret) => {
+                PrincipalData::Password(secret)
+                | PrincipalData::AppPassword(secret)
+                | PrincipalData::OtpAuth(secret) => {
                     if fields.is_empty() || fields.contains(&PrincipalField::Secrets) {
                         result.append_str(PrincipalField::Secrets, secret);
                     }

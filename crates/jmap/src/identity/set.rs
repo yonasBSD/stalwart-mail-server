@@ -68,7 +68,7 @@ impl IdentitySet for Server {
                     .directory()
                     .query(QueryParams::id(account_id).with_return_member_of(false))
                     .await?
-                    .is_none_or(|p| !p.email_addresses().any(|e| e == &identity.email))
+                    .is_none_or(|p| !p.email_addresses().any(|e| e == identity.email))
                 {
                     response.not_created.append(
                         id,

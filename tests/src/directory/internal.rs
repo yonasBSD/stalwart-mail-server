@@ -47,7 +47,7 @@ async fn internal_directory() {
                 TestPrincipal {
                     name: "john".into(),
                     description: Some("John Doe".into()),
-                    secrets: vec!["secret".into(), "secret2".into()],
+                    secrets: vec!["secret".into(), "$app$secret2".into()],
                     ..Default::default()
                 }
                 .into(),
@@ -148,7 +148,7 @@ async fn internal_directory() {
                 TestPrincipal {
                     name: "jane".into(),
                     description: Some("Jane Doe".into()),
-                    secrets: vec!["my_secret".into(), "my_secret2".into()],
+                    secrets: vec!["my_secret".into(), "$app$my_secret2".into()],
                     emails: vec!["jane@example.org".into()],
                     quota: 123,
                     ..Default::default()
@@ -188,7 +188,7 @@ async fn internal_directory() {
                 name: "jane".into(),
                 description: Some("Jane Doe".into()),
                 emails: vec!["jane@example.org".into()],
-                secrets: vec!["my_secret".into(), "my_secret2".into()],
+                secrets: vec!["my_secret".into(), "$app$my_secret2".into()],
                 quota: 123,
                 ..Default::default()
             })
@@ -366,7 +366,7 @@ async fn internal_directory() {
                 id: john_id,
                 name: "john".into(),
                 description: Some("John Doe".into()),
-                secrets: vec!["secret".into(), "secret2".into()],
+                secrets: vec!["secret".into(), "$app$secret2".into()],
                 emails: vec!["john@example.org".into()],
                 member_of: vec!["sales".into(), "support".into()],
                 lists: vec!["list".into()],
@@ -411,7 +411,7 @@ async fn internal_directory() {
                 id: john_id,
                 name: "john".into(),
                 description: Some("John Doe".into()),
-                secrets: vec!["secret".into(), "secret2".into()],
+                secrets: vec!["secret".into(), "$app$secret2".into()],
                 emails: vec!["john@example.org".into()],
                 member_of: vec!["sales".into()],
                 lists: vec!["list".into()],

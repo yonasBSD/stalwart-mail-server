@@ -167,8 +167,8 @@ fn extract_filter_range(query: &CalendarQuery) -> Option<TimeRange> {
 
 fn extract_data_range(propfind: &PropFind, filter_range: Option<TimeRange>) -> Option<TimeRange> {
     let props = match propfind {
-        PropFind::PropName => todo!(),
         PropFind::AllProp(props) | PropFind::Prop(props) => props,
+        PropFind::PropName => &[][..],
     };
 
     for prop in props {

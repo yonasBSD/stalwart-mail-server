@@ -344,10 +344,10 @@ impl JmapConfig {
             }),
             contact_parse_max_items: config
                 .property("jmap.contact.parse.max-items")
-                .unwrap_or(100),
+                .unwrap_or(10),
             calendar_parse_max_items: config
                 .property("jmap.calendar.parse.max-items")
-                .unwrap_or(100),
+                .unwrap_or(10),
             default_folders,
             shared_folder,
         };

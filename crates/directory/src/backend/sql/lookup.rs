@@ -10,6 +10,7 @@ use crate::{
     backend::{
         RcptType,
         internal::{
+            SpecialSecrets,
             lookup::DirectoryStore,
             manage::{self, ManageDirectory, UpdatePrincipal},
         },
@@ -99,17 +100,31 @@ impl SqlDirectory {
 
                             for row in secrets.rows {
                                 for value in row.values {
-                                    if let Value::Text(text) = value {
-                                        principal
+                                    if let Value::Text(secret) = value {
+                                        let secret = secret.into_owned();
+
+                                        if secret.is_otp_secret() {
+                                            if !principal.data.iter().any(|data| {
+                                                matches!(data, PrincipalData::OtpAuth(_))
+                                            }) {
+                                                principal.data.push(PrincipalData::OtpAuth(secret));
+                                            }
+                                        } else if secret.is_app_secret() {
+                                            principal.data.push(PrincipalData::AppPassword(secret));
+                                        } else if !principal
                                             .data
-                                            .push(PrincipalData::Secret(text.as_ref().into()));
+                                            .iter()
+                                            .any(|data| matches!(data, PrincipalData::Password(_)))
+                                        {
+                                            principal.data.push(PrincipalData::Password(secret));
+                                        }
                                     }
                                 }
                             }
                         }
 
                         if principal
-                            .verify_secret(secret, false)
+                            .verify_secret(secret, false, false)
                             .await
                             .caused_by(trc::location!())?
                         {
@@ -201,7 +216,7 @@ impl SqlDirectory {
         };
 
         // Keep the internal store up to date with the SQL server
-        let changes = principal.update_external(external_principal, true);
+        let changes = principal.update_external(external_principal);
         if !changes.is_empty() {
             self.data_store
                 .update_principal(
@@ -281,14 +296,13 @@ impl SqlMappings {
         let mut principal = Principal::new(u32::MAX, Type::Individual);
         let mut role = ROLE_USER;
         let mut has_primary_email = false;
+        let mut secret = None;
 
         if let Some(row) = rows.rows.into_iter().next() {
             for (name, value) in rows.names.into_iter().zip(row.values) {
                 if name.eq_ignore_ascii_case(&self.column_secret) {
                     if let Value::Text(text) = value {
-                        principal
-                            .data
-                            .push(PrincipalData::Secret(text.as_ref().into()));
+                        secret = Some(text.into_owned());
                     }
                 } else if name.eq_ignore_ascii_case(&self.column_type) {
                     match value.to_str().as_ref() {
@@ -328,6 +342,10 @@ impl SqlMappings {
                     principal.data.push(PrincipalData::DiskQuota(quota as u64));
                 }
             }
+        }
+
+        if let Some(secret) = secret {
+            principal.data.push(PrincipalData::Password(secret));
         }
 
         principal.data.push(PrincipalData::Role(role));

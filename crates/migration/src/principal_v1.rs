@@ -12,7 +12,7 @@ use crate::{
 use common::Server;
 use directory::{
     Permission, Principal, PrincipalData, ROLE_ADMIN, ROLE_USER, Type,
-    backend::internal::{PrincipalField, PrincipalSet},
+    backend::internal::{PrincipalField, PrincipalSet, SpecialSecrets},
 };
 use nlp::tokenizers::word::WordTokenizer;
 use std::{slice::Iter, time::Instant};
@@ -183,11 +183,19 @@ impl FromLegacy for Principal {
         };
 
         // Map fields
+        let mut has_secret = false;
         for secret in legacy
             .take_str_array(PrincipalField::Secrets)
             .unwrap_or_default()
         {
-            principal.data.push(PrincipalData::Secret(secret));
+            if secret.is_otp_secret() {
+                principal.data.push(PrincipalData::OtpAuth(secret));
+            } else if secret.is_app_secret() {
+                principal.data.push(PrincipalData::AppPassword(secret));
+            } else if !has_secret {
+                principal.data.push(PrincipalData::Password(secret));
+                has_secret = true;
+            }
         }
         for (idx, email) in legacy
             .take_str_array(PrincipalField::Emails)
@@ -371,7 +379,7 @@ pub(crate) fn build_search_index(batch: &mut BatchBuilder, principal_id: u32, ne
 
     for word in [Some(new.name.as_str()), new.description()]
         .into_iter()
-        .chain(new.email_addresses().map(|s| Some(s.as_str())))
+        .chain(new.email_addresses().map(Some))
         .flatten()
     {
         new_words.extend(WordTokenizer::new(word, MAX_TOKEN_LENGTH).map(|t| t.word));

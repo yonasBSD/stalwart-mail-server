@@ -135,7 +135,7 @@ impl MemoryDirectory {
 
             principal.name = name.as_str().into();
             for (_, secret) in config.values((prefix.as_str(), "principals", lookup_id, "secret")) {
-                principal.data.push(PrincipalData::Secret(secret.into()));
+                principal.data.push(PrincipalData::Password(secret.into()));
             }
             if let Some(description) =
                 config.value((prefix.as_str(), "principals", lookup_id, "description"))

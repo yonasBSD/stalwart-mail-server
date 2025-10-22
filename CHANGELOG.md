@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.14.0] - 2025-10-22
+
+If you are upgrading from v0.13.4 and below, this version includes **breaking changes** to the internal directory, calendar and contacts. Please read the [upgrading documentation](https://stalw.art/docs/install/upgrade) for more information on how to upgrade from previous versions.
+
+## Added
+- JMAP for Calendars ([draft-ietf-jmap-calendars](https://datatracker.ietf.org/doc/draft-ietf-jmap-calendars/)).
+- JMAP for Contacts  ([RFC 9610](https://datatracker.ietf.org/doc/rfc9610/)).
+- JMAP for File Storage ([draft-ietf-jmap-filenode](https://datatracker.ietf.org/doc/draft-ietf-jmap-filenode/)).
+- JMAP Sharing ([RFC 9670](https://datatracker.ietf.org/doc/rfc9670/))
+- CalDAV: support for `supported-calendar-component-set` (#1893)
+- i18n: Greek language support (contributed by @infl00p)
+- i18n: Swedish language support (contributed by @purung)
+
+## Changed
+
+## Fixed
+- Push Subscription: Clean-up of expired subscriptions and cluster notification of changes (#1248)
+- CalDAV: Per-user CalDAV properties (#2058)
+
 ## [0.13.4] - 2025-09-30
 
 If you are upgrading from v0.11.x or v0.12.x, this version includes **breaking changes** to the message queue and MTA configuration. Please read the [UPGRADING.md](https://github.com/stalwartlabs/stalwart/blob/main/UPGRADING.md) file for more information on how to upgrade from previous versions.

@@ -50,7 +50,9 @@ impl DirectoryStore for Store {
             && let Some(mut principal) = self.get_principal(account_id).await?
         {
             if let Some(secret) = secret
-                && !principal.verify_secret(secret, by.only_app_pass).await?
+                && !principal
+                    .verify_secret(secret, by.only_app_pass, true)
+                    .await?
             {
                 return Ok(None);
             }

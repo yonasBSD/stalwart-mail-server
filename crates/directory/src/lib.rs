@@ -42,9 +42,9 @@ pub struct Principal {
     pub data: Vec<PrincipalData>,
 }
 
-#[derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Clone, PartialEq, Eq)]
+#[derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PrincipalData {
-    Secret(String),
+    Password(String),
 
     // Permissions and memberships
     Tenant(u32),
@@ -66,6 +66,10 @@ pub enum PrincipalData {
     ExternalMember(String),
     Url(String),
     Locale(String),
+
+    // Secrets
+    AppPassword(String),
+    OtpAuth(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -92,6 +96,7 @@ pub struct MemberOf {
     Eq,
     serde::Serialize,
     serde::Deserialize,
+    Hash,
 )]
 #[serde(rename_all = "camelCase")]
 pub enum Type {

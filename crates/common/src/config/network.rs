@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use super::*;
 use crate::expr::{if_block::IfBlock, tokenizer::TokenMap};
 use ahash::AHashSet;
-use std::time::Duration;
+use std::{hash::Hasher, time::Duration};
 use utils::config::{Config, Rate, utils::ParseValue};
-
-use super::*;
+use xxhash_rust::xxh3::Xxh3Builder;
 
 #[derive(Clone)]
 pub struct Network {
@@ -377,8 +377,9 @@ impl ClusterRole {
                 shard_id,
                 total_shards,
             } => {
-                (ahash::RandomState::new().hash_one(item) % (*total_shards as u64))
-                    == (*shard_id as u64)
+                let mut hasher = Xxh3Builder::new().with_seed(191179).build();
+                item.hash(&mut hasher);
+                hasher.finish() % (*total_shards as u64) == *shard_id as u64
             }
         }
     }

@@ -5,7 +5,7 @@
  */
 
 use directory::{
-    QueryParams, ROLE_USER, Type,
+    QueryParams, ROLE_ADMIN, ROLE_USER, Type,
     backend::{RcptType, internal::manage::ManageDirectory},
 };
 use mail_send::Credentials;
@@ -189,7 +189,7 @@ async fn sql_directory() {
                 description: Some("Administrator".into()),
                 secrets: vec!["very_secret".into()],
                 typ: Type::Individual,
-                roles: vec![ROLE_USER.to_string()],
+                roles: vec![ROLE_ADMIN.to_string()],
                 ..Default::default()
             }
         );
@@ -208,13 +208,15 @@ async fn sql_directory() {
         );
 
         // Get user by name
+        let mut p = handle
+            .query(QueryParams::name("jane").with_return_member_of(true))
+            .await
+            .unwrap()
+            .unwrap()
+            .into_test();
+        p.member_of.sort();
         assert_eq!(
-            handle
-                .query(QueryParams::name("jane").with_return_member_of(true))
-                .await
-                .unwrap()
-                .unwrap()
-                .into_test(),
+            p,
             TestPrincipal {
                 id: base_store.get_principal_id("jane").await.unwrap().unwrap(),
                 name: "jane".into(),

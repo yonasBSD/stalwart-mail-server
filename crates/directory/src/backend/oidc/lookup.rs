@@ -104,7 +104,7 @@ impl OpenIdDirectory {
                             .ok_or_else(|| manage::not_found(id).caused_by(trc::location!()))?;
 
                         // Keep the internal store up to date with the OIDC server
-                        let changes = principal.update_external(external_principal, false);
+                        let changes = principal.update_external(external_principal);
                         if !changes.is_empty() {
                             self.data_store
                                 .update_principal(

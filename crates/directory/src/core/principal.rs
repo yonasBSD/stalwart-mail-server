@@ -7,9 +7,7 @@
 use crate::{
     ArchivedPrincipal, ArchivedPrincipalData, FALLBACK_ADMIN_ID, Permission, PermissionGrant,
     Principal, PrincipalData, ROLE_ADMIN, Type,
-    backend::internal::{
-        PrincipalField, PrincipalSet, PrincipalUpdate, PrincipalValue, SpecialSecrets,
-    },
+    backend::internal::{PrincipalField, PrincipalSet, PrincipalUpdate, PrincipalValue},
 };
 use ahash::AHashSet;
 use nlp::tokenizers::word::WordTokenizer;
@@ -19,7 +17,7 @@ use serde::{
     ser::SerializeMap,
 };
 use serde_json::Value;
-use std::{collections::hash_map::Entry, fmt, str::FromStr};
+use std::{cmp::Ordering, collections::hash_map::Entry, fmt, str::FromStr};
 use store::{
     U32_LEN, U64_LEN,
     backend::MAX_TOKEN_LENGTH,
@@ -105,25 +103,14 @@ impl Principal {
         })
     }
 
-    pub fn secrets(&self) -> impl Iterator<Item = &String> {
-        let mut found_secret = false;
-        self.data
-            .iter()
-            .take_while(move |item| {
-                if matches!(item, PrincipalData::Secret(_)) {
-                    found_secret = true;
-                    true
-                } else {
-                    !found_secret
-                }
-            })
-            .filter_map(|item| {
-                if let PrincipalData::Secret(secret) = item {
-                    Some(secret)
-                } else {
-                    None
-                }
-            })
+    pub fn secret(&self) -> Option<&str> {
+        if let Some(PrincipalData::Password(password)) = self.data.first() {
+            Some(password.as_str())
+        } else if let Some(PrincipalData::Password(password)) = self.data.get(1) {
+            Some(password.as_str())
+        } else {
+            None
+        }
     }
 
     pub fn primary_email(&self) -> Option<&str> {
@@ -136,7 +123,7 @@ impl Principal {
         })
     }
 
-    pub fn email_addresses(&self) -> impl Iterator<Item = &String> {
+    pub fn email_addresses(&self) -> impl Iterator<Item = &str> {
         let mut found_email = false;
         self.data
             .iter()
@@ -154,7 +141,7 @@ impl Principal {
             .filter_map(|item| {
                 if let PrincipalData::PrimaryEmail(email) | PrincipalData::EmailAlias(email) = item
                 {
-                    Some(email)
+                    Some(email.as_str())
                 } else {
                     None
                 }
@@ -315,123 +302,156 @@ impl Principal {
         });
     }
 
-    pub fn update_external(
-        &mut self,
-        external: Principal,
-        overwrite_emails: bool,
-    ) -> Vec<PrincipalUpdate> {
+    pub fn update_external(&mut self, external: Principal) -> Vec<PrincipalUpdate> {
         let mut updates = Vec::new();
+        let mut external_data = AHashSet::with_capacity(external.data.len());
+        let mut has_role = false;
+        let mut has_member_of = false;
+        let mut has_quota = false;
 
-        // Add external members
-        for (idx, member_of) in external.member_of().enumerate() {
-            if idx == 0 {
-                self.data
-                    .retain(|item| !matches!(item, PrincipalData::MemberOf(_)));
-            }
-            self.data.push(PrincipalData::MemberOf(member_of));
-        }
-
-        // If the principal has no roles, take the ones from the external principal
-        for (idx, role) in external.roles().enumerate() {
-            if idx == 0 && self.roles().next().is_some() {
-                break;
-            }
-
-            self.data.push(PrincipalData::Role(role));
-        }
-
-        // Update description
-        match (external.description(), self.description()) {
-            (Some(external), current) if Some(external) != current => {
-                if current.is_some() {
-                    self.data
-                        .retain(|item| !matches!(item, PrincipalData::Description(_)));
+        for item in external.data {
+            match item {
+                PrincipalData::DiskQuota(_) => {
+                    has_quota = true;
+                    external_data.insert(item);
                 }
-                self.data
-                    .push(PrincipalData::Description(external.to_string()));
-                updates.push(PrincipalUpdate::set(
-                    PrincipalField::Description,
-                    PrincipalValue::String(external.to_string()),
-                ));
+                PrincipalData::MemberOf(_) => {
+                    has_member_of = true;
+                    external_data.insert(item);
+                }
+                PrincipalData::Role(_) => {
+                    has_role = true;
+                    external_data.insert(item);
+                }
+                PrincipalData::Password(_)
+                | PrincipalData::AppPassword(_)
+                | PrincipalData::OtpAuth(_)
+                | PrincipalData::Description(_)
+                | PrincipalData::PrimaryEmail(_)
+                | PrincipalData::EmailAlias(_) => {
+                    external_data.insert(item);
+                }
+                _ => {}
             }
-            _ => {}
         }
 
-        // Update secrets
-        if update_list(external.secrets(), self.secrets()) {
-            let mut new_secrets = Vec::new();
-            self.data
-                .retain(|item| !matches!(item, PrincipalData::Secret(_)));
-            self.data.extend(external.secrets().map(|secret| {
-                new_secrets.push(secret.to_string());
-                PrincipalData::Secret(secret.to_string())
-            }));
-            updates.push(PrincipalUpdate::set(
-                PrincipalField::Secrets,
-                PrincipalValue::StringList(new_secrets),
-            ));
-        }
+        let mut old_data = Vec::new();
+        let data_len = self.data.len();
 
-        // Update emails
-        if update_list(external.email_addresses(), self.email_addresses()) {
-            if overwrite_emails {
-                let mut new_emails = Vec::new();
-                self.data.retain(|item| {
-                    !matches!(
+        for item in std::mem::replace(&mut self.data, Vec::with_capacity(data_len)) {
+            match item {
+                PrincipalData::Password(_)
+                | PrincipalData::AppPassword(_)
+                | PrincipalData::OtpAuth(_)
+                | PrincipalData::Description(_)
+                | PrincipalData::PrimaryEmail(_)
+                | PrincipalData::EmailAlias(_)
+                | PrincipalData::DiskQuota(_)
+                | PrincipalData::MemberOf(_)
+                | PrincipalData::Role(_) => {
+                    if external_data.remove(&item)
+                        || match item {
+                            PrincipalData::EmailAlias(_) => true,
+                            PrincipalData::Role(_) => !has_role,
+                            PrincipalData::MemberOf(_) => !has_member_of,
+                            PrincipalData::DiskQuota(_) => !has_quota,
+                            _ => false,
+                        }
+                    {
+                        self.data.push(item);
+                    } else if matches!(
                         item,
-                        PrincipalData::PrimaryEmail(_) | PrincipalData::EmailAlias(_)
-                    )
-                });
-                self.data
-                    .extend(external.data.iter().filter_map(|v| match v {
-                        PrincipalData::PrimaryEmail(email) => {
-                            new_emails.push(email.clone());
-                            Some(PrincipalData::PrimaryEmail(email.clone()))
-                        }
-                        PrincipalData::EmailAlias(email) => {
-                            new_emails.push(email.clone());
-                            Some(PrincipalData::EmailAlias(email.clone()))
-                        }
-                        _ => None,
-                    }));
-                updates.push(PrincipalUpdate::set(
-                    PrincipalField::Emails,
-                    PrincipalValue::StringList(new_emails),
-                ));
-            } else {
-                // Missing emails are appended to avoid overwriting locally defined aliases
-                // This means that old email addresses need to be deleted either manually or using the API
-                let current_emails = self.email_addresses().collect::<AHashSet<_>>();
-                let mut new_emails = Vec::new();
-                for email in external.email_addresses() {
-                    let email = email.to_lowercase();
-                    if !current_emails.contains(&email) {
-                        updates.push(PrincipalUpdate::add_item(
-                            PrincipalField::Emails,
-                            PrincipalValue::String(email.clone()),
-                        ));
-                        new_emails.push(PrincipalData::EmailAlias(email));
+                        PrincipalData::Password(_)
+                            | PrincipalData::AppPassword(_)
+                            | PrincipalData::OtpAuth(_)
+                            | PrincipalData::PrimaryEmail(_)
+                            | PrincipalData::EmailAlias(_)
+                    ) {
+                        old_data.push(item);
                     }
                 }
-                self.data.extend(new_emails);
+                _ => {
+                    self.data.push(item);
+                }
             }
         }
 
-        let external_quota = external.quota();
-        let this_quota = self.quota();
-        if let Some(external_quota) = external_quota
-            && this_quota.is_none_or(|this_quota| this_quota != external_quota)
-        {
-            if this_quota.is_some() {
-                self.data
-                    .retain(|item| !matches!(item, PrincipalData::DiskQuota(_)));
+        // Add new data
+        let mut has_password = false;
+        let mut has_email = false;
+        for item in external_data {
+            match &item {
+                PrincipalData::Description(value) => {
+                    updates.push(PrincipalUpdate::set(
+                        PrincipalField::Description,
+                        PrincipalValue::String(value.to_string()),
+                    ));
+                }
+                PrincipalData::DiskQuota(value) => {
+                    updates.push(PrincipalUpdate::set(
+                        PrincipalField::Quota,
+                        PrincipalValue::Integer(*value),
+                    ));
+                }
+                PrincipalData::Password(value)
+                | PrincipalData::AppPassword(value)
+                | PrincipalData::OtpAuth(value) => {
+                    let item = PrincipalUpdate::add_item(
+                        PrincipalField::Secrets,
+                        PrincipalValue::String(value.to_string()),
+                    );
+                    if !has_password && !updates.is_empty() {
+                        updates.insert(0, item);
+                    } else {
+                        updates.push(item);
+                    }
+                    has_password = true;
+                }
+                PrincipalData::PrimaryEmail(value) => {
+                    let item = PrincipalUpdate::add_item(
+                        PrincipalField::Emails,
+                        PrincipalValue::String(value.to_string()),
+                    );
+                    if !has_email && !updates.is_empty() {
+                        updates.insert(0, item);
+                    } else {
+                        updates.push(item);
+                    }
+                    has_email = true;
+                }
+                PrincipalData::EmailAlias(value) => {
+                    updates.push(PrincipalUpdate::add_item(
+                        PrincipalField::Emails,
+                        PrincipalValue::String(value.to_string()),
+                    ));
+                }
+                _ => (),
             }
-            self.data.push(PrincipalData::DiskQuota(external_quota));
-            updates.push(PrincipalUpdate::set(
-                PrincipalField::Quota,
-                PrincipalValue::Integer(external_quota),
-            ));
+            self.data.push(item);
         }
+
+        // Remove old data
+        for item in old_data {
+            match item {
+                PrincipalData::Password(value)
+                | PrincipalData::AppPassword(value)
+                | PrincipalData::OtpAuth(value) => {
+                    updates.push(PrincipalUpdate::remove_item(
+                        PrincipalField::Secrets,
+                        PrincipalValue::String(value),
+                    ));
+                }
+                PrincipalData::PrimaryEmail(value) | PrincipalData::EmailAlias(value) => {
+                    updates.push(PrincipalUpdate::remove_item(
+                        PrincipalField::Emails,
+                        PrincipalValue::String(value),
+                    ));
+                }
+                _ => (),
+            }
+        }
+
+        self.sort();
 
         updates
     }
@@ -452,66 +472,64 @@ impl Principal {
             name: "Fallback Administrator".into(),
             data: vec![
                 PrincipalData::Role(ROLE_ADMIN),
-                PrincipalData::Secret(fallback_pass.into()),
+                PrincipalData::Password(fallback_pass.into()),
             ],
         }
     }
 
     pub fn sort(&mut self) {
-        self.data.sort_unstable_by_key(|d| d.rank());
+        self.data.sort_unstable();
     }
 }
 
 impl PrincipalData {
-    fn rank(&self) -> usize {
+    fn rank(&self) -> u8 {
         match self {
-            PrincipalData::Secret(v) => {
-                if v.is_otp_auth() {
-                    0
-                } else {
-                    1
-                }
-            }
-            PrincipalData::PrimaryEmail(_) => 2,
-            PrincipalData::EmailAlias(_) => 3,
-            _ => 4,
+            PrincipalData::OtpAuth(_) => 0,
+            PrincipalData::Password(_) => 1,
+            PrincipalData::AppPassword(_) => 2,
+            PrincipalData::PrimaryEmail(_) => 3,
+            PrincipalData::EmailAlias(_) => 4,
+            _ => 5,
+        }
+    }
+
+    fn rank_string(&self) -> Option<&str> {
+        match self {
+            PrincipalData::OtpAuth(s)
+            | PrincipalData::Password(s)
+            | PrincipalData::AppPassword(s)
+            | PrincipalData::PrimaryEmail(s)
+            | PrincipalData::EmailAlias(s) => Some(s),
+            _ => None,
         }
     }
 }
 
-fn update_list<'x>(
-    new: impl Iterator<Item = &'x String>,
-    mut current: impl Iterator<Item = &'x String>,
-) -> bool {
-    let mut new = new.peekable();
-    if new.peek().is_some() {
-        loop {
-            match (new.next(), current.next()) {
-                (Some(n), Some(c)) => {
-                    if n != c {
-                        return true;
-                    }
-                }
-                (Some(_), None) => {
-                    return true;
-                }
-                (None, Some(_)) => {
-                    return true;
-                }
-                (None, None) => {
-                    return false;
-                }
-            }
+impl PartialOrd for PrincipalData {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for PrincipalData {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match self.rank().cmp(&other.rank()) {
+            Ordering::Equal => match (self.rank_string(), other.rank_string()) {
+                (Some(a), Some(b)) => a.cmp(b),
+                _ => Ordering::Equal,
+            },
+            other => other,
         }
-    } else {
-        false
     }
 }
 
 impl PrincipalData {
     pub fn object_size(&self) -> usize {
         match self {
-            PrincipalData::Secret(v)
+            PrincipalData::Password(v)
+            | PrincipalData::AppPassword(v)
+            | PrincipalData::OtpAuth(v)
             | PrincipalData::Description(v)
             | PrincipalData::PrimaryEmail(v)
             | PrincipalData::EmailAlias(v)

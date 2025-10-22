@@ -6,10 +6,9 @@
 
 use common::{KV_BAYES_MODEL_USER, Server, auth::AccessToken};
 use directory::{
-    DirectoryInner, Permission, QueryBy, QueryParams, Type,
+    DirectoryInner, Permission, PrincipalData, QueryBy, QueryParams, Type,
     backend::internal::{
         PrincipalAction, PrincipalField, PrincipalSet, PrincipalUpdate, PrincipalValue,
-        SpecialSecrets,
         lookup::DirectoryStore,
         manage::{
             self, ChangedPrincipals, ManageDirectory, PrincipalList, UpdatePrincipal, not_found,
@@ -710,13 +709,19 @@ impl PrincipalManager for Server {
                 .await?
                 .ok_or_else(|| trc::ManageEvent::NotFound.into_err())?;
 
-            for secret in principal.secrets() {
-                if secret.is_otp_auth() {
-                    response.otp_auth = true;
-                } else if let Some((app_name, _)) =
-                    secret.strip_prefix("$app$").and_then(|s| s.split_once('$'))
-                {
-                    response.app_passwords.push(app_name.into());
+            for data in &principal.data {
+                match data {
+                    PrincipalData::OtpAuth(_) => {
+                        response.otp_auth = true;
+                    }
+                    PrincipalData::AppPassword(secret) => {
+                        if let Some((app_name, _)) =
+                            secret.strip_prefix("$app$").and_then(|s| s.split_once('$'))
+                        {
+                            response.app_passwords.push(app_name.into());
+                        }
+                    }
+                    _ => {}
                 }
             }
         }

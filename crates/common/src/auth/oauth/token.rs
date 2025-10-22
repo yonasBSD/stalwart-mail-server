@@ -231,7 +231,7 @@ impl Server {
                 .data
                 .into_iter()
                 .filter_map(|v| {
-                    if let PrincipalData::Secret(secret) = v {
+                    if let PrincipalData::Password(secret) = v {
                         Some(secret)
                     } else {
                         None

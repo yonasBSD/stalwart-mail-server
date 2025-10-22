@@ -4,23 +4,22 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use ldap3::{Ldap, LdapConnAsync, ResultEntry, Scope, SearchEntry};
-use mail_send::Credentials;
-use store::xxhash_rust;
-use trc::AddContext;
-
+use super::{AuthBind, LdapDirectory, LdapMappings};
 use crate::{
     IntoError, Principal, PrincipalData, QueryBy, QueryParams, ROLE_ADMIN, ROLE_USER, Type,
     backend::{
         RcptType,
         internal::{
+            SpecialSecrets,
             lookup::DirectoryStore,
             manage::{self, ManageDirectory, UpdatePrincipal},
         },
     },
 };
-
-use super::{AuthBind, LdapDirectory, LdapMappings};
+use ldap3::{Ldap, LdapConnAsync, ResultEntry, Scope, SearchEntry};
+use mail_send::Credentials;
+use store::xxhash_rust;
+use trc::AddContext;
 
 impl LdapDirectory {
     pub async fn query(&self, by: QueryParams<'_>) -> trc::Result<Option<Principal>> {
@@ -186,7 +185,7 @@ impl LdapDirectory {
                     AuthBind::None => {
                         let filter = self.mappings.filter_name.build(username);
                         if let Some(mut result) = self.find_principal(&mut conn, &filter).await? {
-                            if result.principal.verify_secret(secret, false).await? {
+                            if result.principal.verify_secret(secret, false, false).await? {
                                 if result.principal.name.is_empty() {
                                     result.principal.name = username.into();
                                 }
@@ -270,7 +269,7 @@ impl LdapDirectory {
         };
 
         // Keep the internal store up to date with the LDAP server
-        let changes = principal.update_external(external_principal, true);
+        let changes = principal.update_external(external_principal);
         if !changes.is_empty() {
             self.data_store
                 .update_principal(
@@ -431,7 +430,10 @@ impl LdapMappings {
         let mut role = ROLE_USER;
         let mut member_of = vec![];
         let mut description = None;
-        let mut has_primary_email = false;
+        let mut secret = None;
+        let mut otp_secret = None;
+        let mut email = None;
+        let mut email_aliases = Vec::new();
 
         for (attr, value) in entry.attrs {
             if self.attr_name.contains(&attr) {
@@ -439,16 +441,10 @@ impl LdapMappings {
                     principal.name = value.into_iter().next().unwrap_or_default();
                 } else {
                     for (idx, item) in value.into_iter().enumerate() {
-                        if !has_primary_email {
-                            has_primary_email = true;
-                            principal
-                                .data
-                                .push(PrincipalData::PrimaryEmail(item.to_lowercase()));
-                        } else {
-                            principal
-                                .data
-                                .push(PrincipalData::EmailAlias(item.to_lowercase()));
+                        if email.is_none() {
+                            email = Some(item.to_lowercase());
                         }
+
                         if idx == 0 {
                             principal.name = item;
                         }
@@ -456,35 +452,33 @@ impl LdapMappings {
                 }
             } else if self.attr_secret.contains(&attr) {
                 for item in value {
-                    principal.data.push(PrincipalData::Secret(item));
+                    if item.is_otp_secret() {
+                        otp_secret = Some(item);
+                    } else if item.is_app_secret() {
+                        principal.data.push(PrincipalData::AppPassword(item));
+                    } else if secret.is_none() {
+                        secret = Some(item);
+                    }
                 }
             } else if self.attr_secret_changed.contains(&attr) {
                 // Create a disabled AppPassword, used to indicate that the password has been changed
                 // but cannot be used for authentication.
-                for item in value {
-                    principal.data.push(PrincipalData::Secret(format!(
-                        "$app${}$",
-                        xxhash_rust::xxh3::xxh3_64(item.as_bytes())
-                    )));
+                if secret.is_none() {
+                    secret = value.into_iter().next().map(|item| {
+                        format!("$app${}$", xxhash_rust::xxh3::xxh3_64(item.as_bytes()))
+                    });
                 }
             } else if self.attr_email_address.contains(&attr) {
                 for item in value {
-                    if !has_primary_email {
-                        has_primary_email = true;
-                        principal
-                            .data
-                            .push(PrincipalData::PrimaryEmail(item.to_lowercase()));
+                    if email.is_some() {
+                        email_aliases.push(item.to_lowercase());
                     } else {
-                        principal
-                            .data
-                            .push(PrincipalData::EmailAlias(item.to_lowercase()));
+                        email = Some(item.to_lowercase());
                     }
                 }
             } else if self.attr_email_alias.contains(&attr) {
                 for item in value {
-                    principal
-                        .data
-                        .push(PrincipalData::EmailAlias(item.to_lowercase()));
+                    email_aliases.push(item.to_lowercase());
                 }
             } else if let Some(idx) = self.attr_description.iter().position(|a| a == &attr) {
                 if (description.is_none() || idx == 0)
@@ -518,6 +512,24 @@ impl LdapMappings {
                     break;
                 }
             }
+        }
+
+        for alias in email_aliases {
+            if email.as_ref().is_none_or(|email| email != &alias) {
+                principal.data.push(PrincipalData::EmailAlias(alias));
+            }
+        }
+
+        if let Some(email) = email {
+            principal.data.push(PrincipalData::PrimaryEmail(email));
+        }
+
+        if let Some(secret) = secret {
+            principal.data.push(PrincipalData::Password(secret));
+        }
+
+        if let Some(otp_secret) = otp_secret {
+            principal.data.push(PrincipalData::OtpAuth(otp_secret));
         }
 
         if let Some(desc) = description {
