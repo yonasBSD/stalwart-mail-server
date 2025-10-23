@@ -105,8 +105,8 @@ async fn jmap_tests() {
 
     auth::limits::test(&mut params).await;
     auth::oauth::test(&mut params).await;
-    auth::quota::test(&mut params).await;*/
-    auth::permissions::test(&params).await;
+    auth::quota::test(&mut params).await;
+    auth::permissions::test(&params).await;*/
 
     contacts::addressbook::test(&mut params).await;
     contacts::contact::test(&mut params).await;

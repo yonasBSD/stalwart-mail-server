@@ -62,6 +62,10 @@ pub async fn test(params: &mut JMAPTest) {
         JSContactProperty::<Id>::AddressBookIds,
         [book1_id.as_str(), book2_id.as_str()].into_jmap_set(),
     );
+    let tmp_contact = test_jscontact_4().with_property(
+        JSContactProperty::<Id>::AddressBookIds,
+        [book2_id.as_str()].into_jmap_set(),
+    );
     let response = account
         .jmap_create(
             MethodObject::ContactCard,
@@ -69,6 +73,7 @@ pub async fn test(params: &mut JMAPTest) {
                 sarah_contact.clone(),
                 carlos_contact.clone(),
                 acme_contact.clone(),
+                tmp_contact,
             ],
             Vec::<(&str, &str)>::new(),
         )
@@ -76,6 +81,21 @@ pub async fn test(params: &mut JMAPTest) {
     let sarah_contact_id = response.created(0).id().to_string();
     let carlos_contact_id = response.created(1).id().to_string();
     let acme_contact_id = response.created(2).id().to_string();
+    let tmp_contact_id = response.created(3).id().to_string();
+
+    // Destroy tmp contact
+    assert_eq!(
+        account
+            .jmap_destroy(
+                MethodObject::ContactCard,
+                [tmp_contact_id.as_str()],
+                Vec::<(&str, &str)>::new(),
+            )
+            .await
+            .destroyed()
+            .next(),
+        Some(tmp_contact_id.as_str())
+    );
 
     // Validate changes
     assert_eq!(
@@ -1169,6 +1189,17 @@ fn test_jscontact_3() -> Value {
         }
       }
     })
+}
+
+fn test_jscontact_4() -> Value {
+    json!({
+    "@type": "Card",
+    "version": "1.0",
+    "kind": "individual",
+    "name": {
+      "@type": "Name",
+      "full": "Temporary Contact"
+    }})
 }
 
 const TEST_VCARD_1: &str = r#"BEGIN:VCARD

@@ -430,7 +430,7 @@ impl CalendarEventSet for Server {
         'destroy: for id in will_destroy {
             let document_id = id.document_id();
 
-            if !cache.has_container_id(&document_id) {
+            if !cache.has_item_id(&document_id) {
                 response.not_destroyed.append(id, SetError::not_found());
                 continue;
             } else if id.is_synthetic() {

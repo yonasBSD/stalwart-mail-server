@@ -72,6 +72,10 @@ pub async fn test(params: &mut JMAPTest) {
         JSCalendarProperty::<Id>::CalendarIds,
         [calendar1_id.as_str(), calendar2_id.as_str()].into_jmap_set(),
     );
+    let event_4 = test_jscalendar_4().with_property(
+        JSCalendarProperty::<Id>::CalendarIds,
+        [calendar1_id.as_str()].into_jmap_set(),
+    );
     let response = account
         .jmap_create(
             MethodObject::CalendarEvent,
@@ -86,6 +90,7 @@ pub async fn test(params: &mut JMAPTest) {
                     .clone()
                     .with_property(JSCalendarProperty::<Id>::UseDefaultAlerts, true),
                 event_3.clone(),
+                event_4,
             ],
             Vec::<(&str, &str)>::new(),
         )
@@ -93,6 +98,21 @@ pub async fn test(params: &mut JMAPTest) {
     let event_1_id = response.created(0).id().to_string();
     let event_2_id = response.created(1).id().to_string();
     let event_3_id = response.created(2).id().to_string();
+    let event_4_id = response.created(3).id().to_string();
+
+    // Destroy tmp event
+    assert_eq!(
+        account
+            .jmap_destroy(
+                MethodObject::CalendarEvent,
+                [event_4_id.as_str()],
+                Vec::<(&str, &str)>::new(),
+            )
+            .await
+            .destroyed()
+            .next(),
+        Some(event_4_id.as_str())
+    );
 
     // Validate changes
     assert_eq!(
@@ -768,6 +788,19 @@ pub fn test_jscalendar_3() -> Value {
       "title": "Event #3",
       "updated": "2006-02-06T00:12:20Z",
       "timeZone": "US/Eastern"
+    })
+}
+
+pub fn test_jscalendar_4() -> Value {
+    json!({
+      "duration": "PT1H",
+      "@type": "Event",
+      "description": "Tmp Event",
+      "updated": "2006-02-06T00:11:02Z",
+      "timeZone": "US/Eastern",
+      "start": "2006-01-02T10:00:00",
+      "title": "Tmp Event",
+      "uid": "tmp-event@example.com"
     })
 }
 
