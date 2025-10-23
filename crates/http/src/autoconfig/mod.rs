@@ -76,6 +76,25 @@ impl Autoconfig for Server {
         }
 
         config.push_str("\t</emailProvider>\n");
+
+        for (tag, protocol, url) in [
+            ("addressBook", "carddav", "card"),
+            ("calendar", "caldav", "cal"),
+            ("fileShare", "webdav", "file"),
+        ] {
+            let _ = writeln!(&mut config, "\t<{tag} type=\"{protocol}\">");
+            let _ = writeln!(&mut config, "\t\t<username>{account_name}</username>");
+            let _ = writeln!(
+                &mut config,
+                "\t\t<authentication>http-basic</authentication>"
+            );
+            let _ = writeln!(
+                &mut config,
+                "\t\t<serverURL>https://{server_name}/dav/{url}</serverURL>"
+            );
+            let _ = writeln!(&mut config, "\t</{tag}>");
+        }
+
         let _ = writeln!(
             &mut config,
             "\t<clientConfigUpdate url=\"https://autoconfig.{domain}/mail/config-v1.1.xml\"></clientConfigUpdate>"
