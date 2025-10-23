@@ -206,9 +206,7 @@ impl JmapConfig {
         if config.property::<bool>("http.hsts").unwrap_or(false) {
             http_headers.push((
                 hyper::header::STRICT_TRANSPORT_SECURITY,
-                hyper::header::HeaderValue::from_static(
-                    "max-age=31536000; includeSubDomains; preload",
-                ),
+                hyper::header::HeaderValue::from_static("max-age=31536000; includeSubDomains"),
             ));
         }
 
