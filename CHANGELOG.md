@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.14.1] - 2025-10-27
+
+If you are upgrading from v0.13.4 and below, this version includes **breaking changes** to the internal directory, calendar and contacts. Please read the [upgrading documentation](https://stalw.art/docs/install/upgrade) for more information on how to upgrade from previous versions.
+
+## Added
+- Autoconfig for CalDAV, CardDAV and WebDAV (#1937)
+
+## Changed
+- HTTP: Remove HTTP STS `preload` directive.
+
+## Fixed
+- Directory: Keep OTP Auth and AppPasswords unless the remote directory provides new ones (#2319)
+- JMAP: Fix `ContactCard/set` and `CalendarEvent/set` destroy methods (#2308).
+
 ## [0.14.0] - 2025-10-22
 
 If you are upgrading from v0.13.4 and below, this version includes **breaking changes** to the internal directory, calendar and contacts. Please read the [upgrading documentation](https://stalw.art/docs/install/upgrade) for more information on how to upgrade from previous versions.
