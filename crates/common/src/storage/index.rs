@@ -14,7 +14,7 @@ use rkyv::{
 use std::{borrow::Cow, fmt::Debug};
 use store::{
     Serialize, SerializeInfallible,
-    write::{Archive, Archiver, BatchBuilder, BlobOp, DirectoryClass, IntoOperations, TagValue},
+    write::{Archive, Archiver, BatchBuilder, BlobOp, DirectoryClass, IntoOperations},
 };
 use types::{
     acl::AclGrant,
@@ -33,10 +33,6 @@ pub enum IndexValue<'x> {
     IndexList {
         field: Field,
         value: Vec<IndexItem<'x>>,
-    },
-    Tag {
-        field: Field,
-        value: Vec<TagValue>,
     },
     Blob {
         value: BlobHash,
@@ -379,15 +375,6 @@ fn build_index(
                 }
             }
         }
-        IndexValue::Tag { field, value } => {
-            for item in value {
-                if set {
-                    batch.tag(field, item);
-                } else {
-                    batch.untag(field, item);
-                }
-            }
-        }
         IndexValue::Blob { value } => {
             if set {
                 batch.set(BlobOp::Link { hash: value }, vec![]);
@@ -522,27 +509,6 @@ fn merge_index(
 
             for value in remove_values {
                 batch.unindex(field, value.into_owned());
-            }
-        }
-        (
-            IndexValue::Tag {
-                field,
-                value: old_value,
-            },
-            IndexValue::Tag {
-                value: new_value, ..
-            },
-        ) => {
-            for old_tag in &old_value {
-                if !new_value.contains(old_tag) {
-                    batch.untag(field, old_tag.clone());
-                }
-            }
-
-            for new_tag in new_value {
-                if !old_value.contains(&new_tag) {
-                    batch.tag(field, new_tag);
-                }
             }
         }
         (IndexValue::Blob { value: old_hash }, IndexValue::Blob { value: new_hash }) => {

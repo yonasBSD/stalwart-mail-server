@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
-## [0.14.1] - 2025-10-27
+## [0.14.1] - 2025-10-28
 
 If you are upgrading from v0.13.4 and below, this version includes **breaking changes** to the internal directory, calendar and contacts. Please read the [upgrading documentation](https://stalw.art/docs/install/upgrade) for more information on how to upgrade from previous versions.
 
@@ -30,8 +30,14 @@ If you are upgrading from v0.13.4 and below, this version includes **breaking ch
 - i18n: Swedish language support (contributed by @purung)
 
 ## Changed
+- **Breaking Database Changes** (migrated automatically on first start):
+  - Internal directory schema changed.
+  - Calendar and Contacts storage schema changed.
+  - Sieve scripts storage schema changed.
+  - Push Subscriptions storage schema changed.
 - Replaced `sieve.untrusted.limits.max-scripts` and `jmap.push.max-total` with `object-quota.*` settings. 
 - Cluster node roles now allow sharding.
+
 
 ## Fixed
 - Push Subscription: Clean-up of expired subscriptions and cluster notification of changes (#1248)
