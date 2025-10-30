@@ -5,14 +5,17 @@
  */
 
 use super::{
-    index::{MAX_ID_LENGTH, MAX_SORT_FIELD_LENGTH, TrimTextValue, VisitText},
-    ingest::{EmailIngest, IngestedEmail, ThreadResult},
+    index::{MAX_SORT_FIELD_LENGTH, TrimTextValue, VisitText},
+    ingest::{EmailIngest, IngestedEmail},
     metadata::{MessageData, MessageMetadata},
 };
-use crate::mailbox::UidMailbox;
+use crate::{
+    mailbox::UidMailbox,
+    message::ingest::{MergeThreadTask, ThreadInfo},
+};
 use common::{Server, auth::ResourceToken, storage::index::ObjectIndexBuilder};
 use mail_parser::{HeaderName, HeaderValue, parsers::fields::thread::thread_name};
-use store::write::{BatchBuilder, TaskQueueClass, ValueClass, now};
+use store::write::{BatchBuilder, IndexPropertyClass, TaskQueueClass, ValueClass, now};
 use trc::AddContext;
 use types::{
     blob::{BlobClass, BlobId},
@@ -20,6 +23,7 @@ use types::{
     field::EmailField,
     keyword::Keyword,
 };
+use utils::cheeky_hash::{CheekyHash, CheekyHashMap};
 
 pub enum CopyMessageError {
     NotFound,
@@ -55,7 +59,7 @@ impl EmailCopy for Server {
         // Obtain metadata
         let account_id = resource_token.account_id;
         let mut metadata = if let Some(metadata) = self
-            .get_archive_by_property(
+            .archive_by_property(
                 from_account_id,
                 Collection::Email,
                 from_message_id,
@@ -94,23 +98,21 @@ impl EmailCopy for Server {
         }
 
         // Obtain threadId
-        let mut references = Vec::with_capacity(5);
+        let mut message_ids = CheekyHashMap::default();
         let mut subject = "";
-        let mut message_id = "";
         for header in &metadata.contents[0].parts[0].headers {
             match &header.name {
                 HeaderName::MessageId => {
                     header.value.visit_text(|id| {
-                        if !id.is_empty() && id.len() < MAX_ID_LENGTH {
-                            references.push(id.as_bytes());
-                            message_id = id;
+                        if !id.is_empty() {
+                            message_ids.insert(CheekyHash::new(id.as_bytes()), true);
                         }
                     });
                 }
                 HeaderName::InReplyTo | HeaderName::References | HeaderName::ResentMessageId => {
                     header.value.visit_text(|id| {
-                        if !id.is_empty() && id.len() < MAX_ID_LENGTH {
-                            references.push(id.as_bytes());
+                        if !id.is_empty() {
+                            message_ids.insert(CheekyHash::new(id.as_bytes()), false);
                         }
                     });
                 }
@@ -129,21 +131,10 @@ impl EmailCopy for Server {
         }
 
         // Obtain threadId
-        let (is_new_thread, thread_id) = match self
-            .find_or_merge_thread(account_id, subject, references, None)
+        let thread_result = self
+            .find_thread_id(account_id, subject, &message_ids)
             .await
-            .caused_by(trc::location!())?
-        {
-            ThreadResult::Id(thread_id) => (false, thread_id),
-            ThreadResult::Create => (
-                true,
-                self.store()
-                    .assign_document_ids(account_id, Collection::Thread, 1)
-                    .await
-                    .caused_by(trc::location!())?,
-            ),
-            ThreadResult::Skip => unreachable!(),
-        };
+            .caused_by(trc::location!())?;
 
         // Assign id
         let mut email = IngestedEmail {
@@ -164,26 +155,31 @@ impl EmailCopy for Server {
             email.imap_uids.push(uid);
         }
 
-        // Prepare batch
-        let mut batch = BatchBuilder::new();
-        batch.with_account_id(account_id);
-
-        if is_new_thread {
-            batch
-                .with_collection(Collection::Thread)
-                .update_document(thread_id)
-                .log_container_insert(SyncCollection::Thread);
-        }
-
+        // Obtain documentId
         let document_id = self
             .store()
             .assign_document_ids(account_id, Collection::Email, 1)
             .await
             .caused_by(trc::location!())?;
 
+        // Prepare batch
+        let mut batch = BatchBuilder::new();
+        batch.with_account_id(account_id);
+
+        // Determine thread id
+        let thread_id = if let Some(thread_id) = thread_result.thread_id {
+            thread_id
+        } else {
+            batch
+                .with_collection(Collection::Thread)
+                .with_document(document_id)
+                .log_container_insert(SyncCollection::Thread);
+            document_id
+        };
+
         batch
             .with_collection(Collection::Email)
-            .create_document(document_id)
+            .with_document(document_id)
             .custom(
                 ObjectIndexBuilder::<(), _>::new().with_changes(MessageData {
                     mailboxes: mailbox_ids,
@@ -193,11 +189,15 @@ impl EmailCopy for Server {
             )
             .caused_by(trc::location!())?
             .set(
-                ValueClass::TaskQueue(TaskQueueClass::IndexEmail {
-                    due: now(),
-                    hash: metadata.blob_hash.clone(),
+                ValueClass::IndexProperty(IndexPropertyClass::Hash {
+                    property: EmailField::Threading.into(),
+                    hash: thread_result.thread_hash,
                 }),
-                vec![],
+                ThreadInfo::serialize(thread_id, &message_ids),
+            )
+            .set(
+                ValueClass::TaskQueue(TaskQueueClass::IndexEmail { due: now() }),
+                MergeThreadTask::new(thread_result).serialize(),
             );
         metadata
             .index(

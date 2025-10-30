@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{JmapMethods, UpdateResults, changes::state::JmapCacheState};
+use crate::changes::state::JmapCacheState;
 use calcard::{common::timezone::Tz, jscalendar::JSCalendarDateTime};
 use chrono::offset::TimeZone;
 use common::{Server, auth::AccessToken};
@@ -16,7 +16,7 @@ use jmap_proto::{
 };
 use nlp::tokenizers::word::WordTokenizer;
 use std::{cmp::Ordering, sync::Arc};
-use store::{backend::MAX_TOKEN_LENGTH, query, roaring::RoaringBitmap};
+use store::{backend::MAX_TOKEN_LENGTH, roaring::RoaringBitmap, search::SearchFilter};
 use trc::AddContext;
 use types::{
     TimeRange,
@@ -68,16 +68,16 @@ impl CalendarEventQuery for Server {
             match cond {
                 Filter::Property(cond) => match cond {
                     CalendarEventFilter::InCalendar(MaybeInvalid::Value(id)) => {
-                        filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
+                        filters.push(SearchFilter::is_in_set(RoaringBitmap::from_iter(
                             cache.children_ids(id.document_id()),
                         )))
                     }
                     CalendarEventFilter::Uid(uid) => {
-                        filters.push(query::Filter::eq(CalendarField::Uid, uid.into_bytes()))
+                        filters.push(SearchFilter::eq(CalendarField::Uid, uid.into_bytes()))
                     }
                     CalendarEventFilter::Text(value) => {
                         for token in WordTokenizer::new(&value, MAX_TOKEN_LENGTH) {
-                            filters.push(query::Filter::eq(
+                            filters.push(SearchFilter::eq(
                                 CalendarField::Text,
                                 token.word.into_owned().into_bytes(),
                             ));
@@ -87,7 +87,7 @@ impl CalendarEventQuery for Server {
                         if let Some(filter) = &filter
                             && !did_filter_by_time
                         {
-                            filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
+                            filters.push(SearchFilter::is_in_set(RoaringBitmap::from_iter(
                                 cache.resources.iter().filter_map(|r| {
                                     r.event_time_range().and_then(|(start, end)| {
                                         filter
@@ -143,7 +143,7 @@ impl CalendarEventQuery for Server {
 
                 for document_id in result_set.results {
                     let Some(_calendar_event) = self
-                        .get_archive(account_id, Collection::CalendarEvent, document_id)
+                        .archive(account_id, Collection::CalendarEvent, document_id)
                         .await?
                     else {
                         continue;
@@ -230,19 +230,17 @@ impl CalendarEventQuery for Server {
                 for comparator in comparators {
                     comparators_.push(match &comparator.property {
                         CalendarEventComparator::Uid => {
-                            query::Comparator::field(CalendarField::Uid, comparator.is_ascending)
+                            SearchComparator::field(CalendarField::Uid, comparator.is_ascending)
                         }
                         CalendarEventComparator::Start => {
-                            query::Comparator::field(CalendarField::Start, comparator.is_ascending)
+                            SearchComparator::field(CalendarField::Start, comparator.is_ascending)
                         }
-                        CalendarEventComparator::Created => query::Comparator::field(
-                            CalendarField::Created,
-                            comparator.is_ascending,
-                        ),
-                        CalendarEventComparator::Updated => query::Comparator::field(
-                            CalendarField::Updated,
-                            comparator.is_ascending,
-                        ),
+                        CalendarEventComparator::Created => {
+                            SearchComparator::field(CalendarField::Created, comparator.is_ascending)
+                        }
+                        CalendarEventComparator::Updated => {
+                            SearchComparator::field(CalendarField::Updated, comparator.is_ascending)
+                        }
                         unsupported => {
                             return Err(trc::JmapEvent::UnsupportedSort
                                 .into_err()

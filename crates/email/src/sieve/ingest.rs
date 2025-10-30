@@ -20,10 +20,9 @@ use sieve::{Envelope, Event, Input, Mailbox, Recipient, Sieve};
 use std::{borrow::Cow, sync::Arc};
 use std::{future::Future, str::FromStr};
 use store::{
-    Deserialize, Serialize, SerializeInfallible, ValueKey,
+    Deserialize, Serialize, ValueKey,
     ahash::AHashMap,
     dispatch::lookup::KeyValue,
-    query::Filter,
     write::{AlignedBytes, Archive, ArchiveVersion, Archiver, BatchBuilder, BlobOp, ValueClass},
 };
 use trc::{AddContext, SieveEvent};
@@ -608,15 +607,14 @@ impl SieveScriptIngest for Server {
     ) -> trc::Result<Option<Sieve>> {
         // Find the script by name
         if let Some(document_id) = self
-            .store()
-            .filter(
+            .document_ids_matching(
                 account_id,
                 Collection::SieveScript,
-                vec![Filter::eq(SieveField::Name, name.serialize())],
+                SieveField::Name,
+                name.as_bytes(),
             )
             .await
             .caused_by(trc::location!())?
-            .results
             .min()
         {
             self.sieve_script_compile(account_id, document_id)
@@ -635,7 +633,7 @@ impl SieveScriptIngest for Server {
     ) -> trc::Result<Option<CompiledScript>> {
         // Obtain script object
         let Some(script_object) = self
-            .get_archive(account_id, Collection::SieveScript, document_id)
+            .archive(account_id, Collection::SieveScript, document_id)
             .await?
         else {
             return Ok(None);
@@ -710,7 +708,7 @@ impl SieveScriptIngest for Server {
                     batch
                         .with_account_id(account_id)
                         .with_collection(Collection::SieveScript)
-                        .update_document(document_id)
+                        .with_document(document_id)
                         .assert_value(SieveField::Archive, &script_object)
                         .set(
                             SieveField::Archive,

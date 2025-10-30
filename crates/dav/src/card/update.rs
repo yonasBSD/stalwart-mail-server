@@ -110,7 +110,7 @@ impl CardUpdateRequestHandler for Server {
 
             // Update
             let card_ = self
-                .get_archive(account_id, Collection::ContactCard, document_id)
+                .archive(account_id, Collection::ContactCard, document_id)
                 .await
                 .caused_by(trc::location!())?
                 .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;

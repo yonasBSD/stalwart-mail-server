@@ -6,20 +6,16 @@
 
 use super::{FdbStore, MAX_VALUE_SIZE, ReadVersion, into_error};
 use crate::{
-    BitmapKey, Deserialize, IterateParams, Key, U32_LEN, ValueKey, WITH_SUBSPACE,
+    Deserialize, IterateParams, Key, ValueKey, WITH_SUBSPACE,
     backend::deserialize_i64_le,
-    write::{
-        BitmapClass, ValueClass,
-        key::{DeserializeBigEndian, KeySerializer},
-    },
+    write::{ValueClass, key::KeySerializer},
 };
 use foundationdb::{
     KeySelector, RangeOption, Transaction,
     future::FdbSlice,
-    options::{self, StreamingMode},
+    options::{self},
 };
 use futures::TryStreamExt;
-use roaring::RoaringBitmap;
 
 #[allow(dead_code)]
 pub(crate) enum ChunkedValue {
@@ -41,37 +37,6 @@ impl FdbStore {
             ChunkedValue::Chunked { bytes, .. } => U::deserialize_owned(bytes).map(Some),
             ChunkedValue::None => Ok(None),
         }
-    }
-
-    pub(crate) async fn get_bitmap(
-        &self,
-        mut key: BitmapKey<BitmapClass>,
-    ) -> trc::Result<Option<RoaringBitmap>> {
-        let mut bm = RoaringBitmap::new();
-        let begin = key.serialize(WITH_SUBSPACE);
-        key.document_id = u32::MAX;
-        let end = key.serialize(WITH_SUBSPACE);
-        let key_len = begin.len();
-        let trx = self.read_trx().await?;
-        let mut values = trx.get_ranges_keyvalues(
-            RangeOption {
-                begin: KeySelector::first_greater_or_equal(begin),
-                end: KeySelector::first_greater_or_equal(end),
-                mode: StreamingMode::WantAll,
-                reverse: false,
-                ..RangeOption::default()
-            },
-            true,
-        );
-
-        while let Some(value) = values.try_next().await.map_err(into_error)? {
-            let key = value.key();
-            if key.len() == key_len {
-                bm.insert(key.deserialize_be_u32(key.len() - U32_LEN)?);
-            }
-        }
-
-        Ok(if !bm.is_empty() { Some(bm) } else { None })
     }
 
     pub(crate) async fn iterate<T: Key>(

@@ -92,7 +92,7 @@ impl<T: SessionStream> SessionData<T> {
         // Obtain mailbox
         let mailbox_ = self
             .server
-            .get_archive(account_id, Collection::Mailbox, mailbox_id)
+            .archive(account_id, Collection::Mailbox, mailbox_id)
             .await
             .imap_ctx(&tag, trc::location!())?
             .ok_or_else(|| {
@@ -121,7 +121,7 @@ impl<T: SessionStream> SessionData<T> {
             batch
                 .with_account_id(account_id)
                 .with_collection(Collection::Mailbox)
-                .update_document(mailbox_id)
+                .with_document(mailbox_id)
                 .custom(
                     ObjectIndexBuilder::new()
                         .with_current(mailbox)

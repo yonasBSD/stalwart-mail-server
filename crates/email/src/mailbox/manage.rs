@@ -59,7 +59,7 @@ impl MailboxFnc for Server {
                 object.add_subscriber(account_id);
             }
             batch
-                .create_document(document_id)
+                .with_document(document_id)
                 .custom(ObjectIndexBuilder::<(), _>::new().with_changes(object))
                 .caused_by(trc::location!())?;
         }
@@ -137,7 +137,7 @@ impl MailboxFnc for Server {
                 batch
                     .with_account_id(account_id)
                     .with_collection(Collection::Mailbox)
-                    .create_document(document_id)
+                    .with_document(document_id)
                     .custom(
                         ObjectIndexBuilder::<(), _>::new()
                             .with_changes(Mailbox::new(name).with_parent_id(next_parent_id)),

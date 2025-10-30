@@ -120,7 +120,7 @@ pub async fn test(params: &mut JMAPTest) {
                 let id = *id_map.get(id).unwrap();
                 let mut batch = BatchBuilder::new();
                 batch
-                    .update_document(id.document_id())
+                    .with_document(id.document_id())
                     .log_item_update(SyncCollection::Email, id.prefix_id().into());
                 server.store().write(batch.build_all()).await.unwrap();
                 updated_ids.insert(id);
@@ -137,7 +137,7 @@ pub async fn test(params: &mut JMAPTest) {
                 //let new_thread_id = store::rand::random::<u32>();
 
                 let old_message_ = server
-                    .get_archive(
+                    .archive(
                         account.id().document_id(),
                         Collection::Email,
                         id.document_id(),
@@ -157,7 +157,7 @@ pub async fn test(params: &mut JMAPTest) {
                         BatchBuilder::new()
                             .with_account_id(account.id().document_id())
                             .with_collection(Collection::Email)
-                            .update_document(id.document_id())
+                            .with_document(id.document_id())
                             .custom(
                                 ObjectIndexBuilder::new()
                                     .with_current(old_message)

@@ -13,7 +13,6 @@ use sieve::compiler::ErrorType;
 use std::time::Instant;
 use store::{
     Serialize,
-    query::Filter,
     write::{Archiver, BatchBuilder},
 };
 use trc::AddContext;
@@ -56,12 +55,11 @@ impl<T: SessionStream> Session<T> {
 
         if self
             .server
-            .get_document_ids(account_id, Collection::SieveScript)
+            .document_ids(account_id, Collection::SieveScript, SieveField::Name)
             .await
             .caused_by(trc::location!())?
-            .map(|ids| ids.len() as usize)
-            .unwrap_or(0)
-            > access_token.object_quota(Collection::SieveScript) as usize
+            .len()
+            > access_token.object_quota(Collection::SieveScript) as u64
         {
             return Err(trc::ManageSieveEvent::Error
                 .into_err()
@@ -104,7 +102,7 @@ impl<T: SessionStream> Session<T> {
             // Obtain script values
             let script_ = self
                 .server
-                .get_archive(account_id, Collection::SieveScript, document_id)
+                .archive(account_id, Collection::SieveScript, document_id)
                 .await
                 .caused_by(trc::location!())?
                 .ok_or_else(|| {
@@ -130,7 +128,7 @@ impl<T: SessionStream> Session<T> {
             batch
                 .with_account_id(account_id)
                 .with_collection(Collection::SieveScript)
-                .update_document(document_id)
+                .with_document(document_id)
                 .custom(
                     ObjectIndexBuilder::new()
                         .with_changes(
@@ -177,7 +175,7 @@ impl<T: SessionStream> Session<T> {
             batch
                 .with_account_id(account_id)
                 .with_collection(Collection::SieveScript)
-                .create_document(document_id)
+                .with_document(document_id)
                 .custom(
                     ObjectIndexBuilder::<(), _>::new()
                         .with_changes(
@@ -221,18 +219,14 @@ impl<T: SessionStream> Session<T> {
         } else {
             Ok(self
                 .server
-                .store()
-                .filter(
+                .document_ids_matching(
                     account_id,
                     Collection::SieveScript,
-                    vec![Filter::eq(
-                        SieveField::Name,
-                        name.to_lowercase().into_bytes(),
-                    )],
+                    SieveField::Name,
+                    name.to_lowercase().as_bytes(),
                 )
                 .await
                 .caused_by(trc::location!())?
-                .results
                 .min())
         }
     }

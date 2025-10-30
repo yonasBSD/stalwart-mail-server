@@ -36,7 +36,7 @@ pub(crate) async fn migrate_push_subscriptions_v013(
 
     for push_id in &push_ids {
         match server
-            .get_archive(account_id, Collection::PushSubscription, push_id)
+            .archive(account_id, Collection::PushSubscription, push_id)
             .await
         {
             Ok(Some(legacy)) => match legacy.deserialize_untrusted::<PushSubscriptionV2>() {
@@ -88,7 +88,7 @@ pub(crate) async fn migrate_push_subscriptions_v013(
                 .create_document(account_id)
                 .with_account_id(account_id)
                 .with_collection(Collection::Principal)
-                .update_document(0)
+                .with_document(0)
                 .set(
                     PrincipalField::PushSubscriptions,
                     Archiver::new(PushSubscriptions { subscriptions })

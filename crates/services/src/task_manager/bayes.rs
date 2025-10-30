@@ -5,8 +5,10 @@
  */
 
 use common::Server;
-use email::message::bayes::EmailBayesTrain;
 use mail_parser::MessageParser;
+use spam_filter::{
+    SpamFilterInput, analysis::init::SpamFilterInit, modules::bayes::BayesClassifier,
+};
 use std::time::Instant;
 use trc::{SpamEvent, TaskQueueEvent};
 use types::{blob_hash::BlobHash, collection::Collection};
@@ -37,10 +39,12 @@ impl BayesTrainTask for Server {
             .await
         {
             // Train bayes classifier for account
-            self.email_bayes_train(
-                account_id,
-                0,
-                MessageParser::new().parse(&raw_message).unwrap_or_default(),
+            self.bayes_train_if_balanced(
+                &self.spam_filter_init(SpamFilterInput::from_account_message(
+                    &MessageParser::new().parse(&raw_message).unwrap_or_default(),
+                    account_id,
+                    0,
+                )),
                 learn_spam,
             )
             .await;

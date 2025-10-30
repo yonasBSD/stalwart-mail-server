@@ -5,6 +5,7 @@
  */
 
 const ARCHIVE_FIELD: u8 = 50;
+const DOCUMENT_ID_FIELD: u8 = 51;
 
 pub trait FieldType: Into<u8> + Copy + std::fmt::Debug + PartialEq + Eq {}
 
@@ -17,21 +18,20 @@ pub struct Field(u8);
 pub enum ContactField {
     Uid,
     Email,
-    Created,
-    Updated,
-    Text,
     Archive,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
-pub enum CalendarField {
+pub enum CalendarEventField {
     Uid,
-    Created,
-    Updated,
-    Start,
-    Text,
-    EventId,
+    Archive,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum CalendarNotificationField {
+    CreatedToId,
     Archive,
 }
 
@@ -40,17 +40,8 @@ pub enum CalendarField {
 pub enum EmailField {
     Archive,
     Metadata,
-    Size,
-    Subject,
-    References,
-    MailboxIds,
-    ReceivedAt,
-    SentAt,
-    HasAttachment,
-    From,
-    To,
-    Cc,
-    Bcc,
+    Stats,
+    Threading,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -96,24 +87,25 @@ impl From<ContactField> for u8 {
         match value {
             ContactField::Uid => 0,
             ContactField::Email => 1,
-            ContactField::Created => 2,
-            ContactField::Updated => 3,
-            ContactField::Text => 4,
             ContactField::Archive => ARCHIVE_FIELD,
         }
     }
 }
 
-impl From<CalendarField> for u8 {
-    fn from(value: CalendarField) -> Self {
+impl From<CalendarEventField> for u8 {
+    fn from(value: CalendarEventField) -> Self {
         match value {
-            CalendarField::Uid => 0,
-            CalendarField::Text => 1,
-            CalendarField::Created => 2,
-            CalendarField::Updated => 3,
-            CalendarField::Start => 4,
-            CalendarField::EventId => 5,
-            CalendarField::Archive => ARCHIVE_FIELD,
+            CalendarEventField::Uid => 0,
+            CalendarEventField::Archive => ARCHIVE_FIELD,
+        }
+    }
+}
+
+impl From<CalendarNotificationField> for u8 {
+    fn from(value: CalendarNotificationField) -> Self {
+        match value {
+            CalendarNotificationField::CreatedToId => 0,
+            CalendarNotificationField::Archive => ARCHIVE_FIELD,
         }
     }
 }
@@ -121,18 +113,9 @@ impl From<CalendarField> for u8 {
 impl From<EmailField> for u8 {
     fn from(value: EmailField) -> Self {
         match value {
-            EmailField::From => 87,
-            EmailField::To => 35,
-            EmailField::Cc => 74,
-            EmailField::Bcc => 69,
-            EmailField::Subject => 29,
-            EmailField::Size => 27,
             EmailField::Metadata => 71,
-            EmailField::References => 20,
-            EmailField::MailboxIds => 7,
-            EmailField::ReceivedAt => 19,
-            EmailField::SentAt => 26,
-            EmailField::HasAttachment => 89,
+            EmailField::Threading => 90,
+            EmailField::Stats => 91,
             EmailField::Archive => ARCHIVE_FIELD,
         }
     }
@@ -196,8 +179,14 @@ impl From<ContactField> for Field {
     }
 }
 
-impl From<CalendarField> for Field {
-    fn from(value: CalendarField) -> Self {
+impl From<CalendarEventField> for Field {
+    fn from(value: CalendarEventField) -> Self {
+        Field(u8::from(value))
+    }
+}
+
+impl From<CalendarNotificationField> for Field {
+    fn from(value: CalendarNotificationField) -> Self {
         Field(u8::from(value))
     }
 }
@@ -234,15 +223,21 @@ impl From<EmailSubmissionField> for Field {
 
 impl Field {
     pub const ARCHIVE: Field = Field(ARCHIVE_FIELD);
+    pub const DOCUMENT_ID: Field = Field(DOCUMENT_ID_FIELD);
 
     pub fn new(value: u8) -> Self {
         Field(value)
+    }
+
+    pub fn inner(&self) -> u8 {
+        self.0
     }
 }
 
 impl FieldType for Field {}
 impl FieldType for ContactField {}
-impl FieldType for CalendarField {}
+impl FieldType for CalendarEventField {}
+impl FieldType for CalendarNotificationField {}
 impl FieldType for EmailField {}
 impl FieldType for MailboxField {}
 impl FieldType for PrincipalField {}

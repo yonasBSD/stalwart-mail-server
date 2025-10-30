@@ -303,7 +303,7 @@ impl Store {
                 batch.with_collection(collection);
                 last_collection = collection;
             }
-            batch.update_document(document_id);
+            batch.with_document(document_id);
             batch.any_op(Operation::Value {
                 class: ValueClass::Blob(op),
                 op: ValueOp::Clear,

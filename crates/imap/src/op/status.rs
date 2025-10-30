@@ -20,9 +20,10 @@ use imap_proto::{
     receiver::Request,
 };
 use std::time::Instant;
-use store::{Deserialize, U32_LEN};
+use store::{IterateParams, roaring::RoaringBitmap, write::key::DeserializeBigEndian};
 use store::{
-    IndexKeyPrefix, IterateParams, roaring::RoaringBitmap, write::key::DeserializeBigEndian,
+    U32_LEN, ValueKey,
+    write::{IndexPropertyClass, ValueClass},
 };
 use trc::AddContext;
 use types::{collection::Collection, field::EmailField, id::Id, keyword::Keyword};
@@ -299,30 +300,32 @@ impl<T: SessionStream> SessionData<T> {
             .data
             .iterate(
                 IterateParams::new(
-                    IndexKeyPrefix {
+                    ValueKey {
                         account_id,
                         collection: Collection::Email.into(),
-                        field: EmailField::Size.into(),
+                        document_id: 0,
+                        class: ValueClass::IndexProperty(IndexPropertyClass::Integer {
+                            property: EmailField::Stats.into(),
+                            value: 0,
+                        }),
                     },
-                    IndexKeyPrefix {
+                    ValueKey {
                         account_id,
                         collection: Collection::Email.into(),
-                        field: u8::from(EmailField::Size) + 1,
+                        document_id: u32::MAX,
+                        class: ValueClass::IndexProperty(IndexPropertyClass::Integer {
+                            property: EmailField::Stats.into(),
+                            value: u64::MAX,
+                        }),
                     },
                 )
-                .ascending()
-                .no_values(),
-                |key, _| {
+                .ascending(),
+                |key, value| {
                     let id_pos = key.len() - U32_LEN;
                     let document_id = key.deserialize_be_u32(id_pos)?;
 
                     if message_ids.contains(document_id) {
-                        key.get(IndexKeyPrefix::len()..id_pos)
-                            .ok_or_else(|| trc::Error::corrupted_key(key, None, trc::location!()))
-                            .and_then(u32::deserialize)
-                            .map(|size| {
-                                total_size += size as u64;
-                            })?;
+                        total_size += value.deserialize_be_u32(0)? as u64;
                     }
                     Ok(true)
                 },

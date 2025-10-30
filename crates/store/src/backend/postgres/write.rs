@@ -8,8 +8,7 @@ use super::{PostgresStore, into_error};
 use crate::{
     IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_QUOTA, U64_LEN,
     write::{
-        AssignedIds, Batch, BitmapClass, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME, Operation,
-        ValueClass, ValueOp,
+        AssignedIds, Batch, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME, Operation, ValueClass, ValueOp,
     },
 };
 use ahash::AHashMap;
@@ -282,35 +281,6 @@ impl PostgresStore {
                         trx.prepare_cached("DELETE FROM i WHERE k = $1").await?
                     };
                     trx.execute(&s, &[&key]).await?;
-                }
-                Operation::Bitmap { class, set } => {
-                    let is_document_id = matches!(class, BitmapClass::DocumentIds);
-                    let key = class.serialize(account_id, collection, document_id, 0);
-                    let table = char::from(class.subspace());
-
-                    let s = if *set {
-                        if is_document_id {
-                            trx.prepare_cached("INSERT INTO b (k) VALUES ($1)").await?
-                        } else {
-                            trx.prepare_cached(&format!(
-                                "INSERT INTO {} (k) VALUES ($1) ON CONFLICT (k) DO NOTHING",
-                                table
-                            ))
-                            .await?
-                        }
-                    } else {
-                        trx.prepare_cached(&format!("DELETE FROM {} WHERE k = $1", table))
-                            .await?
-                    };
-
-                    trx.execute(&s, &[&key]).await.map_err(|err| {
-                        if is_document_id && matches!(err.code(), Some(&SqlState::UNIQUE_VIOLATION))
-                        {
-                            CommitError::Retry
-                        } else {
-                            CommitError::Postgres(err)
-                        }
-                    })?;
                 }
                 Operation::Log { collection, set } => {
                     let key = LogKey {

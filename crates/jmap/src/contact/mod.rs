@@ -7,7 +7,7 @@
 use calcard::jscontact::JSContactProperty;
 use common::{DavName, DavResources, Server};
 use jmap_proto::error::set::SetError;
-use store::query::Filter;
+use store::SearchFilter;
 use trc::AddContext;
 use types::{collection::Collection, field::ContactField, id::Id};
 

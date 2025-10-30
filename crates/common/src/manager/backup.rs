@@ -14,11 +14,10 @@ use std::{
     sync::mpsc::{self, SyncSender},
 };
 use store::{
-    BitmapKey, Deserialize, IndexKey, IterateParams, LogKey, SUBSPACE_BITMAP_ID,
-    SUBSPACE_BITMAP_TAG, SUBSPACE_BITMAP_TEXT, SerializeInfallible, U32_LEN, U64_LEN, ValueKey,
+    Deserialize, IndexKey, IterateParams, LogKey, SerializeInfallible, U32_LEN, U64_LEN, ValueKey,
     write::{
-        AnyKey, BitmapClass, BitmapHash, BlobOp, DirectoryClass, InMemoryClass, QueueClass,
-        QueueEvent, TagValue, ValueClass, key::DeserializeBigEndian,
+        AnyKey, BlobOp, DirectoryClass, InMemoryClass, QueueClass, QueueEvent, ValueClass,
+        key::DeserializeBigEndian,
     },
 };
 use types::{
@@ -108,9 +107,6 @@ impl Core {
             params
                 .has_family(Family::Index)
                 .then(|| self.backup_index(&params.dest)),
-            params
-                .has_family(Family::Bitmap)
-                .then(|| self.backup_bitmaps(&params.dest)),
             params
                 .has_family(Family::Log)
                 .then(|| self.backup_logs(&params.dest)),
@@ -240,7 +236,7 @@ impl Core {
     }
 
     fn backup_fts_index(&self, dest: &Path) -> TaskHandle {
-        let store = self.storage.data.clone();
+        /*let store = self.storage.data.clone();
         let (handle, writer) = spawn_writer(dest.join("fts_index"));
         (
             tokio::spawn(async move {
@@ -310,7 +306,8 @@ impl Core {
                     .failed("Failed to iterate over data store");
             }),
             handle,
-        )
+        )*/
+        todo!()
     }
 
     fn backup_acl(&self, dest: &Path) -> TaskHandle {
@@ -850,178 +847,6 @@ impl Core {
                     )
                     .await
                     .failed("Failed to iterate over data store");
-            }),
-            handle,
-        )
-    }
-
-    fn backup_bitmaps(&self, dest: &Path) -> TaskHandle {
-        let store = self.storage.data.clone();
-
-        let (handle, writer) = spawn_writer(dest.join("bitmap"));
-        (
-            tokio::spawn(async move {
-                const BM_MARKER: u8 = 1 << 7;
-
-                writer
-                    .send(Op::Family(Family::Bitmap))
-                    .failed("Failed to send family");
-
-                let mut bitmaps: AHashMap<(u32, u8), AHashSet<BitmapClass>> = AHashMap::new();
-
-                for subspace in [
-                    SUBSPACE_BITMAP_ID,
-                    SUBSPACE_BITMAP_TAG,
-                    SUBSPACE_BITMAP_TEXT,
-                ] {
-                    store
-                        .iterate(
-                            IterateParams::new(
-                                AnyKey {
-                                    subspace,
-                                    key: vec![0u8],
-                                },
-                                AnyKey {
-                                    subspace,
-                                    key: vec![u8::MAX; 10],
-                                },
-                            )
-                            .no_values(),
-                            |key, _| {
-                                let account_id = key.deserialize_be_u32(0)?;
-
-                                let key = key.range(0..key.len() - U32_LEN)?;
-
-                                match subspace {
-                                    SUBSPACE_BITMAP_ID => {
-                                        let collection = key.deserialize_u8(U32_LEN)?;
-                                        bitmaps
-                                            .entry((account_id, collection))
-                                            .or_default()
-                                            .insert(BitmapClass::DocumentIds);
-                                    }
-                                    SUBSPACE_BITMAP_TAG => {
-                                        let collection = key.deserialize_u8(U32_LEN)?;
-                                        let value = key.range(U32_LEN + 2..usize::MAX)?;
-                                        let (field, value) = match key
-                                            .deserialize_u8(U32_LEN + 1)?
-                                        {
-                                            field if field & BM_MARKER == 0 => {
-                                                (field, TagValue::Id(value.deserialize_leb128()?))
-                                            }
-                                            field => {
-                                                (field & !BM_MARKER, TagValue::Text(value.to_vec()))
-                                            }
-                                        };
-
-                                        bitmaps
-                                            .entry((account_id, collection))
-                                            .or_default()
-                                            .insert(BitmapClass::Tag { field, value });
-                                    }
-                                    SUBSPACE_BITMAP_TEXT => {
-                                        let collection = key.deserialize_u8(key.len() - 2)?;
-                                        let mut hash = [0u8; 8];
-                                        let (hash, len) = match key.len() - U32_LEN - 2 {
-                                            9 => {
-                                                hash[..8].copy_from_slice(
-                                                    key.range(U32_LEN..key.len() - 3)?,
-                                                );
-                                                (hash, key.deserialize_u8(key.len() - 3)?)
-                                            }
-                                            len @ (1..=7) => {
-                                                hash[..len].copy_from_slice(
-                                                    key.range(U32_LEN..key.len() - 2)?,
-                                                );
-                                                (hash, len as u8)
-                                            }
-                                            _ => {
-                                                return Err(trc::Error::corrupted_key(
-                                                    key,
-                                                    None,
-                                                    trc::location!(),
-                                                ));
-                                            }
-                                        };
-
-                                        bitmaps
-                                            .entry((account_id, collection))
-                                            .or_default()
-                                            .insert(BitmapClass::Text {
-                                                field: key.deserialize_u8(key.len() - 1)?,
-                                                token: BitmapHash { hash, len },
-                                            });
-                                    }
-                                    _ => unreachable!(),
-                                }
-
-                                Ok(true)
-                            },
-                        )
-                        .await
-                        .failed("Failed to iterate over data store");
-                }
-
-                for ((account_id, collection), classes) in bitmaps {
-                    writer
-                        .send(Op::AccountId(account_id))
-                        .failed("Failed to send account id");
-                    writer
-                        .send(Op::Collection(collection))
-                        .failed("Failed to send collection");
-
-                    for class in classes {
-                        if let Some(bitmap) = store
-                            .get_bitmap(BitmapKey {
-                                account_id,
-                                collection,
-                                class: class.clone(),
-                                document_id: 0,
-                            })
-                            .await
-                            .failed("Failed to get bitmap")
-                        {
-                            let key = match class {
-                                BitmapClass::DocumentIds => {
-                                    vec![0u8]
-                                }
-                                BitmapClass::Tag { field, value } => {
-                                    let mut key = Vec::with_capacity(3);
-
-                                    match value {
-                                        TagValue::Id(id) => {
-                                            key.push(1u8);
-                                            key.push(field);
-                                            key.extend_from_slice(&id.serialize());
-                                        }
-                                        TagValue::Text(text) => {
-                                            key.push(2u8);
-                                            key.push(field);
-                                            key.extend_from_slice(&text);
-                                        }
-                                    }
-
-                                    key
-                                }
-                                BitmapClass::Text { field, token } => {
-                                    let mut key = vec![4u8, field];
-                                    key.push(token.len);
-                                    key.extend_from_slice(&token.hash);
-                                    key
-                                }
-                            };
-
-                            let mut bytes = Vec::with_capacity(bitmap.serialized_size());
-                            bitmap
-                                .serialize_into(&mut bytes)
-                                .failed("Failed to serialize bitmap");
-
-                            writer
-                                .send(Op::KeyValue((key, bytes)))
-                                .failed("Failed to send key value");
-                        }
-                    }
-                }
             }),
             handle,
         )

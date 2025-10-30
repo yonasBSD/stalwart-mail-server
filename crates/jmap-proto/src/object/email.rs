@@ -14,7 +14,6 @@ use jmap_tools::{Element, JsonPointer, JsonPointerItem, Key, Property};
 use mail_parser::HeaderName;
 use serde::Serialize;
 use std::{borrow::Cow, fmt::Display, str::FromStr};
-use store::fts::{FilterItem, FilterType};
 use types::{blob::BlobId, id::Id, keyword::Keyword};
 
 #[derive(Debug, Clone, Default)]
@@ -855,22 +854,6 @@ impl EmailComparator {
                 | EmailComparator::Cc
                 | EmailComparator::SentAt
         )
-    }
-}
-
-impl FilterItem for EmailFilter {
-    fn filter_type(&self) -> FilterType {
-        match self {
-            EmailFilter::From(_)
-            | EmailFilter::To(_)
-            | EmailFilter::Cc(_)
-            | EmailFilter::Bcc(_)
-            | EmailFilter::Subject(_)
-            | EmailFilter::Body(_)
-            | EmailFilter::Header(_)
-            | EmailFilter::Text(_) => FilterType::Fts,
-            _ => FilterType::Store,
-        }
     }
 }
 

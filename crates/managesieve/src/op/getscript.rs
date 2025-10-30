@@ -33,7 +33,7 @@ impl<T: SessionStream> Session<T> {
         let document_id = self.get_script_id(account_id, &name).await?;
         let sieve_ = self
             .server
-            .get_archive(account_id, Collection::SieveScript, document_id)
+            .archive(account_id, Collection::SieveScript, document_id)
             .await
             .caused_by(trc::location!())?
             .ok_or_else(|| {

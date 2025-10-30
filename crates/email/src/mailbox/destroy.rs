@@ -78,7 +78,7 @@ impl MailboxDestroy for Server {
 
                 let mut destroy_ids = RoaringBitmap::new();
 
-                self.get_archives(
+                self.archives(
                     account_id,
                     Collection::Email,
                     &message_ids,
@@ -113,7 +113,7 @@ impl MailboxDestroy for Server {
                         // Untag message from mailbox
                         batch
                             .with_collection(Collection::Email)
-                            .update_document(message_id)
+                            .with_document(message_id)
                             .custom(
                                 ObjectIndexBuilder::new()
                                     .with_changes(new_message_data)
@@ -129,7 +129,7 @@ impl MailboxDestroy for Server {
 
                 // Bulk delete messages
                 if !destroy_ids.is_empty() {
-                    self.emails_tombstone(account_id, &mut batch, destroy_ids)
+                    self.emails_delete(account_id, &mut batch, destroy_ids)
                         .await?;
                 }
             } else {
@@ -139,7 +139,7 @@ impl MailboxDestroy for Server {
 
         // Obtain mailbox
         if let Some(mailbox_) = self
-            .get_archive(account_id, Collection::Mailbox, document_id)
+            .archive(account_id, Collection::Mailbox, document_id)
             .await
             .caused_by(trc::location!())?
         {
@@ -157,7 +157,7 @@ impl MailboxDestroy for Server {
             batch
                 .with_account_id(account_id)
                 .with_collection(Collection::Mailbox)
-                .delete_document(document_id)
+                .with_document(document_id)
                 .clear(MailboxField::UidCounter)
                 .custom(ObjectIndexBuilder::<_, ()>::new().with_current(mailbox))
                 .caused_by(trc::location!())?;

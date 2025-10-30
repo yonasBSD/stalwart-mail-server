@@ -4,25 +4,22 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use super::{
+    AnyKey, BlobOp, DirectoryClass, InMemoryClass, QueueClass, ReportClass, ReportEvent,
+    TaskQueueClass, TelemetryClass, ValueClass,
+};
+use crate::{
+    Deserialize, IndexKey, IndexKeyPrefix, Key, LogKey, SUBSPACE_ACL, SUBSPACE_BLOB_LINK,
+    SUBSPACE_BLOB_RESERVE, SUBSPACE_COUNTER, SUBSPACE_DIRECTORY, SUBSPACE_IN_MEMORY_COUNTER,
+    SUBSPACE_IN_MEMORY_VALUE, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_PROPERTY,
+    SUBSPACE_QUEUE_EVENT, SUBSPACE_QUEUE_MESSAGE, SUBSPACE_QUOTA, SUBSPACE_REPORT_IN,
+    SUBSPACE_REPORT_OUT, SUBSPACE_SETTINGS, SUBSPACE_TASK_QUEUE, SUBSPACE_TELEMETRY_INDEX,
+    SUBSPACE_TELEMETRY_METRIC, SUBSPACE_TELEMETRY_SPAN, U16_LEN, U32_LEN, U64_LEN, ValueKey,
+    WITH_SUBSPACE, write::IndexPropertyClass,
+};
 use std::convert::TryInto;
 use types::{blob_hash::BLOB_HASH_LEN, collection::SyncCollection};
 use utils::codec::leb128::Leb128_;
-
-use crate::{
-    BitmapKey, Deserialize, IndexKey, IndexKeyPrefix, Key, LogKey, SUBSPACE_ACL,
-    SUBSPACE_BITMAP_ID, SUBSPACE_BITMAP_TAG, SUBSPACE_BITMAP_TEXT, SUBSPACE_BLOB_LINK,
-    SUBSPACE_BLOB_RESERVE, SUBSPACE_COUNTER, SUBSPACE_DIRECTORY, SUBSPACE_FTS_INDEX,
-    SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_IN_MEMORY_VALUE, SUBSPACE_INDEXES, SUBSPACE_LOGS,
-    SUBSPACE_PROPERTY, SUBSPACE_QUEUE_EVENT, SUBSPACE_QUEUE_MESSAGE, SUBSPACE_QUOTA,
-    SUBSPACE_REPORT_IN, SUBSPACE_REPORT_OUT, SUBSPACE_SETTINGS, SUBSPACE_TASK_QUEUE,
-    SUBSPACE_TELEMETRY_INDEX, SUBSPACE_TELEMETRY_METRIC, SUBSPACE_TELEMETRY_SPAN, U16_LEN, U32_LEN,
-    U64_LEN, ValueKey, WITH_SUBSPACE,
-};
-
-use super::{
-    AnyKey, BitmapClass, BlobOp, DirectoryClass, InMemoryClass, QueueClass, ReportClass,
-    ReportEvent, TagValue, TaskQueueClass, TelemetryClass, ValueClass,
-};
 
 pub struct KeySerializer {
     pub buf: Vec<u8>,
@@ -256,48 +253,46 @@ impl ValueClass {
         };
 
         match self {
-            ValueClass::Property(field) => serializer
+            ValueClass::Property(property) => serializer
                 .write(account_id)
                 .write(collection)
-                .write(*field)
+                .write(*property)
                 .write(document_id),
-            ValueClass::FtsIndex(hash) => {
-                let serializer = serializer.write(account_id).write(
-                    hash.hash
-                        .get(0..std::cmp::min(hash.len as usize, 8))
-                        .unwrap_or_default(),
-                );
-
-                if hash.len >= 8 {
-                    serializer.write(hash.len)
-                } else {
-                    serializer
-                }
-                .write(collection)
-                .write(document_id)
-            }
+            ValueClass::IndexProperty(property) => match property {
+                IndexPropertyClass::Hash { property, hash } => serializer
+                    .write(account_id)
+                    .write(collection)
+                    .write(*property)
+                    .write(hash.as_bytes())
+                    .write(document_id),
+                IndexPropertyClass::Integer { property, value } => serializer
+                    .write(account_id)
+                    .write(collection)
+                    .write(*property)
+                    .write(*value)
+                    .write(document_id),
+            },
             ValueClass::Acl(grant_account_id) => serializer
                 .write(*grant_account_id)
                 .write(account_id)
                 .write(collection)
                 .write(document_id),
             ValueClass::TaskQueue(task) => match task {
-                TaskQueueClass::IndexEmail { due, hash } => serializer
-                    .write(*due)
-                    .write(account_id)
-                    .write(0u8)
-                    .write(document_id)
-                    .write::<&[u8]>(hash.as_ref()),
-                TaskQueueClass::BayesTrain {
+                TaskQueueClass::UpdateIndex {
+                    collection,
+                    is_insert,
                     due,
-                    hash,
-                    learn_spam,
                 } => serializer
                     .write(*due)
                     .write(account_id)
+                    .write(if *is_insert { 7u8 } else { 8u8 })
+                    .write(u8::from(*collection))
+                    .write(document_id),
+                TaskQueueClass::BayesTrain { due, learn_spam } => serializer
+                    .write(*due)
+                    .write(account_id)
                     .write(if *learn_spam { 1u8 } else { 2u8 })
-                    .write(document_id)
-                    .write::<&[u8]>(hash.as_ref()),
+                    .write(document_id),
                 TaskQueueClass::SendAlarm {
                     due,
                     event_id,
@@ -473,92 +468,6 @@ impl<T: AsRef<[u8]> + Sync + Send + Clone> Key for IndexKey<T> {
     }
 }
 
-impl<T: AsRef<BitmapClass> + Sync + Send + Clone> Key for BitmapKey<T> {
-    fn subspace(&self) -> u8 {
-        self.class.as_ref().subspace()
-    }
-
-    fn serialize(&self, flags: u32) -> Vec<u8> {
-        self.class
-            .as_ref()
-            .serialize(self.account_id, self.collection, self.document_id, flags)
-    }
-}
-
-impl BitmapClass {
-    pub fn subspace(&self) -> u8 {
-        match self {
-            BitmapClass::DocumentIds => SUBSPACE_BITMAP_ID,
-            BitmapClass::Tag { .. } => SUBSPACE_BITMAP_TAG,
-            BitmapClass::Text { .. } => SUBSPACE_BITMAP_TEXT,
-        }
-    }
-
-    pub fn serialize(
-        &self,
-        account_id: u32,
-        collection: u8,
-        document_id: u32,
-        flags: u32,
-    ) -> Vec<u8> {
-        const BM_MARKER: u8 = 1 << 7;
-
-        match self {
-            BitmapClass::DocumentIds => if (flags & WITH_SUBSPACE) != 0 {
-                KeySerializer::new(U32_LEN + 2).write(SUBSPACE_BITMAP_ID)
-            } else {
-                KeySerializer::new(U32_LEN + 1)
-            }
-            .write(account_id)
-            .write(collection),
-            BitmapClass::Tag { field, value } => match value {
-                TagValue::Id(id) => if (flags & WITH_SUBSPACE) != 0 {
-                    KeySerializer::new((U32_LEN * 2) + 4).write(SUBSPACE_BITMAP_TAG)
-                } else {
-                    KeySerializer::new((U32_LEN * 2) + 3)
-                }
-                .write(account_id)
-                .write(collection)
-                .write(*field)
-                .write_leb128(*id),
-                TagValue::Text(text) => if (flags & WITH_SUBSPACE) != 0 {
-                    KeySerializer::new(U32_LEN + 4 + text.len()).write(SUBSPACE_BITMAP_TAG)
-                } else {
-                    KeySerializer::new(U32_LEN + 3 + text.len())
-                }
-                .write(account_id)
-                .write(collection)
-                .write(*field | BM_MARKER)
-                .write(text.as_slice()),
-            },
-            BitmapClass::Text { field, token } => {
-                let serializer = if (flags & WITH_SUBSPACE) != 0 {
-                    KeySerializer::new(U32_LEN + 16 + 3 + 1).write(SUBSPACE_BITMAP_TEXT)
-                } else {
-                    KeySerializer::new(U32_LEN + 16 + 3)
-                }
-                .write(account_id)
-                .write(
-                    token
-                        .hash
-                        .get(0..std::cmp::min(token.len as usize, 8))
-                        .unwrap(),
-                );
-
-                if token.len >= 8 {
-                    serializer.write(token.len)
-                } else {
-                    serializer
-                }
-                .write(collection)
-                .write(*field)
-            }
-        }
-        .write(document_id)
-        .finalize()
-    }
-}
-
 impl<T: AsRef<[u8]> + Sync + Send + Clone> Key for AnyKey<T> {
     fn serialize(&self, flags: u32) -> Vec<u8> {
         let key = self.key.as_ref();
@@ -580,13 +489,10 @@ impl ValueClass {
     pub fn serialized_size(&self) -> usize {
         match self {
             ValueClass::Property(_) => U32_LEN * 2 + 3,
-            ValueClass::FtsIndex(hash) => {
-                if hash.len >= 8 {
-                    U32_LEN * 2 + 10
-                } else {
-                    hash.len as usize + U32_LEN * 2 + 1
-                }
-            }
+            ValueClass::IndexProperty(p) => match p {
+                IndexPropertyClass::Hash { hash, .. } => U32_LEN * 2 + 3 + hash.len(),
+                IndexPropertyClass::Integer { .. } => U32_LEN * 2 + 3 + U64_LEN,
+            },
             ValueClass::Acl(_) => U32_LEN * 3 + 2,
             ValueClass::InMemory(InMemoryClass::Counter(v) | InMemoryClass::Key(v))
             | ValueClass::Config(v) => v.len(),
@@ -603,9 +509,8 @@ impl ValueClass {
                 }
             },
             ValueClass::TaskQueue(e) => match e {
-                TaskQueueClass::IndexEmail { .. } | TaskQueueClass::BayesTrain { .. } => {
-                    (BLOB_HASH_LEN + U64_LEN * 2) + 1
-                }
+                TaskQueueClass::UpdateIndex { .. } => (U64_LEN * 2) + 2,
+                TaskQueueClass::BayesTrain { .. } => (U64_LEN * 2) + 1,
                 TaskQueueClass::SendAlarm { .. } => U64_LEN + (U32_LEN * 3) + 1,
                 TaskQueueClass::SendImip { is_payload, .. } => {
                     if *is_payload {
@@ -648,8 +553,8 @@ impl ValueClass {
                     SUBSPACE_PROPERTY
                 }
             }
+            ValueClass::IndexProperty { .. } => SUBSPACE_PROPERTY,
             ValueClass::Acl(_) => SUBSPACE_ACL,
-            ValueClass::FtsIndex(_) => SUBSPACE_FTS_INDEX,
             ValueClass::TaskQueue { .. } => SUBSPACE_TASK_QUEUE,
             ValueClass::Blob(op) => match op {
                 BlobOp::Reserve { .. } => SUBSPACE_BLOB_RESERVE,

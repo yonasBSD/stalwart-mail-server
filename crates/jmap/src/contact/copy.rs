@@ -107,7 +107,7 @@ impl JmapContactCardCopy for Server {
             }
 
             let Some(_contact) = self
-                .get_archive(from_account_id, Collection::ContactCard, from_contact_id)
+                .archive(from_account_id, Collection::ContactCard, from_contact_id)
                 .await?
             else {
                 response.not_created.append(

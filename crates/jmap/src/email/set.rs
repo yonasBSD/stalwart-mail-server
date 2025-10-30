@@ -6,7 +6,6 @@
 
 use super::headers::{BuildHeader, ValueToHeader};
 use crate::{
-    JmapMethods,
     blob::download::BlobDownload,
     changes::state::JmapCacheState,
     email::{PatchResult, handle_email_patch, ingested_into_object},
@@ -73,9 +72,8 @@ impl EmailSet for Server {
         // Prepare response
         let account_id = request.account_id.document_id();
         let cache = self.get_cached_messages(account_id).await?;
-        let mut response = self
-            .prepare_set_response(&request, cache.assert_state(false, &request.if_in_state)?)
-            .await?;
+        let mut response = SetResponse::from_request(&request, self.core.jmap.set_max_objects)?
+            .with_state(cache.assert_state(false, &request.if_in_state)?);
         let can_train_spam = self.email_bayes_can_train(access_token);
 
         // Obtain mailboxIds
@@ -797,7 +795,7 @@ impl EmailSet for Server {
             // Obtain message data
             let document_id = id.document_id();
             let data_ = match self
-                .get_archive(account_id, Collection::Email, document_id)
+                .archive(account_id, Collection::Email, document_id)
                 .await?
             {
                 Some(data) => data,
@@ -991,7 +989,7 @@ impl EmailSet for Server {
             batch
                 .with_account_id(account_id)
                 .with_collection(Collection::Email)
-                .update_document(document_id)
+                .with_document(document_id)
                 .custom(
                     ObjectIndexBuilder::new()
                         .with_current(data)
@@ -1072,10 +1070,10 @@ impl EmailSet for Server {
             }
 
             if !destroy_ids.is_empty() {
-                // Batch delete (tombstone) messages
+                // Batch delete messages
                 let mut batch = BatchBuilder::new();
                 let not_destroyed = self
-                    .emails_tombstone(account_id, &mut batch, destroy_ids)
+                    .emails_delete(account_id, &mut batch, destroy_ids)
                     .await?;
                 if !batch.is_empty() {
                     last_change_id = self

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{JmapMethods, changes::state::JmapCacheState};
+use crate::{ changes::state::JmapCacheState};
 use common::{Server, auth::AccessToken};
 use groupware::cache::GroupwareCache;
 use jmap_proto::{
@@ -49,13 +49,13 @@ impl CalendarEventNotificationQuery for Server {
             match cond {
                 Filter::Property(cond) => match cond {
                     CalendarEventNotificationFilter::Before(before) => {
-                        filters.push(query::Filter::lt(
+                        filters.push(SearchFilter::lt(
                             CalendarField::Created,
                             (before.timestamp() as u64).serialize(),
                         ))
                     }
                     CalendarEventNotificationFilter::After(after) => {
-                        filters.push(query::Filter::gt(
+                        filters.push(SearchFilter::gt(
                             CalendarField::Created,
                             (after.timestamp() as u64).serialize(),
                         ))
@@ -63,16 +63,16 @@ impl CalendarEventNotificationQuery for Server {
                     CalendarEventNotificationFilter::CalendarEventIds(ids) => {
                         let has_many = ids.len() > 1;
                         if has_many {
-                            filters.push(query::Filter::Or);
+                            filters.push(SearchFilter::Or);
                         }
                         for id in ids.into_valid() {
-                            filters.push(query::Filter::eq(
+                            filters.push(SearchFilter::eq(
                                 CalendarField::EventId,
                                 id.document_id().serialize(),
                             ));
                         }
                         if has_many {
-                            filters.push(query::Filter::End);
+                            filters.push(SearchFilter::End);
                         }
                     }
                     unsupported => {
@@ -110,7 +110,7 @@ impl CalendarEventNotificationQuery for Server {
             }) {
                 comparators.push(match comparator.property {
                     CalendarEventNotificationComparator::Created => {
-                        query::Comparator::field(CalendarField::Created, comparator.is_ascending)
+                        SearchComparator::field(CalendarField::Created, comparator.is_ascending)
                     }
                     CalendarEventNotificationComparator::_T(unsupported) => {
                         return Err(trc::JmapEvent::UnsupportedSort

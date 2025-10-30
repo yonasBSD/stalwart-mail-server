@@ -7,7 +7,7 @@
 use super::{LegacyBincode, get_properties};
 use common::Server;
 use email::{
-    mailbox::{TOMBSTONE_ID, UidMailbox},
+    mailbox::UidMailbox,
     message::{
         index::{MAX_ID_LENGTH, VisitText},
         metadata::{
@@ -63,7 +63,7 @@ pub(crate) async fn migrate_emails(server: &Server, account_id: u32) -> trc::Res
             collection: Collection::Email.into(),
             class: BitmapClass::Tag {
                 field: FIELD_MAILBOX_IDS,
-                value: TagValue::Id(TOMBSTONE_ID),
+                value: TagValue::Id(u32::MAX - 1),
             },
             document_id: 0,
         })
@@ -114,7 +114,7 @@ pub(crate) async fn migrate_emails(server: &Server, account_id: u32) -> trc::Res
             batch
                 .with_account_id(account_id)
                 .with_collection(Collection::Email)
-                .update_document(message_id);
+                .with_document(message_id);
 
             for mailbox in &data.mailboxes {
                 batch.untag(EmailField::MailboxIds, TagValue::Id(mailbox.mailbox_id));
@@ -155,7 +155,7 @@ pub(crate) async fn migrate_emails(server: &Server, account_id: u32) -> trc::Res
                 batch
                     .with_account_id(account_id)
                     .with_collection(Collection::Email)
-                    .update_document(message_id);
+                    .with_document(message_id);
 
                 for header in metadata.root_part().headers.iter().rev() {
                     if matches!(header.name, HeaderName::MessageId) {

@@ -4,24 +4,25 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, fmt::Display};
+use crate::search::{SearchComparator, SearchFilter};
 
+use super::{ElasticSearchStore, INDEX_NAMES, assert_success};
 use elasticsearch::SearchParts;
 use roaring::RoaringBitmap;
 use serde_json::{Value, json};
-
-use crate::fts::{Field, FtsFilter};
-
-use super::{ElasticSearchStore, INDEX_NAMES, assert_success};
+use std::{borrow::Cow, fmt::Display};
 
 impl ElasticSearchStore {
-    pub async fn fts_query<T: Into<u8> + Display + Clone + std::fmt::Debug>(
+    pub async fn index_query(
         &self,
         account_id: u32,
         collection: impl Into<u8>,
-        filters: Vec<FtsFilter<T>>,
-    ) -> trc::Result<RoaringBitmap> {
-        let mut stack: Vec<(FtsFilter<T>, Vec<Value>)> = vec![];
+        filters: Vec<SearchFilter>,
+        comparators: Vec<SearchComparator>,
+    ) -> trc::Result<Vec<u32>> {
+        todo!()
+
+        /*let mut stack: Vec<(FtsFilter<T>, Vec<Value>)> = vec![];
         let mut conditions = vec![json!({ "match": { "account_id": account_id } })];
         let mut logical_op = FtsFilter::And;
 
@@ -118,17 +119,6 @@ impl ElasticSearchStore {
             })? as u32);
         }
 
-        Ok(results)
-    }
-}
-
-impl<T: Into<u8> + Display + Clone + std::fmt::Debug> Field<T> {
-    pub fn name(&self) -> Cow<'static, str> {
-        match self {
-            Field::Header(name) => format!("header.{name}").into(),
-            Field::Body => "body".into(),
-            Field::Attachment => "attachment".into(),
-            Field::Keyword => "keyword".into(),
-        }
+        Ok(results)*/
     }
 }

@@ -22,109 +22,15 @@ use crate::{
     IterateParams, SerializeInfallible, Store, U32_LEN, ValueKey,
     backend::MAX_TOKEN_LENGTH,
     dispatch::DocumentSet,
-    write::{
-        BatchBuilder, BitmapHash, Operation, ValueClass, ValueOp, hash::TokenType,
-        key::DeserializeBigEndian,
-    },
+    search::IndexDocument,
+    write::{BatchBuilder, Operation, ValueClass, ValueOp, key::DeserializeBigEndian},
 };
 
-use super::{Field, postings::Postings};
 pub const TERM_INDEX_VERSION: u8 = 1;
 
-#[derive(Debug)]
-pub(crate) struct Text<'x, T: Into<u8> + Display + std::fmt::Debug> {
-    pub field: Field<T>,
-    pub text: Cow<'x, str>,
-    pub typ: Type,
-}
-
-#[derive(Debug)]
-pub(crate) enum Type {
-    Text(Language),
-    Tokenize,
-    Keyword,
-}
-
-#[derive(Debug)]
-pub struct FtsDocument<'x, T: Into<u8> + Display + std::fmt::Debug> {
-    pub(crate) parts: Vec<Text<'x, T>>,
-    pub(crate) default_language: Language,
-    pub(crate) account_id: u32,
-    pub(crate) collection: Collection,
-    pub(crate) document_id: u32,
-}
-
-impl<'x, T: Into<u8> + Display + std::fmt::Debug> FtsDocument<'x, T> {
-    pub fn with_default_language(default_language: Language) -> FtsDocument<'x, T> {
-        FtsDocument {
-            parts: vec![],
-            default_language,
-            account_id: 0,
-            document_id: 0,
-            collection: Collection::None,
-        }
-    }
-
-    pub fn with_account_id(mut self, account_id: u32) -> Self {
-        self.account_id = account_id;
-        self
-    }
-
-    pub fn with_document_id(mut self, document_id: u32) -> Self {
-        self.document_id = document_id;
-        self
-    }
-
-    pub fn with_collection(mut self, collection: Collection) -> Self {
-        self.collection = collection;
-        self
-    }
-
-    pub fn index(&mut self, field: Field<T>, text: impl Into<Cow<'x, str>>, language: Language) {
-        self.parts.push(Text {
-            field,
-            text: text.into(),
-            typ: Type::Text(language),
-        });
-    }
-
-    pub fn index_tokenized(&mut self, field: Field<T>, text: impl Into<Cow<'x, str>>) {
-        self.parts.push(Text {
-            field,
-            text: text.into(),
-            typ: Type::Tokenize,
-        });
-    }
-
-    pub fn index_keyword(&mut self, field: Field<T>, text: impl Into<Cow<'x, str>>) {
-        let text = text.into();
-        if !text.is_empty() {
-            self.parts.push(Text {
-                field,
-                text,
-                typ: Type::Keyword,
-            });
-        }
-    }
-}
-
-impl<T: Into<u8> + Display + std::fmt::Debug> From<Field<T>> for u8 {
-    fn from(value: Field<T>) -> Self {
-        match value {
-            Field::Body => 0,
-            Field::Attachment => 1,
-            Field::Keyword => 2,
-            Field::Header(value) => 3 + value.into(),
-        }
-    }
-}
-
 impl Store {
-    pub async fn fts_index<T: Into<u8> + Display + std::fmt::Debug>(
-        &self,
-        document: FtsDocument<'_, T>,
-    ) -> trc::Result<()> {
-        let mut detect = LanguageDetector::new();
+    pub async fn index_insert(&self, document: IndexDocument) -> trc::Result<()> {
+        /*let mut detect = LanguageDetector::new();
         let mut tokens: AHashMap<BitmapHash, Postings> = AHashMap::new();
         let mut parts = Vec::new();
         let mut position = 0;
@@ -215,7 +121,7 @@ impl Store {
         batch
             .with_account_id(document.account_id)
             .with_collection(document.collection)
-            .update_document(document.document_id);
+            .with_document(document.document_id);
 
         for key in keys.into_iter() {
             if batch.is_large_batch() {
@@ -224,26 +130,26 @@ impl Store {
                 batch
                     .with_account_id(document.account_id)
                     .with_collection(document.collection)
-                    .update_document(document.document_id);
+                    .with_document(document.document_id);
             }
             batch.any_op(key);
         }
 
         if !batch.is_empty() {
             self.write(batch.build_all()).await?;
-        }
+        }*/
 
         Ok(())
     }
 
-    pub async fn fts_remove(
+    pub async fn index_remove(
         &self,
         account_id: u32,
         collection: Collection,
         document_ids: &impl DocumentSet,
     ) -> trc::Result<()> {
         // Find keys to delete
-        let mut delete_keys: AHashMap<u32, Vec<ValueClass>> = AHashMap::new();
+        /*let mut delete_keys: AHashMap<u32, Vec<ValueClass>> = AHashMap::new();
         self.iterate(
             IterateParams::new(
                 ValueKey {
@@ -309,7 +215,7 @@ impl Store {
             .with_collection(collection);
 
         for (document_id, keys) in delete_keys {
-            batch.update_document(document_id);
+            batch.with_document(document_id);
 
             for key in keys {
                 if batch.is_large_batch() {
@@ -320,7 +226,7 @@ impl Store {
                     batch
                         .with_account_id(account_id)
                         .with_collection(collection)
-                        .update_document(document_id);
+                        .with_document(document_id);
                 }
                 batch.any_op(Operation::Value {
                     class: key,
@@ -333,12 +239,12 @@ impl Store {
             self.write(batch.build_all())
                 .await
                 .caused_by(trc::location!())?;
-        }
+        }*/
 
         Ok(())
     }
 
-    pub async fn fts_remove_all(&self, _: u32) -> trc::Result<()> {
+    pub async fn index_remove_all(&self, _: u32) -> trc::Result<()> {
         // No-op
         // Term indexes are stored in the same key range as the document
 

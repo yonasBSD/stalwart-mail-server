@@ -54,7 +54,7 @@ impl PushSubscriptionFetch for Server {
         };
 
         let Some(subscriptions_) = self
-            .get_archive_by_property(
+            .archive_by_property(
                 account_id,
                 Collection::Principal,
                 0,
@@ -158,14 +158,15 @@ impl PushSubscriptionFetch for Server {
             if updated_subscriptions.subscriptions.is_empty() {
                 batch
                     .with_account_id(u32::MAX)
-                    .with_collection(Collection::PushSubscription)
-                    .delete_document(account_id);
+                    .with_collection(Collection::Principal)
+                    .with_account_id(account_id)
+                    .tag(PrincipalField::PushSubscriptions);
             }
 
             batch
                 .with_account_id(account_id)
                 .with_collection(Collection::Principal)
-                .update_document(0)
+                .with_document(0)
                 .assert_value(PrincipalField::PushSubscriptions, subscriptions);
 
             if !updated_subscriptions.subscriptions.is_empty() {

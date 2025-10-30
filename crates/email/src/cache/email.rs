@@ -35,7 +35,7 @@ pub(crate) async fn update_email_cache(
     for (document_id, is_update) in changed_ids {
         if *is_update
             && let Some(archive) = server
-                .get_archive(account_id, Collection::Email, *document_id)
+                .archive(account_id, Collection::Email, *document_id)
                 .await
                 .caused_by(trc::location!())?
         {
@@ -78,7 +78,7 @@ pub(crate) async fn full_email_cache_build(
     };
 
     server
-        .get_archives(
+        .archives(
             account_id,
             Collection::Email,
             &(),

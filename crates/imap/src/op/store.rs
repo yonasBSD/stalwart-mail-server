@@ -12,7 +12,7 @@ use crate::{
 use ahash::AHashSet;
 use common::{listener::SessionStream, storage::index::ObjectIndexBuilder};
 use directory::Permission;
-use email::message::{bayes::EmailBayesTrain, ingest::EmailIngest, metadata::MessageData};
+use email::message::{ingest::EmailIngest, metadata::MessageData};
 use imap_proto::{
     Command, ResponseCode, ResponseType, StatusResponse,
     protocol::{
@@ -25,7 +25,7 @@ use imap_proto::{
 use std::{sync::Arc, time::Instant};
 use store::{
     query::log::{Change, Query},
-    write::{BatchBuilder, ValueClass},
+    write::{BatchBuilder, TaskQueueClass, ValueClass, now},
 };
 use trc::AddContext;
 use types::{
@@ -202,7 +202,7 @@ impl<T: SessionStream> SessionData<T> {
             // Obtain message data
             let data_ = if let Some(data) = self
                 .server
-                .get_archive(account_id, Collection::Email, *id)
+                .archive(account_id, Collection::Email, *id)
                 .await
                 .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?
             {
@@ -292,7 +292,7 @@ impl<T: SessionStream> SessionData<T> {
             batch
                 .with_account_id(account_id)
                 .with_collection(Collection::Email)
-                .update_document(*id)
+                .with_document(*id)
                 .custom(
                     ObjectIndexBuilder::new()
                         .with_current(data)
@@ -303,12 +303,10 @@ impl<T: SessionStream> SessionData<T> {
             // Add spam train task
             if let Some(learn_spam) = train_spam {
                 batch.set(
-                    ValueClass::TaskQueue(
-                        self.server
-                            .email_bayes_queue_task_build(account_id, *id, learn_spam)
-                            .await
-                            .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?,
-                    ),
+                    ValueClass::TaskQueue(TaskQueueClass::BayesTrain {
+                        due: now(),
+                        learn_spam,
+                    }),
                     vec![],
                 );
                 has_spam_train_tasks = true;

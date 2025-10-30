@@ -10,26 +10,19 @@ use store::{
     write::{AnyClass, BatchBuilder, TaskQueueClass, ValueClass, key::DeserializeBigEndian, now},
 };
 use trc::AddContext;
-use types::blob_hash::BlobHash;
 
 pub(crate) async fn migrate_tasks_v011(server: &Server) -> trc::Result<()> {
     let from_key = ValueKey::<ValueClass> {
         account_id: 0,
         collection: 0,
         document_id: 0,
-        class: ValueClass::TaskQueue(TaskQueueClass::IndexEmail {
-            due: 0,
-            hash: BlobHash::default(),
-        }),
+        class: ValueClass::TaskQueue(TaskQueueClass::IndexEmail { due: 0 }),
     };
     let to_key = ValueKey::<ValueClass> {
         account_id: u32::MAX,
         collection: u8::MAX,
         document_id: u32::MAX,
-        class: ValueClass::TaskQueue(TaskQueueClass::IndexEmail {
-            due: u64::MAX,
-            hash: BlobHash::default(),
-        }),
+        class: ValueClass::TaskQueue(TaskQueueClass::IndexEmail { due: u64::MAX }),
     };
 
     let now = now();

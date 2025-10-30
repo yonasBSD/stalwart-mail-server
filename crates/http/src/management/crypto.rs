@@ -38,7 +38,7 @@ pub trait CryptoHandler: Sync + Send {
 impl CryptoHandler for Server {
     async fn handle_crypto_get(&self, access_token: Arc<AccessToken>) -> trc::Result<HttpResponse> {
         let ec = if let Some(params_) = self
-            .get_archive_by_property(
+            .archive_by_property(
                 access_token.primary_id(),
                 Collection::Principal,
                 0,
@@ -94,7 +94,7 @@ impl CryptoHandler for Server {
                 batch
                     .with_account_id(access_token.primary_id())
                     .with_collection(Collection::Principal)
-                    .update_document(0)
+                    .with_document(0)
                     .clear(PrincipalField::EncryptionKeys);
                 self.core.storage.data.write(batch.build_all()).await?;
                 return Ok(JsonResponse::new(json!({
@@ -144,7 +144,7 @@ impl CryptoHandler for Server {
         batch
             .with_account_id(access_token.primary_id())
             .with_collection(Collection::Principal)
-            .update_document(0)
+            .with_document(0)
             .set(PrincipalField::EncryptionKeys, params);
         self.core.storage.data.write(batch.build_all()).await?;
 

@@ -6,7 +6,7 @@
 
 use std::time::Duration;
 
-use crate::{JmapMethods, UpdateResults};
+use crate::{ UpdateResults};
 use common::{Server, sharing::notification::ShareNotification};
 use jmap_proto::{
     method::query::{Filter, QueryRequest, QueryResponse},

@@ -248,16 +248,6 @@ impl RocksDBTransaction<'_, '_> {
                         txn.delete_cf(&self.cf_indexes, &key)?;
                     }
                 }
-                Operation::Bitmap { class, set } => {
-                    let cf = self.db.subspace_handle(class.subspace());
-                    let key = class.serialize(account_id, collection, document_id, 0);
-
-                    if *set {
-                        txn.put_cf(&cf, &key, [])?;
-                    } else {
-                        txn.delete_cf(&cf, &key)?;
-                    }
-                }
                 Operation::Log { collection, set } => {
                     let key = LogKey {
                         account_id,

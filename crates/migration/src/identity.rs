@@ -44,7 +44,7 @@ pub(crate) async fn migrate_identities(server: &Server, account_id: u32) -> trc:
                 batch
                     .with_account_id(account_id)
                     .with_collection(Collection::Identity)
-                    .update_document(identity_id)
+                    .with_document(identity_id)
                     .set(
                         Field::ARCHIVE,
                         Archiver::new(Identity::from_legacy(legacy))

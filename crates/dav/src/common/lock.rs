@@ -526,7 +526,7 @@ impl LockRequestHandler for Server {
                     if let Some(document_id) =
                         resource_state.document_id.filter(|&id| id != u32::MAX)
                         && let Some(archive) = self
-                            .get_archive(
+                            .archive(
                                 resource_state.account_id,
                                 resource_state.collection,
                                 document_id,

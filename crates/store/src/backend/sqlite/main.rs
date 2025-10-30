@@ -101,7 +101,6 @@ impl SqliteStore {
             SUBSPACE_QUEUE_EVENT,
             SUBSPACE_REPORT_OUT,
             SUBSPACE_REPORT_IN,
-            SUBSPACE_FTS_INDEX,
             SUBSPACE_LOGS,
             SUBSPACE_BLOBS,
             SUBSPACE_TELEMETRY_SPAN,
@@ -121,12 +120,7 @@ impl SqliteStore {
             .map_err(into_error)?;
         }
 
-        for table in [
-            SUBSPACE_INDEXES,
-            SUBSPACE_BITMAP_ID,
-            SUBSPACE_BITMAP_TAG,
-            SUBSPACE_BITMAP_TEXT,
-        ] {
+        for table in [SUBSPACE_INDEXES] {
             let table = char::from(table);
             conn.execute(
                 &format!(

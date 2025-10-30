@@ -79,7 +79,7 @@ pub(crate) async fn migrate_push_subscriptions_v011(
 
         batch
             .with_collection(Collection::Principal)
-            .update_document(0)
+            .with_document(0)
             .set(
                 PrincipalField::PushSubscriptions,
                 Archiver::new(PushSubscriptions { subscriptions })

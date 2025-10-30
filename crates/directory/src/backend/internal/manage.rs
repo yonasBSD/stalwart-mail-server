@@ -26,7 +26,10 @@ use store::{
     },
 };
 use trc::AddContext;
-use types::collection::Collection;
+use types::{
+    collection::Collection,
+    field::{self, Field},
+};
 use utils::{DomainPart, sanitize_email};
 
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
@@ -204,7 +207,8 @@ impl ManageDirectory for Store {
                 .with_account_id(u32::MAX)
                 .with_collection(Collection::Principal)
                 .assert_value(name_key.clone(), ())
-                .create_document(principal_id);
+                .with_document(principal_id)
+                .tag(Field::DOCUMENT_ID);
             build_search_index(&mut batch, principal_id, None, Some(&principal));
             principal.sort();
             batch
@@ -592,7 +596,8 @@ impl ManageDirectory for Store {
         batch
             .with_account_id(u32::MAX)
             .with_collection(Collection::Principal)
-            .create_document(principal_id)
+            .with_document(principal_id)
+            .tag(Field::DOCUMENT_ID)
             .assert_value(
                 ValueClass::Directory(DirectoryClass::NameToId(
                     create_principal.name().as_bytes().to_vec(),
@@ -687,7 +692,9 @@ impl ManageDirectory for Store {
         let typ = Type::from(&principal.typ);
 
         let mut batch = BatchBuilder::new();
-        batch.with_account_id(u32::MAX);
+        batch
+            .with_account_id(u32::MAX)
+            .with_collection(Collection::Principal);
 
         let tenant = principal.data.iter().find_map(|data| {
             if let ArchivedPrincipalData::Tenant(tenant_id) = data {
@@ -845,7 +852,8 @@ impl ManageDirectory for Store {
 
         // Delete principal
         batch
-            .delete_document(principal_id)
+            .with_document(principal_id)
+            .untag(Field::DOCUMENT_ID)
             .clear(DirectoryClass::NameToId(principal.name.as_bytes().to_vec()))
             .clear(DirectoryClass::Principal(principal_id))
             .clear(DirectoryClass::UsedQuota(principal_id));
@@ -911,9 +919,7 @@ impl ManageDirectory for Store {
 
         // Delete push subscriptions
         if matches!(typ, Type::Individual) {
-            batch
-                .with_collection(Collection::PushSubscription)
-                .delete_document(principal_id);
+            batch.untag(field::PrincipalField::PushSubscriptions);
         }
 
         self.write(batch.build_all())

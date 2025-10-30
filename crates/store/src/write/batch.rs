@@ -5,8 +5,8 @@
  */
 
 use super::{
-    Batch, BatchBuilder, BitmapClass, ChangedCollection, IntoOperations, Operation, TagValue,
-    ValueClass, ValueOp, assert::ToAssertValue, log::VanishedItem,
+    Batch, BatchBuilder, ChangedCollection, IntoOperations, Operation, ValueClass, ValueOp,
+    assert::ToAssertValue, log::VanishedItem,
 };
 use crate::{
     SerializeInfallible, U32_LEN,
@@ -54,35 +54,9 @@ impl BatchBuilder {
         self
     }
 
-    pub fn create_document(&mut self, document_id: u32) -> &mut Self {
-        self.ops.push(Operation::DocumentId { document_id });
-        self.ops.push(Operation::Bitmap {
-            class: BitmapClass::DocumentIds,
-            set: true,
-        });
-        self.current_document_id = Some(document_id);
-        self.batch_size += U32_LEN * 3;
-        self.batch_ops += 1;
-        self.has_assertions = false;
-        self
-    }
-
-    pub fn update_document(&mut self, document_id: u32) -> &mut Self {
+    pub fn with_document(&mut self, document_id: u32) -> &mut Self {
         self.ops.push(Operation::DocumentId { document_id });
         self.current_document_id = Some(document_id);
-        self.has_assertions = false;
-        self
-    }
-
-    pub fn delete_document(&mut self, document_id: u32) -> &mut Self {
-        self.ops.push(Operation::DocumentId { document_id });
-        self.ops.push(Operation::Bitmap {
-            class: BitmapClass::DocumentIds,
-            set: false,
-        });
-        self.current_document_id = Some(document_id);
-        self.batch_size += U32_LEN * 3;
-        self.batch_ops += 1;
         self.has_assertions = false;
         self
     }
@@ -131,34 +105,14 @@ impl BatchBuilder {
         self
     }
 
-    pub fn tag(&mut self, field: impl FieldType, value: impl Into<TagValue>) -> &mut Self {
-        let value = value.into();
-        let value_len = value.serialized_size();
-        self.ops.push(Operation::Bitmap {
-            class: BitmapClass::Tag {
-                field: field.into(),
-                value,
-            },
-            set: true,
-        });
-        self.batch_size += (U32_LEN * 3) + value_len;
-        self.batch_ops += 1;
-        self
+    #[inline(always)]
+    pub fn tag(&mut self, field: impl FieldType) -> &mut Self {
+        self.index(field, vec![])
     }
 
-    pub fn untag(&mut self, field: impl FieldType, value: impl Into<TagValue>) -> &mut Self {
-        let value = value.into();
-        let value_len = value.serialized_size();
-        self.ops.push(Operation::Bitmap {
-            class: BitmapClass::Tag {
-                field: field.into(),
-                value,
-            },
-            set: false,
-        });
-        self.batch_size += (U32_LEN * 3) + value_len;
-        self.batch_ops += 1;
-        self
+    #[inline(always)]
+    pub fn untag(&mut self, field: impl FieldType) -> &mut Self {
+        self.unindex(field, vec![])
     }
 
     pub fn add(&mut self, class: impl Into<ValueClass>, value: i64) -> &mut Self {

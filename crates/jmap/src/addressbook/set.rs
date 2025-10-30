@@ -131,7 +131,7 @@ impl AddressBookSet for Server {
             // Obtain address book
             let document_id = id.document_id();
             let address_book_ = if let Some(address_book_) = self
-                .get_archive(account_id, Collection::AddressBook, document_id)
+                .archive(account_id, Collection::AddressBook, document_id)
                 .await?
             {
                 address_book_
@@ -223,7 +223,7 @@ impl AddressBookSet for Server {
                 };
 
                 let Some(address_book_) = self
-                    .get_archive(account_id, Collection::AddressBook, document_id)
+                    .archive(account_id, Collection::AddressBook, document_id)
                     .await
                     .caused_by(trc::location!())?
                 else {
@@ -278,7 +278,7 @@ impl AddressBookSet for Server {
             if !destroy_children.is_empty() {
                 for document_id in destroy_children {
                     if let Some(card_) = self
-                        .get_archive(account_id, Collection::ContactCard, document_id)
+                        .archive(account_id, Collection::ContactCard, document_id)
                         .await?
                     {
                         let card = card_
@@ -331,7 +331,7 @@ impl AddressBookSet for Server {
                 batch
                     .with_account_id(account_id)
                     .with_collection(Collection::Principal)
-                    .update_document(0)
+                    .with_document(0)
                     .set(
                         PrincipalField::DefaultAddressBookId,
                         default_address_book_id.serialize(),
@@ -341,7 +341,7 @@ impl AddressBookSet for Server {
             batch
                 .with_account_id(account_id)
                 .with_collection(Collection::Principal)
-                .update_document(0)
+                .with_document(0)
                 .clear(PrincipalField::DefaultAddressBookId);
         }
 

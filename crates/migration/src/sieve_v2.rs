@@ -32,7 +32,7 @@ pub(crate) async fn migrate_sieve_v013(server: &Server, account_id: u32) -> trc:
 
     for script_id in &script_ids {
         match server
-            .get_archive(account_id, Collection::SieveScript, script_id)
+            .archive(account_id, Collection::SieveScript, script_id)
             .await
         {
             Ok(Some(legacy)) => match legacy.deserialize_untrusted::<SieveScriptV2>() {
@@ -48,7 +48,7 @@ pub(crate) async fn migrate_sieve_v013(server: &Server, account_id: u32) -> trc:
                     batch
                         .with_account_id(account_id)
                         .with_collection(Collection::SieveScript)
-                        .update_document(script_id)
+                        .with_document(script_id)
                         .unindex(Field::new(0u8), vec![u8::from(old_sieve.is_active)])
                         .set(
                             Field::ARCHIVE,
@@ -61,7 +61,7 @@ pub(crate) async fn migrate_sieve_v013(server: &Server, account_id: u32) -> trc:
                         batch
                             .with_account_id(account_id)
                             .with_collection(Collection::Principal)
-                            .update_document(0)
+                            .with_document(0)
                             .set(PrincipalField::ActiveScriptId, script_id.serialize());
                     }
                     num_migrated += 1;

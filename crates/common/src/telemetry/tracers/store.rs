@@ -183,6 +183,7 @@ impl TracingStore for Store {
     ) -> trc::Result<Vec<u64>> {
         let mut spans = SpanCollector::Empty;
         let num_params = params.len();
+        let todo = "use FTS";
 
         for (param_num, param) in params.iter().enumerate() {
             let (value, exact_len) = match param {

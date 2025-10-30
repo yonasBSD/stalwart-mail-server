@@ -35,20 +35,6 @@ impl RocksDbStore {
 
         let mut cfs = Vec::new();
 
-        // Bitmaps
-        for subspace in [
-            SUBSPACE_BITMAP_ID,
-            SUBSPACE_BITMAP_TAG,
-            SUBSPACE_BITMAP_TEXT,
-        ] {
-            let mut cf_opts = Options::default();
-            cf_opts.set_max_write_buffer_number(16);
-            cfs.push(ColumnFamilyDescriptor::new(
-                std::str::from_utf8(&[subspace]).unwrap(),
-                cf_opts,
-            ));
-        }
-
         // Counters
         for subspace in [SUBSPACE_COUNTER, SUBSPACE_QUOTA, SUBSPACE_IN_MEMORY_COUNTER] {
             let mut cf_opts = Options::default();
@@ -84,7 +70,6 @@ impl RocksDbStore {
             SUBSPACE_QUEUE_EVENT,
             SUBSPACE_REPORT_OUT,
             SUBSPACE_REPORT_IN,
-            SUBSPACE_FTS_INDEX,
             SUBSPACE_LOGS,
             SUBSPACE_BLOBS,
             SUBSPACE_TELEMETRY_SPAN,

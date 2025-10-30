@@ -105,7 +105,7 @@ impl CalendarGet for Server {
                 continue;
             }
             let _calendar = if let Some(calendar) = self
-                .get_archive(account_id, Collection::Calendar, document_id)
+                .archive(account_id, Collection::Calendar, document_id)
                 .await?
             {
                 calendar

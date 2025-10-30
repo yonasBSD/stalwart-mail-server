@@ -81,7 +81,7 @@ impl FileNodeGet for Server {
                 continue;
             }
             let _file_node = if let Some(file_node) = self
-                .get_archive(account_id, Collection::FileNode, document_id)
+                .archive(account_id, Collection::FileNode, document_id)
                 .await?
             {
                 file_node

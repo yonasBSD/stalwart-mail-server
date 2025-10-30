@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{
+/*use crate::{
     queue::{migrate_queue_v011, migrate_queue_v012},
     v011::migrate_v0_11,
     v012::migrate_v0_12,
     v013::migrate_v0_13,
-};
+};*/
 use common::{DATABASE_SCHEMA_VERSION, Server, manager::boot::DEFAULT_SETTINGS};
 use std::time::Duration;
 use store::{
@@ -21,7 +21,7 @@ use store::{
 use trc::AddContext;
 use types::collection::Collection;
 
-pub mod addressbook_v2;
+/*pub mod addressbook_v2;
 pub mod calendar_v2;
 pub mod changelog;
 pub mod contact_v2;
@@ -45,14 +45,14 @@ pub mod tasks;
 pub mod threads;
 pub mod v011;
 pub mod v012;
-pub mod v013;
+pub mod v013;*/
 
 const LOCK_WAIT_TIME_ACCOUNT: u64 = 3 * 60;
 const LOCK_WAIT_TIME_CORE: u64 = 5 * 60;
 const LOCK_RETRY_TIME: Duration = Duration::from_secs(30);
 
 pub async fn try_migrate(server: &Server) -> trc::Result<()> {
-    if let Some(version) = std::env::var("FORCE_MIGRATE_QUEUE")
+    /*if let Some(version) = std::env::var("FORCE_MIGRATE_QUEUE")
         .ok()
         .and_then(|s| s.parse::<u32>().ok())
     {
@@ -170,7 +170,7 @@ pub async fn try_migrate(server: &Server) -> trc::Result<()> {
         .store()
         .write(batch.build_all())
         .await
-        .caused_by(trc::location!())?;
+        .caused_by(trc::location!())?;*/
 
     Ok(())
 }

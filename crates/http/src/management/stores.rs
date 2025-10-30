@@ -16,7 +16,10 @@ use directory::{
     Permission,
     backend::internal::manage::{self, ManageDirectory},
 };
-use email::message::{ingest::EmailIngest, metadata::MessageData};
+use email::{
+    cache::MessageCacheFetch,
+    message::{ingest::EmailIngest, metadata::MessageData},
+};
 use http_proto::{request::decode_path_element, *};
 use hyper::Method;
 use serde_json::json;
@@ -335,13 +338,14 @@ pub async fn reset_imap_uids(server: &Server, account_id: u32) -> trc::Result<(u
     let mut mailbox_count = 0;
     let mut email_count = 0;
 
-    for mailbox_id in server
-        .get_document_ids(account_id, Collection::Mailbox)
-        .await?
-        .unwrap_or_default()
-    {
+    let cache = server
+        .get_cached_messages(account_id)
+        .await
+        .caused_by(trc::location!())?;
+
+    for &mailbox_id in cache.mailboxes.index.keys() {
         let mailbox = server
-            .get_archive(account_id, Collection::Mailbox, mailbox_id)
+            .archive(account_id, Collection::Mailbox, mailbox_id)
             .await
             .caused_by(trc::location!())?
             .ok_or_else(|| trc::ImapEvent::Error.into_err().caused_by(trc::location!()))?
@@ -353,7 +357,7 @@ pub async fn reset_imap_uids(server: &Server, account_id: u32) -> trc::Result<(u
         batch
             .with_account_id(account_id)
             .with_collection(Collection::Mailbox)
-            .update_document(mailbox_id)
+            .with_document(mailbox_id)
             .custom(
                 ObjectIndexBuilder::new()
                     .with_current(mailbox)
@@ -370,14 +374,9 @@ pub async fn reset_imap_uids(server: &Server, account_id: u32) -> trc::Result<(u
     }
 
     // Reset all UIDs
-    for message_id in server
-        .get_document_ids(account_id, Collection::Email)
-        .await
-        .caused_by(trc::location!())?
-        .unwrap_or_default()
-    {
+    for message_id in cache.emails.items.iter().map(|i| i.document_id) {
         let data = server
-            .get_archive(account_id, Collection::Email, message_id)
+            .archive(account_id, Collection::Email, message_id)
             .await
             .caused_by(trc::location!())?;
         let data_ = if let Some(data) = data {
@@ -404,7 +403,7 @@ pub async fn reset_imap_uids(server: &Server, account_id: u32) -> trc::Result<(u
         batch
             .with_account_id(account_id)
             .with_collection(Collection::Email)
-            .update_document(message_id)
+            .with_document(message_id)
             .assert_value(ValueClass::Property(EmailField::Archive.into()), &data)
             .set(
                 EmailField::Archive,

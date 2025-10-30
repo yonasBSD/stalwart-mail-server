@@ -89,7 +89,7 @@ impl<T: SessionStream> Session<T> {
                 let mut batch = BatchBuilder::new();
                 let not_deleted = self
                     .server
-                    .emails_tombstone(mailbox.account_id, &mut batch, deleted)
+                    .emails_delete(mailbox.account_id, &mut batch, deleted)
                     .await
                     .caused_by(trc::location!())?;
 

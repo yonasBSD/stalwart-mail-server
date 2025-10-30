@@ -58,7 +58,7 @@ pub(crate) async fn migrate_principals_v0_11(server: &Server) -> trc::Result<Roa
                 batch
                     .with_account_id(u32::MAX)
                     .with_collection(Collection::Principal)
-                    .update_document(principal_id);
+                    .with_document(principal_id);
 
                 build_search_index(&mut batch, principal_id, &principal);
 

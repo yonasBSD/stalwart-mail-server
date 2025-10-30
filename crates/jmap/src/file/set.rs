@@ -187,7 +187,7 @@ impl FileNodeSet for Server {
             // Obtain file node
             let document_id = id.document_id();
             let file_node_ = if let Some(file_node_) = self
-                .get_archive(account_id, Collection::FileNode, document_id)
+                .archive(account_id, Collection::FileNode, document_id)
                 .await?
             {
                 file_node_

@@ -87,7 +87,7 @@ impl CalendarDeleteRequestHandler for Server {
             }
 
             let calendar_ = self
-                .get_archive(account_id, Collection::Calendar, document_id)
+                .archive(account_id, Collection::Calendar, document_id)
                 .await
                 .caused_by(trc::location!())?
                 .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
@@ -152,7 +152,7 @@ impl CalendarDeleteRequestHandler for Server {
             }
 
             let event_ = self
-                .get_archive(account_id, Collection::CalendarEvent, document_id)
+                .archive(account_id, Collection::CalendarEvent, document_id)
                 .await
                 .caused_by(trc::location!())?
                 .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;

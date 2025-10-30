@@ -157,7 +157,7 @@ impl CalendarEventSet for Server {
             // Obtain calendar_event card
             let document_id = id.document_id();
             let calendar_event_ = if let Some(calendar_event_) = self
-                .get_archive(account_id, Collection::CalendarEvent, document_id)
+                .archive(account_id, Collection::CalendarEvent, document_id)
                 .await?
             {
                 calendar_event_
@@ -444,7 +444,7 @@ impl CalendarEventSet for Server {
             }
 
             let Some(calendar_event_) = self
-                .get_archive(account_id, Collection::CalendarEvent, document_id)
+                .archive(account_id, Collection::CalendarEvent, document_id)
                 .await
                 .caused_by(trc::location!())?
             else {
@@ -559,7 +559,7 @@ impl CalendarEventSet for Server {
                 ))));
             } else if let Some(show_without_time) = use_default_alerts
                 && let Some(_calendar) = self
-                    .get_archive(account_id, Collection::Calendar, name.parent_id)
+                    .archive(account_id, Collection::Calendar, name.parent_id)
                     .await?
             {
                 ical.components.extend(

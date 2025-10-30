@@ -230,7 +230,7 @@ async fn email_tests(server: Server, client: Arc<Client>) {
 
             for email_id in &email_ids_in_mailbox {
                 if let Some(mailbox_tags) = server
-                    .get_archive(TEST_USER_ID, Collection::Email, email_id)
+                    .archive(TEST_USER_ID, Collection::Email, email_id)
                     .await
                     .unwrap()
                 {

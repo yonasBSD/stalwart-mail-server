@@ -3545,7 +3545,6 @@ dependencies = [
  "compact_str",
  "hashify",
  "mail-parser",
- "store",
  "tokio",
  "trc",
  "types",
@@ -3920,7 +3919,6 @@ dependencies = [
  "rkyv",
  "serde",
  "serde_json",
- "store",
  "tokio",
  "trc",
  "types",
@@ -4743,6 +4741,12 @@ name = "nohash"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a0f889fb66f7acdf83442c35775764b51fed3c606ab9cee51500dbde2cf528ca"
+
+[[package]]
+name = "nohash-hasher"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2bf50223579dc7cdcfb3bfcacf7069ff68243f8c363f62ffa99cf000a6b9c451"
 
 [[package]]
 name = "nom"
@@ -7318,6 +7322,7 @@ dependencies = [
  "sha2 0.10.9",
  "smtp",
  "smtp-proto",
+ "spam-filter",
  "store",
  "tokio",
  "trc",
@@ -8790,12 +8795,14 @@ dependencies = [
  "blake3",
  "chrono",
  "compact_str",
+ "farmhash",
  "fast-float",
  "form_urlencoded",
  "futures",
  "http-body-util",
  "mail-auth",
  "mail-send",
+ "nohash-hasher",
  "parking_lot",
  "pem",
  "privdrop",
@@ -8818,6 +8825,7 @@ dependencies = [
  "trc",
  "webpki-roots 1.0.3",
  "x509-parser",
+ "xxhash-rust",
 ]
 
 [[package]]

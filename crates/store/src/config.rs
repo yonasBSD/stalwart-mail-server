@@ -85,7 +85,7 @@ impl Stores {
                         .map(Store::from)
                     {
                         self.stores.insert(store_id.clone(), db.clone());
-                        self.fts_stores.insert(store_id.clone(), db.clone().into());
+                        self.search_stores.insert(store_id.clone(), db.clone().into());
                         self.blob_stores.insert(
                             store_id.clone(),
                             BlobStore::from(db.clone()).with_compression(compression_algo),
@@ -110,7 +110,7 @@ impl Stores {
                         .map(Store::from)
                     {
                         self.stores.insert(store_id.clone(), db.clone());
-                        self.fts_stores.insert(store_id.clone(), db.clone().into());
+                        self.search_stores.insert(store_id.clone(), db.clone().into());
                         self.blob_stores.insert(
                             store_id.clone(),
                             BlobStore::from(db.clone()).with_compression(compression_algo),
@@ -129,7 +129,7 @@ impl Stores {
                     .map(Store::from)
                     {
                         self.stores.insert(store_id.clone(), db.clone());
-                        self.fts_stores.insert(store_id.clone(), db.clone().into());
+                        self.search_stores.insert(store_id.clone(), db.clone().into());
                         self.blob_stores.insert(
                             store_id.clone(),
                             BlobStore::from(db.clone()).with_compression(compression_algo),
@@ -148,7 +148,7 @@ impl Stores {
                     .map(Store::from)
                     {
                         self.stores.insert(store_id.clone(), db.clone());
-                        self.fts_stores.insert(store_id.clone(), db.clone().into());
+                        self.search_stores.insert(store_id.clone(), db.clone().into());
                         self.blob_stores.insert(
                             store_id.clone(),
                             BlobStore::from(db.clone()).with_compression(compression_algo),
@@ -172,7 +172,7 @@ impl Stores {
                         crate::backend::sqlite::SqliteStore::open(config, prefix).map(Store::from)
                     {
                         self.stores.insert(store_id.clone(), db.clone());
-                        self.fts_stores.insert(store_id.clone(), db.clone().into());
+                        self.search_stores.insert(store_id.clone(), db.clone().into());
                         self.blob_stores.insert(
                             store_id.clone(),
                             BlobStore::from(db.clone()).with_compression(compression_algo),
@@ -201,9 +201,9 @@ impl Stores {
                     if let Some(db) =
                         crate::backend::elastic::ElasticSearchStore::open(config, prefix)
                             .await
-                            .map(crate::FtsStore::from)
+                            .map(crate::SearchStore::from)
                     {
-                        self.fts_stores.insert(store_id, db);
+                        self.search_stores.insert(store_id, db);
                     }
                 }
                 #[cfg(feature = "redis")]
@@ -303,7 +303,7 @@ impl Stores {
                     {
                         let db = Store::SQLReadReplica(db.into());
                         self.stores.insert(id.to_string(), db.clone());
-                        self.fts_stores.insert(id.to_string(), db.clone().into());
+                        self.search_stores.insert(id.to_string(), db.clone().into());
                         self.blob_stores.insert(
                             id.to_string(),
                             BlobStore::from(db.clone()).with_compression(

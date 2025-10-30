@@ -4,15 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use futures::{TryStreamExt, pin_mut};
-use roaring::RoaringBitmap;
-
-use crate::{
-    BitmapKey, Deserialize, IterateParams, Key, U32_LEN, ValueKey,
-    write::{BitmapClass, ValueClass, key::DeserializeBigEndian},
-};
-
 use super::{PostgresStore, into_error};
+use crate::{Deserialize, IterateParams, Key, ValueKey, write::ValueClass};
+use futures::{TryStreamExt, pin_mut};
 
 impl PostgresStore {
     pub(crate) async fn get_value<U>(&self, key: impl Key) -> trc::Result<Option<U>>
@@ -38,38 +32,6 @@ impl PostgresStore {
                     Ok(None)
                 }
             })
-    }
-
-    pub(crate) async fn get_bitmap(
-        &self,
-        mut key: BitmapKey<BitmapClass>,
-    ) -> trc::Result<Option<RoaringBitmap>> {
-        let begin = key.serialize(0);
-        key.document_id = u32::MAX;
-        let key_len = begin.len();
-        let end = key.serialize(0);
-        let conn = self.conn_pool.get().await.map_err(into_error)?;
-        let table = char::from(key.subspace());
-
-        let mut bm = RoaringBitmap::new();
-        let s = conn
-            .prepare_cached(&format!("SELECT k FROM {table} WHERE k >= $1 AND k <= $2"))
-            .await
-            .map_err(into_error)?;
-        let rows = conn
-            .query_raw(&s, &[&begin, &end])
-            .await
-            .map_err(into_error)?;
-
-        pin_mut!(rows);
-
-        while let Some(row) = rows.try_next().await.map_err(into_error)? {
-            let key: &[u8] = row.try_get(0).map_err(into_error)?;
-            if key.len() == key_len {
-                bm.insert(key.deserialize_be_u32(key.len() - U32_LEN)?);
-            }
-        }
-        Ok(if !bm.is_empty() { Some(bm) } else { None })
     }
 
     pub(crate) async fn iterate<T: Key>(

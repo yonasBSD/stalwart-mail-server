@@ -108,7 +108,7 @@ impl DavAclHandler for Server {
 
         // Fetch node
         let archive = self
-            .get_archive(account_id, collection, resource.document_id())
+            .archive(account_id, collection, resource.document_id())
             .await
             .caused_by(trc::location!())?
             .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
@@ -212,7 +212,7 @@ impl DavAclHandler for Server {
         }
 
         let archive = self
-            .get_archive(uri.account_id, uri.collection, uri.resource)
+            .archive(uri.account_id, uri.collection, uri.resource)
             .await
             .caused_by(trc::location!())?
             .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;

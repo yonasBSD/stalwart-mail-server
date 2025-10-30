@@ -101,7 +101,6 @@ impl MysqlStore {
             SUBSPACE_QUEUE_EVENT,
             SUBSPACE_REPORT_OUT,
             SUBSPACE_REPORT_IN,
-            SUBSPACE_FTS_INDEX,
             SUBSPACE_LOGS,
             SUBSPACE_TELEMETRY_SPAN,
             SUBSPACE_TELEMETRY_METRIC,
@@ -130,12 +129,7 @@ impl MysqlStore {
         .await
         .map_err(into_error)?;
 
-        for table in [
-            SUBSPACE_INDEXES,
-            SUBSPACE_BITMAP_ID,
-            SUBSPACE_BITMAP_TAG,
-            SUBSPACE_BITMAP_TEXT,
-        ] {
+        for table in [SUBSPACE_INDEXES] {
             let table = char::from(table);
             conn.query_drop(format!(
                 "CREATE TABLE IF NOT EXISTS {table} (

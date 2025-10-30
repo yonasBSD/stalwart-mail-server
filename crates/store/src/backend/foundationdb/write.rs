@@ -180,16 +180,6 @@ impl FdbStore {
                             trx.clear(&key);
                         }
                     }
-                    Operation::Bitmap { class, set } => {
-                        let key =
-                            class.serialize(account_id, collection, document_id, WITH_SUBSPACE);
-
-                        if *set {
-                            trx.set(&key, &[]);
-                        } else {
-                            trx.clear(&key);
-                        }
-                    }
                     Operation::Log { collection, set } => {
                         let key = LogKey {
                             account_id,

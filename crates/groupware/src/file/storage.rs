@@ -29,7 +29,7 @@ impl FileNode {
         batch
             .with_account_id(account_id)
             .with_collection(Collection::FileNode)
-            .create_document(document_id)
+            .with_document(document_id)
             .custom(
                 ObjectIndexBuilder::<(), _>::new()
                     .with_changes(node)
@@ -51,7 +51,7 @@ impl FileNode {
         batch
             .with_account_id(account_id)
             .with_collection(Collection::FileNode)
-            .update_document(document_id)
+            .with_document(document_id)
             .custom(
                 ObjectIndexBuilder::new()
                     .with_current(node)
@@ -75,7 +75,7 @@ impl DestroyArchive<Archive<&ArchivedFileNode>> {
         batch
             .with_account_id(account_id)
             .with_collection(Collection::FileNode)
-            .delete_document(document_id)
+            .with_document(document_id)
             .custom(
                 ObjectIndexBuilder::<_, ()>::new()
                     .with_current(self.0)
@@ -124,12 +124,12 @@ impl DestroyArchive<Vec<u32>> {
             .with_collection(Collection::FileNode);
         for document_id in self.0 {
             if let Some(node) = server
-                .get_archive(account_id, Collection::FileNode, document_id)
+                .archive(account_id, Collection::FileNode, document_id)
                 .await?
             {
                 // Delete record
                 batch
-                    .delete_document(document_id)
+                    .with_document(document_id)
                     .custom(
                         ObjectIndexBuilder::<_, ()>::new()
                             .with_access_token(access_token)

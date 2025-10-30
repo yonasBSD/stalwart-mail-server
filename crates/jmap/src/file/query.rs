@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{JmapMethods, changes::state::JmapCacheState};
+use crate::{ changes::state::JmapCacheState};
 use common::{Server, auth::AccessToken};
 use groupware::cache::GroupwareCache;
 use jmap_proto::{
@@ -47,20 +47,20 @@ impl FileNodeQuery for Server {
                         if let Some(resource) =
                             cache.container_resource_path_by_id(id.document_id())
                         {
-                            filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
+                            filters.push(SearchFilter::is_in_set(RoaringBitmap::from_iter(
                                 cache.subtree(resource.path()).map(|r| r.document_id()),
                             )))
                         } else {
-                            filters.push(query::Filter::is_in_set(RoaringBitmap::new()));
+                            filters.push(SearchFilter::is_in_set(RoaringBitmap::new()));
                         }
                     }
                     FileNodeFilter::ParentId(MaybeInvalid::Value(id)) => {
-                        filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
+                        filters.push(SearchFilter::is_in_set(RoaringBitmap::from_iter(
                             cache.children_ids(id.document_id()),
                         )));
                     }
                     FileNodeFilter::HasParentId(has_parent_id) => {
-                        filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
+                        filters.push(SearchFilter::is_in_set(RoaringBitmap::from_iter(
                             cache.resources.iter().filter_map(|r| {
                                 if has_parent_id == r.parent_id().is_some() {
                                     Some(r.document_id)
@@ -71,7 +71,7 @@ impl FileNodeQuery for Server {
                         )));
                     }
                     FileNodeFilter::Name(name) => {
-                        filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
+                        filters.push(SearchFilter::is_in_set(RoaringBitmap::from_iter(
                             cache.resources.iter().filter_map(|r| {
                                 if r.container_name().is_some_and(|n| n == name) {
                                     Some(r.document_id)
@@ -82,7 +82,7 @@ impl FileNodeQuery for Server {
                         )));
                     }
                     FileNodeFilter::NameMatch(name) => {
-                        filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
+                        filters.push(SearchFilter::is_in_set(RoaringBitmap::from_iter(
                             cache.resources.iter().filter_map(|r| {
                                 if r.container_name().is_some_and(|n| name.matches(n)) {
                                     Some(r.document_id)
@@ -94,7 +94,7 @@ impl FileNodeQuery for Server {
                     }
                     FileNodeFilter::MinSize(size) => {
                         let size = size as u32;
-                        filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
+                        filters.push(SearchFilter::is_in_set(RoaringBitmap::from_iter(
                             cache.resources.iter().filter_map(|r| {
                                 if r.size().is_some_and(|s| s >= size) {
                                     Some(r.document_id)
@@ -106,7 +106,7 @@ impl FileNodeQuery for Server {
                     }
                     FileNodeFilter::MaxSize(size) => {
                         let size = size as u32;
-                        filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
+                        filters.push(SearchFilter::is_in_set(RoaringBitmap::from_iter(
                             cache.resources.iter().filter_map(|r| {
                                 if r.size().is_some_and(|s| s <= size) {
                                     Some(r.document_id)
@@ -138,7 +138,11 @@ impl FileNodeQuery for Server {
         }
 
         let (response, paginate) = self
-            .build_query_response(result_set.results.len() as usize, cache.get_state(false), &request)
+            .build_query_response(
+                result_set.results.len() as usize,
+                cache.get_state(false),
+                &request,
+            )
             .await?;
 
         if let Some(paginate) = paginate {
@@ -151,10 +155,10 @@ impl FileNodeQuery for Server {
             {
                 comparators.push(match comparator.property {
                     FileNodeComparator::Created => {
-                        query::Comparator::field(ContactField::Created, comparator.is_ascending)
+                        SearchComparator::field(ContactField::Created, comparator.is_ascending)
                     }
                     FileNodeComparator::Updated => {
-                        query::Comparator::field(ContactField::Updated, comparator.is_ascending)
+                        SearchComparator::field(ContactField::Updated, comparator.is_ascending)
                     }
                     unsupported => {
                         return Err(trc::JmapEvent::UnsupportedSort

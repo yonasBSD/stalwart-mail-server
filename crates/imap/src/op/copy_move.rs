@@ -15,7 +15,6 @@ use email::{
     cache::{MessageCacheFetch, email::MessageCacheAccess},
     mailbox::{JUNK_ID, TRASH_ID, UidMailbox},
     message::{
-        bayes::EmailBayesTrain,
         copy::{CopyMessageError, EmailCopy},
         ingest::EmailIngest,
         metadata::MessageData,
@@ -28,7 +27,7 @@ use imap_proto::{
 use std::{sync::Arc, time::Instant};
 use store::{
     roaring::RoaringBitmap,
-    write::{AlignedBytes, Archive, BatchBuilder, ValueClass},
+    write::{AlignedBytes, Archive, BatchBuilder, TaskQueueClass, ValueClass, now},
 };
 use types::{
     acl::Acl,
@@ -252,7 +251,7 @@ impl<T: SessionStream> SessionData<T> {
                         batch
                             .with_account_id(account_id)
                             .with_collection(Collection::Email)
-                            .update_document(id)
+                            .with_document(id)
                             .custom(
                                 ObjectIndexBuilder::new()
                                     .with_current(data)
@@ -299,7 +298,7 @@ impl<T: SessionStream> SessionData<T> {
                 batch
                     .with_account_id(account_id)
                     .with_collection(Collection::Email)
-                    .update_document(id)
+                    .with_document(id)
                     .custom(
                         ObjectIndexBuilder::new()
                             .with_current(data)
@@ -317,12 +316,10 @@ impl<T: SessionStream> SessionData<T> {
                 if can_spam_train {
                     if dest_mailbox_id.mailbox_id == JUNK_ID {
                         batch.set(
-                            ValueClass::TaskQueue(
-                                self.server
-                                    .email_bayes_queue_task_build(account_id, id, true)
-                                    .await
-                                    .imap_ctx(&arguments.tag, trc::location!())?,
-                            ),
+                            ValueClass::TaskQueue(TaskQueueClass::BayesTrain {
+                                due: now(),
+                                learn_spam: true,
+                            }),
                             vec![],
                         );
                         has_spam_train_tasks = true;
@@ -330,12 +327,10 @@ impl<T: SessionStream> SessionData<T> {
                         && dest_mailbox_id.mailbox_id != TRASH_ID
                     {
                         batch.set(
-                            ValueClass::TaskQueue(
-                                self.server
-                                    .email_bayes_queue_task_build(account_id, id, false)
-                                    .await
-                                    .imap_ctx(&arguments.tag, trc::location!())?,
-                            ),
+                            ValueClass::TaskQueue(TaskQueueClass::BayesTrain {
+                                due: now(),
+                                learn_spam: false,
+                            }),
                             vec![],
                         );
                         has_spam_train_tasks = true;
@@ -562,7 +557,7 @@ impl<T: SessionStream> SessionData<T> {
     ) -> trc::Result<Option<Archive<AlignedBytes>>> {
         if let Some(data) = self
             .server
-            .get_archive(account_id, Collection::Email, id)
+            .archive(account_id, Collection::Email, id)
             .await?
         {
             Ok(Some(data))

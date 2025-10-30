@@ -41,9 +41,8 @@ impl IdentitySet for Server {
     ) -> trc::Result<SetResponse<identity::Identity>> {
         let account_id = request.account_id.document_id();
         let identity_ids = self
-            .get_document_ids(account_id, Collection::Identity)
-            .await?
-            .unwrap_or_default();
+            .document_ids(account_id, Collection::Identity, Field::DOCUMENT_ID)
+            .await?;
         let mut response = SetResponse::from_request(&request, self.core.jmap.set_max_objects)?;
         let will_destroy = request.unwrap_destroy().into_valid().collect::<Vec<_>>();
 
@@ -111,7 +110,8 @@ impl IdentitySet for Server {
             batch
                 .with_account_id(account_id)
                 .with_collection(Collection::Identity)
-                .create_document(document_id)
+                .with_document(document_id)
+                .tag(Field::DOCUMENT_ID)
                 .custom(ObjectIndexBuilder::<(), _>::new().with_changes(identity))
                 .caused_by(trc::location!())?
                 .commit_point();
@@ -129,7 +129,7 @@ impl IdentitySet for Server {
             // Obtain identity
             let document_id = id.document_id();
             let identity_ = if let Some(identity_) = self
-                .get_archive(account_id, Collection::Identity, document_id)
+                .archive(account_id, Collection::Identity, document_id)
                 .await?
             {
                 identity_
@@ -157,7 +157,7 @@ impl IdentitySet for Server {
             batch
                 .with_account_id(account_id)
                 .with_collection(Collection::Identity)
-                .update_document(document_id)
+                .with_document(document_id)
                 .custom(
                     ObjectIndexBuilder::new()
                         .with_current(identity)
@@ -176,7 +176,8 @@ impl IdentitySet for Server {
                 batch
                     .with_account_id(account_id)
                     .with_collection(Collection::Identity)
-                    .delete_document(document_id)
+                    .with_document(document_id)
+                    .untag(Field::DOCUMENT_ID)
                     .clear(Field::ARCHIVE)
                     .log_item_delete(SyncCollection::Identity, None)
                     .commit_point();

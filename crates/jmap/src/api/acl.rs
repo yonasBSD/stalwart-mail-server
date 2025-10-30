@@ -13,6 +13,7 @@ use jmap_tools::{JsonPointerIter, Key, Map, Property, Value};
 use types::{
     acl::{Acl, AclGrant},
     collection::Collection,
+    field::Field,
     id::Id,
 };
 use utils::map::bitmap::Bitmap;
@@ -240,9 +241,8 @@ impl JmapAcl for Server {
         }
 
         let principal_ids = self
-            .get_document_ids(u32::MAX, Collection::Principal)
+            .document_ids(u32::MAX, Collection::Principal, Field::DOCUMENT_ID)
             .await
-            .unwrap_or_default()
             .unwrap_or_default();
 
         for grant in grants {

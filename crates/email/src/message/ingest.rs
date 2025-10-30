@@ -13,11 +13,11 @@ use crate::{
     mailbox::{INBOX_ID, JUNK_ID, UidMailbox},
     message::{
         crypto::EncryptionParams,
-        index::{IndexMessage, MAX_ID_LENGTH, VisitText},
+        index::{IndexMessage, VisitText},
         metadata::MessageData,
     },
 };
-use common::{Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
+use common::{Server, auth::AccessToken};
 use directory::Permission;
 use groupware::{
     calendar::itip::{ItipIngest, ItipIngestError},
@@ -31,19 +31,15 @@ use spam_filter::{
     SpamFilterInput, analysis::init::SpamFilterInit, modules::bayes::BayesClassifier,
 };
 use std::future::Future;
-use std::{
-    borrow::Cow,
-    fmt::Write,
-    time::{Duration, Instant},
-};
+use std::{borrow::Cow, fmt::Write, time::Instant};
 use store::{
-    IndexKey, IndexKeyPrefix, IterateParams, U32_LEN,
+    IndexKeyPrefix, IterateParams, U32_LEN, ValueKey,
     ahash::AHashMap,
-    query::Filter,
-    roaring::RoaringBitmap,
-    write::{BatchBuilder, TaskQueueClass, ValueClass, key::DeserializeBigEndian, now},
+    write::{
+        BatchBuilder, IndexPropertyClass, TaskQueueClass, ValueClass, key::DeserializeBigEndian,
+        now,
+    },
 };
-use store::{SerializeInfallible, rand::Rng};
 use trc::{AddContext, MessageIngestEvent};
 use types::{
     blob::{BlobClass, BlobId},
@@ -51,7 +47,10 @@ use types::{
     field::{ContactField, EmailField, MailboxField, PrincipalField},
     keyword::Keyword,
 };
-use utils::sanitize_email;
+use utils::{
+    cheeky_hash::{CheekyHash, CheekyHashMap},
+    sanitize_email,
+};
 
 #[derive(Default)]
 pub struct IngestedEmail {
@@ -87,19 +86,16 @@ pub enum IngestSource<'x> {
     Restore,
 }
 
-const MAX_RETRIES: u32 = 10;
-
 pub trait EmailIngest: Sync + Send {
     fn email_ingest(
         &self,
         params: IngestEmail,
     ) -> impl Future<Output = trc::Result<IngestedEmail>> + Send;
-    fn find_or_merge_thread(
+    fn find_thread_id(
         &self,
         account_id: u32,
         thread_name: &str,
-        references: Vec<&[u8]>,
-        skip_duplicate: Option<(&[u8], u32)>,
+        message_ids: &CheekyHashMap<bool>,
     ) -> impl Future<Output = trc::Result<ThreadResult>> + Send;
     fn assign_imap_uid(
         &self,
@@ -109,10 +105,11 @@ pub trait EmailIngest: Sync + Send {
     fn email_bayes_can_train(&self, access_token: &AccessToken) -> bool;
 }
 
-pub enum ThreadResult {
-    Id(u32),
-    Create,
-    Skip,
+pub struct ThreadResult {
+    pub thread_id: Option<u32>,
+    pub thread_hash: CheekyHash,
+    pub merge_ids: Vec<u32>,
+    pub duplicate_ids: Vec<u32>,
 }
 
 impl EmailIngest for Server {
@@ -214,16 +211,14 @@ impl EmailIngest for Server {
                         && sender != deliver_to
                         && is_sender_authenticated
                         && !self
-                            .store()
-                            .filter(
+                            .document_exists(
                                 account_id,
                                 Collection::ContactCard,
-                                vec![Filter::eq(ContactField::Email, sender.into_bytes())],
+                                ContactField::Email,
+                                sender.as_bytes(),
                             )
                             .await
                             .caused_by(trc::location!())?
-                            .results
-                            .is_empty()
                     {
                         is_spam = false;
                         if self
@@ -403,26 +398,25 @@ impl EmailIngest for Server {
 
         // Obtain message references and thread name
         let mut message_id = None;
-        let mut log_thread_create = false;
-        let thread_id = {
-            let mut references = Vec::with_capacity(5);
+        let mut message_ids = CheekyHashMap::default();
+        let thread_result = {
             let mut subject = "";
             for header in message.root_part().headers().iter().rev() {
                 match &header.name {
                     HeaderName::MessageId => header.value.visit_text(|id| {
-                        if !id.is_empty() && id.len() < MAX_ID_LENGTH {
+                        if !id.is_empty() {
                             if message_id.is_none() {
                                 message_id = id.to_string().into();
                             }
-                            references.push(id.as_bytes());
+                            message_ids.insert(CheekyHash::new(id.as_bytes()), true);
                         }
                     }),
                     HeaderName::InReplyTo
                     | HeaderName::References
                     | HeaderName::ResentMessageId => {
                         header.value.visit_text(|id| {
-                            if !id.is_empty() && id.len() < MAX_ID_LENGTH {
-                                references.push(id.as_bytes());
+                            if !id.is_empty() {
+                                message_ids.insert(CheekyHash::new(id.as_bytes()), false);
                             }
                         });
                     }
@@ -440,48 +434,40 @@ impl EmailIngest for Server {
                 }
             }
 
-            let skip_duplicate = if params.source.is_smtp() {
-                message_id.as_deref().map(|message_id| {
-                    (
-                        message_id.as_bytes(),
-                        params.mailbox_ids.first().copied().unwrap_or(INBOX_ID),
-                    )
-                })
-            } else {
-                None
-            };
-            match self
-                .find_or_merge_thread(account_id, subject, references, skip_duplicate)
+            self.find_thread_id(account_id, subject, &message_ids)
                 .await?
-            {
-                ThreadResult::Id(thread_id) => thread_id,
-                ThreadResult::Create => {
-                    log_thread_create = true;
-                    self.store()
-                        .assign_document_ids(account_id, Collection::Thread, 1)
-                        .await
-                        .caused_by(trc::location!())?
-                }
-                ThreadResult::Skip => {
-                    // Duplicate message
-                    trc::event!(
-                        MessageIngest(MessageIngestEvent::Duplicate),
-                        SpanId = params.session_id,
-                        AccountId = account_id,
-                        MessageId = message_id,
-                    );
-
-                    return Ok(IngestedEmail {
-                        document_id: 0,
-                        thread_id: 0,
-                        change_id: u64::MAX,
-                        blob_id: BlobId::default(),
-                        imap_uids: Vec::new(),
-                        size: 0,
-                    });
-                }
-            }
         };
+
+        // Skip duplicate messages for SMTP ingestion
+        if !thread_result.duplicate_ids.is_empty() && params.source.is_smtp() {
+            // Fetch cached messages
+            let cache = self
+                .get_cached_messages(account_id)
+                .await
+                .caused_by(trc::location!())?;
+
+            // Skip duplicate messages
+            if !cache
+                .in_mailbox(params.mailbox_ids.first().copied().unwrap_or(INBOX_ID))
+                .any(|m| thread_result.duplicate_ids.contains(&m.document_id))
+            {
+                trc::event!(
+                    MessageIngest(MessageIngestEvent::Duplicate),
+                    SpanId = params.session_id,
+                    AccountId = account_id,
+                    MessageId = message_id,
+                );
+
+                return Ok(IngestedEmail {
+                    document_id: 0,
+                    thread_id: 0,
+                    change_id: u64::MAX,
+                    blob_id: BlobId::default(),
+                    imap_uids: Vec::new(),
+                    size: 0,
+                });
+            }
+        }
 
         // Add additional headers to message
         if !extra_headers.is_empty() {
@@ -543,7 +529,7 @@ impl EmailIngest for Server {
         if do_encrypt
             && !message.is_encrypted()
             && let Some(encrypt_params_) = self
-                .get_archive_by_property(
+                .archive_by_property(
                     account_id,
                     Collection::Principal,
                     0,
@@ -624,22 +610,29 @@ impl EmailIngest for Server {
             .collect::<Vec<_>>();
         batch.with_account_id(account_id);
 
-        if log_thread_create {
-            batch
-                .with_collection(Collection::Thread)
-                .update_document(thread_id)
-                .log_container_insert(SyncCollection::Thread);
-        }
-
-        let due = now();
+        // Obtain document ID
         let document_id = self
             .store()
             .assign_document_ids(account_id, Collection::Email, 1)
             .await
             .caused_by(trc::location!())?;
+
+        // Determine thread id
+        let thread_id = if let Some(thread_id) = thread_result.thread_id {
+            thread_id
+        } else {
+            batch
+                .with_collection(Collection::Thread)
+                .with_document(document_id)
+                .log_container_insert(SyncCollection::Thread);
+            document_id
+        };
+
+        let due = now();
+
         batch
             .with_collection(Collection::Email)
-            .create_document(document_id)
+            .with_document(document_id)
             .index_message(
                 account_id,
                 tenant_id,
@@ -654,21 +647,21 @@ impl EmailIngest for Server {
             )
             .caused_by(trc::location!())?
             .set(
-                ValueClass::TaskQueue(TaskQueueClass::IndexEmail {
-                    due,
-                    hash: blob_id.hash.clone(),
+                ValueClass::IndexProperty(IndexPropertyClass::Hash {
+                    property: EmailField::Threading.into(),
+                    hash: thread_result.thread_hash,
                 }),
-                vec![],
+                ThreadInfo::serialize(thread_id, &message_ids),
+            )
+            .set(
+                ValueClass::TaskQueue(TaskQueueClass::IndexEmail { due }),
+                MergeThreadTask::new(thread_result).serialize(),
             );
 
         // Request spam training
         if let Some(learn_spam) = train_spam {
             batch.set(
-                ValueClass::TaskQueue(TaskQueueClass::BayesTrain {
-                    due,
-                    hash: blob_id.hash.clone(),
-                    learn_spam,
-                }),
+                ValueClass::TaskQueue(TaskQueueClass::BayesTrain { due, learn_spam }),
                 vec![],
             );
         }
@@ -731,221 +724,105 @@ impl EmailIngest for Server {
         })
     }
 
-    async fn find_or_merge_thread(
+    async fn find_thread_id(
         &self,
         account_id: u32,
         thread_name: &str,
-        mut references: Vec<&[u8]>,
-        skip_duplicate: Option<(&[u8], u32)>,
+        message_ids: &CheekyHashMap<bool>,
     ) -> trc::Result<ThreadResult> {
-        if references.is_empty() {
-            return Ok(ThreadResult::Create);
+        let mut result = ThreadResult {
+            thread_id: None,
+            thread_hash: CheekyHash::new(if !thread_name.is_empty() {
+                thread_name
+            } else {
+                "!"
+            }),
+            merge_ids: vec![],
+            duplicate_ids: vec![],
+        };
+
+        if message_ids.is_empty() {
+            return Ok(result);
         }
 
-        let mut try_count = 0;
-        let thread_name = if !thread_name.is_empty() {
-            thread_name
-        } else {
-            "!"
-        }
-        .serialize();
-
-        // Sort references ascending
-        references.sort_unstable();
-
-        loop {
-            // Find messages with a matching subject
-            let mut subj_results = RoaringBitmap::new();
-            self.store()
-                .iterate(
-                    IterateParams::new(
-                        IndexKey {
-                            account_id,
-                            collection: Collection::Email.into(),
-                            document_id: 0,
-                            field: EmailField::Subject.into(),
-                            key: thread_name.clone(),
-                        },
-                        IndexKey {
-                            account_id,
-                            collection: Collection::Email.into(),
-                            document_id: u32::MAX,
-                            field: EmailField::Subject.into(),
-                            key: thread_name.clone(),
-                        },
-                    )
-                    .no_values()
-                    .ascending(),
-                    |key, _| {
-                        let id_pos = key.len() - U32_LEN;
-                        let value = key.get(IndexKeyPrefix::len()..id_pos).ok_or_else(|| {
-                            trc::Error::corrupted_key(key, None, trc::location!())
-                        })?;
-
-                        if value == thread_name {
-                            subj_results.insert(key.deserialize_be_u32(id_pos)?);
-                        }
-
-                        Ok(true)
+        // Find thread ids
+        let key_len = IndexKeyPrefix::len() + result.thread_hash.len() + U32_LEN;
+        let document_id_pos = key_len - U32_LEN;
+        let mut thread_ids = AHashMap::<u32, Vec<u32>>::with_capacity(16);
+        self.store()
+            .iterate(
+                IterateParams::new(
+                    ValueKey {
+                        account_id,
+                        collection: Collection::Email.into(),
+                        document_id: 0,
+                        class: ValueClass::IndexProperty(IndexPropertyClass::Hash {
+                            property: EmailField::Threading.into(),
+                            hash: result.thread_hash,
+                        }),
+                    },
+                    ValueKey {
+                        account_id,
+                        collection: Collection::Email.into(),
+                        document_id: u32::MAX,
+                        class: ValueClass::IndexProperty(IndexPropertyClass::Hash {
+                            property: EmailField::Threading.into(),
+                            hash: result.thread_hash,
+                        }),
                     },
                 )
-                .await
-                .caused_by(trc::location!())?;
+                .ascending(),
+                |key, value| {
+                    if key.len() == key_len {
+                        // Find matching references
+                        let mut from_offset = U32_LEN;
 
-            // No matching subjects were found, skip early
-            if subj_results.is_empty() {
-                return Ok(ThreadResult::Create);
-            }
-
-            // Find messages with matching references
-            let mut results = RoaringBitmap::new();
-            let mut found_message_id = Vec::new();
-            self.store()
-                .iterate(
-                    IterateParams::new(
-                        IndexKey {
-                            account_id,
-                            collection: Collection::Email.into(),
-                            document_id: 0,
-                            field: EmailField::References.into(),
-                            key: references.first().unwrap().to_vec(),
-                        },
-                        IndexKey {
-                            account_id,
-                            collection: Collection::Email.into(),
-                            document_id: u32::MAX,
-                            field: EmailField::References.into(),
-                            key: references.last().unwrap().to_vec(),
-                        },
-                    )
-                    .no_values()
-                    .ascending(),
-                    |key, _| {
-                        let id_pos = key.len() - U32_LEN;
-                        let mut value =
-                            key.get(IndexKeyPrefix::len()..id_pos).ok_or_else(|| {
-                                trc::Error::corrupted_key(key, None, trc::location!())
-                            })?;
-                        let document_id = key.deserialize_be_u32(id_pos)?;
-
-                        if let Some(message_id) = value.strip_suffix(&[0]) {
-                            value = message_id;
-                            if skip_duplicate.is_some_and(|(message_id, _)| message_id == value) {
-                                found_message_id.push(document_id);
-                            }
-                        }
-
-                        if subj_results.contains(document_id)
-                            && references.binary_search(&value).is_ok()
+                        while let Some(ref_hash) =
+                            value.get(from_offset..).and_then(CheekyHash::deserialize)
                         {
-                            results.insert(document_id);
+                            if let Some(is_message_id) = message_ids.get(&ref_hash) {
+                                let document_id = key.deserialize_be_u32(document_id_pos)?;
+                                let thread_id = value.deserialize_be_u32(0)?;
 
-                            if subj_results.len() == results.len() {
-                                return Ok(false);
+                                if *is_message_id && from_offset == U32_LEN {
+                                    result.duplicate_ids.push(document_id);
+                                }
+
+                                thread_ids.entry(thread_id).or_default().push(document_id);
+
+                                return Ok(true);
                             }
+
+                            from_offset += ref_hash.len();
                         }
-
-                        Ok(true)
-                    },
-                )
-                .await
-                .caused_by(trc::location!())?;
-
-            // No matching messages
-            if results.is_empty() {
-                return Ok(ThreadResult::Create);
-            }
-
-            // Fetch cached messages
-            let cache = self
-                .get_cached_messages(account_id)
-                .await
-                .caused_by(trc::location!())?;
-
-            // Skip duplicate messages
-            if !found_message_id.is_empty()
-                && cache
-                    .in_mailbox(skip_duplicate.unwrap().1)
-                    .any(|m| found_message_id.contains(&m.document_id))
-            {
-                return Ok(ThreadResult::Skip);
-            }
-
-            // Find the most common threadId
-            let mut thread_counts = AHashMap::<u32, u32>::with_capacity(16);
-            let mut thread_id = u32::MAX;
-            let mut thread_count = 0;
-            for item in &cache.emails.items {
-                if results.contains(item.document_id) {
-                    let tc = thread_counts.entry(item.thread_id).or_default();
-                    *tc += 1;
-                    if *tc > thread_count {
-                        thread_count = *tc;
-                        thread_id = item.thread_id;
                     }
-                }
+
+                    Ok(true)
+                },
+            )
+            .await
+            .caused_by(trc::location!())?;
+
+        match thread_ids.len() {
+            0 => Ok(result),
+            1 => {
+                // Happy path, only one thread id
+                result.thread_id = thread_ids.into_keys().next();
+                Ok(result)
             }
-
-            if thread_id == u32::MAX {
-                return Ok(ThreadResult::Create);
-            } else if thread_counts.len() == 1 {
-                return Ok(ThreadResult::Id(thread_id));
-            }
-
-            // Delete all but the most common threadId
-            let mut batch = BatchBuilder::new();
-            batch
-                .with_account_id(account_id)
-                .with_collection(Collection::Thread);
-            for &delete_thread_id in thread_counts.keys() {
-                if delete_thread_id != thread_id {
-                    batch
-                        .update_document(delete_thread_id)
-                        .log_container_delete(SyncCollection::Thread);
-                }
-            }
-
-            // Move messages to the new threadId
-            batch.with_collection(Collection::Email);
-
-            for item in &cache.emails.items {
-                if thread_id == item.thread_id || !thread_counts.contains_key(&item.thread_id) {
-                    continue;
-                }
-                if let Some(data_) = self
-                    .get_archive(account_id, Collection::Email, item.document_id)
-                    .await
-                    .caused_by(trc::location!())?
-                {
-                    let data = data_
-                        .to_unarchived::<MessageData>()
-                        .caused_by(trc::location!())?;
-                    if data.inner.thread_id != item.thread_id {
-                        continue;
+            _ => {
+                // Multiple thread ids that this message belongs to, merge them
+                let mut max_thread_id = u32::MAX;
+                let mut max_count = 0;
+                for (thread_id, ids) in thread_ids {
+                    if ids.len() > max_count {
+                        max_count = ids.len();
+                        max_thread_id = thread_id;
                     }
-                    let mut new_data = data.deserialize().caused_by(trc::location!())?;
-                    new_data.thread_id = thread_id;
-                    batch
-                        .update_document(item.document_id)
-                        .custom(
-                            ObjectIndexBuilder::new()
-                                .with_current(data)
-                                .with_changes(new_data),
-                        )
-                        .caused_by(trc::location!())?;
+                    result.merge_ids.extend(ids);
                 }
-            }
-
-            match self.commit_batch(batch).await {
-                Ok(_) => return Ok(ThreadResult::Id(thread_id)),
-                Err(err) if err.is_assertion_failure() && try_count < MAX_RETRIES => {
-                    let backoff = store::rand::rng().random_range(50..=300);
-                    tokio::time::sleep(Duration::from_millis(backoff)).await;
-                    try_count += 1;
-                }
-                Err(err) => {
-                    return Err(err.caused_by(trc::location!()));
-                }
+                result.thread_id = Some(max_thread_id);
+                Ok(result)
             }
         }
     }
@@ -956,7 +833,7 @@ impl EmailIngest for Server {
         batch
             .with_account_id(account_id)
             .with_collection(Collection::Mailbox)
-            .update_document(mailbox_id)
+            .with_document(mailbox_id)
             .add_and_get(MailboxField::UidCounter, 1);
         self.core
             .storage
@@ -976,5 +853,75 @@ impl EmailIngest for Server {
 impl IngestSource<'_> {
     pub fn is_smtp(&self) -> bool {
         matches!(self, Self::Smtp { .. })
+    }
+}
+
+pub struct MergeThreadTask {
+    pub thread_hash: CheekyHash,
+    pub duplicate_ids: Vec<u32>,
+}
+
+impl MergeThreadTask {
+    pub(crate) fn new(thread_result: ThreadResult) -> Self {
+        Self {
+            thread_hash: thread_result.thread_hash,
+            duplicate_ids: thread_result.duplicate_ids,
+        }
+    }
+
+    pub(crate) fn serialize(&self) -> Vec<u8> {
+        if !self.duplicate_ids.is_empty() {
+            let mut buf =
+                Vec::with_capacity(self.thread_hash.len() + self.duplicate_ids.len() * U32_LEN);
+            buf.extend_from_slice(self.thread_hash.as_bytes());
+            for id in &self.duplicate_ids {
+                buf.extend_from_slice(&id.to_be_bytes());
+            }
+            buf
+        } else {
+            vec![]
+        }
+    }
+
+    pub fn deserialize(bytes: &[u8]) -> Option<Self> {
+        if !bytes.is_empty() {
+            let thread_hash = CheekyHash::deserialize(bytes)?;
+            let mut duplicate_ids = Vec::new();
+            let mut start_offset = thread_hash.len();
+
+            while let Some(id_bytes) = bytes.get(start_offset..start_offset + U32_LEN) {
+                duplicate_ids.push(u32::from_be_bytes(id_bytes.try_into().ok()?));
+                start_offset += U32_LEN;
+            }
+
+            Some(Self {
+                thread_hash,
+                duplicate_ids,
+            })
+        } else {
+            None
+        }
+    }
+}
+
+pub(crate) struct ThreadInfo;
+
+impl ThreadInfo {
+    pub fn serialize(thread_id: u32, ref_ids: &CheekyHashMap<bool>) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(U32_LEN + ref_ids.len() * (1 + 16));
+        buf.extend_from_slice(&thread_id.to_be_bytes());
+        for (ref_id, is_message_id) in ref_ids {
+            if *is_message_id && buf.len() > U32_LEN {
+                // Place Message-id reference first
+                let mut new_buf = Vec::with_capacity(U32_LEN + ref_ids.len() * (1 + 16));
+                new_buf.extend_from_slice(&thread_id.to_be_bytes());
+                new_buf.extend_from_slice(ref_id.as_bytes());
+                new_buf.extend_from_slice(&buf[U32_LEN..]);
+                buf = new_buf;
+            } else {
+                buf.extend_from_slice(ref_id.as_bytes());
+            }
+        }
+        buf
     }
 }

@@ -98,7 +98,7 @@ impl ContactCardGet for Server {
             }
 
             let _contact = if let Some(contact) = self
-                .get_archive(account_id, Collection::ContactCard, document_id)
+                .archive(account_id, Collection::ContactCard, document_id)
                 .await?
             {
                 contact

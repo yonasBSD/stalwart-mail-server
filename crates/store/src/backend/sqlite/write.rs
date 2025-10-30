@@ -7,7 +7,7 @@
 use super::{SqliteStore, into_error};
 use crate::{
     IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_QUOTA, U64_LEN,
-    write::{AssignedIds, Batch, BitmapClass, Operation, ValueClass, ValueOp},
+    write::{AssignedIds, Batch, Operation, ValueClass, ValueOp},
 };
 use rusqlite::{OptionalExtension, TransactionBehavior, params};
 use trc::AddContext;
@@ -193,39 +193,6 @@ impl SqliteStore {
                                 .map_err(into_error)
                                 .caused_by(trc::location!())?;
                         }
-                    }
-                    Operation::Bitmap { class, set } => {
-                        let is_document_id = matches!(class, BitmapClass::DocumentIds);
-                        let key = class.serialize(account_id, collection, document_id, 0);
-                        let table = char::from(class.subspace());
-
-                        if *set {
-                            if is_document_id {
-                                trx.prepare_cached("INSERT INTO b (k) VALUES (?)")
-                                    .map_err(into_error)
-                                    .caused_by(trc::location!())?
-                                    .execute(params![&key])
-                                    .map_err(into_error)
-                                    .caused_by(trc::location!())?;
-                            } else {
-                                trx.prepare_cached(&format!(
-                                    "INSERT OR IGNORE INTO {} (k) VALUES (?)",
-                                    table
-                                ))
-                                .map_err(into_error)
-                                .caused_by(trc::location!())?
-                                .execute(params![&key])
-                                .map_err(into_error)
-                                .caused_by(trc::location!())?;
-                            }
-                        } else {
-                            trx.prepare_cached(&format!("DELETE FROM {} WHERE k = ?", table))
-                                .map_err(into_error)
-                                .caused_by(trc::location!())?
-                                .execute(params![&key])
-                                .map_err(into_error)
-                                .caused_by(trc::location!())?;
-                        };
                     }
                     Operation::Log { collection, set } => {
                         let key = LogKey {

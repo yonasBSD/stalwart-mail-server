@@ -125,7 +125,7 @@ impl EmailSearchSnippet for Server {
                 continue;
             }
             let metadata_ = match self
-                .get_archive_by_property(
+                .archive_by_property(
                     account_id,
                     Collection::Email,
                     document_id,

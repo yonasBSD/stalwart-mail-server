@@ -1050,7 +1050,7 @@ impl WebDavTest {
     pub async fn fetch_email(&self, account_id: u32, document_id: u32) -> Vec<u8> {
         let metadata_ = self
             .server
-            .get_archive_by_property(
+            .archive_by_property(
                 account_id,
                 Collection::Email,
                 document_id,

@@ -8,19 +8,16 @@
  *
  */
 
+use crate::{
+    Deserialize, IterateParams, Key, Store, Stores, ValueKey,
+    write::{AssignedIds, Batch, ValueClass},
+};
 use std::{
     future::Future,
     ops::Range,
     sync::atomic::{AtomicUsize, Ordering},
 };
-
-use roaring::RoaringBitmap;
 use utils::config::{Config, utils::AsKey};
-
-use crate::{
-    BitmapKey, Deserialize, IterateParams, Key, Store, Stores, ValueKey,
-    write::{AssignedIds, Batch, BitmapClass, ValueClass},
-};
 
 pub struct SQLReadReplica {
     primary: Store,
@@ -185,26 +182,6 @@ impl SQLReadReplica {
                     Store::PostgreSQL(store) => store.get_value(key).await,
                     #[cfg(feature = "mysql")]
                     Store::MySQL(store) => store.get_value(key).await,
-                    _ => panic!("Invalid store type"),
-                }
-            }
-        })
-        .await
-    }
-
-    pub async fn get_bitmap(
-        &self,
-        key: BitmapKey<BitmapClass>,
-    ) -> trc::Result<Option<RoaringBitmap>> {
-        self.run_op(move |store| {
-            let key = key.clone();
-
-            async move {
-                match store {
-                    #[cfg(feature = "postgres")]
-                    Store::PostgreSQL(store) => store.get_bitmap(key).await,
-                    #[cfg(feature = "mysql")]
-                    Store::MySQL(store) => store.get_bitmap(key).await,
                     _ => panic!("Invalid store type"),
                 }
             }

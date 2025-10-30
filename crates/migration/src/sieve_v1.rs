@@ -81,7 +81,7 @@ pub(crate) async fn migrate_sieve_v011(server: &Server, account_id: u32) -> trc:
                     batch
                         .with_account_id(account_id)
                         .with_collection(Collection::SieveScript)
-                        .update_document(script_id)
+                        .with_document(script_id)
                         .index(SieveField::Name, script.name.to_lowercase())
                         .set(
                             Field::ARCHIVE,
@@ -93,7 +93,7 @@ pub(crate) async fn migrate_sieve_v011(server: &Server, account_id: u32) -> trc:
                     if is_active {
                         batch
                             .with_collection(Collection::Principal)
-                            .update_document(0)
+                            .with_document(0)
                             .set(PrincipalField::ActiveScriptId, script_id.serialize());
                     }
 

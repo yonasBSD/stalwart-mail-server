@@ -47,7 +47,7 @@ impl PushSubscriptionSet for Server {
         // Load existing push subscriptions
         let account_id = access_token.primary_id();
         let subscriptions_archive = self
-            .get_archive_by_property(
+            .archive_by_property(
                 account_id,
                 Collection::Principal,
                 0,
@@ -206,19 +206,21 @@ impl PushSubscriptionSet for Server {
             if subscriptions_archive.is_none() {
                 batch
                     .with_account_id(u32::MAX)
-                    .with_collection(Collection::PushSubscription)
-                    .create_document(account_id);
+                    .with_collection(Collection::Principal)
+                    .with_document(account_id)
+                    .tag(PrincipalField::PushSubscriptions);
             } else if subscriptions.subscriptions.is_empty() {
                 batch
                     .with_account_id(u32::MAX)
-                    .with_collection(Collection::PushSubscription)
-                    .delete_document(account_id);
+                    .with_collection(Collection::Principal)
+                    .with_document(account_id)
+                    .untag(PrincipalField::PushSubscriptions);
             }
 
             batch
                 .with_account_id(account_id)
                 .with_collection(Collection::Principal)
-                .update_document(0);
+                .with_document(0);
 
             if let Some(subscriptions_archive) = subscriptions_archive {
                 batch.assert_value(PrincipalField::PushSubscriptions, subscriptions_archive);

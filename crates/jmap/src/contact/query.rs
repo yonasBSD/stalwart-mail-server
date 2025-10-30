@@ -20,7 +20,7 @@ use types::{
 };
 use utils::sanitize_email;
 
-use crate::{JmapMethods, changes::state::JmapCacheState};
+use crate::{ changes::state::JmapCacheState};
 
 pub trait ContactCardQuery: Sync + Send {
     fn contact_card_query(
@@ -48,38 +48,38 @@ impl ContactCardQuery for Server {
             match cond {
                 Filter::Property(cond) => match cond {
                     ContactCardFilter::InAddressBook(MaybeInvalid::Value(id)) => {
-                        filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
+                        filters.push(SearchFilter::is_in_set(RoaringBitmap::from_iter(
                             cache.children_ids(id.document_id()),
                         )))
                     }
                     ContactCardFilter::Uid(uid) => {
-                        filters.push(query::Filter::eq(ContactField::Uid, uid.into_bytes()))
+                        filters.push(SearchFilter::eq(ContactField::Uid, uid.into_bytes()))
                     }
-                    ContactCardFilter::Email(email) => filters.push(query::Filter::eq(
+                    ContactCardFilter::Email(email) => filters.push(SearchFilter::eq(
                         ContactField::Email,
                         sanitize_email(&email).unwrap_or(email).into_bytes(),
                     )),
                     ContactCardFilter::Text(value) => {
                         for token in WordTokenizer::new(&value, MAX_TOKEN_LENGTH) {
-                            filters.push(query::Filter::eq(
+                            filters.push(SearchFilter::eq(
                                 ContactField::Text,
                                 token.word.into_owned().into_bytes(),
                             ));
                         }
                     }
-                    ContactCardFilter::CreatedBefore(before) => filters.push(query::Filter::lt(
+                    ContactCardFilter::CreatedBefore(before) => filters.push(SearchFilter::lt(
                         ContactField::Created,
                         (before.timestamp() as u64).serialize(),
                     )),
-                    ContactCardFilter::CreatedAfter(after) => filters.push(query::Filter::gt(
+                    ContactCardFilter::CreatedAfter(after) => filters.push(SearchFilter::gt(
                         ContactField::Created,
                         (after.timestamp() as u64).serialize(),
                     )),
-                    ContactCardFilter::UpdatedBefore(before) => filters.push(query::Filter::lt(
+                    ContactCardFilter::UpdatedBefore(before) => filters.push(SearchFilter::lt(
                         ContactField::Updated,
                         (before.timestamp() as u64).serialize(),
                     )),
-                    ContactCardFilter::UpdatedAfter(after) => filters.push(query::Filter::gt(
+                    ContactCardFilter::UpdatedAfter(after) => filters.push(SearchFilter::gt(
                         ContactField::Updated,
                         (after.timestamp() as u64).serialize(),
                     )),
@@ -105,7 +105,11 @@ impl ContactCardQuery for Server {
         }
 
         let (response, paginate) = self
-            .build_query_response(result_set.results.len() as usize, cache.get_state(false), &request)
+            .build_query_response(
+                result_set.results.len() as usize,
+                cache.get_state(false),
+                &request,
+            )
             .await?;
 
         if let Some(paginate) = paginate {
@@ -118,10 +122,10 @@ impl ContactCardQuery for Server {
             {
                 comparators.push(match comparator.property {
                     ContactCardComparator::Created => {
-                        query::Comparator::field(ContactField::Created, comparator.is_ascending)
+                        SearchComparator::field(ContactField::Created, comparator.is_ascending)
                     }
                     ContactCardComparator::Updated => {
-                        query::Comparator::field(ContactField::Updated, comparator.is_ascending)
+                        SearchComparator::field(ContactField::Updated, comparator.is_ascending)
                     }
                     unsupported => {
                         return Err(trc::JmapEvent::UnsupportedSort

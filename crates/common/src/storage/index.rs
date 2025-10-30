@@ -14,7 +14,10 @@ use rkyv::{
 use std::{borrow::Cow, fmt::Debug};
 use store::{
     Serialize, SerializeInfallible,
-    write::{Archive, Archiver, BatchBuilder, BlobOp, DirectoryClass, IntoOperations},
+    write::{
+        Archive, Archiver, BatchBuilder, BlobOp, DirectoryClass, IntoOperations, TaskQueueClass,
+        ValueClass, now,
+    },
 };
 use types::{
     acl::AclGrant,
@@ -22,7 +25,7 @@ use types::{
     collection::{Collection, SyncCollection},
     field::Field,
 };
-use utils::{map::bitmap::Bitmap, snowflake::SnowflakeIdGenerator};
+use utils::{cheeky_hash::CheekyHash, map::bitmap::Bitmap, snowflake::SnowflakeIdGenerator};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IndexValue<'x> {
@@ -30,9 +33,12 @@ pub enum IndexValue<'x> {
         field: Field,
         value: IndexItem<'x>,
     },
-    IndexList {
-        field: Field,
-        value: Vec<IndexItem<'x>>,
+    Property {
+        field: ValueClass,
+        value: IndexItem<'x>,
+    },
+    SearchIndex {
+        hashes: AHashSet<u64>,
     },
     Blob {
         value: BlobHash,
@@ -62,6 +68,7 @@ pub enum IndexItem<'x> {
     Slice(&'x [u8]),
     ShortInt([u8; std::mem::size_of::<u32>()]),
     LongInt([u8; std::mem::size_of::<u64>()]),
+    Hash(CheekyHash),
     None,
 }
 
@@ -72,6 +79,7 @@ impl IndexItem<'_> {
             IndexItem::Slice(s) => s,
             IndexItem::ShortInt(s) => s,
             IndexItem::LongInt(s) => s,
+            IndexItem::Hash(h) => h.as_bytes(),
             IndexItem::None => &[],
         }
     }
@@ -82,6 +90,7 @@ impl IndexItem<'_> {
             IndexItem::Slice(s) => s.to_vec(),
             IndexItem::ShortInt(s) => s.to_vec(),
             IndexItem::LongInt(s) => s.to_vec(),
+            IndexItem::Hash(h) => h.as_bytes().to_vec(),
             IndexItem::None => vec![],
         }
     }
@@ -111,6 +120,7 @@ impl std::hash::Hash for IndexItem<'_> {
             IndexItem::Slice(s) => s.hash(state),
             IndexItem::ShortInt(s) => s.as_slice().hash(state),
             IndexItem::LongInt(s) => s.as_slice().hash(state),
+            IndexItem::Hash(h) => h.hash(state),
             IndexItem::None => 0.hash(state),
         }
     }
@@ -366,13 +376,21 @@ fn build_index(
                 }
             }
         }
-        IndexValue::IndexList { field, value } => {
-            for key in value {
-                if set {
-                    batch.index(field, key.into_owned());
-                } else {
-                    batch.unindex(field, key.into_owned());
-                }
+        IndexValue::SearchIndex { .. } => {
+            batch.set(
+                ValueClass::TaskQueue(TaskQueueClass::UpdateIndex {
+                    due: now(),
+                    collection: batch.last_collection().unwrap_or(Collection::None),
+                    is_insert: set,
+                }),
+                vec![],
+            );
+        }
+        IndexValue::Property { field, value } => {
+            if set {
+                batch.set(field, value.into_owned());
+            } else {
+                batch.clear(field);
             }
         }
         IndexValue::Blob { value } => {
@@ -491,24 +509,36 @@ fn merge_index(
             }
         }
         (
-            IndexValue::IndexList {
-                field,
+            IndexValue::SearchIndex { hashes: old_hashes },
+            IndexValue::SearchIndex { hashes: new_hashes },
+        ) => {
+            if old_hashes != new_hashes {
+                batch.set(
+                    ValueClass::TaskQueue(TaskQueueClass::UpdateIndex {
+                        due: now(),
+                        collection: batch.last_collection().unwrap_or(Collection::None),
+                        is_insert: true,
+                    }),
+                    vec![],
+                );
+            }
+        }
+        (
+            IndexValue::Property {
+                field: old_field,
                 value: old_value,
             },
-            IndexValue::IndexList {
-                value: new_value, ..
+            IndexValue::Property {
+                field: new_field,
+                value: new_value,
+                ..
             },
         ) => {
-            let mut remove_values = AHashSet::from_iter(old_value);
-
-            for value in new_value {
-                if !remove_values.remove(&value) {
-                    batch.index(field, value.into_owned());
-                }
-            }
-
-            for value in remove_values {
-                batch.unindex(field, value.into_owned());
+            if old_field != new_field {
+                batch.clear(old_field);
+                batch.set(new_field, new_value.into_owned());
+            } else if new_value != old_value {
+                batch.set(old_field, new_value.into_owned());
             }
         }
         (IndexValue::Blob { value: old_hash }, IndexValue::Blob { value: new_hash }) => {

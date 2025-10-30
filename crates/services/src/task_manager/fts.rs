@@ -11,7 +11,6 @@ use std::time::Instant;
 use store::{
     IterateParams, SerializeInfallible, U32_LEN, ValueKey,
     ahash::AHashMap,
-    fts::index::FtsDocument,
     roaring::RoaringBitmap,
     write::{BatchBuilder, BlobOp, TaskQueueClass, ValueClass, key::DeserializeBigEndian, now},
 };
@@ -38,6 +37,206 @@ pub trait FtsIndexTask: Sync + Send {
 
 impl FtsIndexTask for Server {
     async fn fts_index(&self, account_id: u32, document_id: u32, hash: &BlobHash) -> bool {
+        let todo = "merge threads";
+        let todo = "combine task with bayes train if needed";
+        let todo = "delete Threading field on delete";
+
+        /*loop {
+            // Find messages with a matching subject
+            let mut subj_results = RoaringBitmap::new();
+            self.store()
+                .iterate(
+                    IterateParams::new(
+                        IndexKey {
+                            account_id,
+                            collection: Collection::Email.into(),
+                            document_id: 0,
+                            field: EmailField::Subject.into(),
+                            key: thread_name.clone(),
+                        },
+                        IndexKey {
+                            account_id,
+                            collection: Collection::Email.into(),
+                            document_id: u32::MAX,
+                            field: EmailField::Subject.into(),
+                            key: thread_name.clone(),
+                        },
+                    )
+                    .no_values()
+                    .ascending(),
+                    |key, _| {
+                        let id_pos = key.len() - U32_LEN;
+                        let value = key.get(IndexKeyPrefix::len()..id_pos).ok_or_else(|| {
+                            trc::Error::corrupted_key(key, None, trc::location!())
+                        })?;
+
+                        if value == thread_name {
+                            subj_results.insert(key.deserialize_be_u32(id_pos)?);
+                        }
+
+                        Ok(true)
+                    },
+                )
+                .await
+                .caused_by(trc::location!())?;
+
+            // No matching subjects were found, skip early
+            if subj_results.is_empty() {
+                return Ok(ThreadResult::Id(None));
+            }
+
+            // Find messages with matching references
+            let mut results = RoaringBitmap::new();
+            let mut found_message_id = Vec::new();
+            self.store()
+                .iterate(
+                    IterateParams::new(
+                        IndexKey {
+                            account_id,
+                            collection: Collection::Email.into(),
+                            document_id: 0,
+                            field: EmailField::References.into(),
+                            key: references.first().unwrap().to_vec(),
+                        },
+                        IndexKey {
+                            account_id,
+                            collection: Collection::Email.into(),
+                            document_id: u32::MAX,
+                            field: EmailField::References.into(),
+                            key: references.last().unwrap().to_vec(),
+                        },
+                    )
+                    .no_values()
+                    .ascending(),
+                    |key, _| {
+                        let id_pos = key.len() - U32_LEN;
+                        let mut value =
+                            key.get(IndexKeyPrefix::len()..id_pos).ok_or_else(|| {
+                                trc::Error::corrupted_key(key, None, trc::location!())
+                            })?;
+                        let document_id = key.deserialize_be_u32(id_pos)?;
+
+                        if let Some(message_id) = value.strip_suffix(&[0]) {
+                            value = message_id;
+                            if skip_duplicate.is_some_and(|(message_id, _)| message_id == value) {
+                                found_message_id.push(document_id);
+                            }
+                        }
+
+                        if subj_results.contains(document_id)
+                            && references.binary_search(&value).is_ok()
+                        {
+                            results.insert(document_id);
+
+                            if subj_results.len() == results.len() {
+                                return Ok(false);
+                            }
+                        }
+
+                        Ok(true)
+                    },
+                )
+                .await
+                .caused_by(trc::location!())?;
+
+            // No matching messages
+            if results.is_empty() {
+                return Ok(ThreadResult::Id(None));
+            }
+
+            // Fetch cached messages
+            let cache = self
+                .get_cached_messages(account_id)
+                .await
+                .caused_by(trc::location!())?;
+
+            // Skip duplicate messages
+            if !found_message_id.is_empty()
+                && cache
+                    .in_mailbox(skip_duplicate.unwrap().1)
+                    .any(|m| found_message_id.contains(&m.document_id))
+            {
+                return Ok(ThreadResult::Skip);
+            }
+
+            // Find the most common threadId
+            let mut thread_counts = AHashMap::<u32, u32>::with_capacity(16);
+            let mut thread_id = u32::MAX;
+            let mut thread_count = 0;
+            for item in &cache.emails.items {
+                if results.contains(item.document_id) {
+                    let tc = thread_counts.entry(item.thread_id).or_default();
+                    *tc += 1;
+                    if *tc > thread_count {
+                        thread_count = *tc;
+                        thread_id = item.thread_id;
+                    }
+                }
+            }
+
+            if thread_id == u32::MAX {
+                return Ok(ThreadResult::Id(None));
+            } else if thread_counts.len() == 1 {
+                return Ok(ThreadResult::Id(Some(thread_id)));
+            }
+
+            // Delete all but the most common threadId
+            let mut batch = BatchBuilder::new();
+            batch
+                .with_account_id(account_id)
+                .with_collection(Collection::Thread);
+            for &delete_thread_id in thread_counts.keys() {
+                if delete_thread_id != thread_id {
+                    batch
+                        .with_document(delete_thread_id)
+                        .log_container_delete(SyncCollection::Thread);
+                }
+            }
+
+            // Move messages to the new threadId
+            batch.with_collection(Collection::Email);
+
+            for item in &cache.emails.items {
+                if thread_id == item.thread_id || !thread_counts.contains_key(&item.thread_id) {
+                    continue;
+                }
+                if let Some(data_) = self
+                    .archive(account_id, Collection::Email, item.document_id)
+                    .await
+                    .caused_by(trc::location!())?
+                {
+                    let data = data_
+                        .to_unarchived::<MessageData>()
+                        .caused_by(trc::location!())?;
+                    if data.inner.thread_id != item.thread_id {
+                        continue;
+                    }
+                    let mut new_data = data.deserialize().caused_by(trc::location!())?;
+                    new_data.thread_id = thread_id;
+                    batch
+                        .with_document(item.document_id)
+                        .custom(
+                            ObjectIndexBuilder::new()
+                                .with_current(data)
+                                .with_changes(new_data),
+                        )
+                        .caused_by(trc::location!())?;
+                }
+            }
+
+            match self.commit_batch(batch).await {
+                Ok(_) => return Ok(ThreadResult::Id(Some(thread_id))),
+                Err(err) if err.is_assertion_failure() && try_count < MAX_RETRIES => {
+                    let backoff = store::rand::rng().random_range(50..=300);
+                    tokio::time::sleep(Duration::from_millis(backoff)).await;
+                    try_count += 1;
+                }
+                Err(err) => {
+                    return Err(err.caused_by(trc::location!()));
+                }
+            }
+        }*/
+
         // Obtain raw message
         let op_start = Instant::now();
         let raw_message = if let Ok(Some(raw_message)) = self
@@ -57,7 +256,7 @@ impl FtsIndexTask for Server {
         };
 
         match self
-            .get_archive_by_property(
+            .archive_by_property(
                 account_id,
                 Collection::Email,
                 document_id,
@@ -69,7 +268,7 @@ impl FtsIndexTask for Server {
                 match metadata_.unarchive::<MessageMetadata>() {
                     Ok(metadata) if metadata.blob_hash.0.as_slice() == hash.as_slice() => {
                         // Index message
-                        let document =
+                        /*let document =
                             FtsDocument::with_default_language(self.core.jmap.default_language)
                                 .with_account_id(account_id)
                                 .with_collection(Collection::Email)
@@ -83,7 +282,7 @@ impl FtsIndexTask for Server {
                             );
 
                             return false;
-                        }
+                        }*/
 
                         trc::event!(
                             MessageIngest(MessageIngestEvent::FtsIndex),
@@ -184,7 +383,7 @@ impl FtsIndexTask for Server {
                 hash: BlobHash::new_max(),
             }),
         };
-        let mut hashes: AHashMap<u32, Vec<(u32, BlobHash)>> = AHashMap::new();
+        let mut document_ids: AHashMap<u32, Vec<u32>> = AHashMap::new();
         self.core
             .storage
             .data
@@ -197,17 +396,10 @@ impl FtsIndexTask for Server {
                         .ok_or_else(|| trc::Error::corrupted_key(key, None, trc::location!()))?;
 
                     if accounts.contains(account_id) && collection == Collection::Email as u8 {
-                        let hash =
-                            BlobHash::try_from_hash_slice(key.get(0..BLOB_HASH_LEN).ok_or_else(
-                                || trc::Error::corrupted_key(key, None, trc::location!()),
-                            )?)
-                            .unwrap();
-                        let document_id = key.deserialize_be_u32(key.len() - U32_LEN)?;
-
-                        hashes
+                        document_ids
                             .entry(account_id)
                             .or_default()
-                            .push((document_id, hash));
+                            .push(key.deserialize_be_u32(key.len() - U32_LEN)?);
                     }
 
                     Ok(true)
@@ -218,15 +410,15 @@ impl FtsIndexTask for Server {
 
         let due = now();
 
-        for (account_id, hashes) in hashes {
+        for (account_id, document_ids) in document_ids {
             let mut batch = BatchBuilder::new();
             batch
                 .with_account_id(account_id)
                 .with_collection(Collection::Email);
 
-            for (document_id, hash) in hashes {
-                batch.update_document(document_id).set(
-                    ValueClass::TaskQueue(TaskQueueClass::IndexEmail { hash, due }),
+            for document_id in document_ids {
+                batch.with_document(document_id).set(
+                    ValueClass::TaskQueue(TaskQueueClass::IndexEmail { due }),
                     0u64.serialize(),
                 );
 

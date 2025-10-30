@@ -29,7 +29,7 @@ impl ContactCard {
         batch
             .with_account_id(account_id)
             .with_collection(Collection::ContactCard)
-            .update_document(document_id)
+            .with_document(document_id)
             .custom(
                 ObjectIndexBuilder::new()
                     .with_current(card)
@@ -56,7 +56,7 @@ impl ContactCard {
         batch
             .with_account_id(account_id)
             .with_collection(Collection::ContactCard)
-            .create_document(document_id)
+            .with_document(document_id)
             .custom(
                 ObjectIndexBuilder::<(), _>::new()
                     .with_changes(card)
@@ -84,7 +84,7 @@ impl AddressBook {
         batch
             .with_account_id(account_id)
             .with_collection(Collection::AddressBook)
-            .create_document(document_id)
+            .with_document(document_id)
             .custom(
                 ObjectIndexBuilder::<(), _>::new()
                     .with_changes(book)
@@ -109,7 +109,7 @@ impl AddressBook {
         batch
             .with_account_id(account_id)
             .with_collection(Collection::AddressBook)
-            .update_document(document_id)
+            .with_document(document_id)
             .custom(
                 ObjectIndexBuilder::new()
                     .with_current(book)
@@ -136,7 +136,7 @@ impl DestroyArchive<Archive<&ArchivedAddressBook>> {
         let addressbook_id = document_id;
         for document_id in children_ids {
             if let Some(card_) = server
-                .get_archive(account_id, Collection::ContactCard, document_id)
+                .archive(account_id, Collection::ContactCard, document_id)
                 .await?
             {
                 DestroyArchive(
@@ -171,7 +171,7 @@ impl DestroyArchive<Archive<&ArchivedAddressBook>> {
         batch
             .with_account_id(account_id)
             .with_collection(Collection::AddressBook)
-            .delete_document(document_id)
+            .with_document(document_id)
             .custom(
                 ObjectIndexBuilder::<_, ()>::new()
                     .with_access_token(access_token)
@@ -217,7 +217,7 @@ impl DestroyArchive<Archive<&ArchivedContactCard>> {
                     .caused_by(trc::location!())?;
                 new_card.names.swap_remove(delete_idx);
                 batch
-                    .update_document(document_id)
+                    .with_document(document_id)
                     .custom(
                         ObjectIndexBuilder::new()
                             .with_access_token(access_token)
@@ -228,7 +228,7 @@ impl DestroyArchive<Archive<&ArchivedContactCard>> {
             } else {
                 // Delete card
                 batch
-                    .delete_document(document_id)
+                    .with_document(document_id)
                     .custom(
                         ObjectIndexBuilder::<_, ()>::new()
                             .with_access_token(access_token)
@@ -257,7 +257,7 @@ impl DestroyArchive<Archive<&ArchivedContactCard>> {
         batch
             .with_account_id(account_id)
             .with_collection(Collection::ContactCard)
-            .delete_document(document_id)
+            .with_document(document_id)
             .custom(
                 ObjectIndexBuilder::<_, ()>::new()
                     .with_access_token(access_token)

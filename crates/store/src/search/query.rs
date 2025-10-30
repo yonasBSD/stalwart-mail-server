@@ -4,12 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use super::postings::SerializedPostings;
 use crate::{
-    BitmapKey, IterateParams, Store, U32_LEN, ValueKey,
+    IterateParams, Store, U32_LEN, ValueKey,
     backend::MAX_TOKEN_LENGTH,
-    fts::FtsFilter,
-    write::{BitmapHash, ValueClass, hash::TokenType, key::DeserializeBigEndian},
+    search::{SearchComparator, SearchFilter},
+    write::{ValueClass, key::DeserializeBigEndian},
 };
 use ahash::AHashMap;
 use nlp::language::stemmer::Stemmer;
@@ -21,7 +20,7 @@ use std::{
 use trc::AddContext;
 use types::collection::Collection;
 
-struct State {
+/*struct State {
     pub op: FtsTokenized,
     pub bm: Option<RoaringBitmap>,
 }
@@ -42,17 +41,19 @@ enum FtsTokenized {
     Or,
     Not,
     End,
-}
+}*/
 
 impl Store {
-    pub async fn fts_query<T: Into<u8> + Display + Clone + std::fmt::Debug>(
+    pub async fn index_query(
         &self,
         account_id: u32,
         collection: Collection,
-        filters: Vec<FtsFilter<T>>,
-    ) -> trc::Result<RoaringBitmap> {
+        filters: Vec<SearchFilter>,
+        comparators: Vec<SearchComparator>,
+    ) -> trc::Result<Vec<u32>> {
+        todo!()
         // Tokenize text
-        let mut tokenized_filters = Vec::with_capacity(filters.len());
+        /*let mut tokenized_filters = Vec::with_capacity(filters.len());
         let mut token_count = AHashMap::new();
         for filter in filters {
             let filter = match filter {
@@ -256,10 +257,10 @@ impl Store {
             }
         }
 
-        Ok(state.bm.unwrap_or_default())
+        Ok(state.bm.unwrap_or_default())*/
     }
 
-    async fn get_postings(
+    /*async fn get_postings(
         &self,
         account_id: u32,
         collection: u8,
@@ -392,13 +393,15 @@ impl Store {
             None
         })
     }
+
+    */
 }
 
-impl From<FtsTokenized> for State {
+/*impl From<FtsTokenized> for State {
     fn from(value: FtsTokenized) -> Self {
         Self {
             op: value,
             bm: None,
         }
     }
-}
+}*/

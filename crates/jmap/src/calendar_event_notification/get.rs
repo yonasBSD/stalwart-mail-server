@@ -84,7 +84,7 @@ impl CalendarEventNotificationGet for Server {
             // Obtain the event object
             let document_id = id.document_id();
             let _event = if let Some(event) = self
-                .get_archive(
+                .archive(
                     account_id,
                     Collection::CalendarEventNotification,
                     document_id,

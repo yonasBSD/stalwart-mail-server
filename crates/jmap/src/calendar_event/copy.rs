@@ -124,7 +124,7 @@ impl JmapCalendarEventCopy for Server {
             }
 
             let Some(_calendar_event) = self
-                .get_archive(
+                .archive(
                     from_account_id,
                     Collection::CalendarEvent,
                     from_calendar_event_id,

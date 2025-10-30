@@ -431,7 +431,7 @@ impl PropFindRequestHandler for Server {
                     item.document_id == SCHEDULE_INBOX_ID,
                 )
             } else if let Some(archive) = self
-                .get_archive(account_id, collection, document_id)
+                .archive(account_id, collection, document_id)
                 .await
                 .caused_by(trc::location!())?
             {

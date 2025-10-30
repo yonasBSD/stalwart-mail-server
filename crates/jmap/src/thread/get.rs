@@ -84,6 +84,7 @@ impl ThreadGet for Server {
                     Map::with_capacity(2).with_key_value(ThreadProperty::Id, id);
                 if add_email_ids {
                     let doc_count = document_ids.len() as usize;
+                    let todo = " sorted as vec![Comparator::ascending(EmailField::ReceivedAt)],";
                     thread.insert_unchecked(
                         ThreadProperty::EmailIds,
                         self.core
@@ -91,7 +92,7 @@ impl ThreadGet for Server {
                             .data
                             .sort(
                                 ResultSet::new(account_id, Collection::Email, document_ids),
-                                vec![Comparator::ascending(EmailField::ReceivedAt)],
+                                vec![],
                                 Pagination::new(doc_count, 0, None, 0),
                             )
                             .await

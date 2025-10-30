@@ -82,7 +82,7 @@ pub(crate) async fn migrate_email_submissions(
                 batch
                     .with_account_id(account_id)
                     .with_collection(Collection::EmailSubmission)
-                    .update_document(email_submission_id)
+                    .with_document(email_submission_id)
                     .index(EmailSubmissionField::UndoStatus, es.undo_status.as_index())
                     .index(EmailSubmissionField::EmailId, es.email_id.serialize())
                     .index(EmailSubmissionField::ThreadId, es.thread_id.serialize())

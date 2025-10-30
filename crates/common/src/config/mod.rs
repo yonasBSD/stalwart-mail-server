@@ -23,7 +23,7 @@ use hyper::{
 use ring::signature::{EcdsaKeyPair, RsaKeyPair};
 use spamfilter::SpamFilterConfig;
 use std::{str::FromStr, sync::Arc};
-use store::{BlobBackend, BlobStore, FtsStore, InMemoryStore, Store, Stores};
+use store::{BlobBackend, BlobStore, SearchStore, InMemoryStore, Store, Stores};
 use telemetry::Metrics;
 use utils::config::{Config, utils::AsKey};
 
@@ -125,7 +125,7 @@ impl Core {
             .value_require("storage.fts")
             .map(|id| id.to_string())
             .and_then(|id| {
-                if let Some(store) = stores.fts_stores.get(&id) {
+                if let Some(store) = stores.search_stores.get(&id) {
                     store.clone().into()
                 } else {
                     config.new_parse_error(
@@ -176,12 +176,12 @@ impl Core {
         if matches!(data, Store::None)
             || matches!(&blob.backend, BlobBackend::Store(Store::None))
             || matches!(lookup, InMemoryStore::Store(Store::None))
-            || matches!(fts, FtsStore::Store(Store::None))
+            || matches!(fts, SearchStore::Store(Store::None))
         {
             data = Store::default();
             blob = BlobStore::default();
             lookup = InMemoryStore::default();
-            fts = FtsStore::default();
+            fts = SearchStore::default();
             config.new_build_error(
                 "storage.*",
                 "One or more stores are missing, disabling all stores",
@@ -219,7 +219,7 @@ impl Core {
                 stores: stores.stores,
                 lookups: stores.in_memory_stores,
                 blobs: stores.blob_stores,
-                ftss: stores.fts_stores,
+                ftss: stores.search_stores,
             },
         }
     }

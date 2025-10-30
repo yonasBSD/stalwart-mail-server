@@ -95,7 +95,7 @@ impl AddressBookGet for Server {
                 continue;
             }
             let _address_book = if let Some(address_book) = self
-                .get_archive(account_id, Collection::AddressBook, document_id)
+                .archive(account_id, Collection::AddressBook, document_id)
                 .await?
             {
                 address_book

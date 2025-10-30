@@ -455,7 +455,7 @@ async fn copy_event(
 ) -> crate::Result<HttpResponse> {
     // Fetch event
     let event_ = server
-        .get_archive(from_account_id, Collection::CalendarEvent, from_document_id)
+        .archive(from_account_id, Collection::CalendarEvent, from_document_id)
         .await
         .caused_by(trc::location!())?
         .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
@@ -523,7 +523,7 @@ async fn copy_event(
     let response = if let Some(to_document_id) = to_document_id {
         // Overwrite event on destination
         let event_ = server
-            .get_archive(to_account_id, Collection::CalendarEvent, to_document_id)
+            .archive(to_account_id, Collection::CalendarEvent, to_document_id)
             .await
             .caused_by(trc::location!())?;
         if let Some(event_) = event_ {
@@ -573,7 +573,7 @@ async fn move_event(
 ) -> crate::Result<HttpResponse> {
     // Fetch event
     let event_ = server
-        .get_archive(from_account_id, Collection::CalendarEvent, from_document_id)
+        .archive(from_account_id, Collection::CalendarEvent, from_document_id)
         .await
         .caused_by(trc::location!())?
         .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
@@ -682,7 +682,7 @@ async fn move_event(
     let response = if let Some(to_document_id) = to_document_id {
         // Overwrite event on destination
         let event_ = server
-            .get_archive(to_account_id, Collection::CalendarEvent, to_document_id)
+            .archive(to_account_id, Collection::CalendarEvent, to_document_id)
             .await
             .caused_by(trc::location!())?;
         if let Some(event_) = event_ {
@@ -728,7 +728,7 @@ async fn rename_event(
 ) -> crate::Result<HttpResponse> {
     // Fetch event
     let event_ = server
-        .get_archive(account_id, Collection::CalendarEvent, document_id)
+        .archive(account_id, Collection::CalendarEvent, document_id)
         .await
         .caused_by(trc::location!())?
         .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
@@ -776,7 +776,7 @@ async fn copy_container(
 ) -> crate::Result<HttpResponse> {
     // Fetch calendar
     let calendar_ = server
-        .get_archive(from_account_id, Collection::Calendar, from_document_id)
+        .archive(from_account_id, Collection::Calendar, from_document_id)
         .await
         .caused_by(trc::location!())?
         .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
@@ -820,7 +820,7 @@ async fn copy_container(
     let to_document_id = if let Some(to_document_id) = to_document_id {
         // Overwrite destination
         let calendar_ = server
-            .get_archive(to_account_id, Collection::Calendar, to_document_id)
+            .archive(to_account_id, Collection::Calendar, to_document_id)
             .await
             .caused_by(trc::location!())?;
         if let Some(calendar_) = calendar_ {
@@ -859,7 +859,7 @@ async fn copy_container(
     let mut required_space = 0;
     for from_child_document_id in from_children_ids {
         if let Some(event_) = server
-            .get_archive(
+            .archive(
                 from_account_id,
                 Collection::CalendarEvent,
                 from_child_document_id,
@@ -979,7 +979,7 @@ async fn rename_container(
 ) -> crate::Result<HttpResponse> {
     // Fetch calendar
     let calendar_ = server
-        .get_archive(account_id, Collection::Calendar, document_id)
+        .archive(account_id, Collection::Calendar, document_id)
         .await
         .caused_by(trc::location!())?
         .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;

@@ -6,12 +6,8 @@
 
 use super::{AddressBook, ArchivedAddressBook, ArchivedContactCard, ContactCard};
 use calcard::vcard::{ArchivedVCardProperty, VCardProperty};
-use common::storage::index::{
-    IndexItem, IndexValue, IndexableAndSerializableObject, IndexableObject,
-};
-use nlp::tokenizers::word::WordTokenizer;
-use std::collections::HashSet;
-use store::backend::MAX_TOKEN_LENGTH;
+use common::storage::index::{IndexValue, IndexableAndSerializableObject, IndexableObject};
+use store::xxhash_rust::xxh3;
 use types::{acl::AclGrant, collection::SyncCollection, field::ContactField};
 use utils::sanitize_email;
 
@@ -86,30 +82,11 @@ impl IndexableObject for ContactCard {
                 value: self.card.uid().into(),
             },
             IndexValue::Index {
-                field: ContactField::Created.into(),
-                value: self.created.into(),
-            },
-            IndexValue::Index {
-                field: ContactField::Updated.into(),
-                value: self.modified.into(),
-            },
-            IndexValue::IndexList {
-                field: ContactField::Text.into(),
-                value: self
-                    .text()
-                    .map(Into::into)
-                    .collect::<HashSet<IndexItem>>()
-                    .into_iter()
-                    .collect(),
-            },
-            IndexValue::IndexList {
                 field: ContactField::Email.into(),
-                value: self
-                    .emails()
-                    .map(Into::into)
-                    .collect::<HashSet<IndexItem>>()
-                    .into_iter()
-                    .collect(),
+                value: self.emails().next().into(),
+            },
+            IndexValue::SearchIndex {
+                hashes: self.hashes().collect(),
             },
             IndexValue::Quota {
                 used: self.dead_properties.size() as u32
@@ -134,30 +111,11 @@ impl IndexableObject for &ArchivedContactCard {
                 value: self.card.uid().into(),
             },
             IndexValue::Index {
-                field: ContactField::Created.into(),
-                value: self.created.to_native().into(),
-            },
-            IndexValue::Index {
-                field: ContactField::Updated.into(),
-                value: self.modified.to_native().into(),
-            },
-            IndexValue::IndexList {
-                field: ContactField::Text.into(),
-                value: self
-                    .text()
-                    .map(Into::into)
-                    .collect::<HashSet<IndexItem>>()
-                    .into_iter()
-                    .collect(),
-            },
-            IndexValue::IndexList {
                 field: ContactField::Email.into(),
-                value: self
-                    .emails()
-                    .map(Into::into)
-                    .collect::<HashSet<IndexItem>>()
-                    .into_iter()
-                    .collect(),
+                value: self.emails().next().into(),
+            },
+            IndexValue::SearchIndex {
+                hashes: self.hashes().collect(),
             },
             IndexValue::Quota {
                 used: self.dead_properties.size() as u32
@@ -181,7 +139,7 @@ impl IndexableAndSerializableObject for ContactCard {
 }
 
 impl ContactCard {
-    pub fn text(&self) -> impl Iterator<Item = String> {
+    pub fn hashes(&self) -> impl Iterator<Item = u64> {
         self.card
             .entries
             .iter()
@@ -195,11 +153,11 @@ impl ContactCard {
                         | VCardProperty::Org
                         | VCardProperty::Note
                         | VCardProperty::Nickname
+                        | VCardProperty::Email
                 )
             })
             .flat_map(|e| e.values.iter().filter_map(|v| v.as_text()))
-            .flat_map(|v| WordTokenizer::new(v, MAX_TOKEN_LENGTH))
-            .map(|t| t.word.into_owned())
+            .map(|v| xxh3::xxh3_64(v.as_bytes()))
     }
 
     pub fn emails(&self) -> impl Iterator<Item = String> {
@@ -212,7 +170,7 @@ impl ContactCard {
 }
 
 impl ArchivedContactCard {
-    pub fn text(&self) -> impl Iterator<Item = String> {
+    pub fn hashes(&self) -> impl Iterator<Item = u64> {
         self.card
             .entries
             .iter()
@@ -226,11 +184,11 @@ impl ArchivedContactCard {
                         | ArchivedVCardProperty::Org
                         | ArchivedVCardProperty::Note
                         | ArchivedVCardProperty::Nickname
+                        | ArchivedVCardProperty::Email
                 )
             })
             .flat_map(|e| e.values.iter().filter_map(|v| v.as_text()))
-            .flat_map(|v| WordTokenizer::new(v, MAX_TOKEN_LENGTH))
-            .map(|t| t.word.into_owned())
+            .map(|v| xxh3::xxh3_64(v.as_bytes()))
     }
 
     pub fn emails(&self) -> impl Iterator<Item = String> {

@@ -203,7 +203,7 @@ impl CalendarEventGet for Server {
             }
 
             let Some(_calendar_event) = self
-                .get_archive(account_id, Collection::CalendarEvent, document_id)
+                .archive(account_id, Collection::CalendarEvent, document_id)
                 .await?
             else {
                 response.not_found.push(id);

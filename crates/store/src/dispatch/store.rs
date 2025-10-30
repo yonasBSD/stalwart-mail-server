@@ -4,29 +4,21 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{
-    ops::{BitAndAssign, Range},
-    time::Instant,
-};
-
-use compact_str::ToCompactString;
-use roaring::RoaringBitmap;
-use trc::{AddContext, StoreEvent};
-use types::collection::Collection;
-
+use super::DocumentSet;
 use crate::{
-    BitmapKey, Deserialize, IterateParams, Key, QueryResult, SUBSPACE_BITMAP_ID,
-    SUBSPACE_BITMAP_TAG, SUBSPACE_BITMAP_TEXT, SUBSPACE_COUNTER, SUBSPACE_INDEXES, SUBSPACE_LOGS,
-    Store, U32_LEN, Value, ValueKey,
+    Deserialize, IterateParams, Key, QueryResult, SUBSPACE_COUNTER, SUBSPACE_INDEXES,
+    SUBSPACE_LOGS, Store, U32_LEN, Value, ValueKey,
     write::{
-        AnyClass, AnyKey, AssignedIds, Batch, BatchBuilder, BitmapClass, BitmapHash, Operation,
-        ReportClass, ValueClass, ValueOp,
+        AnyClass, AnyKey, AssignedIds, Batch, BatchBuilder, Operation, ReportClass, ValueClass,
+        ValueOp,
         key::{DeserializeBigEndian, KeySerializer},
         now,
     },
 };
-
-use super::DocumentSet;
+use compact_str::ToCompactString;
+use std::{ops::Range, time::Instant};
+use trc::{AddContext, StoreEvent};
+use types::collection::Collection;
 
 #[cfg(feature = "test_mode")]
 #[allow(clippy::type_complexity)]
@@ -63,54 +55,6 @@ impl Store {
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
         }
         .caused_by(trc::location!())
-    }
-
-    pub async fn get_bitmap(
-        &self,
-        key: BitmapKey<BitmapClass>,
-    ) -> trc::Result<Option<RoaringBitmap>> {
-        match self {
-            #[cfg(feature = "sqlite")]
-            Self::SQLite(store) => store.get_bitmap(key).await,
-            #[cfg(feature = "foundation")]
-            Self::FoundationDb(store) => store.get_bitmap(key).await,
-            #[cfg(feature = "postgres")]
-            Self::PostgreSQL(store) => store.get_bitmap(key).await,
-            #[cfg(feature = "mysql")]
-            Self::MySQL(store) => store.get_bitmap(key).await,
-            #[cfg(feature = "rocks")]
-            Self::RocksDb(store) => store.get_bitmap(key).await,
-            // SPDX-SnippetBegin
-            // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
-            // SPDX-License-Identifier: LicenseRef-SEL
-            #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
-            Self::SQLReadReplica(store) => store.get_bitmap(key).await,
-            // SPDX-SnippetEnd
-            Self::None => Err(trc::StoreEvent::NotConfigured.into()),
-        }
-        .caused_by(trc::location!())
-    }
-
-    pub async fn get_bitmaps_intersection(
-        &self,
-        keys: Vec<BitmapKey<BitmapClass>>,
-    ) -> trc::Result<Option<RoaringBitmap>> {
-        let mut result: Option<RoaringBitmap> = None;
-        for key in keys {
-            if let Some(bitmap) = self.get_bitmap(key).await.caused_by(trc::location!())? {
-                if let Some(result) = &mut result {
-                    result.bitand_assign(&bitmap);
-                    if result.is_empty() {
-                        break;
-                    }
-                } else {
-                    result = Some(bitmap);
-                }
-            } else {
-                return Ok(None);
-            }
-        }
-        Ok(result)
     }
 
     pub async fn iterate<T: Key>(
@@ -410,14 +354,7 @@ impl Store {
     }
 
     pub async fn danger_destroy_account(&self, account_id: u32) -> trc::Result<()> {
-        for subspace in [
-            SUBSPACE_BITMAP_ID,
-            SUBSPACE_BITMAP_TAG,
-            SUBSPACE_BITMAP_TEXT,
-            SUBSPACE_LOGS,
-            SUBSPACE_INDEXES,
-            SUBSPACE_COUNTER,
-        ] {
+        for subspace in [SUBSPACE_LOGS, SUBSPACE_INDEXES, SUBSPACE_COUNTER] {
             self.delete_range(
                 AnyKey {
                     subspace,
@@ -435,16 +372,6 @@ impl Store {
         for (from_class, to_class) in [
             (ValueClass::Acl(account_id), ValueClass::Acl(account_id + 1)),
             (ValueClass::Property(0), ValueClass::Property(0)),
-            (
-                ValueClass::FtsIndex(BitmapHash {
-                    hash: [0u8; 8],
-                    len: 0,
-                }),
-                ValueClass::FtsIndex(BitmapHash {
-                    hash: [u8::MAX; 8],
-                    len: u8::MAX,
-                }),
-            ),
         ] {
             self.delete_range(
                 ValueKey {
@@ -542,9 +469,6 @@ impl Store {
 
         for subspace in [
             SUBSPACE_ACL,
-            SUBSPACE_BITMAP_ID,
-            SUBSPACE_BITMAP_TAG,
-            SUBSPACE_BITMAP_TEXT,
             SUBSPACE_DIRECTORY,
             SUBSPACE_TASK_QUEUE,
             SUBSPACE_INDEXES,
@@ -562,7 +486,6 @@ impl Store {
             SUBSPACE_QUOTA,
             SUBSPACE_REPORT_OUT,
             SUBSPACE_REPORT_IN,
-            SUBSPACE_FTS_INDEX,
             SUBSPACE_TELEMETRY_SPAN,
             SUBSPACE_TELEMETRY_METRIC,
             SUBSPACE_TELEMETRY_INDEX,
@@ -713,8 +636,6 @@ impl Store {
     #[cfg(feature = "test_mode")]
     #[allow(unused_variables)]
     pub async fn assert_is_empty(&self, blob_store: crate::BlobStore) {
-        use utils::codec::leb128::Leb128Iterator;
-
         use crate::*;
 
         self.blob_expire_all().await;
@@ -737,16 +658,12 @@ impl Store {
             (SUBSPACE_QUEUE_EVENT, true),
             (SUBSPACE_REPORT_OUT, true),
             (SUBSPACE_REPORT_IN, true),
-            (SUBSPACE_FTS_INDEX, true),
             (SUBSPACE_BLOB_RESERVE, true),
             (SUBSPACE_BLOB_LINK, true),
             (SUBSPACE_BLOBS, true),
             (SUBSPACE_COUNTER, false),
             (SUBSPACE_QUOTA, false),
             (SUBSPACE_BLOBS, true),
-            (SUBSPACE_BITMAP_ID, false),
-            (SUBSPACE_BITMAP_TAG, false),
-            (SUBSPACE_BITMAP_TEXT, false),
             (SUBSPACE_INDEXES, false),
             (SUBSPACE_TELEMETRY_SPAN, true),
             (SUBSPACE_TELEMETRY_METRIC, true),
@@ -765,61 +682,6 @@ impl Store {
                 IterateParams::new(from_key, to_key).set_values(with_values),
                 |key, value| {
                     match subspace {
-                        SUBSPACE_BITMAP_ID | SUBSPACE_BITMAP_TAG | SUBSPACE_BITMAP_TEXT => {
-                            if key.get(0..4).unwrap_or_default() == u32::MAX.to_be_bytes() {
-                                return Ok(true);
-                            }
-
-                            const BM_DOCUMENT_IDS: u8 = 0;
-                            const BM_TAG: u8 = 1 << 6;
-                            const BM_TEXT: u8 = 1 << 7;
-                            const TAG_TEXT: u8 = 1 << 0;
-                            const TAG_STATIC: u8 = 1 << 1;
-
-                            match key[5] {
-                                BM_DOCUMENT_IDS => {
-                                    print!("Found document ids bitmap");
-                                }
-                                BM_TAG => {
-                                    print!(
-                                        "Found tagged id {} bitmap",
-                                        key[7..].iter().next_leb128::<u32>().unwrap()
-                                    );
-                                }
-                                TAG_TEXT => {
-                                    print!(
-                                        "Found tagged text {:?} bitmap",
-                                        String::from_utf8_lossy(&key[7..])
-                                    );
-                                }
-                                TAG_STATIC => {
-                                    print!("Found tagged static {} bitmap", key[7]);
-                                }
-                                other => {
-                                    if other & BM_TEXT == BM_TEXT {
-                                        print!(
-                                            "Found text hash {:?} bitmap",
-                                            String::from_utf8_lossy(&key[7..])
-                                        );
-                                    } else {
-                                        print!("Found unknown bitmap");
-                                    }
-                                }
-                            }
-
-                            println!(
-                                concat!(
-                                    ", account {}, collection {},",
-                                    " family {}, field {}, key {:?}: {:?}"
-                                ),
-                                u32::from_be_bytes(key[0..4].try_into().unwrap()),
-                                key[4],
-                                key[5],
-                                key[6],
-                                key,
-                                value
-                            );
-                        }
                         SUBSPACE_COUNTER if key.len() == U32_LEN + 1 || key.len() == U32_LEN => {
                             // Message ID and change ID counters
                             return Ok(true);

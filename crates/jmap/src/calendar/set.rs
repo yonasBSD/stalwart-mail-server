@@ -136,7 +136,7 @@ impl CalendarSet for Server {
             // Obtain calendar
             let document_id = id.document_id();
             let calendar_ = if let Some(calendar_) = self
-                .get_archive(account_id, Collection::Calendar, document_id)
+                .archive(account_id, Collection::Calendar, document_id)
                 .await?
             {
                 calendar_
@@ -214,7 +214,7 @@ impl CalendarSet for Server {
                 };
 
                 let Some(calendar_) = self
-                    .get_archive(account_id, Collection::Calendar, document_id)
+                    .archive(account_id, Collection::Calendar, document_id)
                     .await
                     .caused_by(trc::location!())?
                 else {
@@ -269,7 +269,7 @@ impl CalendarSet for Server {
             if !destroy_children.is_empty() {
                 for document_id in destroy_children {
                     if let Some(event_) = self
-                        .get_archive(account_id, Collection::CalendarEvent, document_id)
+                        .archive(account_id, Collection::CalendarEvent, document_id)
                         .await?
                     {
                         let event = event_
@@ -323,7 +323,7 @@ impl CalendarSet for Server {
                 batch
                     .with_account_id(account_id)
                     .with_collection(Collection::Principal)
-                    .update_document(0)
+                    .with_document(0)
                     .set(
                         PrincipalField::DefaultCalendarId,
                         default_calendar_id.serialize(),
@@ -333,7 +333,7 @@ impl CalendarSet for Server {
             batch
                 .with_account_id(account_id)
                 .with_collection(Collection::Principal)
-                .update_document(0)
+                .with_document(0)
                 .clear(PrincipalField::DefaultCalendarId);
         }
 

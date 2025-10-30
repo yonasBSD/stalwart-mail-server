@@ -115,7 +115,7 @@ impl ContactCardSet for Server {
             // Obtain contact card
             let document_id = id.document_id();
             let contact_card_ = if let Some(contact_card_) = self
-                .get_archive(account_id, Collection::ContactCard, document_id)
+                .archive(account_id, Collection::ContactCard, document_id)
                 .await?
             {
                 contact_card_
@@ -281,7 +281,7 @@ impl ContactCardSet for Server {
             };
 
             let Some(contact_card_) = self
-                .get_archive(account_id, Collection::ContactCard, document_id)
+                .archive(account_id, Collection::ContactCard, document_id)
                 .await
                 .caused_by(trc::location!())?
             else {

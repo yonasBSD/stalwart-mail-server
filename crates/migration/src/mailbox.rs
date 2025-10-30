@@ -48,7 +48,7 @@ pub(crate) async fn migrate_mailboxes(server: &Server, account_id: u32) -> trc::
                 batch
                     .with_account_id(account_id)
                     .with_collection(Collection::Mailbox)
-                    .update_document(mailbox_id)
+                    .with_document(mailbox_id)
                     .set(
                         Field::ARCHIVE,
                         Archiver::new(Mailbox::from_legacy(legacy))

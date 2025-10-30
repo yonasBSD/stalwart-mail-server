@@ -112,7 +112,7 @@ impl CalendarPropPatchRequestHandler for Server {
 
         // Fetch archive
         let archive = self
-            .get_archive(account_id, collection, document_id)
+            .archive(account_id, collection, document_id)
             .await
             .caused_by(trc::location!())?
             .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;

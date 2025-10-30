@@ -74,7 +74,7 @@ impl FileUpdateRequestHandler for Server {
         {
             // Update
             let node_ = self
-                .get_archive(account_id, Collection::FileNode, document_id)
+                .archive(account_id, Collection::FileNode, document_id)
                 .await
                 .caused_by(trc::location!())?
                 .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
@@ -183,7 +183,7 @@ impl FileUpdateRequestHandler for Server {
             batch
                 .with_account_id(account_id)
                 .with_collection(Collection::FileNode)
-                .update_document(document_id)
+                .with_document(document_id)
                 .custom(
                     ObjectIndexBuilder::new()
                         .with_current(node)
@@ -279,7 +279,7 @@ impl FileUpdateRequestHandler for Server {
             batch
                 .with_account_id(account_id)
                 .with_collection(Collection::FileNode)
-                .create_document(document_id)
+                .with_document(document_id)
                 .custom(
                     ObjectIndexBuilder::<(), _>::new()
                         .with_changes(node)

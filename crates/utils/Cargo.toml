@@ -37,6 +37,9 @@ quick_cache = "0.6.9"
 fast-float = "0.2.0"
 rkyv = { version = "0.8.10", features = ["little_endian"] }
 compact_str = "0.9.0"
+xxhash-rust = { version = "0.8.5", features = ["xxh3"] }
+farmhash = "1.1.5"
+nohash-hasher = "0.2.0"
 
 [target.'cfg(unix)'.dependencies]
 privdrop = "0.5.3"

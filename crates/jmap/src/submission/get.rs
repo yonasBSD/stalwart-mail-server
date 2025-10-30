@@ -23,6 +23,7 @@ use store::rkyv::option::ArchivedOption;
 use trc::AddContext;
 use types::{
     collection::{Collection, SyncCollection},
+    field::EmailSubmissionField,
     id::Id,
 };
 use utils::map::vec_map::VecMap;
@@ -54,9 +55,12 @@ impl EmailSubmissionGet for Server {
         ]);
         let account_id = request.account_id.document_id();
         let email_submission_ids = self
-            .get_document_ids(account_id, Collection::EmailSubmission)
-            .await?
-            .unwrap_or_default();
+            .document_ids(
+                account_id,
+                Collection::EmailSubmission,
+                EmailSubmissionField::EmailId,
+            )
+            .await?;
         let ids = if let Some(ids) = ids {
             ids
         } else {
@@ -84,7 +88,7 @@ impl EmailSubmissionGet for Server {
                 continue;
             }
             let submission_ = if let Some(submission) = self
-                .get_archive(account_id, Collection::EmailSubmission, document_id)
+                .archive(account_id, Collection::EmailSubmission, document_id)
                 .await?
             {
                 submission

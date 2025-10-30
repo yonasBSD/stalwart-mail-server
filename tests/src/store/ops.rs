@@ -28,7 +28,7 @@ pub async fn test(db: Store) {
         batch
             .with_account_id(0)
             .with_collection(Collection::Email)
-            .update_document(0);
+            .with_document(0);
         for n in 0..900000 {
             batch.set(
                 ValueClass::Config(format!("key{n:10}").into_bytes()),
@@ -41,7 +41,7 @@ pub async fn test(db: Store) {
                 batch
                     .with_account_id(0)
                     .with_collection(Collection::Email)
-                    .update_document(0);
+                    .with_document(0);
             }
         }
         db.write(batch.build_all()).await.unwrap();
@@ -83,7 +83,7 @@ pub async fn test(db: Store) {
         batch
             .with_account_id(0)
             .with_collection(Collection::Email)
-            .update_document(0);
+            .with_document(0);
         for n in 0..900000 {
             batch.clear(ValueClass::Config(format!("key{n:10}").into_bytes()));
 
@@ -93,7 +93,7 @@ pub async fn test(db: Store) {
                 batch
                     .with_account_id(0)
                     .with_collection(Collection::Email)
-                    .update_document(0);
+                    .with_document(0);
             }
         }
         db.write(batch.build_all()).await.unwrap();
@@ -110,7 +110,7 @@ pub async fn test(db: Store) {
                 builder
                     .with_account_id(0)
                     .with_collection(Collection::Email)
-                    .update_document(0)
+                    .with_document(0)
                     .merge(ValueClass::Property(3), |bytes| {
                         if let Some(bytes) = bytes {
                             Ok((u64::from_be_bytes(bytes.try_into().unwrap()) + 1)
@@ -154,7 +154,7 @@ pub async fn test(db: Store) {
                 builder
                     .with_account_id(0)
                     .with_collection(Collection::Email)
-                    .update_document(0)
+                    .with_document(0)
                     .add_and_get(ValueClass::Directory(DirectoryClass::UsedQuota(0)), 1);
                 db.write(builder.build_all())
                     .await
@@ -208,7 +208,7 @@ pub async fn test(db: Store) {
                 builder
                     .with_account_id(0)
                     .with_collection(Collection::Email)
-                    .update_document(document_id)
+                    .with_document(document_id)
                     .set_versioned(ValueClass::Property(5), archived_value, offset)
                     .log_container_insert(SyncCollection::Email);
                 db.write(builder.build_all())
@@ -273,7 +273,7 @@ pub async fn test(db: Store) {
             BatchBuilder::new()
                 .with_account_id(0)
                 .with_collection(Collection::Email)
-                .update_document(0)
+                .with_document(0)
                 .set(ValueClass::Property(1), value.as_slice())
                 .set(ValueClass::Property(0), "check1".as_bytes())
                 .set(ValueClass::Property(2), "check2".as_bytes())
@@ -302,7 +302,7 @@ pub async fn test(db: Store) {
             BatchBuilder::new()
                 .with_account_id(0)
                 .with_collection(Collection::Email)
-                .update_document(0)
+                .with_document(0)
                 .clear(ValueClass::Property(1))
                 .build_all(),
         )
@@ -346,7 +346,7 @@ pub async fn test(db: Store) {
             .with_account_id(0)
             .with_collection(Collection::Email)
             .with_account_id(0)
-            .update_document(0)
+            .with_document(0)
             .clear(ValueClass::Property(0))
             .clear(ValueClass::Property(2))
             .clear(ValueClass::Property(3))
@@ -355,7 +355,7 @@ pub async fn test(db: Store) {
 
         for document_id in 0..1000 {
             batch
-                .update_document(document_id)
+                .with_document(document_id)
                 .clear(ValueClass::Property(5));
         }
 

@@ -359,7 +359,7 @@ impl<T: SessionStream> Session<T> {
             batch
                 .with_account_id(mailbox_id.account_id)
                 .with_collection(Collection::Mailbox)
-                .update_document(mailbox_id.mailbox_id)
+                .with_document(mailbox_id.mailbox_id)
                 .custom(
                     ObjectIndexBuilder::new()
                         .with_changes(mailbox)
@@ -460,7 +460,7 @@ impl<T: SessionStream> SessionData<T> {
         if let Some(mailbox) = self.get_mailbox_by_name(&arguments.mailbox_name) {
             if let Some(values) = self
                 .server
-                .get_archive(mailbox.account_id, Collection::Mailbox, mailbox.mailbox_id)
+                .archive(mailbox.account_id, Collection::Mailbox, mailbox.mailbox_id)
                 .await
                 .caused_by(trc::location!())?
             {

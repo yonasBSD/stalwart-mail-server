@@ -6,13 +6,11 @@
 
 use crate::task_manager::imip::SendImipTask;
 use alarm::SendAlarmTask;
-use bayes::BayesTrainTask;
 use common::IPC_CHANNEL_BUFFER;
 use common::config::server::ServerProtocol;
 use common::listener::limiter::ConcurrencyLimiter;
 use common::listener::{ServerInstance, TcpAcceptor};
 use common::{Inner, KV_LOCK_TASK, Server, core::BuildServer};
-use fts::FtsIndexTask;
 use groupware::calendar::alarm::{CalendarAlarm, CalendarAlarmType};
 use std::collections::hash_map::Entry;
 use std::future::Future;
@@ -49,13 +47,14 @@ pub struct Task {
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum TaskAction {
-    Index { hash: BlobHash },
-    BayesTrain { hash: BlobHash, learn_spam: bool },
+    Index,
+    Unindex,
+    BayesTrain { learn_spam: bool },
     SendAlarm { alarm: CalendarAlarm },
     SendImip,
 }
 
-const FTS_LOCK_EXPIRY: u64 = 60 * 5; // 5 minutes
+const INDEX_EXPIRY: u64 = 60 * 5; // 5 minutes
 const BAYES_LOCK_EXPIRY: u64 = 60 * 30; // 30 minutes
 const ALARM_EXPIRY: u64 = 60 * 2; // 2 minutes
 const QUEUE_REFRESH_INTERVAL: u64 = 60 * 5; // 5 minutes
@@ -103,15 +102,23 @@ pub fn spawn_task_manager(inner: Arc<Inner>) {
                 // Lock task
                 if server.try_lock_task(&task).await {
                     let success = match &task.action {
-                        TaskAction::Index { hash } => {
-                            server
-                                .fts_index(task.account_id, task.document_id, hash)
-                                .await
+                        TaskAction::Index => {
+                            let todo = "implement";
+                            /*server
+                            .fts_index(task.account_id, task.document_id, hash)
+                            .await*/
+                            true
                         }
-                        TaskAction::BayesTrain { hash, learn_spam } => {
-                            server
-                                .bayes_train(task.account_id, task.document_id, hash, *learn_spam)
-                                .await
+                        TaskAction::Unindex => {
+                            let todo = "implement";
+                            true
+                        }
+                        TaskAction::BayesTrain { learn_spam } => {
+                            let todo = "implement";
+                            /*server
+                            .bayes_train(task.account_id, task.document_id, hash, *learn_spam)
+                            .await*/
+                            true
                         }
                         TaskAction::SendAlarm { alarm } => {
                             if server.core.groupware.alarms_enabled {
@@ -148,7 +155,7 @@ pub fn spawn_task_manager(inner: Arc<Inner>) {
                         let mut batch = BatchBuilder::new();
                         batch
                             .with_account_id(task.account_id)
-                            .update_document(task.document_id);
+                            .with_document(task.document_id);
 
                         for value in task.value_classes() {
                             batch.clear(value);
@@ -204,10 +211,7 @@ impl TaskQueueManager for Server {
             account_id: 0,
             collection: 0,
             document_id: 0,
-            class: ValueClass::TaskQueue(TaskQueueClass::IndexEmail {
-                due: 0,
-                hash: BlobHash::default(),
-            }),
+            class: ValueClass::TaskQueue(TaskQueueClass::IndexEmail { due: 0 }),
         };
         let to_key = ValueKey::<ValueClass> {
             account_id: u32::MAX,
@@ -215,7 +219,6 @@ impl TaskQueueManager for Server {
             document_id: u32::MAX,
             class: ValueClass::TaskQueue(TaskQueueClass::IndexEmail {
                 due: now_timestamp + QUEUE_REFRESH_INTERVAL,
-                hash: BlobHash::default(),
             }),
         };
 
@@ -376,7 +379,7 @@ impl Task {
 
     fn lock_key(&self) -> Vec<u8> {
         match &self.action {
-            TaskAction::Index { .. } => KeySerializer::new((U32_LEN * 2) + U64_LEN + 1)
+            TaskAction::Index => KeySerializer::new((U32_LEN * 2) + U64_LEN + 1)
                 .write(0u8)
                 .write(self.due)
                 .write_leb128(self.account_id)
@@ -399,12 +402,18 @@ impl Task {
                 .write_leb128(self.account_id)
                 .write_leb128(self.document_id)
                 .finalize(),
+            TaskAction::Unindex => KeySerializer::new((U32_LEN * 2) + U64_LEN + 1)
+                .write(4u8)
+                .write(self.due)
+                .write_leb128(self.account_id)
+                .write_leb128(self.document_id)
+                .finalize(),
         }
     }
 
     fn lock_expiry(&self) -> u64 {
         match self.action {
-            TaskAction::Index { .. } => FTS_LOCK_EXPIRY,
+            TaskAction::Index | TaskAction::Unindex => INDEX_EXPIRY,
             TaskAction::BayesTrain { .. } => BAYES_LOCK_EXPIRY,
             TaskAction::SendAlarm { .. } | TaskAction::SendImip => ALARM_EXPIRY,
         }
@@ -413,12 +422,9 @@ impl Task {
     fn value_classes(&self) -> impl Iterator<Item = ValueClass> {
         [
             Some(ValueClass::TaskQueue(match &self.action {
-                TaskAction::Index { hash } => TaskQueueClass::IndexEmail {
-                    hash: hash.clone(),
-                    due: self.due,
-                },
-                TaskAction::BayesTrain { hash, learn_spam } => TaskQueueClass::BayesTrain {
-                    hash: hash.clone(),
+                TaskAction::Index => TaskQueueClass::IndexEmail { due: self.due },
+                TaskAction::Unindex => TaskQueueClass::UnindexEmail { due: self.due },
+                TaskAction::BayesTrain { learn_spam } => TaskQueueClass::BayesTrain {
                     due: self.due,
                     learn_spam: *learn_spam,
                 },
@@ -450,24 +456,10 @@ impl Task {
             account_id: key.deserialize_be_u32(U64_LEN)?,
             document_id: key.deserialize_be_u32(U64_LEN + U32_LEN + 1)?,
             action: match key.get(U64_LEN + U32_LEN) {
-                Some(0) => TaskAction::Index {
-                    hash: key
-                        .get(
-                            U64_LEN + U32_LEN + U32_LEN + 1
-                                ..U64_LEN + U32_LEN + U32_LEN + BLOB_HASH_LEN + 1,
-                        )
-                        .and_then(|bytes| BlobHash::try_from_hash_slice(bytes).ok())
-                        .ok_or_else(|| trc::Error::corrupted_key(key, None, trc::location!()))?,
-                },
+                Some(0) => TaskAction::Index,
+                Some(7) => TaskAction::Unindex,
                 Some(v @ (1 | 2)) => TaskAction::BayesTrain {
                     learn_spam: *v == 1,
-                    hash: key
-                        .get(
-                            U64_LEN + U32_LEN + U32_LEN + 1
-                                ..U64_LEN + U32_LEN + U32_LEN + BLOB_HASH_LEN + 1,
-                        )
-                        .and_then(|bytes| BlobHash::try_from_hash_slice(bytes).ok())
-                        .ok_or_else(|| trc::Error::corrupted_key(key, None, trc::location!()))?,
                 },
                 Some(3) => TaskAction::SendAlarm {
                     alarm: CalendarAlarm {

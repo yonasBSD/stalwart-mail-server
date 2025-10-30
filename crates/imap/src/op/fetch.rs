@@ -324,7 +324,7 @@ impl<T: SessionStream> SessionData<T> {
             // Obtain attributes and keywords
             let (metadata_, data) = if let (Some(email), Some(data)) = (
                 self.server
-                    .get_archive_by_property(
+                    .archive_by_property(
                         account_id,
                         Collection::Email,
                         id,
@@ -543,7 +543,7 @@ impl<T: SessionStream> SessionData<T> {
             if set_seen_flag
                 && let Some(data_) = self
                     .server
-                    .get_archive(account_id, Collection::Email, id)
+                    .archive(account_id, Collection::Email, id)
                     .await
                     .imap_ctx(&arguments.tag, trc::location!())?
             {
@@ -558,7 +558,7 @@ impl<T: SessionStream> SessionData<T> {
                 batch
                     .with_account_id(account_id)
                     .with_collection(Collection::Email)
-                    .update_document(id)
+                    .with_document(id)
                     .custom(
                         ObjectIndexBuilder::new()
                             .with_current(data)

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{JmapMethods, blob::download::BlobDownload, changes::state::StateManager};
+use crate::{blob::download::BlobDownload, changes::state::StateManager};
 use common::{
     Server,
     auth::{AccessToken, ResourceToken},
@@ -28,7 +28,6 @@ use sieve::compiler::ErrorType;
 use std::future::Future;
 use store::{
     Serialize, SerializeInfallible,
-    query::Filter,
     rand::{Rng, rng},
     write::{Archive, Archiver, BatchBuilder},
 };
@@ -83,23 +82,20 @@ impl SieveScriptSet for Server {
     ) -> trc::Result<SetResponse<Sieve>> {
         let account_id = request.account_id.document_id();
         let sieve_ids = self
-            .get_document_ids(account_id, Collection::SieveScript)
-            .await?
-            .unwrap_or_default();
+            .document_ids(account_id, Collection::SieveScript, SieveField::Name)
+            .await?;
         let mut ctx = SetContext {
             resource_token: self.get_resource_token(access_token, account_id).await?,
             access_token,
-            response: self
-                .prepare_set_response(
-                    &request,
+            response: SetResponse::from_request(&request, self.core.jmap.set_max_objects)?
+                .with_state(
                     self.assert_state(
                         account_id,
                         SyncCollection::SieveScript,
                         &request.if_in_state,
                     )
                     .await?,
-                )
-                .await?,
+                ),
         };
         let will_destroy = request.unwrap_destroy().into_valid().collect::<Vec<_>>();
 
@@ -134,7 +130,7 @@ impl SieveScriptSet for Server {
                         batch
                             .with_account_id(account_id)
                             .with_collection(Collection::SieveScript)
-                            .create_document(document_id)
+                            .with_document(document_id)
                             .custom(builder.with_access_token(ctx.access_token))
                             .caused_by(trc::location!())?
                             .commit_point();
@@ -200,7 +196,7 @@ impl SieveScriptSet for Server {
             // Obtain sieve script
             let document_id = id.document_id();
             if let Some(sieve_) = self
-                .get_archive(account_id, Collection::SieveScript, document_id)
+                .archive(account_id, Collection::SieveScript, document_id)
                 .await?
             {
                 let sieve = sieve_
@@ -221,7 +217,7 @@ impl SieveScriptSet for Server {
                         batch
                             .with_account_id(account_id)
                             .with_collection(Collection::SieveScript)
-                            .update_document(document_id);
+                            .with_document(document_id);
 
                         let blob_id = if let Some(blob) = blob {
                             // Store blob
@@ -330,13 +326,13 @@ impl SieveScriptSet for Server {
                 batch
                     .with_account_id(account_id)
                     .with_collection(Collection::Principal)
-                    .update_document(0)
+                    .with_document(0)
                     .set(PrincipalField::ActiveScriptId, id.document_id().serialize());
             } else if on_success_deactivate_script {
                 batch
                     .with_account_id(account_id)
                     .with_collection(Collection::Principal)
-                    .update_document(0)
+                    .with_document(0)
                     .clear(PrincipalField::ActiveScriptId);
             }
         }

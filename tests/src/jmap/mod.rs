@@ -224,19 +224,13 @@ pub async fn wait_for_index(server: &Server) {
                         account_id: 0,
                         collection: 0,
                         document_id: 0,
-                        class: ValueClass::TaskQueue(TaskQueueClass::IndexEmail {
-                            due: 0,
-                            hash: BlobHash::default(),
-                        }),
+                        class: ValueClass::TaskQueue(TaskQueueClass::IndexEmail { due: 0 }),
                     },
                     ValueKey::<ValueClass> {
                         account_id: u32::MAX,
                         collection: u8::MAX,
                         document_id: u32::MAX,
-                        class: ValueClass::TaskQueue(TaskQueueClass::IndexEmail {
-                            due: u64::MAX,
-                            hash: BlobHash::default(),
-                        }),
+                        class: ValueClass::TaskQueue(TaskQueueClass::IndexEmail { due: u64::MAX }),
                     },
                 )
                 .ascending(),
@@ -290,6 +284,7 @@ pub async fn assert_is_empty(server: &Server) {
 }
 
 pub async fn emails_purge_tombstoned(server: &Server) {
+    let todo = "remove";
     let mut account_ids = RoaringBitmap::new();
     server
         .core
@@ -326,7 +321,7 @@ pub async fn emails_purge_tombstoned(server: &Server) {
                 .access_tokens
                 .insert(account_id, Arc::new(AccessToken::from_id(account_id)));
         }
-        server.emails_purge_tombstoned(account_id).await.unwrap();
+        //server.emails_purge_tombstoned(account_id).await.unwrap();
         if do_add {
             server.inner.cache.access_tokens.remove(&account_id);
         }

@@ -116,7 +116,7 @@ impl ParticipantIdentityGet for Server {
         account_id: u32,
     ) -> trc::Result<Option<Archive<AlignedBytes>>> {
         if let Some(identities) = self
-            .get_archive_by_property(
+            .archive_by_property(
                 account_id,
                 Collection::Principal,
                 0,
@@ -173,7 +173,7 @@ impl ParticipantIdentityGet for Server {
         batch
             .with_account_id(account_id)
             .with_collection(Collection::Principal)
-            .update_document(0)
+            .with_document(0)
             .set(
                 PrincipalField::ParticipantIdentities,
                 Archiver::new(identities)
@@ -183,7 +183,7 @@ impl ParticipantIdentityGet for Server {
 
         self.commit_batch(batch).await.caused_by(trc::location!())?;
 
-        self.get_archive_by_property(
+        self.archive_by_property(
             account_id,
             Collection::Principal,
             0,

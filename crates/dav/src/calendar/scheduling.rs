@@ -98,7 +98,7 @@ impl CalendarEventNotificationHandler for Server {
 
         // Fetch event
         let event_ = self
-            .get_archive(
+            .archive(
                 account_id,
                 Collection::CalendarEventNotification,
                 resource.document_id(),
@@ -181,7 +181,7 @@ impl CalendarEventNotificationHandler for Server {
 
         let document_id = resource.document_id();
         let event_ = self
-            .get_archive(
+            .archive(
                 account_id,
                 Collection::CalendarEventNotification,
                 document_id,

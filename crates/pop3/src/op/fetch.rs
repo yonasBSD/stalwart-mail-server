@@ -24,7 +24,7 @@ impl<T: SessionStream> Session<T> {
         if let Some(message) = mailbox.messages.get(msg.saturating_sub(1) as usize) {
             if let Some(metadata_) = self
                 .server
-                .get_archive_by_property(
+                .archive_by_property(
                     mailbox.account_id,
                     Collection::Email,
                     message.id,

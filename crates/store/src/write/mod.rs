@@ -17,17 +17,19 @@ use types::{
     blob_hash::BlobHash,
     collection::{Collection, SyncCollection, VanishedCollection},
     field::{
-        CalendarField, ContactField, EmailField, EmailSubmissionField, Field, MailboxField,
-        PrincipalField, SieveField,
+        CalendarEventField, CalendarNotificationField, ContactField, EmailField,
+        EmailSubmissionField, Field, MailboxField, PrincipalField, SieveField,
     },
 };
-use utils::map::{bitmap::Bitmap, vec_map::VecMap};
+use utils::{
+    cheeky_hash::CheekyHash,
+    map::{bitmap::Bitmap, vec_map::VecMap},
+};
 
 pub mod assert;
 pub mod batch;
 pub mod bitpack;
 pub mod blob;
-pub mod hash;
 pub mod key;
 pub mod log;
 pub mod serialize;
@@ -146,10 +148,6 @@ pub enum Operation {
         key: Vec<u8>,
         set: bool,
     },
-    Bitmap {
-        class: BitmapClass,
-        set: bool,
-    },
     Log {
         collection: LogCollection,
         set: Vec<u8>,
@@ -162,31 +160,12 @@ pub enum LogCollection {
     Vanished(VanishedCollection),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum BitmapClass {
-    DocumentIds,
-    Tag { field: u8, value: TagValue },
-    Text { field: u8, token: BitmapHash },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct BitmapHash {
-    pub hash: [u8; 8],
-    pub len: u8,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum TagValue {
-    Id(u32),
-    Text(Vec<u8>),
-}
-
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub enum ValueClass {
     Property(u8),
+    IndexProperty(IndexPropertyClass),
     Acl(u32),
     InMemory(InMemoryClass),
-    FtsIndex(BitmapHash),
     TaskQueue(TaskQueueClass),
     Directory(DirectoryClass),
     Blob(BlobOp),
@@ -204,14 +183,20 @@ pub enum ValueClass {
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
+pub enum IndexPropertyClass {
+    Hash { property: u8, hash: CheekyHash },
+    Integer { property: u8, value: u64 },
+}
+
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub enum TaskQueueClass {
-    IndexEmail {
+    UpdateIndex {
         due: u64,
-        hash: BlobHash,
+        collection: Collection,
+        is_insert: bool,
     },
     BayesTrain {
         due: u64,
-        hash: BlobHash,
         learn_spam: bool,
     },
     SendAlarm {
@@ -332,36 +317,6 @@ pub struct AnyKey<T: AsRef<[u8]>> {
     pub key: T,
 }
 
-impl From<u32> for TagValue {
-    fn from(value: u32) -> Self {
-        TagValue::Id(value)
-    }
-}
-
-impl From<Vec<u8>> for TagValue {
-    fn from(value: Vec<u8>) -> Self {
-        TagValue::Text(value)
-    }
-}
-
-impl From<String> for TagValue {
-    fn from(value: String) -> Self {
-        TagValue::Text(value.into_bytes())
-    }
-}
-
-impl From<u8> for TagValue {
-    fn from(value: u8) -> Self {
-        TagValue::Id(value as u32)
-    }
-}
-
-impl From<()> for TagValue {
-    fn from(_: ()) -> Self {
-        TagValue::Text(vec![])
-    }
-}
-
 pub trait TokenizeText {
     fn tokenize_into(&self, tokens: &mut HashSet<String>);
     fn to_tokens(&self) -> HashSet<String>;
@@ -395,24 +350,6 @@ pub fn now() -> u64 {
 impl AsRef<ValueClass> for ValueClass {
     fn as_ref(&self) -> &ValueClass {
         self
-    }
-}
-
-impl AsRef<BitmapClass> for BitmapClass {
-    fn as_ref(&self) -> &BitmapClass {
-        self
-    }
-}
-
-impl BitmapClass {
-    pub fn tag_id(property: impl Into<u8>, id: u32) -> Self
-    where
-        TagValue: From<u32>,
-    {
-        BitmapClass::Tag {
-            field: property.into(),
-            value: id.into(),
-        }
     }
 }
 
@@ -477,15 +414,6 @@ impl<T: AsRef<[u8]>> AsRef<[u8]> for Archive<T> {
     }
 }
 
-impl TagValue {
-    pub fn serialized_size(&self) -> usize {
-        match self {
-            TagValue::Id(_) => std::mem::size_of::<u32>(),
-            TagValue::Text(items) => items.len(),
-        }
-    }
-}
-
 impl ArchiveVersion {
     pub fn hash(&self) -> Option<u32> {
         match self {
@@ -540,8 +468,14 @@ impl From<ContactField> for ValueClass {
     }
 }
 
-impl From<CalendarField> for ValueClass {
-    fn from(value: CalendarField) -> Self {
+impl From<CalendarEventField> for ValueClass {
+    fn from(value: CalendarEventField) -> Self {
+        ValueClass::Property(value.into())
+    }
+}
+
+impl From<CalendarNotificationField> for ValueClass {
+    fn from(value: CalendarNotificationField) -> Self {
         ValueClass::Property(value.into())
     }
 }

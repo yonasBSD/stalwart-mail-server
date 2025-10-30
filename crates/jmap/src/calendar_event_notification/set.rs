@@ -72,7 +72,7 @@ impl CalendarEventNotificationSet for Server {
             };
 
             let _event = if let Some(event) = self
-                .get_archive(
+                .archive(
                     account_id,
                     Collection::CalendarEventNotification,
                     document_id,

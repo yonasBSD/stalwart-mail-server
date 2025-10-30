@@ -77,7 +77,7 @@ pub(crate) async fn migrate_calendar_events_v013(
 
     for document_id in document_ids.iter() {
         let Some(archive) = server
-            .get_archive(account_id, Collection::CalendarEvent, document_id)
+            .archive(account_id, Collection::CalendarEvent, document_id)
             .await
             .caused_by(trc::location!())?
         else {
@@ -111,7 +111,7 @@ pub(crate) async fn migrate_calendar_events_v013(
                 batch
                     .with_account_id(account_id)
                     .with_collection(Collection::CalendarEvent)
-                    .update_document(document_id)
+                    .with_document(document_id)
                     .set(
                         Field::ARCHIVE,
                         Archiver::new(new_event)
@@ -151,7 +151,7 @@ pub(crate) async fn migrate_calendar_scheduling_v013(
 
     for document_id in document_ids.iter() {
         let Some(archive) = server
-            .get_archive(
+            .archive(
                 account_id,
                 Collection::CalendarEventNotification,
                 document_id,
@@ -179,7 +179,7 @@ pub(crate) async fn migrate_calendar_scheduling_v013(
                 batch
                     .with_account_id(account_id)
                     .with_collection(Collection::CalendarEventNotification)
-                    .update_document(document_id)
+                    .with_document(document_id)
                     .set(
                         Field::ARCHIVE,
                         Archiver::new(new_event)

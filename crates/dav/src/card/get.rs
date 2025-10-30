@@ -73,7 +73,7 @@ impl CardGetRequestHandler for Server {
 
         // Fetch card
         let card_ = self
-            .get_archive(account_id, Collection::ContactCard, resource.document_id())
+            .archive(account_id, Collection::ContactCard, resource.document_id())
             .await
             .caused_by(trc::location!())?
             .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;

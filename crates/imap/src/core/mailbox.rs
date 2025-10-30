@@ -396,7 +396,7 @@ impl<T: SessionStream> SessionData<T> {
         Ok(access_token.is_member(account_id)
             || self
                 .server
-                .get_archive(account_id, Collection::Mailbox, document_id)
+                .archive(account_id, Collection::Mailbox, document_id)
                 .await
                 .and_then(|mailbox| {
                     if let Some(mailbox) = mailbox {

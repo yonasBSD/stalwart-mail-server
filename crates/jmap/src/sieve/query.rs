@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{JmapMethods, changes::state::StateManager};
+use crate::changes::state::StateManager;
 use common::Server;
 use email::sieve::ingest::SieveScriptIngest;
 use jmap_proto::{
@@ -52,17 +52,17 @@ impl SieveScriptQuery for Server {
             match cond {
                 Filter::Property(cond) => match cond {
                     SieveFilter::Name(name) => {
-                        filters.push(query::Filter::contains(SieveField::Name, &name))
+                        filters.push(SearchFilter::contains(SieveField::Name, &name))
                     }
                     SieveFilter::IsActive(is_active) => {
                         if !is_active {
-                            filters.push(query::Filter::Not);
+                            filters.push(SearchFilter::Not);
                         }
-                        filters.push(query::Filter::is_in_set(RoaringBitmap::from_iter(
+                        filters.push(SearchFilter::is_in_set(RoaringBitmap::from_iter(
                             active_script_id,
                         )));
                         if !is_active {
-                            filters.push(query::Filter::End);
+                            filters.push(SearchFilter::End);
                         }
                     }
                     SieveFilter::_T(other) => {
@@ -99,9 +99,9 @@ impl SieveScriptQuery for Server {
             {
                 comparators.push(match comparator.property {
                     SieveComparator::Name => {
-                        query::Comparator::field(SieveField::Name, comparator.is_ascending)
+                        SearchComparator::field(SieveField::Name, comparator.is_ascending)
                     }
-                    SieveComparator::IsActive => query::Comparator::set(
+                    SieveComparator::IsActive => SearchComparator::set(
                         RoaringBitmap::from_iter(active_script_id),
                         comparator.is_ascending,
                     ),

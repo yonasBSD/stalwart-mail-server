@@ -203,7 +203,7 @@ impl BlobOperations for Server {
                     let collection = Collection::from(*collection);
                     if collection == Collection::Email {
                         if let Some(data_) = self
-                            .get_archive(req_account_id, Collection::Email, *document_id)
+                            .archive(req_account_id, Collection::Email, *document_id)
                             .await?
                         {
                             let data = data_

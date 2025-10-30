@@ -155,7 +155,7 @@ impl CalendarFreebusyRequestHandler for Server {
 
             for document_id in document_ids {
                 let Some(archive) = self
-                    .get_archive(account_id, Collection::CalendarEvent, document_id)
+                    .archive(account_id, Collection::CalendarEvent, document_id)
                     .await
                     .caused_by(trc::location!())?
                 else {

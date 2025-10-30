@@ -73,7 +73,7 @@ impl CalendarGetRequestHandler for Server {
 
         // Fetch event
         let event_ = self
-            .get_archive(
+            .archive(
                 account_id,
                 Collection::CalendarEvent,
                 resource.document_id(),

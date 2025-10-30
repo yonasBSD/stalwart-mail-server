@@ -12,8 +12,9 @@ use email::{
 };
 use std::collections::BTreeMap;
 use store::{
-    IndexKey, IterateParams, SerializeInfallible, U32_LEN, ahash::AHashMap,
-    write::key::DeserializeBigEndian,
+    IterateParams, U32_LEN, ValueKey,
+    ahash::AHashMap,
+    write::{IndexPropertyClass, ValueClass, key::DeserializeBigEndian},
 };
 use trc::AddContext;
 use types::{collection::Collection, field::EmailField, special_use::SpecialUse};
@@ -60,26 +61,30 @@ impl<T: SessionStream> Session<T> {
             .data
             .iterate(
                 IterateParams::new(
-                    IndexKey {
+                    ValueKey {
                         account_id,
                         collection: Collection::Email.into(),
                         document_id: 0,
-                        field: EmailField::Size.into(),
-                        key: 0u32.serialize(),
+                        class: ValueClass::IndexProperty(IndexPropertyClass::Integer {
+                            property: EmailField::Stats.into(),
+                            value: 0,
+                        }),
                     },
-                    IndexKey {
+                    ValueKey {
                         account_id,
                         collection: Collection::Email.into(),
                         document_id: u32::MAX,
-                        field: EmailField::Size.into(),
-                        key: u32::MAX.serialize(),
+                        class: ValueClass::IndexProperty(IndexPropertyClass::Integer {
+                            property: EmailField::Stats.into(),
+                            value: u64::MAX,
+                        }),
                     },
                 )
-                .no_values(),
-                |key, _| {
+                .ascending(),
+                |key, value| {
                     message_sizes.insert(
                         key.deserialize_be_u32(key.len() - U32_LEN)?,
-                        key.deserialize_be_u32(key.len() - (U32_LEN * 2))?,
+                        value.deserialize_be_u32(0)?,
                     );
 
                     Ok(true)

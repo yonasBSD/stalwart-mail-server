@@ -178,7 +178,7 @@ impl PrincipalGetAvailability for Server {
                 // Fetch event
                 let document_id = resource.document_id;
                 let Some(archive) = self
-                    .get_archive(account_id, Collection::CalendarEvent, document_id)
+                    .archive(account_id, Collection::CalendarEvent, document_id)
                     .await
                     .caused_by(trc::location!())?
                 else {

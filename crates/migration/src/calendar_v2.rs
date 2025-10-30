@@ -74,7 +74,7 @@ pub(crate) async fn migrate_calendar_v013(server: &Server, account_id: u32) -> t
 
     for document_id in document_ids.iter() {
         let Some(archive) = server
-            .get_archive(account_id, Collection::Calendar, document_id)
+            .archive(account_id, Collection::Calendar, document_id)
             .await
             .caused_by(trc::location!())?
         else {
@@ -117,7 +117,7 @@ pub(crate) async fn migrate_calendar_v013(server: &Server, account_id: u32) -> t
                 batch
                     .with_account_id(account_id)
                     .with_collection(Collection::Calendar)
-                    .update_document(document_id)
+                    .with_document(document_id)
                     .set(
                         Field::ARCHIVE,
                         Archiver::new(new_calendar)

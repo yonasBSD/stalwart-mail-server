@@ -121,7 +121,7 @@ impl CalendarUpdateRequestHandler for Server {
 
             // Update
             let event_ = self
-                .get_archive(account_id, Collection::CalendarEvent, document_id)
+                .archive(account_id, Collection::CalendarEvent, document_id)
                 .await
                 .caused_by(trc::location!())?
                 .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;

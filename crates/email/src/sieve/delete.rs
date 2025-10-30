@@ -30,14 +30,14 @@ impl SieveScriptDelete for Server {
     ) -> trc::Result<bool> {
         // Fetch record
         if let Some(obj_) = self
-            .get_archive(account_id, Collection::SieveScript, document_id)
+            .archive(account_id, Collection::SieveScript, document_id)
             .await?
         {
             // Delete record
             batch
                 .with_account_id(account_id)
                 .with_collection(Collection::SieveScript)
-                .delete_document(document_id)
+                .with_document(document_id)
                 .clear(SieveField::Ids)
                 .custom(
                     ObjectIndexBuilder::<_, ()>::new()

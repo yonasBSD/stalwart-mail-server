@@ -42,11 +42,16 @@ pub fn spawn_push_manager(inner: Arc<Inner>) -> mpsc::Sender<Event> {
         // Load active subscriptions on startup
         {
             let server = inner.build_server();
+
             match server
-                .get_document_ids(u32::MAX, Collection::PushSubscription)
+                .document_ids(
+                    u32::MAX,
+                    Collection::Principal,
+                    PrincipalField::PushSubscriptions,
+                )
                 .await
             {
-                Ok(Some(account_ids)) => {
+                Ok(account_ids) => {
                     for account_id in account_ids {
                         if server
                             .core
@@ -93,7 +98,6 @@ pub fn spawn_push_manager(inner: Arc<Inner>) -> mpsc::Sender<Event> {
                         }
                     }
                 }
-                Ok(None) => {}
                 Err(err) => {
                     trc::error!(err.caused_by(trc::location!()));
                 }
@@ -484,7 +488,7 @@ async fn load_push_subscriptions(
         .collect::<Vec<_>>();
 
     if let Some(push_subscriptions) = server
-        .get_archive_by_property(
+        .archive_by_property(
             account_id,
             Collection::Principal,
             0,

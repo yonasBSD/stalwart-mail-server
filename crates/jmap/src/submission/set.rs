@@ -95,7 +95,7 @@ impl EmailSubmissionSet for Server {
                     batch
                         .with_account_id(account_id)
                         .with_collection(Collection::EmailSubmission)
-                        .create_document(document_id)
+                        .with_document(document_id)
                         .custom(ObjectIndexBuilder::<(), _>::new().with_changes(submission))
                         .caused_by(trc::location!())?
                         .commit_point();
@@ -118,7 +118,7 @@ impl EmailSubmissionSet for Server {
             // Obtain submission
             let document_id = id.document_id();
             let submission = if let Some(submission) = self
-                .get_archive(account_id, Collection::EmailSubmission, document_id)
+                .archive(account_id, Collection::EmailSubmission, document_id)
                 .await?
             {
                 submission
@@ -171,7 +171,7 @@ impl EmailSubmissionSet for Server {
                         batch
                             .with_account_id(account_id)
                             .with_collection(Collection::EmailSubmission)
-                            .update_document(document_id)
+                            .with_document(document_id)
                             .custom(
                                 ObjectIndexBuilder::new()
                                     .with_current(submission)
@@ -211,14 +211,14 @@ impl EmailSubmissionSet for Server {
         for id in will_destroy {
             let document_id = id.document_id();
             if let Some(submission) = self
-                .get_archive(account_id, Collection::EmailSubmission, document_id)
+                .archive(account_id, Collection::EmailSubmission, document_id)
                 .await?
             {
                 // Update record
                 batch
                     .with_account_id(account_id)
                     .with_collection(Collection::EmailSubmission)
-                    .delete_document(document_id)
+                    .with_document(document_id)
                     .custom(
                         ObjectIndexBuilder::<_, ()>::new().with_current(
                             submission
@@ -456,7 +456,7 @@ impl EmailSubmissionSet for Server {
 
         // Fetch identity's mailFrom
         let identity_mail_from = if let Some(identity) = self
-            .get_archive(account_id, Collection::Identity, submission.identity_id)
+            .archive(account_id, Collection::Identity, submission.identity_id)
             .await?
         {
             identity
@@ -492,7 +492,7 @@ impl EmailSubmissionSet for Server {
 
         // Obtain message metadata
         let metadata_ = if let Some(metadata) = self
-            .get_archive_by_property(
+            .archive_by_property(
                 account_id,
                 Collection::Email,
                 submission.email_id,

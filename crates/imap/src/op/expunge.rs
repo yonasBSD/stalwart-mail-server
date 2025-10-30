@@ -11,7 +11,6 @@ use common::{listener::SessionStream, storage::index::ObjectIndexBuilder};
 use directory::Permission;
 use email::{
     cache::{MessageCacheFetch, email::MessageCacheAccess},
-    mailbox::TOMBSTONE_ID,
     message::metadata::MessageData,
 };
 use imap_proto::{
@@ -21,14 +20,14 @@ use imap_proto::{
 };
 use std::{sync::Arc, time::Instant};
 use store::{
+    SerializeInfallible,
     roaring::RoaringBitmap,
-    write::{BatchBuilder, TagValue},
+    write::{BatchBuilder, TaskQueueClass, ValueClass, now},
 };
 use trc::AddContext;
 use types::{
     acl::Acl,
     collection::{Collection, VanishedCollection},
-    field::EmailField,
     keyword::Keyword,
 };
 
@@ -170,9 +169,10 @@ impl<T: SessionStream> SessionData<T> {
         batch
             .with_account_id(account_id)
             .with_collection(Collection::Email);
+        let due = now();
 
         self.server
-            .get_archives(
+            .archives(
                 account_id,
                 Collection::Email,
                 deleted_ids,
@@ -183,7 +183,7 @@ impl<T: SessionStream> SessionData<T> {
 
                     if let Some(message_uid) = metadata.inner.message_uid(mailbox_id) {
                         // Add vanished items
-                        batch.update_document(document_id);
+                        batch.with_document(document_id);
                         batch.log_vanished_item(
                             VanishedCollection::Email,
                             (mailbox_id, message_uid),
@@ -194,7 +194,10 @@ impl<T: SessionStream> SessionData<T> {
                             batch
                                 .custom(ObjectIndexBuilder::<_, ()>::new().with_current(metadata))
                                 .caused_by(trc::location!())?
-                                .tag(EmailField::MailboxIds, TagValue::Id(TOMBSTONE_ID))
+                                .set(
+                                    ValueClass::TaskQueue(TaskQueueClass::UnindexEmail { due }),
+                                    0u64.serialize(),
+                                )
                                 .commit_point();
                         } else {
                             // Untag message from this mailbox and remove Deleted flag

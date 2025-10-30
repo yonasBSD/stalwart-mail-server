@@ -4,20 +4,13 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, fmt::Display};
-
+use super::{ElasticSearchStore, assert_success};
+use crate::{backend::elastic::INDEX_NAMES, dispatch::DocumentSet, search::IndexDocument};
 use elasticsearch::{DeleteByQueryParts, IndexParts};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::{borrow::Cow, fmt::Display};
 use types::collection::Collection;
-
-use crate::{
-    backend::elastic::INDEX_NAMES,
-    dispatch::DocumentSet,
-    fts::{Field, index::FtsDocument},
-};
-
-use super::{ElasticSearchStore, assert_success};
 
 #[derive(Serialize, Deserialize, Default)]
 struct Document<'x> {
@@ -36,11 +29,9 @@ struct Header<'x> {
 }
 
 impl ElasticSearchStore {
-    pub async fn fts_index<T: Into<u8> + Display + Clone + std::fmt::Debug>(
-        &self,
-        document: FtsDocument<'_, T>,
-    ) -> trc::Result<()> {
-        assert_success(
+    pub async fn index_insert(&self, document: IndexDocument) -> trc::Result<()> {
+        todo!()
+        /*assert_success(
             self.index
                 .index(IndexParts::Index(INDEX_NAMES[document.collection as usize]))
                 .body(Document::from(document))
@@ -48,10 +39,10 @@ impl ElasticSearchStore {
                 .await,
         )
         .await
-        .map(|_| ())
+        .map(|_| ())*/
     }
 
-    pub async fn fts_remove(
+    pub async fn index_remove(
         &self,
         account_id: u32,
         collection: Collection,
@@ -81,7 +72,7 @@ impl ElasticSearchStore {
         .map(|_| ())
     }
 
-    pub async fn fts_remove_all(&self, account_id: u32) -> trc::Result<()> {
+    pub async fn index_remove_all(&self, account_id: u32) -> trc::Result<()> {
         assert_success(
             self.index
                 .delete_by_query(DeleteByQueryParts::Index(INDEX_NAMES))
@@ -99,31 +90,5 @@ impl ElasticSearchStore {
         )
         .await
         .map(|_| ())
-    }
-}
-
-impl<'x, T: Into<u8> + Display + Clone + std::fmt::Debug> From<FtsDocument<'x, T>>
-    for Document<'x>
-{
-    fn from(value: FtsDocument<'x, T>) -> Self {
-        let mut document = Document {
-            account_id: value.account_id,
-            document_id: value.document_id,
-            ..Default::default()
-        };
-
-        for part in value.parts {
-            match part.field {
-                Field::Header(name) => document.header.push(Header {
-                    name: name.to_string().into(),
-                    value: part.text,
-                }),
-                Field::Body => document.body.push(part.text),
-                Field::Attachment => document.attachments.push(part.text),
-                Field::Keyword => document.keywords.push(part.text),
-            }
-        }
-
-        document
     }
 }

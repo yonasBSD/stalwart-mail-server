@@ -76,7 +76,7 @@ impl From<Gram<'_>> for TokenHash {
                     hash.len = t1.len() as u8;
                 } else {
                     let h1 = xxhash_rust::xxh3::xxh3_64(t1).to_be_bytes();
-                    let h2 = farmhash::hash64(t1).to_be_bytes();
+                    let h2 = farmhash::fingerprint64(t1).to_be_bytes();
                     hash.hash[..std::mem::size_of::<u64>()].copy_from_slice(&h1);
                     hash.hash[std::mem::size_of::<u64>()..].copy_from_slice(&h2);
                     hash.len = HASH_LEN as u8;
@@ -99,7 +99,7 @@ impl From<Gram<'_>> for TokenHash {
                         t1.iter()
                             .copied()
                             .chain(xxhash_rust::xxh3::xxh3_64(t2).to_be_bytes().into_iter())
-                            .chain(farmhash::hash64(t2).to_be_bytes().into_iter()),
+                            .chain(farmhash::fingerprint64(t2).to_be_bytes().into_iter()),
                     ) {
                         *h = b;
                     }

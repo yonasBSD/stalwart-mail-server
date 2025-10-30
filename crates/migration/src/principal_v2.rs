@@ -151,7 +151,7 @@ pub(crate) async fn migrate_principals_v0_13(server: &Server) -> trc::Result<Roa
                     batch
                         .with_account_id(u32::MAX)
                         .with_collection(Collection::Principal)
-                        .update_document(principal_id);
+                        .with_document(principal_id);
 
                     batch.set(
                         ValueClass::Directory(DirectoryClass::Principal(principal_id)),

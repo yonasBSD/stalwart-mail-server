@@ -121,7 +121,7 @@ async fn send_email_alarm(
 
     // Fetch event
     let Some(event_) = server
-        .get_archive(account_id, Collection::CalendarEvent, document_id)
+        .archive(account_id, Collection::CalendarEvent, document_id)
         .await
         .caused_by(trc::location!())?
     else {
@@ -310,7 +310,7 @@ async fn send_display_alarm(
 ) -> trc::Result<bool> {
     // Fetch event
     let Some(event_) = server
-        .get_archive(account_id, Collection::CalendarEvent, document_id)
+        .archive(account_id, Collection::CalendarEvent, document_id)
         .await
         .caused_by(trc::location!())?
     else {
@@ -400,7 +400,7 @@ async fn write_next_alarm(
         batch
             .with_account_id(account_id)
             .with_collection(Collection::CalendarEvent)
-            .update_document(document_id);
+            .with_document(document_id);
         next_alarm.write_task(&mut batch);
         server
             .store()

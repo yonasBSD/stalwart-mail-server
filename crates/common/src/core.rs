@@ -24,13 +24,13 @@ use std::{
     time::Duration,
 };
 use store::{
-    BitmapKey, BlobStore, Deserialize, FtsStore, InMemoryStore, IndexKey, IterateParams, Key,
-    LogKey, SUBSPACE_LOGS, SerializeInfallible, Store, U32_LEN, U64_LEN, ValueKey,
+    BlobStore, Deserialize, InMemoryStore, IndexKey, IndexKeyPrefix, IterateParams, Key, LogKey,
+    SUBSPACE_LOGS, SearchStore, SerializeInfallible, Store, U32_LEN, U64_LEN, ValueKey,
     dispatch::DocumentSet,
     roaring::RoaringBitmap,
     write::{
         AlignedBytes, AnyClass, Archive, AssignedIds, BatchBuilder, BlobOp, DirectoryClass,
-        QueueClass, ValueClass, key::DeserializeBigEndian, now,
+        IndexPropertyClass, QueueClass, ValueClass, key::DeserializeBigEndian, now,
     },
 };
 use trc::AddContext;
@@ -55,7 +55,7 @@ impl Server {
     }
 
     #[inline(always)]
-    pub fn fts_store(&self) -> &FtsStore {
+    pub fn search_store(&self) -> &SearchStore {
         &self.core.storage.fts
     }
 
@@ -349,30 +349,28 @@ impl Server {
         self.store()
             .iterate(
                 IterateParams::new(
-                    IndexKey {
+                    ValueKey {
                         account_id,
                         collection: Collection::Email.into(),
                         document_id: 0,
-                        field: EmailField::Size.into(),
-                        key: 0u32.serialize(),
+                        class: ValueClass::IndexProperty(IndexPropertyClass::Integer {
+                            property: EmailField::Stats.into(),
+                            value: 0,
+                        }),
                     },
-                    IndexKey {
+                    ValueKey {
                         account_id,
                         collection: Collection::Email.into(),
                         document_id: u32::MAX,
-                        field: EmailField::Size.into(),
-                        key: u32::MAX.serialize(),
+                        class: ValueClass::IndexProperty(IndexPropertyClass::Integer {
+                            property: EmailField::Stats.into(),
+                            value: u64::MAX,
+                        }),
                     },
                 )
-                .no_values()
                 .ascending(),
-                |key, _| {
-                    let value = key
-                        .get(key.len() - (U32_LEN * 2)..key.len() - U32_LEN)
-                        .ok_or_else(|| trc::Error::corrupted_key(key, None, trc::location!()))
-                        .and_then(u32::deserialize)?;
-
-                    quota += value as i64;
+                |_, value| {
+                    quota += value.deserialize_be_u32(0)? as i64;
 
                     Ok(true)
                 },
@@ -490,7 +488,7 @@ impl Server {
     }
 
     #[inline(always)]
-    pub async fn get_archive(
+    pub async fn archive(
         &self,
         account_id: u32,
         collection: Collection,
@@ -515,7 +513,7 @@ impl Server {
     }
 
     #[inline(always)]
-    pub async fn get_archive_by_property(
+    pub async fn archive_by_property(
         &self,
         account_id: u32,
         collection: Collection,
@@ -540,7 +538,7 @@ impl Server {
             })
     }
 
-    pub async fn get_archives<I, CB>(
+    pub async fn archives<I, CB>(
         &self,
         account_id: u32,
         collection: Collection,
@@ -589,22 +587,124 @@ impl Server {
             })
     }
 
-    #[inline(always)]
-    pub async fn get_document_ids(
+    pub async fn document_ids(
         &self,
         account_id: u32,
         collection: Collection,
-    ) -> trc::Result<Option<RoaringBitmap>> {
-        self.core
-            .storage
-            .data
-            .get_bitmap(BitmapKey::document_ids(account_id, collection))
+        field: impl Into<u8>,
+    ) -> trc::Result<RoaringBitmap> {
+        let field = field.into();
+        let mut results = RoaringBitmap::new();
+        self.store()
+            .iterate(
+                IterateParams::new(
+                    IndexKeyPrefix {
+                        account_id,
+                        collection: collection.into(),
+                        field,
+                    },
+                    IndexKeyPrefix {
+                        account_id,
+                        collection: collection.into(),
+                        field: field + 1,
+                    },
+                )
+                .no_values(),
+                |key, _| {
+                    results.insert(key.deserialize_be_u32(key.len() - U32_LEN)?);
+
+                    Ok(true)
+                },
+            )
             .await
-            .add_context(|err| {
-                err.caused_by(trc::location!())
-                    .account_id(account_id)
-                    .collection(collection)
-            })
+            .caused_by(trc::location!())
+            .map(|_| results)
+    }
+
+    pub async fn document_exists(
+        &self,
+        account_id: u32,
+        collection: Collection,
+        field: impl Into<u8>,
+        filter: impl AsRef<[u8]>,
+    ) -> trc::Result<bool> {
+        let field = field.into();
+        let mut exists = false;
+        let filter = filter.as_ref();
+        let key_len = IndexKeyPrefix::len() + filter.len() + U32_LEN;
+
+        self.store()
+            .iterate(
+                IterateParams::new(
+                    IndexKey {
+                        account_id,
+                        collection: collection.into(),
+                        document_id: 0,
+                        field,
+                        key: filter,
+                    },
+                    IndexKey {
+                        account_id,
+                        collection: collection.into(),
+                        document_id: u32::MAX,
+                        field,
+                        key: filter,
+                    },
+                )
+                .no_values(),
+                |key, _| {
+                    exists = key.len() == key_len;
+
+                    Ok(!exists)
+                },
+            )
+            .await
+            .caused_by(trc::location!())
+            .map(|_| exists)
+    }
+
+    pub async fn document_ids_matching(
+        &self,
+        account_id: u32,
+        collection: Collection,
+        field: impl Into<u8>,
+        filter: impl AsRef<[u8]>,
+    ) -> trc::Result<RoaringBitmap> {
+        let field = field.into();
+        let filter = filter.as_ref();
+        let key_len = IndexKeyPrefix::len() + filter.len() + U32_LEN;
+        let mut results = RoaringBitmap::new();
+
+        self.store()
+            .iterate(
+                IterateParams::new(
+                    IndexKey {
+                        account_id,
+                        collection: collection.into(),
+                        document_id: 0,
+                        field,
+                        key: filter,
+                    },
+                    IndexKey {
+                        account_id,
+                        collection: collection.into(),
+                        document_id: u32::MAX,
+                        field,
+                        key: filter,
+                    },
+                )
+                .no_values(),
+                |key, _| {
+                    if key.len() == key_len {
+                        results.insert(key.deserialize_be_u32(key.len() - U32_LEN)?);
+                    }
+
+                    Ok(true)
+                },
+            )
+            .await
+            .caused_by(trc::location!())
+            .map(|_| results)
     }
 
     #[inline(always)]

@@ -5,27 +5,24 @@
  */
 
 use super::metadata::MessageData;
-use crate::{cache::MessageCacheFetch, mailbox::*, message::metadata::MessageMetadata};
+use crate::{cache::MessageCacheFetch, mailbox::*};
 use common::{KV_LOCK_PURGE_ACCOUNT, Server, storage::index::ObjectIndexBuilder};
 use groupware::calendar::storage::ItipAutoExpunge;
 use std::future::Future;
 use store::rand::prelude::SliceRandom;
 use store::write::key::DeserializeBigEndian;
-use store::write::now;
+use store::write::{IndexPropertyClass, TaskQueueClass, now};
+use store::{IterateParams, SerializeInfallible, U32_LEN, ValueKey};
 use store::{
-    BitmapKey, ValueKey,
     roaring::RoaringBitmap,
-    write::{AlignedBytes, Archive, BatchBuilder, BitmapClass, TagValue, ValueClass},
+    write::{BatchBuilder, ValueClass},
 };
-use store::{IndexKey, IterateParams, SerializeInfallible, U32_LEN};
 use trc::AddContext;
-#[cfg(feature = "enterprise")]
-use types::blob_hash::BlobHash;
 use types::collection::{Collection, VanishedCollection};
-use types::field::EmailField;
+use types::field::{EmailField, Field};
 
 pub trait EmailDeletion: Sync + Send {
-    fn emails_tombstone(
+    fn emails_delete(
         &self,
         account_id: u32,
         batch: &mut BatchBuilder,
@@ -41,26 +38,21 @@ pub trait EmailDeletion: Sync + Send {
         account_id: u32,
         hold_period: u64,
     ) -> impl Future<Output = trc::Result<()>> + Send;
-
-    fn emails_purge_tombstoned(
-        &self,
-        account_id: u32,
-    ) -> impl Future<Output = trc::Result<()>> + Send;
 }
 
 impl EmailDeletion for Server {
-    async fn emails_tombstone(
+    async fn emails_delete(
         &self,
         account_id: u32,
         batch: &mut BatchBuilder,
         document_ids: RoaringBitmap,
     ) -> trc::Result<RoaringBitmap> {
-        // Tombstone message and untag it from the mailboxes
+        let due = now();
         let mut deleted_ids = RoaringBitmap::new();
         batch
             .with_account_id(account_id)
             .with_collection(Collection::Email);
-        self.get_archives(
+        self.archives(
             account_id,
             Collection::Email,
             &document_ids,
@@ -76,10 +68,13 @@ impl EmailDeletion for Server {
                     );
                 }
                 batch
-                    .update_document(document_id)
+                    .with_document(document_id)
                     .custom(ObjectIndexBuilder::<_, ()>::new().with_current(metadata))
                     .caused_by(trc::location!())?
-                    .tag(EmailField::MailboxIds, TagValue::Id(TOMBSTONE_ID))
+                    .set(
+                        ValueClass::TaskQueue(TaskQueueClass::UnindexEmail { due }),
+                        0u64.serialize(),
+                    )
                     .commit_point();
 
                 deleted_ids.insert(document_id);
@@ -100,7 +95,9 @@ impl EmailDeletion for Server {
     }
 
     async fn purge_accounts(&self, use_roles: bool) {
-        if let Ok(Some(account_ids)) = self.get_document_ids(u32::MAX, Collection::Principal).await
+        if let Ok(account_ids) = self
+            .document_ids(u32::MAX, Collection::Principal, Field::DOCUMENT_ID)
+            .await
         {
             let mut account_ids: Vec<u32> = account_ids
                 .into_iter()
@@ -167,14 +164,6 @@ impl EmailDeletion for Server {
             );
         }
 
-        // Purge tombstoned messages
-        if let Err(err) = self.emails_purge_tombstoned(account_id).await {
-            trc::error!(
-                err.details("Failed to purge tombstoned messages.")
-                    .account_id(account_id)
-            );
-        }
-
         // Purge changelogs
         if let Err(err) = self
             .delete_changes(
@@ -224,23 +213,27 @@ impl EmailDeletion for Server {
         self.store()
             .iterate(
                 IterateParams::new(
-                    IndexKey {
+                    ValueKey {
                         account_id,
                         collection: Collection::Email.into(),
                         document_id: 0,
-                        field: EmailField::ReceivedAt.into(),
-                        key: 0u64.serialize(),
+                        class: ValueClass::IndexProperty(IndexPropertyClass::Integer {
+                            property: EmailField::Stats.into(),
+                            value: 0,
+                        }),
                     },
-                    IndexKey {
+                    ValueKey {
                         account_id,
                         collection: Collection::Email.into(),
                         document_id: u32::MAX,
-                        field: EmailField::ReceivedAt.into(),
-                        key: now().saturating_sub(hold_period).serialize(),
+                        class: ValueClass::IndexProperty(IndexPropertyClass::Integer {
+                            property: EmailField::Stats.into(),
+                            value: now().saturating_sub(hold_period),
+                        }),
                     },
                 )
-                .no_values()
-                .ascending(),
+                .ascending()
+                .no_values(),
                 |key, _| {
                     let document_id = key
                         .deserialize_be_u32(key.len() - U32_LEN)
@@ -267,16 +260,16 @@ impl EmailDeletion for Server {
             Total = destroy_ids.len(),
         );
 
-        // Tombstone messages
+        // Delete messages
         let mut batch = BatchBuilder::new();
-        self.emails_tombstone(account_id, &mut batch, destroy_ids)
+        self.emails_delete(account_id, &mut batch, destroy_ids)
             .await?;
         self.commit_batch(batch).await?;
 
         Ok(())
     }
 
-    async fn emails_purge_tombstoned(&self, account_id: u32) -> trc::Result<()> {
+    /*async fn emails_purge_tombstoned(&self, account_id: u32) -> trc::Result<()> {
         // Obtain tombstoned messages
         let tombstoned_ids = self
             .core
@@ -383,5 +376,5 @@ impl EmailDeletion for Server {
         self.commit_batch(batch).await?;
 
         Ok(())
-    }
+    }*/
 }

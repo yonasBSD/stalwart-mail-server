@@ -12,10 +12,9 @@ use std::{
 };
 use store::{
     BlobStore, Key, LogKey, SUBSPACE_LOGS, SerializeInfallible, Store, U32_LEN,
-    roaring::RoaringBitmap,
     write::{
-        AnyClass, BatchBuilder, BitmapClass, BitmapHash, BlobOp, DirectoryClass, InMemoryClass,
-        Operation, TagValue, TaskQueueClass, ValueClass, ValueOp, key::DeserializeBigEndian, now,
+        AnyClass, BatchBuilder, BlobOp, DirectoryClass, InMemoryClass, Operation, TaskQueueClass,
+        ValueClass, ValueOp, key::DeserializeBigEndian, now,
     },
 };
 use store::{
@@ -88,7 +87,7 @@ async fn restore_file(store: Store, blob_store: BlobStore, path: &Path) {
             }
             Op::DocumentId(d) => {
                 document_id = d;
-                batch.update_document(document_id);
+                batch.with_document(document_id);
             }
             Op::KeyValue((key, value)) => {
                 batch_size += key.len() + value.len() + U32_LEN * 2;
@@ -128,7 +127,7 @@ async fn restore_file(store: Store, blob_store: BlobStore, path: &Path) {
                                 }
                             };
 
-                            batch.set(ValueClass::FtsIndex(BitmapHash { hash, len }), value);
+                            //batch.set(ValueClass::FtsIndex(BitmapHash { hash, len }), value);
                         }
                     }
                     Family::Acl => {
@@ -147,9 +146,10 @@ async fn restore_file(store: Store, blob_store: BlobStore, path: &Path) {
                         if account_id != u32::MAX && document_id != u32::MAX {
                             if reader.version == 1 && collection == Collection::Email {
                                 batch.set(
-                                    ValueClass::TaskQueue(TaskQueueClass::IndexEmail {
+                                    ValueClass::TaskQueue(TaskQueueClass::UpdateIndex {
                                         due,
-                                        hash: hash.clone(),
+                                        collection: Collection::Email,
+                                        is_insert: true,
                                     }),
                                     0u64.serialize(),
                                 );
@@ -274,76 +274,7 @@ async fn restore_file(store: Store, blob_store: BlobStore, path: &Path) {
                             set: true,
                         });
                     }
-                    Family::Bitmap => {
-                        let key = key.as_slice();
-                        let class: BitmapClass =
-                            match key.first().expect("Failed to read bitmap class") {
-                                0 => BitmapClass::DocumentIds,
-                                1 => BitmapClass::Tag {
-                                    field: key.get(1).copied().expect("Failed to read field"),
-                                    value: TagValue::Id(
-                                        key.deserialize_be_u32(2).expect("Failed to read tag id"),
-                                    ),
-                                },
-                                2 => BitmapClass::Tag {
-                                    field: key.get(1).copied().expect("Failed to read field"),
-                                    value: TagValue::Text(
-                                        key.get(2..).expect("Failed to read tag text").to_vec(),
-                                    ),
-                                },
-                                3 => BitmapClass::Tag {
-                                    field: key.get(1).copied().expect("Failed to read field"),
-                                    value: TagValue::Id(
-                                        key.get(2)
-                                            .copied()
-                                            .expect("Failed to read tag static id")
-                                            .into(),
-                                    ),
-                                },
-                                4 => {
-                                    if reader.version == 1 && collection == Collection::Email {
-                                        continue;
-                                    }
-
-                                    BitmapClass::Text {
-                                        field: key.get(1).copied().expect("Failed to read field"),
-                                        token: BitmapHash {
-                                            len: key
-                                                .get(2)
-                                                .copied()
-                                                .expect("Failed to read tag static id"),
-                                            hash: key
-                                                .get(3..11)
-                                                .expect("Failed to read tag static id")
-                                                .try_into()
-                                                .unwrap(),
-                                        },
-                                    }
-                                }
-                                _ => failed("Invalid bitmap class"),
-                            };
-                        let document_ids = RoaringBitmap::deserialize_from(&value[..])
-                            .expect("Failed to deserialize bitmap");
-
-                        for document_id in document_ids {
-                            batch.any_op(Operation::DocumentId { document_id });
-                            batch.any_op(Operation::Bitmap {
-                                class: class.clone(),
-                                set: true,
-                            });
-
-                            if batch.is_large_batch() {
-                                store
-                                    .write(batch.build_all())
-                                    .await
-                                    .failed("Failed to write batch");
-                                batch = BatchBuilder::new();
-                                batch
-                                    .with_account_id(account_id)
-                                    .with_collection(collection);
-                            }
-                        }
-                    }
+                    Family::Bitmap => {}
                     Family::Log => {
                         let change_id = key
                             .as_slice()
@@ -382,7 +313,7 @@ async fn restore_file(store: Store, blob_store: BlobStore, path: &Path) {
             batch
                 .with_account_id(account_id)
                 .with_collection(collection)
-                .update_document(document_id);
+                .with_document(document_id);
             batch_size = 0;
         }
     }

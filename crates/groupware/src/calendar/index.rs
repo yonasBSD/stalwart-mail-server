@@ -16,13 +16,12 @@ use calcard::icalendar::{
     ArchivedICalendarParameterValue, ArchivedICalendarProperty, ArchivedICalendarValue,
     ICalendarParameterValue, ICalendarProperty, ICalendarValue,
 };
-use common::storage::index::{
-    IndexItem, IndexValue, IndexableAndSerializableObject, IndexableObject,
+use common::storage::index::{IndexValue, IndexableAndSerializableObject, IndexableObject};
+use store::{
+    write::{IndexPropertyClass, ValueClass},
+    xxhash_rust::xxh3,
 };
-use nlp::tokenizers::word::WordTokenizer;
-use std::collections::HashSet;
-use store::backend::MAX_TOKEN_LENGTH;
-use types::{acl::AclGrant, collection::SyncCollection, field::CalendarField};
+use types::{acl::AclGrant, collection::SyncCollection, field::CalendarNotificationField};
 
 impl IndexableObject for Calendar {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
@@ -76,30 +75,8 @@ impl IndexableAndSerializableObject for Calendar {
 impl IndexableObject for CalendarEvent {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
         [
-            IndexValue::Index {
-                field: CalendarField::Uid.into(),
-                value: self.data.event.uids().next().into(),
-            },
-            IndexValue::Index {
-                field: CalendarField::Start.into(),
-                value: self.data.event_range_start().into(),
-            },
-            IndexValue::Index {
-                field: CalendarField::Created.into(),
-                value: self.created.into(),
-            },
-            IndexValue::Index {
-                field: CalendarField::Updated.into(),
-                value: self.modified.into(),
-            },
-            IndexValue::IndexList {
-                field: CalendarField::Text.into(),
-                value: self
-                    .text()
-                    .map(Into::into)
-                    .collect::<HashSet<IndexItem>>()
-                    .into_iter()
-                    .collect(),
+            IndexValue::SearchIndex {
+                hashes: self.hashes().collect(),
             },
             IndexValue::Quota {
                 used: self.dead_properties.size() as u32
@@ -120,30 +97,8 @@ impl IndexableObject for CalendarEvent {
 impl IndexableObject for &ArchivedCalendarEvent {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
         [
-            IndexValue::Index {
-                field: CalendarField::Uid.into(),
-                value: self.data.event.uids().next().into(),
-            },
-            IndexValue::Index {
-                field: CalendarField::Start.into(),
-                value: self.data.event_range_start().into(),
-            },
-            IndexValue::Index {
-                field: CalendarField::Created.into(),
-                value: self.created.to_native().into(),
-            },
-            IndexValue::Index {
-                field: CalendarField::Updated.into(),
-                value: self.modified.to_native().into(),
-            },
-            IndexValue::IndexList {
-                field: CalendarField::Text.into(),
-                value: self
-                    .text()
-                    .map(Into::into)
-                    .collect::<HashSet<IndexItem>>()
-                    .into_iter()
-                    .collect(),
+            IndexValue::SearchIndex {
+                hashes: self.hashes().collect(),
             },
             IndexValue::Quota {
                 used: self.dead_properties.size() as u32
@@ -171,12 +126,11 @@ impl IndexableObject for CalendarEventNotification {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
         [
             IndexValue::Quota { used: self.size },
-            IndexValue::Index {
-                field: CalendarField::Created.into(),
-                value: self.created.into(),
-            },
-            IndexValue::Index {
-                field: CalendarField::EventId.into(),
+            IndexValue::Property {
+                field: ValueClass::IndexProperty(IndexPropertyClass::Integer {
+                    property: CalendarNotificationField::CreatedToId.into(),
+                    value: self.created as u64,
+                }),
                 value: self.event_id.unwrap_or(u32::MAX).into(),
             },
             IndexValue::LogItem {
@@ -194,12 +148,11 @@ impl IndexableObject for &ArchivedCalendarEventNotification {
             IndexValue::Quota {
                 used: self.size.to_native(),
             },
-            IndexValue::Index {
-                field: CalendarField::Created.into(),
-                value: self.created.to_native().into(),
-            },
-            IndexValue::Index {
-                field: CalendarField::EventId.into(),
+            IndexValue::Property {
+                field: ValueClass::IndexProperty(IndexPropertyClass::Integer {
+                    property: CalendarNotificationField::CreatedToId.into(),
+                    value: self.created.to_native() as u64,
+                }),
                 value: self
                     .event_id
                     .as_ref()
@@ -293,7 +246,7 @@ impl ArchivedDefaultAlert {
 }
 
 impl CalendarEvent {
-    pub fn text(&self) -> impl Iterator<Item = String> {
+    pub fn hashes(&self) -> impl Iterator<Item = u64> {
         self.data
             .event
             .components
@@ -327,15 +280,12 @@ impl CalendarEvent {
                         _ => None,
                     }))
             })
-            .flat_map(|v| {
-                WordTokenizer::new(v.strip_prefix("mailto:").unwrap_or(v), MAX_TOKEN_LENGTH)
-            })
-            .map(|t| t.word.into_owned())
+            .map(|v| xxh3::xxh3_64(v.as_bytes()))
     }
 }
 
 impl ArchivedCalendarEvent {
-    pub fn text(&self) -> impl Iterator<Item = String> {
+    pub fn hashes(&self) -> impl Iterator<Item = u64> {
         self.data
             .event
             .components
@@ -369,9 +319,6 @@ impl ArchivedCalendarEvent {
                         _ => None,
                     }))
             })
-            .flat_map(|v| {
-                WordTokenizer::new(v.strip_prefix("mailto:").unwrap_or(v), MAX_TOKEN_LENGTH)
-            })
-            .map(|t| t.word.into_owned())
+            .map(|v| xxh3::xxh3_64(v.as_bytes()))
     }
 }

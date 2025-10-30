@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{JmapMethods, changes::state::StateManager};
+use crate::changes::state::StateManager;
 use common::Server;
 use email::submission::UndoStatus;
 use jmap_proto::{
@@ -41,37 +41,37 @@ impl EmailSubmissionQuery for Server {
             match cond {
                 Filter::Property(cond) => match cond {
                     EmailSubmissionFilter::IdentityIds(ids) => {
-                        filters.push(query::Filter::Or);
+                        filters.push(SearchFilter::Or);
                         for id in ids.into_valid() {
-                            filters.push(query::Filter::eq(
+                            filters.push(SearchFilter::eq(
                                 EmailSubmissionField::IdentityId,
                                 id.document_id().serialize(),
                             ));
                         }
-                        filters.push(query::Filter::End);
+                        filters.push(SearchFilter::End);
                     }
                     EmailSubmissionFilter::EmailIds(ids) => {
-                        filters.push(query::Filter::Or);
+                        filters.push(SearchFilter::Or);
                         for id in ids.into_valid() {
-                            filters.push(query::Filter::eq(
+                            filters.push(SearchFilter::eq(
                                 EmailSubmissionField::EmailId,
                                 id.id().serialize(),
                             ));
                         }
-                        filters.push(query::Filter::End);
+                        filters.push(SearchFilter::End);
                     }
                     EmailSubmissionFilter::ThreadIds(ids) => {
-                        filters.push(query::Filter::Or);
+                        filters.push(SearchFilter::Or);
                         for id in ids.into_valid() {
-                            filters.push(query::Filter::eq(
+                            filters.push(SearchFilter::eq(
                                 EmailSubmissionField::ThreadId,
                                 id.document_id().serialize(),
                             ));
                         }
-                        filters.push(query::Filter::End);
+                        filters.push(SearchFilter::End);
                     }
                     EmailSubmissionFilter::UndoStatus(undo_status) => {
-                        filters.push(query::Filter::eq(
+                        filters.push(SearchFilter::eq(
                             EmailSubmissionField::UndoStatus,
                             match undo_status {
                                 email_submission::UndoStatus::Pending => UndoStatus::Pending,
@@ -82,11 +82,11 @@ impl EmailSubmissionQuery for Server {
                             .serialize(),
                         ))
                     }
-                    EmailSubmissionFilter::Before(before) => filters.push(query::Filter::lt(
+                    EmailSubmissionFilter::Before(before) => filters.push(SearchFilter::lt(
                         EmailSubmissionField::SendAt,
                         (before.timestamp() as u64).serialize(),
                     )),
-                    EmailSubmissionFilter::After(after) => filters.push(query::Filter::gt(
+                    EmailSubmissionFilter::After(after) => filters.push(SearchFilter::gt(
                         EmailSubmissionField::SendAt,
                         (after.timestamp() as u64).serialize(),
                     )),
@@ -124,15 +124,15 @@ impl EmailSubmissionQuery for Server {
                 .unwrap_or_else(|| vec![Comparator::descending(EmailSubmissionComparator::SentAt)])
             {
                 comparators.push(match comparator.property {
-                    EmailSubmissionComparator::EmailId => query::Comparator::field(
+                    EmailSubmissionComparator::EmailId => SearchComparator::field(
                         EmailSubmissionField::EmailId,
                         comparator.is_ascending,
                     ),
-                    EmailSubmissionComparator::ThreadId => query::Comparator::field(
+                    EmailSubmissionComparator::ThreadId => SearchComparator::field(
                         EmailSubmissionField::ThreadId,
                         comparator.is_ascending,
                     ),
-                    EmailSubmissionComparator::SentAt => query::Comparator::field(
+                    EmailSubmissionComparator::SentAt => SearchComparator::field(
                         EmailSubmissionField::SendAt,
                         comparator.is_ascending,
                     ),
