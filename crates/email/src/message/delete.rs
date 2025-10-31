@@ -11,15 +11,15 @@ use groupware::calendar::storage::ItipAutoExpunge;
 use std::future::Future;
 use store::rand::prelude::SliceRandom;
 use store::write::key::DeserializeBigEndian;
-use store::write::{IndexPropertyClass, TaskQueueClass, now};
-use store::{IterateParams, SerializeInfallible, U32_LEN, ValueKey};
+use store::write::{IndexPropertyClass, SearchIndex, TaskQueueClass, now};
+use store::{IterateParams, SerializeInfallible, U32_LEN, U64_LEN, ValueKey};
 use store::{
     roaring::RoaringBitmap,
     write::{BatchBuilder, ValueClass},
 };
 use trc::AddContext;
 use types::collection::{Collection, VanishedCollection};
-use types::field::{EmailField, Field};
+use types::field::{EmailField, EmailSubmissionField, Field};
 
 pub trait EmailDeletion: Sync + Send {
     fn emails_delete(
@@ -32,6 +32,12 @@ pub trait EmailDeletion: Sync + Send {
     fn purge_accounts(&self, use_roles: bool) -> impl Future<Output = ()> + Send;
 
     fn purge_account(&self, account_id: u32) -> impl Future<Output = ()> + Send;
+
+    fn purge_email_submissions(
+        &self,
+        account_id: u32,
+        hold_period: u64,
+    ) -> impl Future<Output = trc::Result<()>> + Send;
 
     fn emails_auto_expunge(
         &self,
@@ -72,7 +78,11 @@ impl EmailDeletion for Server {
                     .custom(ObjectIndexBuilder::<_, ()>::new().with_current(metadata))
                     .caused_by(trc::location!())?
                     .set(
-                        ValueClass::TaskQueue(TaskQueueClass::UnindexEmail { due }),
+                        ValueClass::TaskQueue(TaskQueueClass::UpdateIndex {
+                            index: SearchIndex::Email,
+                            due,
+                            is_insert: false,
+                        }),
                         0u64.serialize(),
                     )
                     .commit_point();
@@ -164,6 +174,16 @@ impl EmailDeletion for Server {
             );
         }
 
+        // Delete old e-mail submissions
+        if let Some(hold_period) = self.core.jmap.email_submission_autoexpunge_after
+            && let Err(err) = self.purge_email_submissions(account_id, hold_period).await
+        {
+            trc::error!(
+                err.details("Failed to auto-expunge e-mail submissions.")
+                    .account_id(account_id)
+            );
+        }
+
         // Purge changelogs
         if let Err(err) = self
             .delete_changes(
@@ -218,7 +238,7 @@ impl EmailDeletion for Server {
                         collection: Collection::Email.into(),
                         document_id: 0,
                         class: ValueClass::IndexProperty(IndexPropertyClass::Integer {
-                            property: EmailField::Stats.into(),
+                            property: EmailField::ReceivedToSize.into(),
                             value: 0,
                         }),
                     },
@@ -227,7 +247,7 @@ impl EmailDeletion for Server {
                         collection: Collection::Email.into(),
                         document_id: u32::MAX,
                         class: ValueClass::IndexProperty(IndexPropertyClass::Integer {
-                            property: EmailField::Stats.into(),
+                            property: EmailField::ReceivedToSize.into(),
                             value: now().saturating_sub(hold_period),
                         }),
                     },
@@ -264,6 +284,78 @@ impl EmailDeletion for Server {
         let mut batch = BatchBuilder::new();
         self.emails_delete(account_id, &mut batch, destroy_ids)
             .await?;
+        self.commit_batch(batch).await?;
+
+        Ok(())
+    }
+
+    async fn purge_email_submissions(&self, account_id: u32, hold_period: u64) -> trc::Result<()> {
+        // Filter messages by received date
+        let mut destroy_ids = Vec::new();
+        self.store()
+            .iterate(
+                IterateParams::new(
+                    ValueKey {
+                        account_id,
+                        collection: Collection::EmailSubmission.into(),
+                        document_id: 0,
+                        class: ValueClass::IndexProperty(IndexPropertyClass::Integer {
+                            property: EmailSubmissionField::Metadata.into(),
+                            value: 0,
+                        }),
+                    },
+                    ValueKey {
+                        account_id,
+                        collection: Collection::Email.into(),
+                        document_id: u32::MAX,
+                        class: ValueClass::IndexProperty(IndexPropertyClass::Integer {
+                            property: EmailSubmissionField::Metadata.into(),
+                            value: now().saturating_sub(hold_period),
+                        }),
+                    },
+                )
+                .ascending()
+                .no_values(),
+                |key, _| {
+                    destroy_ids.push((
+                        key.deserialize_be_u32(key.len() - U32_LEN)?,
+                        key.deserialize_be_u64(key.len() - U32_LEN - U64_LEN)?,
+                    ));
+
+                    Ok(true)
+                },
+            )
+            .await
+            .caused_by(trc::location!())?;
+
+        if destroy_ids.is_empty() {
+            return Ok(());
+        }
+
+        trc::event!(
+            Purge(trc::PurgeEvent::AutoExpunge),
+            Collection = Collection::EmailSubmission.as_str(),
+            AccountId = account_id,
+            Total = destroy_ids.len(),
+        );
+
+        // Delete messages
+        let mut batch = BatchBuilder::new();
+        batch
+            .with_account_id(account_id)
+            .with_collection(Collection::EmailSubmission);
+
+        for (document_id, send_at) in destroy_ids {
+            batch
+                .with_document(document_id)
+                .clear(EmailSubmissionField::Metadata)
+                .clear(ValueClass::IndexProperty(IndexPropertyClass::Integer {
+                    property: EmailSubmissionField::Metadata.into(),
+                    value: send_at,
+                }))
+                .commit_point();
+        }
+
         self.commit_batch(batch).await?;
 
         Ok(())

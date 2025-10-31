@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{ changes::state::JmapCacheState};
+use crate::{api::query::QueryResponseBuilder, changes::state::JmapCacheState};
 use common::{Server, auth::AccessToken};
 use groupware::cache::GroupwareCache;
 use jmap_proto::{
@@ -12,7 +12,7 @@ use jmap_proto::{
     object::file_node::{FileNode, FileNodeFilter},
     request::MaybeInvalid,
 };
-use store::{query, roaring::RoaringBitmap};
+use store::{roaring::RoaringBitmap, search::SearchFilter};
 use types::{
     acl::Acl,
     collection::{Collection, SyncCollection},
@@ -122,63 +122,51 @@ impl FileNodeQuery for Server {
                             .details(unsupported.into_string()));
                     }
                 },
-
-                Filter::And | Filter::Or | Filter::Not | Filter::Close => {
-                    filters.push(cond.into());
+                Filter::And => {
+                    filters.push(SearchFilter::And);
+                }
+                Filter::Or => {
+                    filters.push(SearchFilter::Or);
+                }
+                Filter::Not => {
+                    filters.push(SearchFilter::Not);
+                }
+                Filter::Close => {
+                    filters.push(SearchFilter::End);
                 }
             }
         }
 
-        let mut result_set = self
-            .filter(account_id, Collection::FileNode, filters)
-            .await?;
-
-        if let Some(filter_mask) = filter_mask {
-            result_set.apply_mask(filter_mask);
+        if request.sort.as_ref().is_some_and(|s| !s.is_empty()) {
+            return Err(trc::JmapEvent::UnsupportedSort
+                .into_err()
+                .details("Sorting is not supported on FileNode"));
         }
 
-        let (response, paginate) = self
-            .build_query_response(
-                result_set.results.len() as usize,
-                cache.get_state(false),
-                &request,
-            )
+        let results = self
+            .search_store()
+            .query(account_id, Collection::FileNode, filters, vec![])
             .await?;
 
-        if let Some(paginate) = paginate {
-            // Parse sort criteria
-            /*let mut comparators = Vec::with_capacity(request.sort.as_ref().map_or(1, |s| s.len()));
-            for comparator in request
-                .sort
-                .filter(|s| !s.is_empty())
-                .unwrap_or_else(|| vec![Comparator::descending(FileNodeComparator::Updated)])
+        let mut response = QueryResponseBuilder::new(
+            results.len(),
+            self.core.jmap.query_max_results,
+            cache.get_state(false),
+            &request,
+        );
+
+        for document_id in results {
+            if filter_mask
+                .as_ref()
+                .is_some_and(|filter_ids| !filter_ids.contains(document_id))
             {
-                comparators.push(match comparator.property {
-                    FileNodeComparator::Created => {
-                        SearchComparator::field(ContactField::Created, comparator.is_ascending)
-                    }
-                    FileNodeComparator::Updated => {
-                        SearchComparator::field(ContactField::Updated, comparator.is_ascending)
-                    }
-                    unsupported => {
-                        return Err(trc::JmapEvent::UnsupportedSort
-                            .into_err()
-                            .details(unsupported.into_string()));
-                    }
-                });
-            }*/
-
-            if request.sort.is_some_and(|s| !s.is_empty()) {
-                return Err(trc::JmapEvent::UnsupportedSort
-                    .into_err()
-                    .details("Sorting is not supported on FileNode"));
+                continue;
             }
-
-            // Sort results
-            self.sort(result_set, Default::default(), paginate, response)
-                .await
-        } else {
-            Ok(response)
+            if !response.add(0, document_id) {
+                break;
+            }
         }
+
+        response.build()
     }
 }

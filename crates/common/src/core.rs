@@ -354,7 +354,7 @@ impl Server {
                         collection: Collection::Email.into(),
                         document_id: 0,
                         class: ValueClass::IndexProperty(IndexPropertyClass::Integer {
-                            property: EmailField::Stats.into(),
+                            property: EmailField::ReceivedToSize.into(),
                             value: 0,
                         }),
                     },
@@ -363,7 +363,7 @@ impl Server {
                         collection: Collection::Email.into(),
                         document_id: u32::MAX,
                         class: ValueClass::IndexProperty(IndexPropertyClass::Integer {
-                            property: EmailField::Stats.into(),
+                            property: EmailField::ReceivedToSize.into(),
                             value: u64::MAX,
                         }),
                     },

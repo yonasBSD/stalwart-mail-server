@@ -404,13 +404,13 @@ impl SieveScriptSet for Server {
                         .as_ref()
                         .is_none_or(|(_, obj)| obj.inner.name != value.as_ref())
                         && let Some(id) = self
-                            .filter(
+                            .document_ids_matching(
                                 ctx.resource_token.account_id,
                                 Collection::SieveScript,
-                                vec![Filter::eq(SieveField::Name, value.as_bytes().to_vec())],
+                                SieveField::Name,
+                                value.as_bytes(),
                             )
                             .await?
-                            .results
                             .min()
                     {
                         return Ok(Err(SetError::already_exists()

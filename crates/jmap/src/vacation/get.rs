@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{ changes::state::StateManager};
+use crate::changes::state::StateManager;
 use common::Server;
 use email::sieve::{SieveScript, ingest::SieveScriptIngest};
 use jmap_proto::{
@@ -17,7 +17,6 @@ use jmap_proto::{
 };
 use jmap_tools::{Map, Value};
 use std::future::Future;
-use store::SearchFilter;
 use trc::AddContext;
 use types::{
     collection::{Collection, SyncCollection},
@@ -162,12 +161,13 @@ impl VacationResponseGet for Server {
     }
 
     async fn get_vacation_sieve_script_id(&self, account_id: u32) -> trc::Result<Option<u32>> {
-        self.filter(
+        self.document_ids_matching(
             account_id,
             Collection::SieveScript,
-            vec![Filter::eq(SieveField::Name, "vacation".as_bytes().to_vec())],
+            SieveField::Name,
+            "vacation".as_bytes(),
         )
         .await
-        .map(|r| r.results.min())
+        .map(|r| r.min())
     }
 }

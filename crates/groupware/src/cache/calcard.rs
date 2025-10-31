@@ -9,7 +9,7 @@ use crate::{
     DavResourceName, RFC_3986,
     calendar::{
         ArchivedCalendar, ArchivedCalendarEvent, Calendar, CalendarEvent, SCHEDULE_INBOX_ID,
-        SCHEDULE_OUTBOX_ID,
+        SCHEDULE_OUTBOX_ID, storage::ItipAutoExpunge,
     },
     contact::{AddressBook, ArchivedAddressBook, ArchivedContactCard, ContactCard},
 };
@@ -192,11 +192,7 @@ pub(super) async fn build_scheduling_resources(
         .unwrap_or_else(|| format!("_{account_id}"));
 
     let item_ids = server
-        .document_ids(
-            account_id,
-            Collection::CalendarEventNotification,
-            CalendarNotificationField::CreatedToId,
-        )
+        .itip_ids(account_id)
         .await
         .caused_by(trc::location!())?;
 

@@ -5,9 +5,20 @@
  */
 
 use super::{AddressBook, ArchivedAddressBook, ArchivedContactCard, ContactCard};
-use calcard::vcard::{ArchivedVCardProperty, VCardProperty};
+use calcard::{
+    common::IanaString,
+    vcard::{
+        ArchivedVCardParameterValue, ArchivedVCardProperty, ArchivedVCardValue,
+        VCardParameterValue, VCardProperty,
+    },
+};
 use common::storage::index::{IndexValue, IndexableAndSerializableObject, IndexableObject};
-use store::xxhash_rust::xxh3;
+use nlp::language::Language;
+use store::{
+    search::{ContactSearchField, IndexDocument},
+    write::SearchIndex,
+    xxhash_rust::xxh3,
+};
 use types::{acl::AclGrant, collection::SyncCollection, field::ContactField};
 use utils::sanitize_email;
 
@@ -86,7 +97,8 @@ impl IndexableObject for ContactCard {
                 value: self.emails().next().into(),
             },
             IndexValue::SearchIndex {
-                hashes: self.hashes().collect(),
+                index: SearchIndex::Contacts,
+                hash: self.hashes().fold(0, |acc, hash| acc ^ hash),
             },
             IndexValue::Quota {
                 used: self.dead_properties.size() as u32
@@ -115,7 +127,8 @@ impl IndexableObject for &ArchivedContactCard {
                 value: self.emails().next().into(),
             },
             IndexValue::SearchIndex {
-                hashes: self.hashes().collect(),
+                index: SearchIndex::Contacts,
+                hash: self.hashes().fold(0, |acc, hash| acc ^ hash),
             },
             IndexValue::Quota {
                 used: self.dead_properties.size() as u32
@@ -154,9 +167,23 @@ impl ContactCard {
                         | VCardProperty::Note
                         | VCardProperty::Nickname
                         | VCardProperty::Email
+                        | VCardProperty::Kind
+                        | VCardProperty::Uid
+                        | VCardProperty::Member
+                        | VCardProperty::Impp
+                        | VCardProperty::Socialprofile
+                        | VCardProperty::Tel
                 )
             })
-            .flat_map(|e| e.values.iter().filter_map(|v| v.as_text()))
+            .flat_map(|e| {
+                e.values
+                    .iter()
+                    .filter_map(|v| v.as_text())
+                    .chain(e.params.iter().filter_map(|p| match &p.value {
+                        VCardParameterValue::Text(v) => Some(v.as_str()),
+                        _ => None,
+                    }))
+            })
             .map(|v| xxh3::xxh3_64(v.as_bytes()))
     }
 
@@ -185,9 +212,23 @@ impl ArchivedContactCard {
                         | ArchivedVCardProperty::Note
                         | ArchivedVCardProperty::Nickname
                         | ArchivedVCardProperty::Email
+                        | ArchivedVCardProperty::Kind
+                        | ArchivedVCardProperty::Uid
+                        | ArchivedVCardProperty::Member
+                        | ArchivedVCardProperty::Impp
+                        | ArchivedVCardProperty::Socialprofile
+                        | ArchivedVCardProperty::Tel
                 )
             })
-            .flat_map(|e| e.values.iter().filter_map(|v| v.as_text()))
+            .flat_map(|e| {
+                e.values
+                    .iter()
+                    .filter_map(|v| v.as_text())
+                    .chain(e.params.iter().filter_map(|p| match &p.value {
+                        ArchivedVCardParameterValue::Text(v) => Some(v.as_str()),
+                        _ => None,
+                    }))
+            })
             .map(|v| xxh3::xxh3_64(v.as_bytes()))
     }
 
@@ -197,5 +238,57 @@ impl ArchivedContactCard {
                 .iter()
                 .filter_map(|v| v.as_text().and_then(sanitize_email))
         })
+    }
+}
+
+impl ArchivedContactCard {
+    pub fn index_document(&self) -> IndexDocument {
+        let mut document = IndexDocument::with_default_language(Language::Unknown);
+
+        document.index_number(ContactSearchField::Created, self.created.to_native());
+
+        for entry in self.card.entries.iter() {
+            let field = match entry.name {
+                ArchivedVCardProperty::N => ContactSearchField::Name,
+                ArchivedVCardProperty::Nickname => ContactSearchField::Nickname,
+                ArchivedVCardProperty::Org => ContactSearchField::Organization,
+                ArchivedVCardProperty::Email => ContactSearchField::Email,
+                ArchivedVCardProperty::Tel => ContactSearchField::Phone,
+                ArchivedVCardProperty::Impp | ArchivedVCardProperty::Socialprofile => {
+                    ContactSearchField::OnlineService
+                }
+                ArchivedVCardProperty::Adr => ContactSearchField::Address,
+                ArchivedVCardProperty::Note => ContactSearchField::Note,
+                ArchivedVCardProperty::Kind => ContactSearchField::Kind,
+                ArchivedVCardProperty::Uid => ContactSearchField::Uid,
+                ArchivedVCardProperty::Member => ContactSearchField::Member,
+                _ => continue,
+            };
+
+            for value in entry.values.iter() {
+                match value {
+                    ArchivedVCardValue::Text(v) => {
+                        document.index_text(field, v, Language::Unknown);
+                    }
+                    ArchivedVCardValue::Kind(v) => {
+                        document.index_text(field, v.as_str(), Language::Unknown);
+                    }
+                    ArchivedVCardValue::Component(v) => {
+                        for item in v.iter() {
+                            document.index_text(field, item, Language::Unknown);
+                        }
+                    }
+                    _ => (),
+                }
+            }
+
+            for param in entry.params.iter() {
+                if let ArchivedVCardParameterValue::Text(value) = &param.value {
+                    document.index_text(field, value, Language::Unknown);
+                }
+            }
+        }
+
+        document
     }
 }

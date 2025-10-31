@@ -192,7 +192,7 @@ pub enum IndexPropertyClass {
 pub enum TaskQueueClass {
     UpdateIndex {
         due: u64,
-        collection: Collection,
+        index: SearchIndex,
         is_insert: bool,
     },
     BayesTrain {
@@ -209,6 +209,15 @@ pub enum TaskQueueClass {
         due: u64,
         is_payload: bool,
     },
+}
+
+#[derive(Debug, PartialEq, Clone, Copy, Eq, Hash)]
+pub enum SearchIndex {
+    Email,
+    Calendar,
+    Contacts,
+    File,
+    DeliveryHistory,
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]

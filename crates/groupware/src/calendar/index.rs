@@ -17,8 +17,10 @@ use calcard::icalendar::{
     ICalendarParameterValue, ICalendarProperty, ICalendarValue,
 };
 use common::storage::index::{IndexValue, IndexableAndSerializableObject, IndexableObject};
+use nlp::language::Language;
 use store::{
-    write::{IndexPropertyClass, ValueClass},
+    search::{CalendarSearchField, IndexDocument},
+    write::{IndexPropertyClass, SearchIndex, ValueClass},
     xxhash_rust::xxh3,
 };
 use types::{acl::AclGrant, collection::SyncCollection, field::CalendarNotificationField};
@@ -76,7 +78,11 @@ impl IndexableObject for CalendarEvent {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
         [
             IndexValue::SearchIndex {
-                hashes: self.hashes().collect(),
+                index: SearchIndex::Calendar,
+                hash: self
+                    .hashes()
+                    .chain([self.data.event_range_start() as u64])
+                    .fold(0, |acc, hash| acc ^ hash),
             },
             IndexValue::Quota {
                 used: self.dead_properties.size() as u32
@@ -98,7 +104,11 @@ impl IndexableObject for &ArchivedCalendarEvent {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
         [
             IndexValue::SearchIndex {
-                hashes: self.hashes().collect(),
+                index: SearchIndex::Calendar,
+                hash: self
+                    .hashes()
+                    .chain([self.data.event_range_start() as u64])
+                    .fold(0, |acc, hash| acc ^ hash),
             },
             IndexValue::Quota {
                 used: self.dead_properties.size() as u32
@@ -263,6 +273,7 @@ impl CalendarEvent {
                             | ICalendarProperty::Comment
                             | ICalendarProperty::Attendee
                             | ICalendarProperty::Organizer
+                            | ICalendarProperty::Uid
                     )
                 })
             })
@@ -302,6 +313,7 @@ impl ArchivedCalendarEvent {
                             | ArchivedICalendarProperty::Comment
                             | ArchivedICalendarProperty::Attendee
                             | ArchivedICalendarProperty::Organizer
+                            | ArchivedICalendarProperty::Uid
                     )
                 })
             })
@@ -320,5 +332,56 @@ impl ArchivedCalendarEvent {
                     }))
             })
             .map(|v| xxh3::xxh3_64(v.as_bytes()))
+    }
+}
+
+impl ArchivedCalendarEvent {
+    pub fn index_document(&self) -> IndexDocument {
+        let mut document = IndexDocument::with_default_language(Language::Unknown);
+
+        document.index_number(CalendarSearchField::Start, self.data.event_range_start());
+
+        for component in self
+            .data
+            .event
+            .components
+            .iter()
+            .filter(|e| e.component_type.is_scheduling_object())
+        {
+            for entry in component.entries.iter() {
+                let field = match entry.name {
+                    ArchivedICalendarProperty::Summary => CalendarSearchField::Title,
+                    ArchivedICalendarProperty::Description => CalendarSearchField::Description,
+                    ArchivedICalendarProperty::Location => CalendarSearchField::Location,
+                    ArchivedICalendarProperty::Organizer => CalendarSearchField::Owner,
+                    ArchivedICalendarProperty::Attendee => CalendarSearchField::Attendee,
+                    ArchivedICalendarProperty::Uid => CalendarSearchField::Uid,
+                    _ => continue,
+                };
+
+                for value in entry
+                    .values
+                    .iter()
+                    .filter_map(|v| match v {
+                        ArchivedICalendarValue::Text(v) => Some(v.as_str()),
+                        ArchivedICalendarValue::Uri(uri) => uri.as_str(),
+                        _ => None,
+                    })
+                    .chain(entry.params.iter().filter_map(|p| match &p.value {
+                        ArchivedICalendarParameterValue::Text(v) => Some(v.as_str()),
+                        ArchivedICalendarParameterValue::Uri(uri) => uri.as_str(),
+                        _ => None,
+                    }))
+                {
+                    document.index_text(
+                        field,
+                        value.strip_prefix("mailto:").unwrap_or(value),
+                        Language::Unknown,
+                    );
+                }
+            }
+        }
+
+        document
     }
 }

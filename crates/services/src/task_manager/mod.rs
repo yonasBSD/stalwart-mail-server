@@ -18,6 +18,7 @@ use std::time::Duration;
 use std::{sync::Arc, time::Instant};
 use store::rand;
 use store::rand::seq::SliceRandom;
+use store::write::SearchIndex;
 use store::{
     IterateParams, U16_LEN, U32_LEN, U64_LEN, ValueKey,
     ahash::AHashMap,
@@ -47,8 +48,7 @@ pub struct Task {
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum TaskAction {
-    Index,
-    Unindex,
+    UpdateIndex { index: SearchIndex, is_insert: bool },
     BayesTrain { learn_spam: bool },
     SendAlarm { alarm: CalendarAlarm },
     SendImip,
@@ -102,15 +102,11 @@ pub fn spawn_task_manager(inner: Arc<Inner>) {
                 // Lock task
                 if server.try_lock_task(&task).await {
                     let success = match &task.action {
-                        TaskAction::Index => {
+                        TaskAction::UpdateIndex { index, is_insert } => {
                             let todo = "implement";
                             /*server
                             .fts_index(task.account_id, task.document_id, hash)
                             .await*/
-                            true
-                        }
-                        TaskAction::Unindex => {
-                            let todo = "implement";
                             true
                         }
                         TaskAction::BayesTrain { learn_spam } => {
@@ -211,14 +207,20 @@ impl TaskQueueManager for Server {
             account_id: 0,
             collection: 0,
             document_id: 0,
-            class: ValueClass::TaskQueue(TaskQueueClass::IndexEmail { due: 0 }),
+            class: ValueClass::TaskQueue(TaskQueueClass::UpdateIndex {
+                due: 0,
+                index: SearchIndex::Email,
+                is_insert: true,
+            }),
         };
         let to_key = ValueKey::<ValueClass> {
             account_id: u32::MAX,
             collection: u8::MAX,
             document_id: u32::MAX,
-            class: ValueClass::TaskQueue(TaskQueueClass::IndexEmail {
+            class: ValueClass::TaskQueue(TaskQueueClass::UpdateIndex {
                 due: now_timestamp + QUEUE_REFRESH_INTERVAL,
+                index: SearchIndex::Email,
+                is_insert: true,
             }),
         };
 
@@ -286,7 +288,9 @@ impl TaskQueueManager for Server {
         let roles = &self.core.network.roles;
         for event in tasks {
             let tx = match &event.action {
-                TaskAction::Index { .. } if roles.fts_indexing.is_enabled_for_hash(&event) => {
+                TaskAction::UpdateIndex { .. }
+                    if roles.fts_indexing.is_enabled_for_hash(&event) =>
+                {
                     &ipc.tx_fts
                 }
                 TaskAction::BayesTrain { .. }
@@ -379,12 +383,15 @@ impl Task {
 
     fn lock_key(&self) -> Vec<u8> {
         match &self.action {
-            TaskAction::Index => KeySerializer::new((U32_LEN * 2) + U64_LEN + 1)
-                .write(0u8)
-                .write(self.due)
-                .write_leb128(self.account_id)
-                .write_leb128(self.document_id)
-                .finalize(),
+            TaskAction::UpdateIndex { index, .. } => {
+                KeySerializer::new((U32_LEN * 2) + U64_LEN + 2)
+                    .write(0u8)
+                    .write(self.due)
+                    .write_leb128(self.account_id)
+                    .write_leb128(self.document_id)
+                    .write(index.to_u8())
+                    .finalize()
+            }
             TaskAction::BayesTrain { .. } => KeySerializer::new((U32_LEN * 2) + 1)
                 .write(1u8)
                 .write_leb128(self.account_id)
@@ -402,18 +409,12 @@ impl Task {
                 .write_leb128(self.account_id)
                 .write_leb128(self.document_id)
                 .finalize(),
-            TaskAction::Unindex => KeySerializer::new((U32_LEN * 2) + U64_LEN + 1)
-                .write(4u8)
-                .write(self.due)
-                .write_leb128(self.account_id)
-                .write_leb128(self.document_id)
-                .finalize(),
         }
     }
 
     fn lock_expiry(&self) -> u64 {
         match self.action {
-            TaskAction::Index | TaskAction::Unindex => INDEX_EXPIRY,
+            TaskAction::UpdateIndex { .. } => INDEX_EXPIRY,
             TaskAction::BayesTrain { .. } => BAYES_LOCK_EXPIRY,
             TaskAction::SendAlarm { .. } | TaskAction::SendImip => ALARM_EXPIRY,
         }
@@ -422,8 +423,11 @@ impl Task {
     fn value_classes(&self) -> impl Iterator<Item = ValueClass> {
         [
             Some(ValueClass::TaskQueue(match &self.action {
-                TaskAction::Index => TaskQueueClass::IndexEmail { due: self.due },
-                TaskAction::Unindex => TaskQueueClass::UnindexEmail { due: self.due },
+                TaskAction::UpdateIndex { index, is_insert } => TaskQueueClass::UpdateIndex {
+                    due: self.due,
+                    index: *index,
+                    is_insert: *is_insert,
+                },
                 TaskAction::BayesTrain { learn_spam } => TaskQueueClass::BayesTrain {
                     due: self.due,
                     learn_spam: *learn_spam,
@@ -456,8 +460,14 @@ impl Task {
             account_id: key.deserialize_be_u32(U64_LEN)?,
             document_id: key.deserialize_be_u32(U64_LEN + U32_LEN + 1)?,
             action: match key.get(U64_LEN + U32_LEN) {
-                Some(0) => TaskAction::Index,
-                Some(7) => TaskAction::Unindex,
+                Some(v @ (7 | 8)) => TaskAction::UpdateIndex {
+                    index: key
+                        .last()
+                        .copied()
+                        .and_then(SearchIndex::try_from_u8)
+                        .ok_or_else(|| trc::Error::corrupted_key(key, None, trc::location!()))?,
+                    is_insert: *v == 7,
+                },
                 Some(v @ (1 | 2)) => TaskAction::BayesTrain {
                     learn_spam: *v == 1,
                 },

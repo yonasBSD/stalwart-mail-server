@@ -8,7 +8,7 @@ use calcard::jscalendar::JSCalendarProperty;
 use common::Server;
 use jmap_proto::error::set::SetError;
 use trc::AddContext;
-use types::{collection::Collection, field::CalendarField, id::Id};
+use types::{collection::Collection, field::CalendarEventField, id::Id};
 
 pub mod copy;
 pub mod get;
@@ -67,7 +67,7 @@ pub(super) async fn assert_is_unique_uid(
             .document_exists(
                 account_id,
                 Collection::CalendarEvent,
-                CalendarField::Uid,
+                CalendarEventField::Uid,
                 uid.as_bytes(),
             )
             .await

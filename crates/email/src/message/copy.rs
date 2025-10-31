@@ -5,17 +5,21 @@
  */
 
 use super::{
-    index::{MAX_SORT_FIELD_LENGTH, TrimTextValue, VisitText},
     ingest::{EmailIngest, IngestedEmail},
     metadata::{MessageData, MessageMetadata},
 };
 use crate::{
     mailbox::UidMailbox,
-    message::ingest::{MergeThreadTask, ThreadInfo},
+    message::{
+        index::extractors::VisitText,
+        ingest::{MergeThreadTask, ThreadInfo},
+    },
 };
 use common::{Server, auth::ResourceToken, storage::index::ObjectIndexBuilder};
 use mail_parser::{HeaderName, HeaderValue, parsers::fields::thread::thread_name};
-use store::write::{BatchBuilder, IndexPropertyClass, TaskQueueClass, ValueClass, now};
+use store::write::{
+    BatchBuilder, IndexPropertyClass, SearchIndex, TaskQueueClass, ValueClass, now,
+};
 use trc::AddContext;
 use types::{
     blob::{BlobClass, BlobId},
@@ -123,8 +127,7 @@ impl EmailCopy for Server {
                             list.first().unwrap().as_ref()
                         }
                         _ => "",
-                    })
-                    .trim_text(MAX_SORT_FIELD_LENGTH);
+                    });
                 }
                 _ => (),
             }
@@ -196,7 +199,11 @@ impl EmailCopy for Server {
                 ThreadInfo::serialize(thread_id, &message_ids),
             )
             .set(
-                ValueClass::TaskQueue(TaskQueueClass::IndexEmail { due: now() }),
+                ValueClass::TaskQueue(TaskQueueClass::UpdateIndex {
+                    index: SearchIndex::Email,
+                    due: now(),
+                    is_insert: true,
+                }),
                 MergeThreadTask::new(thread_result).serialize(),
             );
         metadata

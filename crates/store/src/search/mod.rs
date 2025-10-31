@@ -8,10 +8,10 @@ pub mod index;
 pub mod local;
 pub mod query;
 
+use ahash::AHashMap;
 use nlp::language::Language;
 use roaring::RoaringBitmap;
-use std::borrow::Cow;
-use types::collection::Collection;
+use std::{borrow::Cow, collections::hash_map::Entry};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SearchOperator {
@@ -24,7 +24,7 @@ pub enum SearchOperator {
     Exists,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum SearchField {
     Email(EmailSearchField),
     Calendar(CalendarSearchField),
@@ -32,7 +32,7 @@ pub enum SearchField {
     File(FileSearchField),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum EmailSearchField {
     From,
     To,
@@ -48,17 +48,34 @@ pub enum EmailSearchField {
     Header(Cow<'static, str>),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CalendarSearchField {
-    Summary,
+    Title,
+    Description,
+    Location,
+    Owner,
+    Attendee,
+    Start,
+    Uid,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ContactSearchField {
+    Created,
+    Member,
+    Kind,
     Name,
+    Nickname,
+    Organization,
+    Email,
+    Phone,
+    OnlineService,
+    Address,
+    Note,
+    Uid,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FileSearchField {
     Name,
     Content,
@@ -95,16 +112,9 @@ pub enum SearchComparator {
 #[derive(Debug)]
 pub struct IndexDocument {
     pub(crate) account_id: u32,
-    pub(crate) collection: Collection,
     pub(crate) document_id: u32,
-    pub(crate) fields: Vec<IndexField>,
+    pub(crate) fields: AHashMap<SearchField, SearchValue>,
     pub(crate) default_language: Language,
-}
-
-#[derive(Debug)]
-pub struct IndexField {
-    pub(crate) field: SearchField,
-    pub(crate) value: SearchValue,
 }
 
 impl SearchFilter {
@@ -214,8 +224,14 @@ impl SearchFilter {
         }
     }
 
+    #[inline(always)]
     pub fn has_english_text(field: impl Into<SearchField>, text: impl Into<String>) -> Self {
         Self::has_text(field, text, Language::English)
+    }
+
+    #[inline(always)]
+    pub fn has_unknown_text(field: impl Into<SearchField>, text: impl Into<String>) -> Self {
+        Self::has_text(field, text, Language::Unknown)
     }
 
     pub fn is_in_set(set: RoaringBitmap) -> Self {
@@ -257,11 +273,10 @@ impl SearchComparator {
 impl IndexDocument {
     pub fn with_default_language(default_language: Language) -> Self {
         Self {
-            fields: vec![],
+            fields: Default::default(),
             default_language,
             account_id: 0,
             document_id: 0,
-            collection: Collection::None,
         }
     }
 
@@ -275,16 +290,39 @@ impl IndexDocument {
         self
     }
 
-    pub fn with_collection(mut self, collection: Collection) -> Self {
-        self.collection = collection;
-        self
+    pub fn index_text(&mut self, field: impl Into<SearchField>, value: &str, language: Language) {
+        match self.fields.entry(field.into()) {
+            Entry::Occupied(mut entry) => {
+                if let SearchValue::Text {
+                    value: existing_value,
+                    ..
+                } = entry.get_mut()
+                {
+                    existing_value.push(' ');
+                    existing_value.push_str(value);
+                }
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(SearchValue::Text {
+                    value: value.to_string(),
+                    language,
+                });
+            }
+        }
     }
 
-    pub fn index(&mut self, field: impl Into<SearchField>, value: impl Into<SearchValue>) {
-        self.fields.push(IndexField {
-            field: field.into(),
-            value: value.into(),
-        });
+    pub fn index_bool(&mut self, field: impl Into<SearchField>, value: bool) {
+        self.fields
+            .insert(field.into(), SearchValue::Boolean(value));
+    }
+
+    pub fn index_number<N: Into<i64>>(&mut self, field: impl Into<SearchField>, value: N) {
+        self.fields
+            .insert(field.into(), SearchValue::Number(value.into()));
+    }
+
+    pub fn has_field(&self, field: &SearchField) -> bool {
+        self.fields.contains_key(field)
     }
 }
 

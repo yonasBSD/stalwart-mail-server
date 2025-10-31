@@ -4,16 +4,13 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use super::{
-    crypto::{EncryptMessage, EncryptMessageError},
-    index::{MAX_SORT_FIELD_LENGTH, TrimTextValue},
-};
+use super::crypto::{EncryptMessage, EncryptMessageError};
 use crate::{
     cache::{MessageCacheFetch, email::MessageCacheAccess},
     mailbox::{INBOX_ID, JUNK_ID, UidMailbox},
     message::{
         crypto::EncryptionParams,
-        index::{IndexMessage, VisitText},
+        index::{IndexMessage, extractors::VisitText},
         metadata::MessageData,
     },
 };
@@ -36,8 +33,8 @@ use store::{
     IndexKeyPrefix, IterateParams, U32_LEN, ValueKey,
     ahash::AHashMap,
     write::{
-        BatchBuilder, IndexPropertyClass, TaskQueueClass, ValueClass, key::DeserializeBigEndian,
-        now,
+        BatchBuilder, IndexPropertyClass, SearchIndex, TaskQueueClass, ValueClass,
+        key::DeserializeBigEndian, now,
     },
 };
 use trc::{AddContext, MessageIngestEvent};
@@ -427,8 +424,7 @@ impl EmailIngest for Server {
                                 list.first().unwrap().as_ref()
                             }
                             _ => "",
-                        })
-                        .trim_text(MAX_SORT_FIELD_LENGTH);
+                        });
                     }
                     _ => (),
                 }
@@ -654,7 +650,11 @@ impl EmailIngest for Server {
                 ThreadInfo::serialize(thread_id, &message_ids),
             )
             .set(
-                ValueClass::TaskQueue(TaskQueueClass::IndexEmail { due }),
+                ValueClass::TaskQueue(TaskQueueClass::UpdateIndex {
+                    index: SearchIndex::Email,
+                    due,
+                    is_insert: true,
+                }),
                 MergeThreadTask::new(thread_result).serialize(),
             );
 

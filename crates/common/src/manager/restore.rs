@@ -13,8 +13,8 @@ use std::{
 use store::{
     BlobStore, Key, LogKey, SUBSPACE_LOGS, SerializeInfallible, Store, U32_LEN,
     write::{
-        AnyClass, BatchBuilder, BlobOp, DirectoryClass, InMemoryClass, Operation, TaskQueueClass,
-        ValueClass, ValueOp, key::DeserializeBigEndian, now,
+        AnyClass, BatchBuilder, BlobOp, DirectoryClass, InMemoryClass, Operation, SearchIndex,
+        TaskQueueClass, ValueClass, ValueOp, key::DeserializeBigEndian, now,
     },
 };
 use store::{
@@ -148,7 +148,7 @@ async fn restore_file(store: Store, blob_store: BlobStore, path: &Path) {
                                 batch.set(
                                     ValueClass::TaskQueue(TaskQueueClass::UpdateIndex {
                                         due,
-                                        collection: Collection::Email,
+                                        index: SearchIndex::Email,
                                         is_insert: true,
                                     }),
                                     0u64.serialize(),

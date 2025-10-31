@@ -14,17 +14,9 @@ use jmap_proto::{
 };
 use jmap_tools::Map;
 use std::future::Future;
-use store::{
-    ahash::AHashMap,
-    query::{Comparator, ResultSet, sort::Pagination},
-    roaring::RoaringBitmap,
-};
+use store::{ahash::AHashMap, roaring::RoaringBitmap};
 use trc::AddContext;
-use types::{
-    collection::{Collection, SyncCollection},
-    field::EmailField,
-    id::Id,
-};
+use types::{collection::SyncCollection, id::Id};
 
 pub trait ThreadGet: Sync + Send {
     fn thread_get(
@@ -83,23 +75,11 @@ impl ThreadGet for Server {
                 let mut thread: Map<'_, ThreadProperty, ThreadValue> =
                     Map::with_capacity(2).with_key_value(ThreadProperty::Id, id);
                 if add_email_ids {
-                    let doc_count = document_ids.len() as usize;
-                    let todo = " sorted as vec![Comparator::ascending(EmailField::ReceivedAt)],";
                     thread.insert_unchecked(
                         ThreadProperty::EmailIds,
-                        self.core
-                            .storage
-                            .data
-                            .sort(
-                                ResultSet::new(account_id, Collection::Email, document_ids),
-                                vec![],
-                                Pagination::new(doc_count, 0, None, 0),
-                            )
-                            .await
-                            .caused_by(trc::location!())?
-                            .ids
+                        document_ids
                             .into_iter()
-                            .map(|id| Id::from_parts(thread_id, id.document_id()))
+                            .map(|id| Id::from_parts(thread_id, id))
                             .collect::<Vec<_>>(),
                     );
                 }

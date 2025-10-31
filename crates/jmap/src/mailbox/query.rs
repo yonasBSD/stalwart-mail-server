@@ -108,7 +108,7 @@ impl MailboxQuery for Server {
                                     .items
                                     .iter()
                                     .filter(|mailbox| {
-                                        !matches!(mailbox.role, SpecialUse::None) == has_role
+                                        matches!(mailbox.role, SpecialUse::None) != has_role
                                     })
                                     .map(|m| m.document_id)
                                     .collect::<RoaringBitmap>(),

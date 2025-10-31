@@ -15,7 +15,8 @@ use crate::{
     SUBSPACE_QUEUE_EVENT, SUBSPACE_QUEUE_MESSAGE, SUBSPACE_QUOTA, SUBSPACE_REPORT_IN,
     SUBSPACE_REPORT_OUT, SUBSPACE_SETTINGS, SUBSPACE_TASK_QUEUE, SUBSPACE_TELEMETRY_INDEX,
     SUBSPACE_TELEMETRY_METRIC, SUBSPACE_TELEMETRY_SPAN, U16_LEN, U32_LEN, U64_LEN, ValueKey,
-    WITH_SUBSPACE, write::IndexPropertyClass,
+    WITH_SUBSPACE,
+    write::{IndexPropertyClass, SearchIndex},
 };
 use std::convert::TryInto;
 use types::{blob_hash::BLOB_HASH_LEN, collection::SyncCollection};
@@ -279,15 +280,15 @@ impl ValueClass {
                 .write(document_id),
             ValueClass::TaskQueue(task) => match task {
                 TaskQueueClass::UpdateIndex {
-                    collection,
+                    index,
                     is_insert,
                     due,
                 } => serializer
                     .write(*due)
                     .write(account_id)
                     .write(if *is_insert { 7u8 } else { 8u8 })
-                    .write(u8::from(*collection))
-                    .write(document_id),
+                    .write(document_id)
+                    .write(index.to_u8()),
                 TaskQueueClass::BayesTrain { due, learn_spam } => serializer
                     .write(*due)
                     .write(account_id)
@@ -655,5 +656,28 @@ impl Deserialize for ReportEvent {
                         .ctx(trc::Key::Key, key)
                 })?,
         })
+    }
+}
+
+impl SearchIndex {
+    pub fn to_u8(&self) -> u8 {
+        match self {
+            SearchIndex::Email => 0,
+            SearchIndex::Calendar => 1,
+            SearchIndex::Contacts => 2,
+            SearchIndex::File => 3,
+            SearchIndex::DeliveryHistory => 4,
+        }
+    }
+
+    pub fn try_from_u8(value: u8) -> Option<Self> {
+        match value {
+            0 => Some(SearchIndex::Email),
+            1 => Some(SearchIndex::Calendar),
+            2 => Some(SearchIndex::Contacts),
+            3 => Some(SearchIndex::File),
+            4 => Some(SearchIndex::DeliveryHistory),
+            _ => None,
+        }
     }
 }

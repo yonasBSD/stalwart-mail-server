@@ -19,7 +19,11 @@ use jmap_tools::{Key, Map, Value};
 use smtp::queue::{ArchivedError, ArchivedErrorDetails, ArchivedStatus, Message, spool::SmtpSpool};
 use smtp_proto::ArchivedResponse;
 use std::future::Future;
-use store::rkyv::option::ArchivedOption;
+use store::{
+    IterateParams, U32_LEN, ValueKey,
+    rkyv::option::ArchivedOption,
+    write::{IndexPropertyClass, ValueClass, key::DeserializeBigEndian, now},
+};
 use trc::AddContext;
 use types::{
     collection::{Collection, SyncCollection},
@@ -54,21 +58,45 @@ impl EmailSubmissionGet for Server {
             EmailSubmissionProperty::MdnBlobIds,
         ]);
         let account_id = request.account_id.document_id();
-        let email_submission_ids = self
-            .document_ids(
-                account_id,
-                Collection::EmailSubmission,
-                EmailSubmissionField::EmailId,
-            )
-            .await?;
         let ids = if let Some(ids) = ids {
             ids
         } else {
-            email_submission_ids
-                .iter()
-                .take(self.core.jmap.get_max_objects)
-                .map(Into::into)
-                .collect::<Vec<_>>()
+            let mut ids = Vec::with_capacity(16);
+
+            self.store()
+                .iterate(
+                    IterateParams::new(
+                        ValueKey {
+                            account_id,
+                            collection: Collection::CalendarEventNotification.into(),
+                            document_id: 0,
+                            class: ValueClass::IndexProperty(IndexPropertyClass::Integer {
+                                property: EmailSubmissionField::Metadata.into(),
+                                value: now() - (3 * 86400),
+                            }),
+                        },
+                        ValueKey {
+                            account_id,
+                            collection: Collection::CalendarEventNotification.into(),
+                            document_id: 0,
+                            class: ValueClass::IndexProperty(IndexPropertyClass::Integer {
+                                property: EmailSubmissionField::Metadata.into(),
+                                value: u64::MAX,
+                            }),
+                        },
+                    )
+                    .ascending()
+                    .no_values(),
+                    |key, _| {
+                        ids.push(Id::from(key.deserialize_be_u32(key.len() - U32_LEN)?));
+
+                        Ok(ids.len() < self.core.jmap.get_max_objects)
+                    },
+                )
+                .await
+                .caused_by(trc::location!())?;
+
+            ids
         };
         let mut response = GetResponse {
             account_id: request.account_id.into(),
@@ -83,10 +111,6 @@ impl EmailSubmissionGet for Server {
         for id in ids {
             // Obtain the email_submission object
             let document_id = id.document_id();
-            if !email_submission_ids.contains(document_id) {
-                response.not_found.push(id);
-                continue;
-            }
             let submission_ = if let Some(submission) = self
                 .archive(account_id, Collection::EmailSubmission, document_id)
                 .await?

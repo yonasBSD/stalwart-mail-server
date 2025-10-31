@@ -4,23 +4,23 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::{api::query::QueryResponseBuilder, changes::state::JmapCacheState};
 use common::{Server, auth::AccessToken};
 use groupware::cache::GroupwareCache;
 use jmap_proto::{
-    method::query::{Comparator, Filter, QueryRequest, QueryResponse},
+    method::query::{Filter, QueryRequest, QueryResponse},
     object::contact::{ContactCard, ContactCardComparator, ContactCardFilter},
     request::MaybeInvalid,
 };
-use nlp::tokenizers::word::WordTokenizer;
-use store::{SerializeInfallible, backend::MAX_TOKEN_LENGTH, query, roaring::RoaringBitmap};
+use store::{
+    roaring::RoaringBitmap,
+    search::{ContactSearchField, SearchComparator, SearchFilter},
+};
 use types::{
     acl::Acl,
     collection::{Collection, SyncCollection},
-    field::ContactField,
 };
 use utils::sanitize_email;
-
-use crate::{ changes::state::JmapCacheState};
 
 pub trait ContactCardQuery: Sync + Send {
     fn contact_card_query(
@@ -52,93 +52,188 @@ impl ContactCardQuery for Server {
                             cache.children_ids(id.document_id()),
                         )))
                     }
-                    ContactCardFilter::Uid(uid) => {
-                        filters.push(SearchFilter::eq(ContactField::Uid, uid.into_bytes()))
+                    ContactCardFilter::Name(value)
+                    | ContactCardFilter::NameGiven(value)
+                    | ContactCardFilter::NameSurname(value)
+                    | ContactCardFilter::NameSurname2(value) => {
+                        filters.push(SearchFilter::has_unknown_text(
+                            ContactSearchField::Name,
+                            value,
+                        ));
                     }
-                    ContactCardFilter::Email(email) => filters.push(SearchFilter::eq(
-                        ContactField::Email,
-                        sanitize_email(&email).unwrap_or(email).into_bytes(),
-                    )),
+                    ContactCardFilter::Nickname(value) => {
+                        filters.push(SearchFilter::has_unknown_text(
+                            ContactSearchField::Nickname,
+                            value,
+                        ));
+                    }
+                    ContactCardFilter::Organization(value) => {
+                        filters.push(SearchFilter::has_unknown_text(
+                            ContactSearchField::Organization,
+                            value,
+                        ));
+                    }
+                    ContactCardFilter::Phone(value) => {
+                        filters.push(SearchFilter::has_unknown_text(
+                            ContactSearchField::Phone,
+                            value,
+                        ));
+                    }
+                    ContactCardFilter::OnlineService(value) => {
+                        filters.push(SearchFilter::has_unknown_text(
+                            ContactSearchField::OnlineService,
+                            value,
+                        ));
+                    }
+                    ContactCardFilter::Address(value) => {
+                        filters.push(SearchFilter::has_unknown_text(
+                            ContactSearchField::Address,
+                            value,
+                        ));
+                    }
+                    ContactCardFilter::Note(value) => {
+                        filters.push(SearchFilter::has_text_detect(
+                            ContactSearchField::Note,
+                            value,
+                            self.core.jmap.default_language,
+                        ));
+                    }
+                    ContactCardFilter::HasMember(value) => {
+                        filters.push(SearchFilter::has_unknown_text(
+                            ContactSearchField::Member,
+                            value,
+                        ));
+                    }
+                    ContactCardFilter::Kind(value) => {
+                        filters.push(SearchFilter::eq(ContactSearchField::Kind, value));
+                    }
+                    ContactCardFilter::Uid(value) => {
+                        filters.push(SearchFilter::eq(ContactSearchField::Uid, value))
+                    }
+                    ContactCardFilter::Email(email) => {
+                        filters.push(SearchFilter::has_unknown_text(
+                            ContactSearchField::Email,
+                            sanitize_email(&email).unwrap_or(email),
+                        ))
+                    }
                     ContactCardFilter::Text(value) => {
-                        for token in WordTokenizer::new(&value, MAX_TOKEN_LENGTH) {
-                            filters.push(SearchFilter::eq(
-                                ContactField::Text,
-                                token.word.into_owned().into_bytes(),
-                            ));
-                        }
+                        filters.push(SearchFilter::Or);
+                        filters.push(SearchFilter::has_unknown_text(
+                            ContactSearchField::Name,
+                            value.clone(),
+                        ));
+                        filters.push(SearchFilter::has_unknown_text(
+                            ContactSearchField::Nickname,
+                            value.clone(),
+                        ));
+                        filters.push(SearchFilter::has_unknown_text(
+                            ContactSearchField::Organization,
+                            value.clone(),
+                        ));
+                        filters.push(SearchFilter::has_unknown_text(
+                            ContactSearchField::Email,
+                            value.clone(),
+                        ));
+                        filters.push(SearchFilter::has_unknown_text(
+                            ContactSearchField::Phone,
+                            value.clone(),
+                        ));
+                        filters.push(SearchFilter::has_unknown_text(
+                            ContactSearchField::OnlineService,
+                            value.clone(),
+                        ));
+                        filters.push(SearchFilter::has_unknown_text(
+                            ContactSearchField::Address,
+                            value.clone(),
+                        ));
+                        filters.push(SearchFilter::has_text_detect(
+                            ContactSearchField::Note,
+                            value,
+                            self.core.jmap.default_language,
+                        ));
+                        filters.push(SearchFilter::End);
                     }
                     ContactCardFilter::CreatedBefore(before) => filters.push(SearchFilter::lt(
-                        ContactField::Created,
-                        (before.timestamp() as u64).serialize(),
+                        ContactSearchField::Created,
+                        before.timestamp(),
                     )),
                     ContactCardFilter::CreatedAfter(after) => filters.push(SearchFilter::gt(
-                        ContactField::Created,
-                        (after.timestamp() as u64).serialize(),
+                        ContactSearchField::Created,
+                        after.timestamp(),
                     )),
-                    ContactCardFilter::UpdatedBefore(before) => filters.push(SearchFilter::lt(
-                        ContactField::Updated,
-                        (before.timestamp() as u64).serialize(),
+                    /*ContactCardFilter::UpdatedBefore(before) => filters.push(SearchFilter::lt(
+                        ContactSearchField::Updated,
+                        before.timestamp(),
                     )),
                     ContactCardFilter::UpdatedAfter(after) => filters.push(SearchFilter::gt(
-                        ContactField::Updated,
-                        (after.timestamp() as u64).serialize(),
-                    )),
+                        ContactSearchField::Updated,
+                        after.timestamp(),
+                    )),*/
                     unsupported => {
                         return Err(trc::JmapEvent::UnsupportedFilter
                             .into_err()
                             .details(unsupported.into_string()));
                     }
                 },
-
-                Filter::And | Filter::Or | Filter::Not | Filter::Close => {
-                    filters.push(cond.into());
+                Filter::And => {
+                    filters.push(SearchFilter::And);
+                }
+                Filter::Or => {
+                    filters.push(SearchFilter::Or);
+                }
+                Filter::Not => {
+                    filters.push(SearchFilter::Not);
+                }
+                Filter::Close => {
+                    filters.push(SearchFilter::End);
                 }
             }
         }
 
-        let mut result_set = self
-            .filter(account_id, Collection::ContactCard, filters)
+        let comparators = request
+            .sort
+            .take()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|comparator| match comparator.property {
+                ContactCardComparator::Created => Ok(SearchComparator::field(
+                    ContactSearchField::Created,
+                    comparator.is_ascending,
+                )),
+                /*ContactCardComparator::Updated => Ok(SearchComparator::field(
+                    ContactSearchField::Updated,
+                    comparator.is_ascending,
+                )),*/
+                other => Err(trc::JmapEvent::UnsupportedSort
+                    .into_err()
+                    .details(other.into_string())),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let results = self
+            .search_store()
+            .query(account_id, Collection::ContactCard, filters, comparators)
             .await?;
 
-        if let Some(filter_mask) = filter_mask {
-            result_set.apply_mask(filter_mask);
-        }
+        let mut response = QueryResponseBuilder::new(
+            results.len(),
+            self.core.jmap.query_max_results,
+            cache.get_state(false),
+            &request,
+        );
 
-        let (response, paginate) = self
-            .build_query_response(
-                result_set.results.len() as usize,
-                cache.get_state(false),
-                &request,
-            )
-            .await?;
-
-        if let Some(paginate) = paginate {
-            // Parse sort criteria
-            let mut comparators = Vec::with_capacity(request.sort.as_ref().map_or(1, |s| s.len()));
-            for comparator in request
-                .sort
-                .filter(|s| !s.is_empty())
-                .unwrap_or_else(|| vec![Comparator::descending(ContactCardComparator::Updated)])
+        for document_id in results {
+            if filter_mask
+                .as_ref()
+                .is_some_and(|filter_ids| !filter_ids.contains(document_id))
             {
-                comparators.push(match comparator.property {
-                    ContactCardComparator::Created => {
-                        SearchComparator::field(ContactField::Created, comparator.is_ascending)
-                    }
-                    ContactCardComparator::Updated => {
-                        SearchComparator::field(ContactField::Updated, comparator.is_ascending)
-                    }
-                    unsupported => {
-                        return Err(trc::JmapEvent::UnsupportedSort
-                            .into_err()
-                            .details(unsupported.into_string()));
-                    }
-                });
+                continue;
             }
-
-            // Sort results
-            self.sort(result_set, comparators, paginate, response).await
-        } else {
-            Ok(response)
+            if !response.add(0, document_id) {
+                break;
+            }
         }
+
+        response.build()
     }
 }

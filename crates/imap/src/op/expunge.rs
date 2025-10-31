@@ -22,7 +22,7 @@ use std::{sync::Arc, time::Instant};
 use store::{
     SerializeInfallible,
     roaring::RoaringBitmap,
-    write::{BatchBuilder, TaskQueueClass, ValueClass, now},
+    write::{BatchBuilder, SearchIndex, TaskQueueClass, ValueClass, now},
 };
 use trc::AddContext;
 use types::{
@@ -190,12 +190,16 @@ impl<T: SessionStream> SessionData<T> {
                         );
 
                         if metadata.inner.mailboxes.len() == 1 {
-                            // Tombstone message
+                            // Delete message
                             batch
                                 .custom(ObjectIndexBuilder::<_, ()>::new().with_current(metadata))
                                 .caused_by(trc::location!())?
                                 .set(
-                                    ValueClass::TaskQueue(TaskQueueClass::UnindexEmail { due }),
+                                    ValueClass::TaskQueue(TaskQueueClass::UpdateIndex {
+                                        index: SearchIndex::Email,
+                                        due,
+                                        is_insert: false,
+                                    }),
                                     0u64.serialize(),
                                 )
                                 .commit_point();

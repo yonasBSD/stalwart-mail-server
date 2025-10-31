@@ -5,7 +5,6 @@
  */
 
 use crate::{auth::AccessToken, sharing::notification::ShareNotification};
-use ahash::AHashSet;
 use rkyv::{
     option::ArchivedOption,
     primitive::{ArchivedU32, ArchivedU64},
@@ -15,8 +14,8 @@ use std::{borrow::Cow, fmt::Debug};
 use store::{
     Serialize, SerializeInfallible,
     write::{
-        Archive, Archiver, BatchBuilder, BlobOp, DirectoryClass, IntoOperations, TaskQueueClass,
-        ValueClass, now,
+        Archive, Archiver, BatchBuilder, BlobOp, DirectoryClass, IntoOperations, SearchIndex,
+        TaskQueueClass, ValueClass, now,
     },
 };
 use types::{
@@ -38,7 +37,8 @@ pub enum IndexValue<'x> {
         value: IndexItem<'x>,
     },
     SearchIndex {
-        hashes: AHashSet<u64>,
+        index: SearchIndex,
+        hash: u64,
     },
     Blob {
         value: BlobHash,
@@ -376,11 +376,11 @@ fn build_index(
                 }
             }
         }
-        IndexValue::SearchIndex { .. } => {
+        IndexValue::SearchIndex { index, .. } => {
             batch.set(
                 ValueClass::TaskQueue(TaskQueueClass::UpdateIndex {
                     due: now(),
-                    collection: batch.last_collection().unwrap_or(Collection::None),
+                    index,
                     is_insert: set,
                 }),
                 vec![],
@@ -508,20 +508,15 @@ fn merge_index(
                 batch.index(field, new_value.into_owned());
             }
         }
-        (
-            IndexValue::SearchIndex { hashes: old_hashes },
-            IndexValue::SearchIndex { hashes: new_hashes },
-        ) => {
-            if old_hashes != new_hashes {
-                batch.set(
-                    ValueClass::TaskQueue(TaskQueueClass::UpdateIndex {
-                        due: now(),
-                        collection: batch.last_collection().unwrap_or(Collection::None),
-                        is_insert: true,
-                    }),
-                    vec![],
-                );
-            }
+        (IndexValue::SearchIndex { index, .. }, IndexValue::SearchIndex { .. }) => {
+            batch.set(
+                ValueClass::TaskQueue(TaskQueueClass::UpdateIndex {
+                    due: now(),
+                    index,
+                    is_insert: true,
+                }),
+                vec![],
+            );
         }
         (
             IndexValue::Property {

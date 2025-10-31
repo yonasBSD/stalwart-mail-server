@@ -44,6 +44,7 @@ pub struct JmapConfig {
     pub mail_parse_max_items: usize,
     pub mail_max_size: usize,
     pub mail_autoexpunge_after: Option<u64>,
+    pub email_submission_autoexpunge_after: Option<u64>,
 
     pub contact_parse_max_items: usize,
     pub calendar_parse_max_items: usize,
@@ -274,6 +275,10 @@ impl JmapConfig {
             mail_parse_max_items: config.property("jmap.email.parse.max-items").unwrap_or(10),
             mail_autoexpunge_after: config
                 .property_or_default::<Option<Duration>>("email.auto-expunge", "30d")
+                .map(|d| d.map(|d| d.as_secs()))
+                .unwrap_or_default(),
+            email_submission_autoexpunge_after: config
+                .property_or_default::<Option<Duration>>("email-submission.auto-expunge", "3d")
                 .map(|d| d.map(|d| d.as_secs()))
                 .unwrap_or_default(),
             sieve_max_script_name: config

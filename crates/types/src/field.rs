@@ -40,7 +40,7 @@ pub enum CalendarNotificationField {
 pub enum EmailField {
     Archive,
     Metadata,
-    Stats,
+    ReceivedToSize,
     Threading,
 }
 
@@ -63,11 +63,7 @@ pub enum SieveField {
 #[repr(u8)]
 pub enum EmailSubmissionField {
     Archive,
-    UndoStatus,
-    EmailId,
-    ThreadId,
-    IdentityId,
-    SendAt,
+    Metadata,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -115,7 +111,7 @@ impl From<EmailField> for u8 {
         match value {
             EmailField::Metadata => 71,
             EmailField::Threading => 90,
-            EmailField::Stats => 91,
+            EmailField::ReceivedToSize => 91,
             EmailField::Archive => ARCHIVE_FIELD,
         }
     }
@@ -143,11 +139,7 @@ impl From<SieveField> for u8 {
 impl From<EmailSubmissionField> for u8 {
     fn from(value: EmailSubmissionField) -> Self {
         match value {
-            EmailSubmissionField::UndoStatus => 41,
-            EmailSubmissionField::EmailId => 83,
-            EmailSubmissionField::ThreadId => 33,
-            EmailSubmissionField::IdentityId => 95,
-            EmailSubmissionField::SendAt => 24,
+            EmailSubmissionField::Metadata => 49,
             EmailSubmissionField::Archive => ARCHIVE_FIELD,
         }
     }

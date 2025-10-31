@@ -6,13 +6,16 @@
 
 use common::Server;
 use directory::{Type, backend::internal::manage::ManageDirectory};
-use email::message::{index::IndexMessageText, metadata::MessageMetadata};
+use email::message::metadata::MessageMetadata;
 use std::time::Instant;
 use store::{
     IterateParams, SerializeInfallible, U32_LEN, ValueKey,
     ahash::AHashMap,
     roaring::RoaringBitmap,
-    write::{BatchBuilder, BlobOp, TaskQueueClass, ValueClass, key::DeserializeBigEndian, now},
+    write::{
+        BatchBuilder, BlobOp, SearchIndex, TaskQueueClass, ValueClass, key::DeserializeBigEndian,
+        now,
+    },
 };
 use trc::{AddContext, MessageIngestEvent, TaskQueueEvent};
 use types::{
@@ -418,7 +421,11 @@ impl FtsIndexTask for Server {
 
             for document_id in document_ids {
                 batch.with_document(document_id).set(
-                    ValueClass::TaskQueue(TaskQueueClass::IndexEmail { due }),
+                    ValueClass::TaskQueue(TaskQueueClass::UpdateIndex {
+                        due,
+                        index: SearchIndex::Email,
+                        is_insert: true,
+                    }),
                     0u64.serialize(),
                 );
 

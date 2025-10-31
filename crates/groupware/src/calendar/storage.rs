@@ -18,10 +18,10 @@ use crate::{
 use calcard::common::timezone::Tz;
 use common::{Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
 use store::{
-    IndexKey, IterateParams, SerializeInfallible, U16_LEN, U32_LEN, U64_LEN,
+    IterateParams, U16_LEN, U32_LEN, U64_LEN, ValueKey,
     roaring::RoaringBitmap,
     write::{
-        Archive, BatchBuilder, TaskQueueClass, ValueClass,
+        Archive, BatchBuilder, IndexPropertyClass, TaskQueueClass, ValueClass,
         key::{DeserializeBigEndian, KeySerializer},
         now,
     },
@@ -33,6 +33,8 @@ use types::{
 };
 
 pub trait ItipAutoExpunge: Sync + Send {
+    fn itip_ids(&self, account_id: u32) -> impl Future<Output = trc::Result<RoaringBitmap>> + Send;
+
     fn itip_auto_expunge(
         &self,
         account_id: u32,
@@ -41,33 +43,71 @@ pub trait ItipAutoExpunge: Sync + Send {
 }
 
 impl ItipAutoExpunge for Server {
-    async fn itip_auto_expunge(&self, account_id: u32, hold_period: u64) -> trc::Result<()> {
-        let mut destroy_ids = RoaringBitmap::new();
+    async fn itip_ids(&self, account_id: u32) -> trc::Result<RoaringBitmap> {
+        let mut document_ids = RoaringBitmap::new();
         self.store()
             .iterate(
                 IterateParams::new(
-                    IndexKey {
+                    ValueKey {
                         account_id,
                         collection: Collection::CalendarEventNotification.into(),
                         document_id: 0,
-                        field: CalendarNotificationField::CreatedToId.into(),
-                        key: 0u64.serialize(),
+                        class: ValueClass::IndexProperty(IndexPropertyClass::Integer {
+                            property: CalendarNotificationField::CreatedToId.into(),
+                            value: 0,
+                        }),
                     },
-                    IndexKey {
+                    ValueKey {
                         account_id,
                         collection: Collection::CalendarEventNotification.into(),
-                        document_id: u32::MAX,
-                        field: CalendarNotificationField::CreatedToId.into(),
-                        key: now().saturating_sub(hold_period).serialize(),
+                        document_id: 0,
+                        class: ValueClass::IndexProperty(IndexPropertyClass::Integer {
+                            property: CalendarNotificationField::CreatedToId.into(),
+                            value: u64::MAX,
+                        }),
                     },
                 )
                 .no_values()
                 .ascending(),
                 |key, _| {
-                    destroy_ids.insert(
-                        key.deserialize_be_u32(key.len() - U32_LEN)
-                            .caused_by(trc::location!())?,
-                    );
+                    document_ids.insert(key.deserialize_be_u32(key.len() - U32_LEN)?);
+
+                    Ok(true)
+                },
+            )
+            .await
+            .caused_by(trc::location!())
+            .map(|_| document_ids)
+    }
+
+    async fn itip_auto_expunge(&self, account_id: u32, hold_period: u64) -> trc::Result<()> {
+        let mut destroy_ids = RoaringBitmap::new();
+        self.store()
+            .iterate(
+                IterateParams::new(
+                    ValueKey {
+                        account_id,
+                        collection: Collection::CalendarEventNotification.into(),
+                        document_id: 0,
+                        class: ValueClass::IndexProperty(IndexPropertyClass::Integer {
+                            property: CalendarNotificationField::CreatedToId.into(),
+                            value: 0,
+                        }),
+                    },
+                    ValueKey {
+                        account_id,
+                        collection: Collection::CalendarEventNotification.into(),
+                        document_id: 0,
+                        class: ValueClass::IndexProperty(IndexPropertyClass::Integer {
+                            property: CalendarNotificationField::CreatedToId.into(),
+                            value: now().saturating_sub(hold_period),
+                        }),
+                    },
+                )
+                .no_values()
+                .ascending(),
+                |key, _| {
+                    destroy_ids.insert(key.deserialize_be_u32(key.len() - U32_LEN)?);
 
                     Ok(true)
                 },

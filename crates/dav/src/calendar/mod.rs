@@ -23,7 +23,7 @@ use dav_proto::schema::{
 use groupware::scheduling::ItipError;
 use hyper::StatusCode;
 use trc::AddContext;
-use types::{collection::Collection, field::CalendarField};
+use types::{collection::Collection, field::CalendarEventField};
 
 pub(crate) static CALENDAR_CONTAINER_PROPS: [DavProperty; 31] = [
     DavProperty::WebDav(WebDavProperty::CreationDate),
@@ -99,7 +99,7 @@ pub(crate) async fn assert_is_unique_uid(
             .document_ids_matching(
                 account_id,
                 Collection::CalendarEvent,
-                CalendarField::Uid,
+                CalendarEventField::Uid,
                 uid.as_bytes(),
             )
             .await
