@@ -23,11 +23,11 @@ use email::{
 use http_proto::{request::decode_path_element, *};
 use hyper::Method;
 use serde_json::json;
-use services::task_manager::fts::FtsIndexTask;
+use services::task_manager::index::ReindexIndexTask;
 use std::future::Future;
 use store::{
     Serialize, rand,
-    write::{Archiver, BatchBuilder, ValueClass},
+    write::{Archiver, BatchBuilder, SearchIndex, ValueClass},
 };
 use trc::AddContext;
 use types::{
@@ -221,7 +221,7 @@ impl ManageStore for Server {
                 }))
                 .await
             }
-            (Some("reindex"), id, None, &Method::GET) => {
+            (Some("reindex"), Some(index), id, &Method::GET) => {
                 // Validate the access token
                 access_token.assert_has_permission(Permission::FtsReindex)?;
 
@@ -237,10 +237,13 @@ impl ManageStore for Server {
                     None
                 };
                 let tenant_id = access_token.tenant.map(|t| t.id);
+                let index = SearchIndex::try_from_str(index).ok_or_else(|| {
+                    trc::ResourceEvent::BadParameters.reason("Invalid search index specified")
+                })?;
 
                 let jmap = self.clone();
                 tokio::spawn(async move {
-                    if let Err(err) = jmap.fts_reindex(account_id, tenant_id).await {
+                    if let Err(err) = jmap.reindex(index, account_id, tenant_id).await {
                         trc::error!(err.details("Failed to reindex FTS"));
                     }
                 });

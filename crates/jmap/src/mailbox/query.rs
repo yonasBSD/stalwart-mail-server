@@ -17,9 +17,10 @@ use std::{
 };
 use store::{
     roaring::RoaringBitmap,
-    search::{SearchComparator, SearchFilter},
+    search::{SearchComparator, SearchFilter, SearchQuery},
+    write::SearchIndex,
 };
-use types::{acl::Acl, collection::Collection, special_use::SpecialUse};
+use types::{acl::Acl, special_use::SpecialUse};
 
 pub trait MailboxQuery: Sync + Send {
     fn mailbox_query(
@@ -225,43 +226,47 @@ impl MailboxQuery for Server {
             });
         }
 
-        let results = self
-            .search_store()
-            .query(account_id, Collection::Mailbox, filters, comparators)
-            .await?;
+        let results = SearchQuery::new(SearchIndex::InMemory)
+            .with_filters(filters)
+            .with_comparators(comparators)
+            .with_mask(if access_token.is_shared(account_id) {
+                mailboxes.shared_mailboxes(access_token, Acl::Read)
+            } else {
+                mailboxes
+                    .mailboxes
+                    .items
+                    .iter()
+                    .map(|m| m.document_id)
+                    .collect()
+            })
+            .execute();
 
         let mut response = QueryResponseBuilder::new(
-            results.len(),
+            results.len() as usize,
             self.core.jmap.query_max_results,
             mailboxes.get_state(true),
             &request,
         );
 
         if !results.is_empty() {
-            let filter_ids = if access_token.is_shared(account_id) {
-                mailboxes.shared_mailboxes(access_token, Acl::Read).into()
-            } else {
-                None
-            };
-
             // Filter as tree
             if filter_as_tree {
                 let mut total_filtered = 0;
                 let mut is_page_full = false;
 
                 for document_id in &results {
-                    let mut check_id = *document_id;
+                    let mut check_id = document_id;
                     for _ in 0..self.core.jmap.mailbox_max_depth {
                         if let Some(mailbox) = mailboxes.mailbox_by_id(&check_id) {
                             if let Some(parent_id) = mailbox.parent_id() {
-                                if results.contains(&parent_id) {
+                                if results.contains(parent_id) {
                                     check_id = parent_id;
                                 } else {
                                     break;
                                 }
                             } else {
                                 total_filtered += 1;
-                                if !is_page_full && !response.add(0, *document_id) {
+                                if !is_page_full && !response.add(0, document_id) {
                                     is_page_full = true;
                                 }
                             }
@@ -270,16 +275,11 @@ impl MailboxQuery for Server {
                 }
 
                 if total_filtered != results.len() {
-                    response.response.total = Some(total_filtered);
+                    response.response.total = Some(total_filtered as usize);
                 }
             } else {
                 for document_id in results {
-                    if filter_ids
-                        .as_ref()
-                        .is_some_and(|filter_ids| !filter_ids.contains(document_id))
-                    {
-                        continue;
-                    } else if !response.add(0, document_id) {
+                    if !response.add(0, document_id) {
                         break;
                     }
                 }

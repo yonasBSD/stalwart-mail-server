@@ -20,6 +20,7 @@ use hyper::{Method, header};
 use serde_json::json;
 use std::future::Future;
 use std::sync::Arc;
+use store::{search::SearchQuery, write::SearchIndex};
 use trc::AddContext;
 use utils::url_params::UrlParams;
 
@@ -399,11 +400,23 @@ impl PrincipalManager for Server {
                             }
 
                             if matches!(typ, Type::Individual | Type::Group) {
-                                // Remove FTS index
-                                if let Err(err) =
-                                    server.core.storage.fts.remove_all(principal.id()).await
-                                {
-                                    trc::error!(err.details("Failed to delete FTS index"));
+                                // Remove search index
+                                for index in [
+                                    SearchIndex::Email,
+                                    SearchIndex::Contacts,
+                                    SearchIndex::Calendar,
+                                ] {
+                                    if let Err(err) = server
+                                        .core
+                                        .storage
+                                        .fts
+                                        .unindex(
+                                            SearchQuery::new(index).with_account_id(principal.id()),
+                                        )
+                                        .await
+                                    {
+                                        trc::error!(err.details("Failed to delete FTS index"));
+                                    }
                                 }
 
                                 // Delete bayes model
@@ -516,7 +529,21 @@ impl PrincipalManager for Server {
 
                         if matches!(typ, Type::Individual | Type::Group) {
                             // Remove FTS index
-                            self.core.storage.fts.remove_all(account_id).await?;
+                            for index in [
+                                SearchIndex::Email,
+                                SearchIndex::Contacts,
+                                SearchIndex::Calendar,
+                            ] {
+                                if let Err(err) = self
+                                    .core
+                                    .storage
+                                    .fts
+                                    .unindex(SearchQuery::new(index).with_account_id(account_id))
+                                    .await
+                                {
+                                    trc::error!(err.details("Failed to delete FTS index"));
+                                }
+                            }
 
                             // Delete bayes model
                             if self

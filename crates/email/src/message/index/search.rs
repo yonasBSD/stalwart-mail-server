@@ -29,11 +29,8 @@ impl ArchivedMessageMetadata {
         let message_contents = &self.contents[0];
         let mut document = IndexDocument::with_default_language(language);
 
-        document.index_number(
-            EmailSearchField::ReceivedAt,
-            self.received_at.to_native() as i64,
-        );
-        document.index_number(EmailSearchField::Size, self.size.to_native());
+        document.index_unsigned(EmailSearchField::ReceivedAt, self.received_at.to_native());
+        document.index_unsigned(EmailSearchField::Size, self.size.to_native());
 
         for (part_id, part) in message_contents
             .parts
@@ -95,7 +92,7 @@ impl ArchivedMessageMetadata {
                         }
                         ArchivedHeaderName::Date => {
                             if let Some(date) = header.value.as_datetime() {
-                                document.index_number(
+                                document.index_integer(
                                     EmailSearchField::SentAt,
                                     DateTime::from(date).to_timestamp(),
                                 );

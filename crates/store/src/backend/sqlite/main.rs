@@ -105,7 +105,6 @@ impl SqliteStore {
             SUBSPACE_BLOBS,
             SUBSPACE_TELEMETRY_SPAN,
             SUBSPACE_TELEMETRY_METRIC,
-            SUBSPACE_TELEMETRY_INDEX,
         ] {
             let table = char::from(table);
             conn.execute(

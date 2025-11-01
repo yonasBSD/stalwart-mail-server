@@ -27,11 +27,11 @@ use mail_parser::{
 use spam_filter::{
     SpamFilterInput, analysis::init::SpamFilterInit, modules::bayes::BayesClassifier,
 };
-use std::future::Future;
-use std::{borrow::Cow, fmt::Write, time::Instant};
+use std::{borrow::Cow, cmp::Ordering, fmt::Write, time::Instant};
+use std::{future::Future, hash::Hasher};
 use store::{
     IndexKeyPrefix, IterateParams, U32_LEN, ValueKey,
-    ahash::AHashMap,
+    ahash::{AHashMap, AHashSet},
     write::{
         BatchBuilder, IndexPropertyClass, SearchIndex, TaskQueueClass, ValueClass,
         key::DeserializeBigEndian, now,
@@ -655,8 +655,16 @@ impl EmailIngest for Server {
                     due,
                     is_insert: true,
                 }),
-                MergeThreadTask::new(thread_result).serialize(),
+                vec![],
             );
+
+        // Merge threads if necessary
+        if let Some(merge_threads) = MergeThreadIds::new(thread_result).serialize() {
+            batch.set(
+                ValueClass::TaskQueue(TaskQueueClass::MergeThreads { due }),
+                merge_threads,
+            );
+        }
 
         // Request spam training
         if let Some(learn_spam) = train_spam {
@@ -748,7 +756,7 @@ impl EmailIngest for Server {
         // Find thread ids
         let key_len = IndexKeyPrefix::len() + result.thread_hash.len() + U32_LEN;
         let document_id_pos = key_len - U32_LEN;
-        let mut thread_ids = AHashMap::<u32, Vec<u32>>::with_capacity(16);
+        let mut thread_merge = ThreadMerge::new();
         self.store()
             .iterate(
                 IterateParams::new(
@@ -788,7 +796,7 @@ impl EmailIngest for Server {
                                     result.duplicate_ids.push(document_id);
                                 }
 
-                                thread_ids.entry(thread_id).or_default().push(document_id);
+                                thread_merge.add(thread_id, document_id);
 
                                 return Ok(true);
                             }
@@ -803,25 +811,18 @@ impl EmailIngest for Server {
             .await
             .caused_by(trc::location!())?;
 
-        match thread_ids.len() {
+        match thread_merge.num_thread_ids() {
             0 => Ok(result),
             1 => {
                 // Happy path, only one thread id
-                result.thread_id = thread_ids.into_keys().next();
+                result.thread_id = thread_merge.thread_ids().next().copied();
                 Ok(result)
             }
             _ => {
                 // Multiple thread ids that this message belongs to, merge them
-                let mut max_thread_id = u32::MAX;
-                let mut max_count = 0;
-                for (thread_id, ids) in thread_ids {
-                    if ids.len() > max_count {
-                        max_count = ids.len();
-                        max_thread_id = thread_id;
-                    }
-                    result.merge_ids.extend(ids);
-                }
-                result.thread_id = Some(max_thread_id);
+                let thread_merge = thread_merge.merge();
+                result.merge_ids = thread_merge.merge_ids;
+                result.thread_id = Some(thread_merge.thread_id);
                 Ok(result)
             }
         }
@@ -856,51 +857,64 @@ impl IngestSource<'_> {
     }
 }
 
-pub struct MergeThreadTask {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MergeThreadIds<T> {
     pub thread_hash: CheekyHash,
-    pub duplicate_ids: Vec<u32>,
+    pub merge_ids: T,
 }
 
-impl MergeThreadTask {
+impl MergeThreadIds<Vec<u32>> {
     pub(crate) fn new(thread_result: ThreadResult) -> Self {
         Self {
             thread_hash: thread_result.thread_hash,
-            duplicate_ids: thread_result.duplicate_ids,
+            merge_ids: thread_result.merge_ids,
         }
     }
 
-    pub(crate) fn serialize(&self) -> Vec<u8> {
-        if !self.duplicate_ids.is_empty() {
+    pub(crate) fn serialize(&self) -> Option<Vec<u8>> {
+        if !self.merge_ids.is_empty() {
             let mut buf =
-                Vec::with_capacity(self.thread_hash.len() + self.duplicate_ids.len() * U32_LEN);
+                Vec::with_capacity(self.thread_hash.len() + self.merge_ids.len() * U32_LEN);
             buf.extend_from_slice(self.thread_hash.as_bytes());
-            for id in &self.duplicate_ids {
+            for id in &self.merge_ids {
                 buf.extend_from_slice(&id.to_be_bytes());
             }
-            buf
+            Some(buf)
         } else {
-            vec![]
+            None
         }
     }
+}
 
-    pub fn deserialize(bytes: &[u8]) -> Option<Self> {
+impl MergeThreadIds<AHashSet<u32>> {
+    pub fn deserialize(document_id: u32, bytes: &[u8]) -> Option<Self> {
         if !bytes.is_empty() {
             let thread_hash = CheekyHash::deserialize(bytes)?;
-            let mut duplicate_ids = Vec::new();
+            let mut merge_ids =
+                AHashSet::with_capacity(((bytes.len() - thread_hash.len()) / U32_LEN) + 1);
             let mut start_offset = thread_hash.len();
 
+            merge_ids.insert(document_id);
+
             while let Some(id_bytes) = bytes.get(start_offset..start_offset + U32_LEN) {
-                duplicate_ids.push(u32::from_be_bytes(id_bytes.try_into().ok()?));
+                merge_ids.insert(u32::from_be_bytes(id_bytes.try_into().ok()?));
                 start_offset += U32_LEN;
             }
 
             Some(Self {
                 thread_hash,
-                duplicate_ids,
+                merge_ids,
             })
         } else {
             None
         }
+    }
+}
+
+impl std::hash::Hash for MergeThreadIds<AHashSet<u32>> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.thread_hash.hash(state);
+        self.merge_ids.len().hash(state);
     }
 }
 
@@ -923,5 +937,95 @@ impl ThreadInfo {
             }
         }
         buf
+    }
+}
+
+pub struct ThreadMerge {
+    entries: AHashMap<u32, Vec<u32>>,
+    num_ids: usize,
+}
+
+pub struct ThreadMergeResult {
+    pub thread_id: u32,
+    pub merge_ids: Vec<u32>,
+}
+
+impl ThreadMerge {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        Self {
+            entries: AHashMap::with_capacity(8),
+            num_ids: 0,
+        }
+    }
+
+    pub fn add(&mut self, thread_id: u32, document_id: u32) {
+        self.entries.entry(thread_id).or_default().push(document_id);
+        self.num_ids += 1;
+    }
+
+    pub fn num_document_ids(&self) -> usize {
+        self.num_ids
+    }
+
+    pub fn num_thread_ids(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn thread_ids(&self) -> impl Iterator<Item = &u32> {
+        self.entries.keys()
+    }
+
+    pub fn thread_groups(&self) -> impl Iterator<Item = (&u32, &Vec<u32>)> {
+        self.entries.iter()
+    }
+
+    pub fn merge_thread_id(&self) -> u32 {
+        let mut max_thread_id = u32::MAX;
+        let mut max_count = 0;
+
+        for (thread_id, ids) in &self.entries {
+            match ids.len().cmp(&max_count) {
+                Ordering::Greater => {
+                    max_count = ids.len();
+                    max_thread_id = *thread_id;
+                }
+                Ordering::Equal => {
+                    if *thread_id < max_thread_id {
+                        max_thread_id = *thread_id;
+                    }
+                }
+                Ordering::Less => (),
+            }
+        }
+
+        max_thread_id
+    }
+
+    pub fn merge(self) -> ThreadMergeResult {
+        let mut max_thread_id = u32::MAX;
+        let mut max_count = 0;
+        let mut merge_ids = Vec::with_capacity(self.num_ids);
+
+        for (thread_id, ids) in self.entries {
+            match ids.len().cmp(&max_count) {
+                Ordering::Greater => {
+                    max_count = ids.len();
+                    max_thread_id = thread_id;
+                }
+                Ordering::Equal => {
+                    if thread_id < max_thread_id {
+                        max_thread_id = thread_id;
+                    }
+                }
+                Ordering::Less => (),
+            }
+            merge_ids.extend(ids);
+        }
+
+        ThreadMergeResult {
+            thread_id: max_thread_id,
+            merge_ids,
+        }
     }
 }

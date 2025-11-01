@@ -5,9 +5,11 @@
  */
 
 use crate::config::groupware::GroupwareConfig;
+use ahash::{AHashMap, AHashSet};
 use jmap_proto::request::capability::BaseCapabilities;
 use nlp::language::Language;
 use std::{str::FromStr, time::Duration};
+use store::{search::SearchField, write::SearchIndex};
 use types::{collection::Collection, special_use::SpecialUse};
 use utils::{
     config::{Config, Rate, cron::SimpleCron, utils::ParseValue},
@@ -78,6 +80,10 @@ pub struct JmapConfig {
 
     pub encrypt: bool,
     pub encrypt_append: bool,
+
+    pub index_batch_size: usize,
+    pub index_all_headers: bool,
+    pub index_fields: AHashMap<SearchIndex, AHashSet<SearchField>>,
 
     pub capabilities: BaseCapabilities,
     pub account_purge_frequency: SimpleCron,
@@ -351,9 +357,44 @@ impl JmapConfig {
             calendar_parse_max_items: config
                 .property("jmap.calendar.parse.max-items")
                 .unwrap_or(10),
+            index_batch_size: config.property("jmap.index.batch-size").unwrap_or(100),
+            index_all_headers: config
+                .property_or_default("jmap.index.email.all-headers", "false")
+                .unwrap_or(false),
+            index_fields: AHashMap::new(),
             default_folders,
             shared_folder,
         };
+
+        // Parse index fields
+        for index in [
+            SearchIndex::Email,
+            SearchIndex::Contacts,
+            SearchIndex::Calendar,
+        ] {
+            let mut fields = AHashSet::new();
+            let todo = "implement";
+            /*for field_str in config.values(&format!(
+                "jmap.index.{}.fields",
+                index.as_config_case()
+            )) {
+                match SearchField::try_from(field_str.1.as_str()) {
+                    Ok(field) => {
+                        fields.insert(field);
+                    }
+                    Err(_) => {
+                        config.new_parse_error(
+                            &format!(
+                                "jmap.index.{}.fields",
+                                index.as_config_case()
+                            ),
+                            format!("Invalid search field: {}", field_str.1),
+                        );
+                    }
+                }
+            }*/
+            jmap.index_fields.insert(index, fields);
+        }
 
         for collection in Bitmap::<Collection>::all() {
             let key = format!("object-quota.{}", collection.as_config_case());

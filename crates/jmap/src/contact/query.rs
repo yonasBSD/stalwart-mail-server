@@ -14,12 +14,10 @@ use jmap_proto::{
 };
 use store::{
     roaring::RoaringBitmap,
-    search::{ContactSearchField, SearchComparator, SearchFilter},
+    search::{ContactSearchField, SearchComparator, SearchFilter, SearchQuery},
+    write::SearchIndex,
 };
-use types::{
-    acl::Acl,
-    collection::{Collection, SyncCollection},
-};
+use types::{acl::Acl, collection::SyncCollection};
 use utils::sanitize_email;
 
 pub trait ContactCardQuery: Sync + Send {
@@ -41,8 +39,6 @@ impl ContactCardQuery for Server {
         let cache = self
             .fetch_dav_resources(access_token, account_id, SyncCollection::AddressBook)
             .await?;
-        let filter_mask = (access_token.is_shared(account_id))
-            .then(|| cache.shared_items(access_token, [Acl::ReadItems], true));
 
         for cond in std::mem::take(&mut request.filter) {
             match cond {
@@ -212,7 +208,17 @@ impl ContactCardQuery for Server {
 
         let results = self
             .search_store()
-            .query(account_id, Collection::ContactCard, filters, comparators)
+            .query(
+                SearchQuery::new(SearchIndex::Contacts)
+                    .with_filters(filters)
+                    .with_comparators(comparators)
+                    .with_account_id(account_id)
+                    .with_mask(if access_token.is_shared(account_id) {
+                        cache.shared_items(access_token, [Acl::ReadItems], true)
+                    } else {
+                        cache.document_ids(false).collect()
+                    }),
+            )
             .await?;
 
         let mut response = QueryResponseBuilder::new(
@@ -223,12 +229,6 @@ impl ContactCardQuery for Server {
         );
 
         for document_id in results {
-            if filter_mask
-                .as_ref()
-                .is_some_and(|filter_ids| !filter_ids.contains(document_id))
-            {
-                continue;
-            }
             if !response.add(0, document_id) {
                 break;
             }

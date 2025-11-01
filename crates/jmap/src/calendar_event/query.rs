@@ -18,7 +18,8 @@ use nlp::language::Language;
 use std::{cmp::Ordering, sync::Arc};
 use store::{
     roaring::RoaringBitmap,
-    search::{CalendarSearchField, SearchComparator, SearchFilter},
+    search::{CalendarSearchField, SearchComparator, SearchFilter, SearchQuery},
+    write::SearchIndex,
 };
 use trc::AddContext;
 use types::{
@@ -208,9 +209,20 @@ impl CalendarEventQuery for Server {
         } else {
             vec![]
         };
+
         let results = self
             .search_store()
-            .query(account_id, Collection::CalendarEvent, filters, comparators)
+            .query(
+                SearchQuery::new(SearchIndex::Calendar)
+                    .with_filters(filters)
+                    .with_comparators(comparators)
+                    .with_account_id(account_id)
+                    .with_mask(if access_token.is_shared(account_id) {
+                        cache.shared_items(access_token, [Acl::ReadItems], true)
+                    } else {
+                        cache.document_ids(false).collect()
+                    }),
+            )
             .await?;
 
         let mut response = QueryResponseBuilder::new(
@@ -227,8 +239,6 @@ impl CalendarEventQuery for Server {
                 .as_deref()
                 .filter(|s| !s.is_empty())
                 .unwrap_or_default();
-            let filter_mask = (access_token.is_shared(account_id))
-                .then(|| cache.shared_items(access_token, [Acl::ReadItems], true));
 
             if expand_recurrences {
                 let Some(time_range) = filter.filter(|f| f.start != i64::MIN && f.end != i64::MAX)
@@ -244,13 +254,6 @@ impl CalendarEventQuery for Server {
                     .any(|c| matches!(c.property, CalendarEventComparator::Uid));
 
                 for document_id in results {
-                    if filter_mask
-                        .as_ref()
-                        .is_some_and(|filter_ids| !filter_ids.contains(document_id))
-                    {
-                        continue;
-                    }
-
                     let Some(_calendar_event) = self
                         .archive(account_id, Collection::CalendarEvent, document_id)
                         .await?
@@ -327,12 +330,6 @@ impl CalendarEventQuery for Server {
                 }
             } else {
                 for document_id in results {
-                    if filter_mask
-                        .as_ref()
-                        .is_some_and(|filter_ids| !filter_ids.contains(document_id))
-                    {
-                        continue;
-                    }
                     if !response.add(0, document_id) {
                         break;
                     }

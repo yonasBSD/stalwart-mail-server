@@ -13,8 +13,10 @@ use jmap_proto::{
 };
 use std::future::Future;
 use store::{
-    IndexKeyPrefix, IterateParams, U32_LEN, ahash::AHashSet, roaring::RoaringBitmap,
-    search::SearchFilter, write::key::DeserializeBigEndian,
+    IndexKeyPrefix, IterateParams, U32_LEN,
+    roaring::RoaringBitmap,
+    search::{SearchFilter, SearchQuery},
+    write::{SearchIndex, key::DeserializeBigEndian},
 };
 use trc::AddContext;
 use types::{
@@ -153,15 +155,13 @@ impl SieveScriptQuery for Server {
             };
         }
 
-        let mut results = self
-            .search_store()
-            .query(account_id, Collection::SieveScript, filters, vec![])
-            .await?
-            .into_iter()
-            .collect::<AHashSet<_>>();
+        let mut results = SearchQuery::new(SearchIndex::InMemory)
+            .with_filters(filters)
+            .with_mask(document_ids)
+            .execute();
 
         let mut response = QueryResponseBuilder::new(
-            results.len(),
+            results.len() as usize,
             self.core.jmap.query_max_results,
             self.get_state(account_id, SyncCollection::SieveScript)
                 .await?,
@@ -170,7 +170,7 @@ impl SieveScriptQuery for Server {
 
         if !results.is_empty() {
             if matches!(sort_by_active, Some(true))
-                && results.remove(&active_script_id.unwrap_or_default())
+                && results.remove(active_script_id.unwrap_or_default())
                 && !response.add(0, active_script_id.unwrap())
             {
                 return response.build();
@@ -178,7 +178,7 @@ impl SieveScriptQuery for Server {
 
             let mut last_id = None;
             for (document_id, _) in names {
-                if results.contains(&document_id) {
+                if results.contains(document_id) {
                     if sort_by_active.is_some() && Some(document_id) == active_script_id {
                         last_id = Some(document_id);
                     } else if !response.add(0, document_id) {

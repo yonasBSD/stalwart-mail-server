@@ -29,7 +29,7 @@ use crate::{
 pub const TERM_INDEX_VERSION: u8 = 1;
 
 impl Store {
-    pub async fn index_insert(&self, document: IndexDocument) -> trc::Result<()> {
+    pub(crate) async fn index_insert(&self, document: IndexDocument) -> trc::Result<()> {
         /*let mut detect = LanguageDetector::new();
         let mut tokens: AHashMap<BitmapHash, Postings> = AHashMap::new();
         let mut parts = Vec::new();
@@ -142,7 +142,7 @@ impl Store {
         Ok(())
     }
 
-    pub async fn index_remove(
+    pub(crate) async fn index_remove(
         &self,
         account_id: u32,
         collection: Collection,
@@ -244,7 +244,7 @@ impl Store {
         Ok(())
     }
 
-    pub async fn index_remove_all(&self, _: u32) -> trc::Result<()> {
+    pub(crate) async fn index_remove_all(&self, _: u32) -> trc::Result<()> {
         // No-op
         // Term indexes are stored in the same key range as the document
 

@@ -339,7 +339,7 @@ impl ArchivedCalendarEvent {
     pub fn index_document(&self) -> IndexDocument {
         let mut document = IndexDocument::with_default_language(Language::Unknown);
 
-        document.index_number(CalendarSearchField::Start, self.data.event_range_start());
+        document.index_integer(CalendarSearchField::Start, self.data.event_range_start());
 
         for component in self
             .data

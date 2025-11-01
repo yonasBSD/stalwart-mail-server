@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::api::query::QueryResponseBuilder;
 use common::{Server, auth::AccessToken};
 use directory::{Permission, QueryParams, Type, backend::internal::manage::ManageDirectory};
 use http_proto::HttpSessionData;
@@ -13,11 +14,12 @@ use jmap_proto::{
     types::state::State,
 };
 use std::future::Future;
-use store::{roaring::RoaringBitmap, search::SearchFilter};
+use store::{
+    roaring::RoaringBitmap,
+    search::{SearchFilter, SearchQuery},
+    write::SearchIndex,
+};
 use trc::AddContext;
-use types::collection::Collection;
-
-use crate::api::query::QueryResponseBuilder;
 
 pub trait PrincipalQuery: Sync + Send {
     fn principal_query(
@@ -171,20 +173,20 @@ impl PrincipalQuery for Server {
             }
         }
 
-        let results = self
-            .search_store()
-            .query(u32::MAX, Collection::Principal, filters, vec![])
-            .await?;
+        let results = SearchQuery::new(SearchIndex::InMemory)
+            .with_filters(filters)
+            .with_mask(principal_ids)
+            .execute();
 
         let mut response = QueryResponseBuilder::new(
-            results.len(),
+            results.len() as usize,
             self.core.jmap.query_max_results,
             State::Initial,
             &request,
         );
 
         for document_id in results {
-            if principal_ids.contains(document_id) && !response.add(0, document_id) {
+            if !response.add(0, document_id) {
                 break;
             }
         }

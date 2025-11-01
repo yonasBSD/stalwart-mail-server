@@ -13,6 +13,8 @@ use nlp::language::Language;
 use roaring::RoaringBitmap;
 use std::{borrow::Cow, collections::hash_map::Entry};
 
+use crate::write::SearchIndex;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SearchOperator {
     LowerThan,
@@ -26,6 +28,9 @@ pub enum SearchOperator {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum SearchField {
+    AccountId,
+    DocumentId,
+    Id,
     Email(EmailSearchField),
     Calendar(CalendarSearchField),
     Contact(ContactSearchField),
@@ -84,8 +89,23 @@ pub enum FileSearchField {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SearchValue {
     Text { value: String, language: Language },
-    Number(i64),
+    Int(i64),
+    Uint(u64),
     Boolean(bool),
+}
+
+pub trait SearchDocumentId: Sized {
+    fn from_u32(id: u32) -> Self;
+    fn from_u64(id: u64) -> Self;
+    fn field(&self) -> SearchField;
+}
+
+#[derive(Debug)]
+pub struct SearchQuery {
+    index: SearchIndex,
+    filters: Vec<SearchFilter>,
+    comparators: Vec<SearchComparator>,
+    mask: RoaringBitmap,
 }
 
 #[derive(Debug)]
@@ -111,8 +131,6 @@ pub enum SearchComparator {
 
 #[derive(Debug)]
 pub struct IndexDocument {
-    pub(crate) account_id: u32,
-    pub(crate) document_id: u32,
     pub(crate) fields: AHashMap<SearchField, SearchValue>,
     pub(crate) default_language: Language,
 }
@@ -275,18 +293,25 @@ impl IndexDocument {
         Self {
             fields: Default::default(),
             default_language,
-            account_id: 0,
-            document_id: 0,
         }
     }
 
     pub fn with_account_id(mut self, account_id: u32) -> Self {
-        self.account_id = account_id;
+        self.fields
+            .insert(SearchField::AccountId, SearchValue::Uint(account_id as u64));
         self
     }
 
     pub fn with_document_id(mut self, document_id: u32) -> Self {
-        self.document_id = document_id;
+        self.fields.insert(
+            SearchField::DocumentId,
+            SearchValue::Uint(document_id as u64),
+        );
+        self
+    }
+
+    pub fn with_id(mut self, id: u64) -> Self {
+        self.fields.insert(SearchField::Id, SearchValue::Uint(id));
         self
     }
 
@@ -316,13 +341,76 @@ impl IndexDocument {
             .insert(field.into(), SearchValue::Boolean(value));
     }
 
-    pub fn index_number<N: Into<i64>>(&mut self, field: impl Into<SearchField>, value: N) {
+    pub fn index_integer<N: Into<i64>>(&mut self, field: impl Into<SearchField>, value: N) {
         self.fields
-            .insert(field.into(), SearchValue::Number(value.into()));
+            .insert(field.into(), SearchValue::Int(value.into()));
+    }
+
+    pub fn index_unsigned<N: Into<u64>>(&mut self, field: impl Into<SearchField>, value: N) {
+        self.fields
+            .insert(field.into(), SearchValue::Uint(value.into()));
     }
 
     pub fn has_field(&self, field: &SearchField) -> bool {
         self.fields.contains_key(field)
+    }
+}
+
+impl SearchQuery {
+    pub fn new(index: SearchIndex) -> Self {
+        Self {
+            index,
+            filters: Vec::new(),
+            comparators: Vec::new(),
+            mask: RoaringBitmap::new(),
+        }
+    }
+
+    pub fn with_filters(mut self, filters: Vec<SearchFilter>) -> Self {
+        if self.filters.is_empty() {
+            self.filters = filters;
+        } else {
+            self.filters.extend(filters);
+        }
+        self
+    }
+
+    pub fn with_comparators(mut self, comparators: Vec<SearchComparator>) -> Self {
+        if self.comparators.is_empty() {
+            self.comparators = comparators;
+        } else {
+            self.comparators.extend(comparators);
+        }
+        self
+    }
+
+    pub fn with_filter(mut self, filter: SearchFilter) -> Self {
+        self.filters.push(filter);
+        self
+    }
+
+    pub fn with_comparator(mut self, comparator: SearchComparator) -> Self {
+        self.comparators.push(comparator);
+        self
+    }
+
+    pub fn with_mask(mut self, mask: RoaringBitmap) -> Self {
+        self.mask = mask;
+        self
+    }
+
+    pub fn with_account_id(mut self, account_id: u32) -> Self {
+        self.filters.push(SearchFilter::cond(
+            SearchField::AccountId,
+            SearchOperator::Equal,
+            SearchValue::Uint(account_id as u64),
+        ));
+        self
+    }
+
+    pub fn execute(&self) -> RoaringBitmap {
+        let todo = "implement search execution logic";
+        todo!()
     }
 }
 
@@ -352,31 +440,31 @@ impl From<FileSearchField> for SearchField {
 
 impl From<u64> for SearchValue {
     fn from(value: u64) -> Self {
-        SearchValue::Number(value as i64)
+        SearchValue::Uint(value)
     }
 }
 
 impl From<i64> for SearchValue {
     fn from(value: i64) -> Self {
-        SearchValue::Number(value)
+        SearchValue::Int(value)
     }
 }
 
 impl From<u32> for SearchValue {
     fn from(value: u32) -> Self {
-        SearchValue::Number(value as i64)
+        SearchValue::Uint(value as u64)
     }
 }
 
 impl From<i32> for SearchValue {
     fn from(value: i32) -> Self {
-        SearchValue::Number(value as i64)
+        SearchValue::Int(value as i64)
     }
 }
 
 impl From<usize> for SearchValue {
     fn from(value: usize) -> Self {
-        SearchValue::Number(value as i64)
+        SearchValue::Uint(value as u64)
     }
 }
 
@@ -392,5 +480,33 @@ impl From<String> for SearchValue {
             value,
             language: Language::None,
         }
+    }
+}
+
+impl SearchDocumentId for u32 {
+    fn from_u32(id: u32) -> Self {
+        id
+    }
+
+    fn from_u64(id: u64) -> Self {
+        id as u32
+    }
+
+    fn field(&self) -> SearchField {
+        SearchField::DocumentId
+    }
+}
+
+impl SearchDocumentId for u64 {
+    fn from_u32(id: u32) -> Self {
+        id as u64
+    }
+
+    fn from_u64(id: u64) -> Self {
+        id
+    }
+
+    fn field(&self) -> SearchField {
+        SearchField::Id
     }
 }

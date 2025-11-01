@@ -26,7 +26,6 @@ use trc::AddContext;
 use types::{
     acl::AclGrant,
     collection::{Collection, SyncCollection},
-    field::CalendarNotificationField,
 };
 use utils::map::bitmap::Bitmap;
 
@@ -128,7 +127,6 @@ pub(super) async fn build_calcard_resources(
             }
         }
 
-        let todo = "fix fdb range scan to support chunked reads";
         let parent_range = cache.resources.len();
         server
             .archives(account_id, item_collection, &(), |document_id, archive| {

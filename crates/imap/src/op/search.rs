@@ -26,16 +26,12 @@ use std::{borrow::Cow, str::FromStr, sync::Arc, time::Instant};
 use store::{
     query::log::Query,
     roaring::RoaringBitmap,
-    search::{EmailSearchField, SearchComparator, SearchFilter},
-    write::now,
+    search::{EmailSearchField, SearchComparator, SearchFilter, SearchQuery},
+    write::{SearchIndex, now},
 };
 use tokio::sync::watch;
 use trc::AddContext;
-use types::{
-    collection::{Collection, SyncCollection},
-    id::Id,
-    keyword::Keyword,
-};
+use types::{collection::SyncCollection, id::Id, keyword::Keyword};
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_search(
@@ -225,8 +221,6 @@ impl<T: SessionStream> SessionData<T> {
                 .in_mailbox(mailbox.id.mailbox_id)
                 .map(|m| m.document_id),
         );
-
-        filters.push(SearchFilter::is_in_set(message_ids.clone()));
 
         // Convert query
         let mut include_highest_modseq = false;
@@ -594,10 +588,11 @@ impl<T: SessionStream> SessionData<T> {
         self.server
             .search_store()
             .query(
-                mailbox.id.account_id,
-                Collection::Email,
-                filters,
-                comparators,
+                SearchQuery::new(SearchIndex::Email)
+                    .with_filters(filters)
+                    .with_comparators(comparators)
+                    .with_account_id(mailbox.id.account_id)
+                    .with_mask(message_ids),
             )
             .await
             .map(|res| (res, include_highest_modseq))

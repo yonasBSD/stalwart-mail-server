@@ -44,7 +44,7 @@ enum FtsTokenized {
 }*/
 
 impl Store {
-    pub async fn index_query(
+    pub(crate) async fn index_query(
         &self,
         account_id: u32,
         collection: Collection,

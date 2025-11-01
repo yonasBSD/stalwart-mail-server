@@ -12,11 +12,12 @@ use jmap_proto::{
     object::file_node::{FileNode, FileNodeFilter},
     request::MaybeInvalid,
 };
-use store::{roaring::RoaringBitmap, search::SearchFilter};
-use types::{
-    acl::Acl,
-    collection::{Collection, SyncCollection},
+use store::{
+    roaring::RoaringBitmap,
+    search::{SearchFilter, SearchQuery},
+    write::SearchIndex,
 };
+use types::{acl::Acl, collection::SyncCollection};
 
 pub trait FileNodeQuery: Sync + Send {
     fn file_node_query(
@@ -37,8 +38,6 @@ impl FileNodeQuery for Server {
         let cache = self
             .fetch_dav_resources(access_token, account_id, SyncCollection::FileNode)
             .await?;
-        let filter_mask = (access_token.is_shared(account_id))
-            .then(|| cache.shared_containers(access_token, [Acl::ReadItems], true));
 
         for cond in std::mem::take(&mut request.filter) {
             match cond {
@@ -143,25 +142,23 @@ impl FileNodeQuery for Server {
                 .details("Sorting is not supported on FileNode"));
         }
 
-        let results = self
-            .search_store()
-            .query(account_id, Collection::FileNode, filters, vec![])
-            .await?;
+        let results = SearchQuery::new(SearchIndex::InMemory)
+            .with_filters(filters)
+            .with_mask(if access_token.is_shared(account_id) {
+                cache.shared_containers(access_token, [Acl::ReadItems], true)
+            } else {
+                cache.document_ids(false).collect()
+            })
+            .execute();
 
         let mut response = QueryResponseBuilder::new(
-            results.len(),
+            results.len() as usize,
             self.core.jmap.query_max_results,
             cache.get_state(false),
             &request,
         );
 
         for document_id in results {
-            if filter_mask
-                .as_ref()
-                .is_some_and(|filter_ids| !filter_ids.contains(document_id))
-            {
-                continue;
-            }
             if !response.add(0, document_id) {
                 break;
             }

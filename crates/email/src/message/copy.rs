@@ -12,7 +12,7 @@ use crate::{
     mailbox::UidMailbox,
     message::{
         index::extractors::VisitText,
-        ingest::{MergeThreadTask, ThreadInfo},
+        ingest::{MergeThreadIds, ThreadInfo},
     },
 };
 use common::{Server, auth::ResourceToken, storage::index::ObjectIndexBuilder};
@@ -179,7 +179,7 @@ impl EmailCopy for Server {
                 .log_container_insert(SyncCollection::Thread);
             document_id
         };
-
+        let due = now();
         batch
             .with_collection(Collection::Email)
             .with_document(document_id)
@@ -201,11 +201,20 @@ impl EmailCopy for Server {
             .set(
                 ValueClass::TaskQueue(TaskQueueClass::UpdateIndex {
                     index: SearchIndex::Email,
-                    due: now(),
+                    due,
                     is_insert: true,
                 }),
-                MergeThreadTask::new(thread_result).serialize(),
+                vec![],
             );
+
+        // Merge threads if necessary
+        if let Some(merge_threads) = MergeThreadIds::new(thread_result).serialize() {
+            batch.set(
+                ValueClass::TaskQueue(TaskQueueClass::MergeThreads { due }),
+                merge_threads,
+            );
+        }
+
         metadata
             .index(
                 &mut batch,

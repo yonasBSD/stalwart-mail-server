@@ -17,10 +17,11 @@ use std::{borrow::Cow, future::Future};
 use store::{
     ahash::{AHashMap, AHashSet},
     roaring::RoaringBitmap,
-    search::{EmailSearchField, SearchComparator, SearchFilter},
+    search::{EmailSearchField, SearchComparator, SearchFilter, SearchQuery},
+    write::SearchIndex,
 };
 use trc::AddContext;
-use types::{acl::Acl, collection::Collection, keyword::Keyword};
+use types::{acl::Acl, keyword::Keyword};
 
 pub trait EmailQuery: Sync + Send {
     fn email_query(
@@ -331,7 +332,22 @@ impl EmailQuery for Server {
 
         let results = self
             .search_store()
-            .query(account_id, Collection::Email, filters, comparators)
+            .query(
+                SearchQuery::new(SearchIndex::Email)
+                    .with_filters(filters)
+                    .with_comparators(comparators)
+                    .with_account_id(account_id)
+                    .with_mask(if access_token.is_shared(account_id) {
+                        cached_messages.shared_messages(access_token, Acl::ReadItems)
+                    } else {
+                        cached_messages
+                            .emails
+                            .items
+                            .iter()
+                            .map(|item| item.document_id)
+                            .collect()
+                    }),
+            )
             .await?;
 
         let mut response = QueryResponseBuilder::new(
@@ -342,23 +358,10 @@ impl EmailQuery for Server {
         );
 
         if !results.is_empty() {
-            let filter_ids = if access_token.is_shared(account_id) {
-                cached_messages
-                    .shared_messages(access_token, Acl::ReadItems)
-                    .into()
-            } else {
-                None
-            };
             let collapse_threads = request.arguments.collapse_threads.unwrap_or(false);
             let mut seen_thread_ids = AHashSet::new();
 
             for document_id in results {
-                if filter_ids
-                    .as_ref()
-                    .is_some_and(|filter_ids| !filter_ids.contains(document_id))
-                {
-                    continue;
-                }
                 let Some(thread_id) = cached_messages
                     .email_by_id(&document_id)
                     .map(|email| email.thread_id)

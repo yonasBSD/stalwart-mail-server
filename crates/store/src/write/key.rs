@@ -13,9 +13,8 @@ use crate::{
     SUBSPACE_BLOB_RESERVE, SUBSPACE_COUNTER, SUBSPACE_DIRECTORY, SUBSPACE_IN_MEMORY_COUNTER,
     SUBSPACE_IN_MEMORY_VALUE, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_PROPERTY,
     SUBSPACE_QUEUE_EVENT, SUBSPACE_QUEUE_MESSAGE, SUBSPACE_QUOTA, SUBSPACE_REPORT_IN,
-    SUBSPACE_REPORT_OUT, SUBSPACE_SETTINGS, SUBSPACE_TASK_QUEUE, SUBSPACE_TELEMETRY_INDEX,
-    SUBSPACE_TELEMETRY_METRIC, SUBSPACE_TELEMETRY_SPAN, U16_LEN, U32_LEN, U64_LEN, ValueKey,
-    WITH_SUBSPACE,
+    SUBSPACE_REPORT_OUT, SUBSPACE_SETTINGS, SUBSPACE_TASK_QUEUE, SUBSPACE_TELEMETRY_METRIC,
+    SUBSPACE_TELEMETRY_SPAN, U16_LEN, U32_LEN, U64_LEN, ValueKey, WITH_SUBSPACE,
     write::{IndexPropertyClass, SearchIndex},
 };
 use std::convert::TryInto;
@@ -322,6 +321,11 @@ impl ValueClass {
                             .write(*due)
                     }
                 }
+                TaskQueueClass::MergeThreads { due } => serializer
+                    .write(*due)
+                    .write(account_id)
+                    .write(9u8)
+                    .write(document_id),
             },
             ValueClass::Blob(op) => match op {
                 BlobOp::Reserve { hash, until } => serializer
@@ -418,9 +422,6 @@ impl ValueClass {
             },
             ValueClass::Telemetry(telemetry) => match telemetry {
                 TelemetryClass::Span { span_id } => serializer.write(*span_id),
-                TelemetryClass::Index { span_id, value } => {
-                    serializer.write(value.as_slice()).write(*span_id)
-                }
                 TelemetryClass::Metric {
                     timestamp,
                     metric_id,
@@ -512,7 +513,9 @@ impl ValueClass {
             ValueClass::TaskQueue(e) => match e {
                 TaskQueueClass::UpdateIndex { .. } => (U64_LEN * 2) + 2,
                 TaskQueueClass::BayesTrain { .. } => (U64_LEN * 2) + 1,
-                TaskQueueClass::SendAlarm { .. } => U64_LEN + (U32_LEN * 3) + 1,
+                TaskQueueClass::SendAlarm { .. } | TaskQueueClass::MergeThreads { .. } => {
+                    U64_LEN + (U32_LEN * 3) + 1
+                }
                 TaskQueueClass::SendImip { is_payload, .. } => {
                     if *is_payload {
                         (U64_LEN * 2) + (U32_LEN * 2) + 1
@@ -535,7 +538,6 @@ impl ValueClass {
             ValueClass::Report(_) => U64_LEN * 2 + 1,
             ValueClass::Telemetry(telemetry) => match telemetry {
                 TelemetryClass::Span { .. } => U64_LEN + 1,
-                TelemetryClass::Index { value, .. } => U64_LEN + value.len() + 1,
                 TelemetryClass::Metric { .. } => U64_LEN * 2 + 1,
             },
             ValueClass::DocumentId => U32_LEN + 1,
@@ -584,7 +586,6 @@ impl ValueClass {
             ValueClass::Report(_) => SUBSPACE_REPORT_IN,
             ValueClass::Telemetry(telemetry) => match telemetry {
                 TelemetryClass::Span { .. } => SUBSPACE_TELEMETRY_SPAN,
-                TelemetryClass::Index { .. } => SUBSPACE_TELEMETRY_INDEX,
                 TelemetryClass::Metric { .. } => SUBSPACE_TELEMETRY_METRIC,
             },
             ValueClass::DocumentId | ValueClass::ChangeId => SUBSPACE_COUNTER,
@@ -666,7 +667,8 @@ impl SearchIndex {
             SearchIndex::Calendar => 1,
             SearchIndex::Contacts => 2,
             SearchIndex::File => 3,
-            SearchIndex::DeliveryHistory => 4,
+            SearchIndex::TracingSpan => 4,
+            SearchIndex::InMemory => unreachable!(),
         }
     }
 
@@ -676,7 +678,18 @@ impl SearchIndex {
             1 => Some(SearchIndex::Calendar),
             2 => Some(SearchIndex::Contacts),
             3 => Some(SearchIndex::File),
-            4 => Some(SearchIndex::DeliveryHistory),
+            4 => Some(SearchIndex::TracingSpan),
+            _ => None,
+        }
+    }
+
+    pub fn try_from_str(value: &str) -> Option<Self> {
+        match value {
+            "email" => Some(SearchIndex::Email),
+            "calendar" => Some(SearchIndex::Calendar),
+            "contacts" => Some(SearchIndex::Contacts),
+            "file" => Some(SearchIndex::File),
+            "tracing" => Some(SearchIndex::TracingSpan),
             _ => None,
         }
     }

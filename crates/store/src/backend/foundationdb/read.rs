@@ -47,6 +47,8 @@ impl FdbStore {
         let begin = params.begin.serialize(WITH_SUBSPACE);
         let end = params.end.serialize(WITH_SUBSPACE);
 
+        let todo = "fix fdb range scan to support chunked reads";
+
         if !params.first {
             let mut last_key = vec![];
 

@@ -74,7 +74,6 @@ impl RocksDbStore {
             SUBSPACE_BLOBS,
             SUBSPACE_TELEMETRY_SPAN,
             SUBSPACE_TELEMETRY_METRIC,
-            SUBSPACE_TELEMETRY_INDEX,
         ] {
             let cf_opts = Options::default();
             cfs.push(ColumnFamilyDescriptor::new(

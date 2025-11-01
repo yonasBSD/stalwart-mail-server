@@ -209,6 +209,9 @@ pub enum TaskQueueClass {
         due: u64,
         is_payload: bool,
     },
+    MergeThreads {
+        due: u64,
+    },
 }
 
 #[derive(Debug, PartialEq, Clone, Copy, Eq, Hash)]
@@ -217,7 +220,8 @@ pub enum SearchIndex {
     Calendar,
     Contacts,
     File,
-    DeliveryHistory,
+    TracingSpan,
+    InMemory,
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
@@ -271,10 +275,6 @@ pub enum TelemetryClass {
         timestamp: u64,
         metric_id: u64,
         node_id: u64,
-    },
-    Index {
-        span_id: u64,
-        value: Vec<u8>,
     },
 }
 

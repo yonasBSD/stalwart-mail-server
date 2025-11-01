@@ -102,7 +102,6 @@ pub const SUBSPACE_QUOTA: u8 = b'u';
 pub const SUBSPACE_REPORT_OUT: u8 = b'h';
 pub const SUBSPACE_REPORT_IN: u8 = b'r';
 pub const SUBSPACE_TELEMETRY_SPAN: u8 = b'o';
-pub const SUBSPACE_TELEMETRY_INDEX: u8 = b'w';
 pub const SUBSPACE_TELEMETRY_METRIC: u8 = b'x';
 
 pub const SUBSPACE_RESERVED_2: u8 = b'z';
@@ -111,7 +110,7 @@ pub const SUBSPACE_BITMAP_ID: u8 = b'b';
 pub const SUBSPACE_BITMAP_TAG: u8 = b'c';
 pub const SUBSPACE_BITMAP_TEXT: u8 = b'v';
 pub const SUBSPACE_FTS_INDEX: u8 = b'g';
-
+pub const SUBSPACE_TELEMETRY_INDEX: u8 = b'w';
 */
 
 #[derive(Clone)]

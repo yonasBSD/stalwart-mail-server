@@ -44,6 +44,7 @@ pub struct ClusterRoles {
     pub fts_indexing: ClusterRole,
     pub bayes_training: ClusterRole,
     pub imip_processing: ClusterRole,
+    pub merge_threads: ClusterRole,
     pub calendar_alerts: ClusterRole,
     pub renew_acme: ClusterRole,
     pub calculate_metrics: ClusterRole,
@@ -255,6 +256,10 @@ impl Network {
             (
                 &mut network.roles.calendar_alerts,
                 "cluster.roles.calendar-alerts",
+            ),
+            (
+                &mut network.roles.merge_threads,
+                "cluster.roles.merge-threads",
             ),
         ] {
             let shards = config

@@ -245,7 +245,7 @@ impl ArchivedContactCard {
     pub fn index_document(&self) -> IndexDocument {
         let mut document = IndexDocument::with_default_language(Language::Unknown);
 
-        document.index_number(ContactSearchField::Created, self.created.to_native());
+        document.index_integer(ContactSearchField::Created, self.created.to_native());
 
         for entry in self.card.entries.iter() {
             let field = match entry.name {

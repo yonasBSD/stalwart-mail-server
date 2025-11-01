@@ -19,8 +19,8 @@ use store::{
     IterateParams, U32_LEN, U64_LEN, ValueKey,
     ahash::AHashSet,
     roaring::RoaringBitmap,
-    search::SearchFilter,
-    write::{IndexPropertyClass, ValueClass, key::DeserializeBigEndian},
+    search::{SearchFilter, SearchQuery},
+    write::{IndexPropertyClass, SearchIndex, ValueClass, key::DeserializeBigEndian},
 };
 use trc::AddContext;
 use types::{
@@ -58,6 +58,7 @@ impl CalendarEventNotificationQuery for Server {
             )
             .await?;
         let mut notifications = Vec::with_capacity(16);
+        let mut document_ids = RoaringBitmap::new();
 
         self.store()
             .iterate(
@@ -83,11 +84,13 @@ impl CalendarEventNotificationQuery for Server {
                 )
                 .ascending(),
                 |key, value| {
+                    let document_id = key.deserialize_be_u32(key.len() - U32_LEN)?;
                     notifications.push(Notification {
-                        document_id: key.deserialize_be_u32(key.len() - U32_LEN)?,
+                        document_id,
                         created: key.deserialize_be_u64(key.len() - U32_LEN - U64_LEN)?,
                         event_id: value.deserialize_be_u32(0)?,
                     });
+                    document_ids.insert(document_id);
 
                     Ok(true)
                 },
@@ -164,18 +167,13 @@ impl CalendarEventNotificationQuery for Server {
             notifications.reverse();
         }
 
-        let results = self
-            .search_store()
-            .query(
-                account_id,
-                Collection::CalendarEventNotification,
-                filters,
-                vec![],
-            )
-            .await?;
+        let results = SearchQuery::new(SearchIndex::InMemory)
+            .with_filters(filters)
+            .with_mask(document_ids)
+            .execute();
 
         let mut response = QueryResponseBuilder::new(
-            results.len(),
+            results.len() as usize,
             self.core.jmap.query_max_results,
             cache.get_state(false),
             &request,

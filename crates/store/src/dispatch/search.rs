@@ -7,51 +7,44 @@
 use super::DocumentSet;
 use crate::{
     SearchStore,
-    search::{IndexDocument, SearchComparator, SearchFilter},
+    backend::elastic::query,
+    search::{IndexDocument, SearchComparator, SearchDocumentId, SearchFilter, SearchQuery},
 };
 use trc::AddContext;
 use types::collection::Collection;
 
 impl SearchStore {
-    pub async fn index(&self, document: IndexDocument) -> trc::Result<()> {
-        match self {
+    pub async fn query<R: SearchDocumentId>(&self, query: SearchQuery) -> trc::Result<Vec<R>> {
+        todo!()
+        /*match self {
+            SearchStore::Store(store) => {
+                store
+                    .index_query(account_id, collection, filters, comparators)
+                    .await
+            }
+            #[cfg(feature = "elastic")]
+            SearchStore::ElasticSearch(store) => {
+                store
+                    .index_query(account_id, collection, filters, comparators)
+                    .await
+            }
+        }
+        .caused_by(trc::location!())*/
+    }
+
+    pub async fn index(&self, documents: Vec<IndexDocument>) -> trc::Result<()> {
+        todo!()
+        /*match self {
             SearchStore::Store(store) => store.index_insert(document).await,
             #[cfg(feature = "elastic")]
             SearchStore::ElasticSearch(store) => store.index_insert(document).await,
         }
-        .caused_by(trc::location!())
+        .caused_by(trc::location!())*/
     }
 
-    pub async fn query(
-        &self,
-        account_id: u32,
-        collection: Collection,
-        filters: Vec<SearchFilter>,
-        comparators: Vec<SearchComparator>,
-    ) -> trc::Result<Vec<u32>> {
-        match self {
-            SearchStore::Store(store) => {
-                store
-                    .index_query(account_id, collection, filters, comparators)
-                    .await
-            }
-            #[cfg(feature = "elastic")]
-            SearchStore::ElasticSearch(store) => {
-                store
-                    .index_query(account_id, collection, filters, comparators)
-                    .await
-            }
-        }
-        .caused_by(trc::location!())
-    }
-
-    pub async fn remove(
-        &self,
-        account_id: u32,
-        collection: Collection,
-        document_ids: &impl DocumentSet,
-    ) -> trc::Result<()> {
-        match self {
+    pub async fn unindex(&self, query: SearchQuery) -> trc::Result<()> {
+        todo!()
+        /*match self {
             SearchStore::Store(store) => {
                 store
                     .index_remove(account_id, collection, document_ids)
@@ -64,15 +57,6 @@ impl SearchStore {
                     .await
             }
         }
-        .caused_by(trc::location!())
-    }
-
-    pub async fn remove_all(&self, account_id: u32) -> trc::Result<()> {
-        match self {
-            SearchStore::Store(store) => store.index_remove_all(account_id).await,
-            #[cfg(feature = "elastic")]
-            SearchStore::ElasticSearch(store) => store.index_remove_all(account_id).await,
-        }
-        .caused_by(trc::location!())
+        .caused_by(trc::location!())*/
     }
 }
