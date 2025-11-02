@@ -35,6 +35,7 @@ pub enum SearchField {
     Calendar(CalendarSearchField),
     Contact(ContactSearchField),
     File(FileSearchField),
+    Tracing(TracingSearchField),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -86,12 +87,21 @@ pub enum FileSearchField {
     Content,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TracingSearchField {
+    EventType,
+    QueueId,
+    Address,
+    RemoteIp,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SearchValue {
     Text { value: String, language: Language },
     Int(i64),
     Uint(u64),
     Boolean(bool),
+    Keywords(Vec<SearchValue>),
 }
 
 pub trait SearchDocumentId: Sized {
@@ -351,6 +361,29 @@ impl IndexDocument {
             .insert(field.into(), SearchValue::Uint(value.into()));
     }
 
+    pub fn insert_keyword(
+        &mut self,
+        field: impl Into<SearchField>,
+        keyword: impl Into<SearchValue>,
+    ) {
+        let search_field = field.into();
+
+        match self.fields.entry(search_field) {
+            Entry::Occupied(mut entry) => {
+                if let SearchValue::Keywords(existing_keywords) = entry.get_mut() {
+                    existing_keywords.push(keyword.into());
+                }
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(SearchValue::Keywords(vec![keyword.into()]));
+            }
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.fields.is_empty()
+    }
+
     pub fn has_field(&self, field: &SearchField) -> bool {
         self.fields.contains_key(field)
     }
@@ -385,6 +418,11 @@ impl SearchQuery {
     }
 
     pub fn with_filter(mut self, filter: SearchFilter) -> Self {
+        self.filters.push(filter);
+        self
+    }
+
+    pub fn add_filter(&mut self, filter: SearchFilter) -> &mut Self {
         self.filters.push(filter);
         self
     }
@@ -435,6 +473,12 @@ impl From<ContactSearchField> for SearchField {
 impl From<FileSearchField> for SearchField {
     fn from(field: FileSearchField) -> Self {
         SearchField::File(field)
+    }
+}
+
+impl From<TracingSearchField> for SearchField {
+    fn from(field: TracingSearchField) -> Self {
+        SearchField::Tracing(field)
     }
 }
 

@@ -9,6 +9,7 @@ use crate::{
     SearchStore,
     backend::elastic::query,
     search::{IndexDocument, SearchComparator, SearchDocumentId, SearchFilter, SearchQuery},
+    write::SearchIndex,
 };
 use trc::AddContext;
 use types::collection::Collection;
@@ -32,7 +33,11 @@ impl SearchStore {
         .caused_by(trc::location!())*/
     }
 
-    pub async fn index(&self, documents: Vec<IndexDocument>) -> trc::Result<()> {
+    pub async fn index(
+        &self,
+        index: SearchIndex,
+        documents: Vec<IndexDocument>,
+    ) -> trc::Result<()> {
         todo!()
         /*match self {
             SearchStore::Store(store) => store.index_insert(document).await,

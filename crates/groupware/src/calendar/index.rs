@@ -12,6 +12,7 @@ use crate::calendar::{
     ArchivedCalendarEventNotification, ArchivedEventPreferences, CalendarEventNotification,
     EventPreferences,
 };
+use ahash::AHashSet;
 use calcard::icalendar::{
     ArchivedICalendarParameterValue, ArchivedICalendarProperty, ArchivedICalendarValue,
     ICalendarParameterValue, ICalendarProperty, ICalendarValue,
@@ -19,7 +20,7 @@ use calcard::icalendar::{
 use common::storage::index::{IndexValue, IndexableAndSerializableObject, IndexableObject};
 use nlp::language::Language;
 use store::{
-    search::{CalendarSearchField, IndexDocument},
+    search::{CalendarSearchField, IndexDocument, SearchField},
     write::{IndexPropertyClass, SearchIndex, ValueClass},
     xxhash_rust::xxh3,
 };
@@ -336,10 +337,14 @@ impl ArchivedCalendarEvent {
 }
 
 impl ArchivedCalendarEvent {
-    pub fn index_document(&self) -> IndexDocument {
+    pub fn index_document(&self, index_fields: &AHashSet<SearchField>) -> IndexDocument {
         let mut document = IndexDocument::with_default_language(Language::Unknown);
 
-        document.index_integer(CalendarSearchField::Start, self.data.event_range_start());
+        if index_fields.is_empty()
+            || index_fields.contains(&SearchField::Calendar(CalendarSearchField::Start))
+        {
+            document.index_integer(CalendarSearchField::Start, self.data.event_range_start());
+        }
 
         for component in self
             .data
@@ -349,7 +354,7 @@ impl ArchivedCalendarEvent {
             .filter(|e| e.component_type.is_scheduling_object())
         {
             for entry in component.entries.iter() {
-                let field = match entry.name {
+                let field = SearchField::Calendar(match entry.name {
                     ArchivedICalendarProperty::Summary => CalendarSearchField::Title,
                     ArchivedICalendarProperty::Description => CalendarSearchField::Description,
                     ArchivedICalendarProperty::Location => CalendarSearchField::Location,
@@ -357,27 +362,29 @@ impl ArchivedCalendarEvent {
                     ArchivedICalendarProperty::Attendee => CalendarSearchField::Attendee,
                     ArchivedICalendarProperty::Uid => CalendarSearchField::Uid,
                     _ => continue,
-                };
+                });
 
-                for value in entry
-                    .values
-                    .iter()
-                    .filter_map(|v| match v {
-                        ArchivedICalendarValue::Text(v) => Some(v.as_str()),
-                        ArchivedICalendarValue::Uri(uri) => uri.as_str(),
-                        _ => None,
-                    })
-                    .chain(entry.params.iter().filter_map(|p| match &p.value {
-                        ArchivedICalendarParameterValue::Text(v) => Some(v.as_str()),
-                        ArchivedICalendarParameterValue::Uri(uri) => uri.as_str(),
-                        _ => None,
-                    }))
-                {
-                    document.index_text(
-                        field,
-                        value.strip_prefix("mailto:").unwrap_or(value),
-                        Language::Unknown,
-                    );
+                if index_fields.is_empty() || index_fields.contains(&field) {
+                    for value in entry
+                        .values
+                        .iter()
+                        .filter_map(|v| match v {
+                            ArchivedICalendarValue::Text(v) => Some(v.as_str()),
+                            ArchivedICalendarValue::Uri(uri) => uri.as_str(),
+                            _ => None,
+                        })
+                        .chain(entry.params.iter().filter_map(|p| match &p.value {
+                            ArchivedICalendarParameterValue::Text(v) => Some(v.as_str()),
+                            ArchivedICalendarParameterValue::Uri(uri) => uri.as_str(),
+                            _ => None,
+                        }))
+                    {
+                        document.index_text(
+                            field.clone(),
+                            value.strip_prefix("mailto:").unwrap_or(value),
+                            Language::Unknown,
+                        );
+                    }
                 }
             }
         }

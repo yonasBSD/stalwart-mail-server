@@ -5,26 +5,36 @@
  */
 
 use crate::task_manager::{IndexAction, Task};
-use common::Server;
-use directory::{Type, backend::internal::manage::ManageDirectory};
-use groupware::cache::GroupwareCache;
+use common::{
+    Server,
+    telemetry::tracers::store::{TracingStore, build_span_document},
+};
+use directory::{QueryParams, Type, backend::internal::manage::ManageDirectory};
+use email::message::metadata::MessageMetadata;
+use groupware::{cache::GroupwareCache, calendar::CalendarEvent, contact::ContactCard};
+use std::cmp::Ordering;
 use store::{
     IterateParams, SerializeInfallible, U32_LEN, ValueKey,
     ahash::AHashMap,
     roaring::RoaringBitmap,
+    search::{IndexDocument, SearchField, SearchFilter, SearchQuery},
     write::{
         BatchBuilder, BlobOp, SearchIndex, TaskQueueClass, ValueClass, key::DeserializeBigEndian,
         now,
     },
 };
-use trc::AddContext;
+use trc::{AddContext, TaskQueueEvent};
 use types::{
     blob_hash::{BLOB_HASH_LEN, BlobHash},
     collection::{Collection, SyncCollection},
+    field::EmailField,
 };
 
 pub(crate) trait SearchIndexTask: Sync + Send {
-    fn index(&self, tasks: &[Task<IndexAction>]) -> impl Future<Output = bool> + Send;
+    fn index(
+        &self,
+        tasks: &[Task<IndexAction>],
+    ) -> impl Future<Output = Vec<IndexTaskResult>> + Send;
 }
 
 pub trait ReindexIndexTask: Sync + Send {
@@ -36,106 +46,241 @@ pub trait ReindexIndexTask: Sync + Send {
     ) -> impl Future<Output = trc::Result<()>> + Send;
 }
 
+const NUM_INDEXES: usize = 5;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TaskType {
+    Insert,
+    Delete,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TaskStatus {
+    Success,
+    Failed,
+    Ignored,
+}
+
+#[derive(Debug)]
+pub(crate) struct IndexTaskResult {
+    index: SearchIndex,
+    task_type: TaskType,
+    status: TaskStatus,
+}
+
 impl SearchIndexTask for Server {
-    async fn index(&self, tasks: &[Task<IndexAction>]) -> bool {
-        todo!()
-        // Obtain raw message
-        /*let op_start = Instant::now();
-        let raw_message = if let Ok(Some(raw_message)) = self
-            .blob_store()
-            .get_blob(hash.as_slice(), 0..usize::MAX)
-            .await
-        {
-            raw_message
-        } else {
-            trc::event!(
-                TaskQueue(TaskQueueEvent::BlobNotFound),
-                AccountId = account_id,
-                DocumentId = document_id,
-                BlobId = hash.as_slice(),
-            );
-            return false;
-        };
+    async fn index(&self, tasks: &[Task<IndexAction>]) -> Vec<IndexTaskResult> {
+        let mut results: Vec<IndexTaskResult> = Vec::with_capacity(tasks.len());
+        let mut batch = BatchBuilder::new();
+        let mut document_insertions: [Vec<IndexDocument>; NUM_INDEXES] =
+            std::array::from_fn(|_| Vec::new());
+        let mut document_deletions: [AHashMap<u32, Vec<u32>>; NUM_INDEXES] =
+            std::array::from_fn(|_| AHashMap::new());
 
-        match self
-            .archive_by_property(
-                account_id,
-                Collection::Email,
-                document_id,
-                EmailField::Metadata.into(),
-            )
-            .await
-        {
-            Ok(Some(metadata_)) => {
-                match metadata_.unarchive::<MessageMetadata>() {
-                    Ok(metadata) if metadata.blob_hash.0.as_slice() == hash.as_slice() => {
-                        // Index message
-                        /*let document =
-                            FtsDocument::with_default_language(self.core.jmap.default_language)
-                                .with_account_id(account_id)
-                                .with_collection(Collection::Email)
-                                .with_document_id(document_id)
-                                .index_message(metadata, &raw_message);
-                        if let Err(err) = self.core.storage.fts.index(document).await {
-                            trc::error!(
-                                err.account_id(account_id)
-                                    .document_id(document_id)
-                                    .details("Failed to index email in FTS index")
-                            );
+        for task in tasks {
+            if task.action.is_insert {
+                let (idx, document) = match task.action.index {
+                    SearchIndex::Email => (
+                        0,
+                        build_email_document(self, task.account_id, task.document_id).await,
+                    ),
+                    SearchIndex::Calendar => (
+                        1,
+                        build_calendar_document(self, task.account_id, task.document_id).await,
+                    ),
+                    SearchIndex::Contacts => (
+                        2,
+                        build_contact_document(self, task.account_id, task.document_id).await,
+                    ),
+                    SearchIndex::File => {
+                        // File indexing not implemented yet
+                        continue;
+                    }
+                    SearchIndex::TracingSpan => (
+                        4,
+                        build_tracing_span_document(self, task.account_id, task.document_id).await,
+                    ),
+                    SearchIndex::InMemory => unreachable!(),
+                };
 
-                            return false;
-                        }*/
-
-                        trc::event!(
-                            MessageIngest(MessageIngestEvent::FtsIndex),
-                            AccountId = account_id,
-                            Collection = Collection::Email,
-                            DocumentId = document_id,
-                            Elapsed = op_start.elapsed(),
-                        );
+                let result = match document {
+                    Ok(Some(doc)) if !doc.is_empty() => {
+                        document_insertions[idx].push(doc);
+                        TaskStatus::Success
                     }
                     Err(err) => {
                         trc::error!(
-                            err.account_id(account_id)
-                                .document_id(document_id)
-                                .details("Failed to unarchive email metadata")
+                            err.account_id(task.account_id)
+                                .document_id(task.document_id)
+                                .caused_by(trc::location!())
+                                .ctx(trc::Key::Collection, task.action.index.name())
+                                .details("Failed to build document for indexing")
                         );
+                        TaskStatus::Failed
                     }
-
                     _ => {
-                        // The message was probably deleted or overwritten
                         trc::event!(
-                            TaskQueue(TaskQueueEvent::MetadataNotFound),
-                            Details = "E-mail blob hash mismatch",
-                            AccountId = account_id,
-                            DocumentId = document_id,
+                            TaskQueue(TaskQueueEvent::TaskIgnored),
+                            Collection = task.action.index.name(),
+                            Reason = "Nothing to index",
+                            AccountId = task.account_id,
+                            DocumentId = task.document_id,
                         );
+                        TaskStatus::Ignored
+                    }
+                };
+
+                results.push(IndexTaskResult {
+                    task_type: TaskType::Insert,
+                    index: task.action.index,
+                    status: result,
+                });
+            } else {
+                let idx = match task.action.index {
+                    SearchIndex::Email => {
+                        if let Err(err) = delete_email_metadata(
+                            self,
+                            &mut batch,
+                            task.account_id,
+                            task.document_id,
+                        )
+                        .await
+                        {
+                            trc::error!(
+                                err.account_id(task.account_id)
+                                    .document_id(task.document_id)
+                                    .caused_by(trc::location!())
+                                    .details("Failed to delete email metadata from index")
+                            );
+                            results.push(IndexTaskResult {
+                                task_type: TaskType::Delete,
+                                index: task.action.index,
+                                status: TaskStatus::Failed,
+                            });
+                            continue;
+                        }
+                        0
+                    }
+                    SearchIndex::Calendar => 1,
+                    SearchIndex::Contacts => 2,
+                    SearchIndex::File => 3,
+                    SearchIndex::TracingSpan | SearchIndex::InMemory => unreachable!(),
+                };
+
+                document_deletions[idx]
+                    .entry(task.account_id)
+                    .or_default()
+                    .push(task.document_id);
+
+                results.push(IndexTaskResult {
+                    task_type: TaskType::Delete,
+                    index: task.action.index,
+                    status: TaskStatus::Success,
+                });
+            }
+        }
+
+        // Commit deletion batch to data store
+        if !batch.is_empty() {
+            if let Err(err) = self.store().write(batch.build_all()).await {
+                trc::error!(
+                    err.caused_by(trc::location!())
+                        .details("Failed to commit index deletions to data store")
+                );
+            }
+            for r in results.iter_mut() {
+                if r.task_type == TaskType::Delete
+                    && r.status == TaskStatus::Success
+                    && r.index == SearchIndex::Email
+                {
+                    r.status = TaskStatus::Failed;
+                }
+            }
+            return results;
+        }
+
+        // Index documents
+        for (documents, index) in document_insertions.into_iter().zip([
+            SearchIndex::Email,
+            SearchIndex::Calendar,
+            SearchIndex::Contacts,
+            SearchIndex::File,
+            SearchIndex::TracingSpan,
+        ]) {
+            if !documents.is_empty()
+                && let Err(err) = self.search_store().index(index, documents).await
+            {
+                trc::error!(
+                    err.caused_by(trc::location!())
+                        .details("Failed to index documents")
+                        .ctx(trc::Key::Collection, index.name())
+                );
+                for r in results.iter_mut() {
+                    if r.task_type == TaskType::Delete && r.status == TaskStatus::Success {
+                        r.status = TaskStatus::Failed;
                     }
                 }
-
-                true
+                return results;
             }
-            Err(err) => {
+        }
+
+        // Delete documents
+        for (accounts, index) in document_deletions.into_iter().zip([
+            SearchIndex::Email,
+            SearchIndex::Calendar,
+            SearchIndex::Contacts,
+        ]) {
+            let multi_account = match accounts.len().cmp(&1) {
+                Ordering::Greater => true,
+                Ordering::Equal => false,
+                Ordering::Less => continue,
+            };
+
+            let mut query = SearchQuery::new(index);
+            if multi_account {
+                query.add_filter(SearchFilter::Or);
+            }
+
+            for (account_id, document_ids) in accounts {
+                let multi_document = document_ids.len() > 1;
+                query
+                    .add_filter(SearchFilter::And)
+                    .add_filter(SearchFilter::eq(SearchField::AccountId, account_id));
+
+                if multi_document {
+                    query.add_filter(SearchFilter::Or);
+                }
+
+                for document_id in document_ids {
+                    query.add_filter(SearchFilter::eq(SearchField::DocumentId, document_id));
+                }
+
+                if multi_document {
+                    query.add_filter(SearchFilter::End);
+                }
+                query.add_filter(SearchFilter::End);
+            }
+
+            if multi_account {
+                query.add_filter(SearchFilter::End);
+            }
+
+            if let Err(err) = self.search_store().unindex(query).await {
                 trc::error!(
-                    err.account_id(account_id)
-                        .document_id(document_id)
-                        .caused_by(trc::location!())
-                        .details("Failed to retrieve email metadata")
+                    err.caused_by(trc::location!())
+                        .details("Failed to delete documents from index")
+                        .ctx(trc::Key::Collection, index.name())
                 );
+                for r in results.iter_mut() {
+                    if r.task_type == TaskType::Delete && r.status == TaskStatus::Success {
+                        r.status = TaskStatus::Failed;
+                    }
+                }
+                return results;
+            }
+        }
 
-                false
-            }
-            _ => {
-                // The message was probably deleted or overwritten
-                trc::event!(
-                    TaskQueue(TaskQueueEvent::MetadataNotFound),
-                    Details = "E-mail metadata not found",
-                    AccountId = account_id,
-                    DocumentId = document_id,
-                );
-                true
-            }
-        }*/
+        results
     }
 }
 
@@ -293,5 +438,167 @@ impl ReindexIndexTask for Server {
         self.notify_task_queue();
 
         Ok(())
+    }
+}
+
+async fn build_email_document(
+    server: &Server,
+    account_id: u32,
+    document_id: u32,
+) -> trc::Result<Option<IndexDocument>> {
+    let Some(index_fields) = server.core.jmap.index_fields.get(&SearchIndex::Email) else {
+        return Ok(None);
+    };
+
+    match server
+        .archive_by_property(
+            account_id,
+            Collection::Email,
+            document_id,
+            EmailField::Metadata.into(),
+        )
+        .await?
+    {
+        Some(metadata_) => {
+            let metadata = metadata_
+                .unarchive::<MessageMetadata>()
+                .caused_by(trc::location!())?;
+
+            let raw_message = server
+                .blob_store()
+                .get_blob(metadata.blob_hash.0.as_slice(), 0..usize::MAX)
+                .await
+                .caused_by(trc::location!())?
+                .ok_or_else(|| {
+                    trc::StoreEvent::NotFound
+                        .into_err()
+                        .details("Blob not found")
+                })?;
+
+            Ok(Some(metadata.index_document(
+                &raw_message,
+                index_fields,
+                server.core.jmap.index_all_headers,
+            )))
+        }
+        None => Ok(None),
+    }
+}
+
+async fn build_calendar_document(
+    server: &Server,
+    account_id: u32,
+    document_id: u32,
+) -> trc::Result<Option<IndexDocument>> {
+    let Some(index_fields) = server.core.jmap.index_fields.get(&SearchIndex::Calendar) else {
+        return Ok(None);
+    };
+
+    match server
+        .archive(account_id, Collection::CalendarEvent, document_id)
+        .await?
+    {
+        Some(metadata_) => Ok(Some(
+            metadata_
+                .unarchive::<CalendarEvent>()
+                .caused_by(trc::location!())?
+                .index_document(index_fields),
+        )),
+        None => Ok(None),
+    }
+}
+
+async fn build_contact_document(
+    server: &Server,
+    account_id: u32,
+    document_id: u32,
+) -> trc::Result<Option<IndexDocument>> {
+    let Some(index_fields) = server.core.jmap.index_fields.get(&SearchIndex::Contacts) else {
+        return Ok(None);
+    };
+
+    match server
+        .archive(account_id, Collection::ContactCard, document_id)
+        .await?
+    {
+        Some(metadata_) => Ok(Some(
+            metadata_
+                .unarchive::<ContactCard>()
+                .caused_by(trc::location!())?
+                .index_document(index_fields),
+        )),
+        None => Ok(None),
+    }
+}
+
+async fn build_tracing_span_document(
+    server: &Server,
+    account_id: u32,
+    document_id: u32,
+) -> trc::Result<Option<IndexDocument>> {
+    let Some(index_fields) = server.core.jmap.index_fields.get(&SearchIndex::TracingSpan) else {
+        return Ok(None);
+    };
+
+    let span_id = ((account_id as u64) << 32) | document_id as u64;
+    let span = server.store().get_span(span_id).await?;
+
+    if !span.is_empty() {
+        Ok(Some(build_span_document(span_id, span, index_fields)))
+    } else {
+        Ok(None)
+    }
+}
+
+async fn delete_email_metadata(
+    server: &Server,
+    batch: &mut BatchBuilder,
+    account_id: u32,
+    document_id: u32,
+) -> trc::Result<()> {
+    match server
+        .archive_by_property(
+            account_id,
+            Collection::Email,
+            document_id,
+            EmailField::Metadata.into(),
+        )
+        .await?
+    {
+        Some(metadata) => {
+            let tenant_id = server
+                .core
+                .storage
+                .directory
+                .query(QueryParams::id(account_id).with_return_member_of(false))
+                .await
+                .unwrap_or_default()
+                .and_then(|p| p.tenant());
+
+            batch
+                .with_account_id(account_id)
+                .with_collection(Collection::Email)
+                .with_document(document_id);
+            metadata
+                .unarchive::<MessageMetadata>()
+                .caused_by(trc::location!())?
+                .unindex(batch, account_id, tenant_id);
+        }
+        None => {
+            trc::event!(
+                TaskQueue(TaskQueueEvent::MetadataNotFound),
+                Details = "E-mail metadata not found",
+                AccountId = account_id,
+                DocumentId = document_id,
+            );
+        }
+    }
+
+    Ok(())
+}
+
+impl IndexTaskResult {
+    pub fn is_done(&self) -> bool {
+        self.status != TaskStatus::Failed
     }
 }

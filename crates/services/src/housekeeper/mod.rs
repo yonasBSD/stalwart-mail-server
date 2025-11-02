@@ -735,7 +735,9 @@ impl Purge for Server {
                 // SPDX-License-Identifier: LicenseRef-SEL
                 #[cfg(feature = "enterprise")]
                 if let Some(trace_retention) = trace_retention
-                    && let Err(err) = store.purge_spans(trace_retention).await
+                    && let Err(err) = store
+                        .purge_spans(trace_retention, self.search_store().into())
+                        .await
                 {
                     trc::error!(err.details("Failed to purge tracing spans"));
                 }

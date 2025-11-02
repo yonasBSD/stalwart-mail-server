@@ -10,9 +10,11 @@
 
 use crate::config::telemetry::StoreTracer;
 use ahash::{AHashMap, AHashSet};
+use nlp::language::Language;
 use std::{future::Future, time::Duration};
 use store::{
-    Deserialize, Store, ValueKey,
+    Deserialize, SearchStore, Store, ValueKey,
+    search::{IndexDocument, SearchField, SearchFilter, SearchQuery, TracingSearchField},
     write::{BatchBuilder, SearchIndex, TaskQueueClass, TelemetryClass, ValueClass, now},
 };
 use trc::{
@@ -51,27 +53,30 @@ pub(crate) fn spawn_store_tracer(builder: SubscriberBuilder, settings: StoreTrac
                             .any(|(k, v)| matches!((k, v), (Key::QueueId, Value::UInt(_))))
                     {
                         // Serialize events
-                        batch
-                            .set(
-                                ValueClass::Telemetry(TelemetryClass::Span { span_id }),
-                                serialize_events(
-                                    [span.as_ref()]
-                                        .into_iter()
-                                        .chain(events.iter().map(|event| event.as_ref()))
-                                        .chain([event.as_ref()].into_iter()),
-                                    events.len() + 2,
-                                ),
-                            )
-                            .with_account_id((span_id >> 32) as u32) // TODO: This is hacky, improve
-                            .with_document(span_id as u32)
-                            .set(
-                                ValueClass::TaskQueue(TaskQueueClass::UpdateIndex {
-                                    due: now,
-                                    index: SearchIndex::TracingSpan,
-                                    is_insert: true,
-                                }),
-                                vec![],
-                            );
+                        batch.set(
+                            ValueClass::Telemetry(TelemetryClass::Span { span_id }),
+                            serialize_events(
+                                [span.as_ref()]
+                                    .into_iter()
+                                    .chain(events.iter().map(|event| event.as_ref()))
+                                    .chain([event.as_ref()].into_iter()),
+                                events.len() + 2,
+                            ),
+                        );
+
+                        if settings.indexed {
+                            batch
+                                .with_account_id((span_id >> 32) as u32) // TODO: This is hacky, improve
+                                .with_document(span_id as u32)
+                                .set(
+                                    ValueClass::TaskQueue(TaskQueueClass::UpdateIndex {
+                                        due: now,
+                                        index: SearchIndex::TracingSpan,
+                                        is_insert: true,
+                                    }),
+                                    vec![],
+                                );
+                        }
                     }
                 }
             }
@@ -86,12 +91,6 @@ pub(crate) fn spawn_store_tracer(builder: SubscriberBuilder, settings: StoreTrac
     });
 }
 
-pub enum TracingQuery {
-    EventType(EventType),
-    QueueId(u64),
-    Keywords(String),
-}
-
 pub trait TracingStore: Sync + Send {
     fn get_span(
         &self,
@@ -101,13 +100,11 @@ pub trait TracingStore: Sync + Send {
         &self,
         span_id: u64,
     ) -> impl Future<Output = trc::Result<Option<Vec<u8>>>> + Send;
-    fn query_spans(
+    fn purge_spans(
         &self,
-        params: &[TracingQuery],
-        from_span_id: u64,
-        to_span_id: u64,
-    ) -> impl Future<Output = trc::Result<Vec<u64>>> + Send;
-    fn purge_spans(&self, period: Duration) -> impl Future<Output = trc::Result<()>> + Send;
+        period: Duration,
+        search_store: Option<&SearchStore>,
+    ) -> impl Future<Output = trc::Result<()>> + Send;
 }
 
 impl TracingStore for Store {
@@ -129,16 +126,11 @@ impl TracingStore for Store {
         .map(|span| span.map(|span| span.0))
     }
 
-    async fn query_spans(
+    async fn purge_spans(
         &self,
-        params: &[TracingQuery],
-        from_span_id: u64,
-        to_span_id: u64,
-    ) -> trc::Result<Vec<u64>> {
-        todo!()
-    }
-
-    async fn purge_spans(&self, period: Duration) -> trc::Result<()> {
+        period: Duration,
+        search_store: Option<&SearchStore>,
+    ) -> trc::Result<()> {
         let until_span_id = SnowflakeIdGenerator::from_duration(period).ok_or_else(|| {
             trc::StoreEvent::UnexpectedError
                 .caused_by(trc::location!())
@@ -154,7 +146,15 @@ impl TracingStore for Store {
         .await
         .caused_by(trc::location!())?;
 
-        let todo = "delete from index";
+        if let Some(search_store) = search_store {
+            search_store
+                .unindex(
+                    SearchQuery::new(SearchIndex::TracingSpan)
+                        .with_filter(SearchFilter::lt(SearchField::Id, until_span_id)),
+                )
+                .await
+                .caused_by(trc::location!())?;
+        }
 
         Ok(())
     }
@@ -239,4 +239,74 @@ impl Deserialize for RawSpan {
     fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
         Ok(Self(bytes.to_vec()))
     }
+}
+
+pub fn build_span_document(
+    span_id: u64,
+    events: Vec<Event<EventDetails>>,
+    index_fields: &AHashSet<SearchField>,
+) -> IndexDocument {
+    let mut document = IndexDocument::with_default_language(Language::None);
+
+    document.index_unsigned(SearchField::Id, span_id);
+
+    for event in events {
+        for (idx, (key, value)) in event.keys.into_iter().enumerate() {
+            if idx == 0
+                && (index_fields.is_empty()
+                    || index_fields.contains(&TracingSearchField::EventType.into()))
+            {
+                document.index_unsigned(TracingSearchField::EventType, event.inner.typ.code());
+            }
+
+            match (key, value) {
+                (Key::QueueId, Value::UInt(queue_id)) => {
+                    if index_fields.is_empty()
+                        || index_fields.contains(&TracingSearchField::QueueId.into())
+                    {
+                        document.insert_keyword(TracingSearchField::QueueId, queue_id);
+                    }
+                }
+                (Key::From | Key::To | Key::Domain | Key::Hostname, Value::String(address)) => {
+                    if index_fields.is_empty()
+                        || index_fields.contains(&TracingSearchField::Address.into())
+                    {
+                        document.insert_keyword(TracingSearchField::Address, address.into_string());
+                    }
+                }
+                (Key::To, Value::Array(value)) => {
+                    if index_fields.is_empty()
+                        || index_fields.contains(&TracingSearchField::Address.into())
+                    {
+                        for value in value {
+                            if let Value::String(address) = value {
+                                document.insert_keyword(
+                                    TracingSearchField::Address,
+                                    address.into_string(),
+                                );
+                            }
+                        }
+                    }
+                }
+                (Key::RemoteIp, Value::Ipv4(ip)) => {
+                    if index_fields.is_empty()
+                        || index_fields.contains(&TracingSearchField::RemoteIp.into())
+                    {
+                        document.insert_keyword(TracingSearchField::RemoteIp, ip.to_string());
+                    }
+                }
+                (Key::RemoteIp, Value::Ipv6(ip)) => {
+                    if index_fields.is_empty()
+                        || index_fields.contains(&TracingSearchField::RemoteIp.into())
+                    {
+                        document.insert_keyword(TracingSearchField::RemoteIp, ip.to_string());
+                    }
+                }
+
+                _ => {}
+            }
+        }
+    }
+
+    document
 }

@@ -5,6 +5,7 @@
  */
 
 use super::{AddressBook, ArchivedAddressBook, ArchivedContactCard, ContactCard};
+use ahash::AHashSet;
 use calcard::{
     common::IanaString,
     vcard::{
@@ -15,7 +16,7 @@ use calcard::{
 use common::storage::index::{IndexValue, IndexableAndSerializableObject, IndexableObject};
 use nlp::language::Language;
 use store::{
-    search::{ContactSearchField, IndexDocument},
+    search::{ContactSearchField, IndexDocument, SearchField},
     write::SearchIndex,
     xxhash_rust::xxh3,
 };
@@ -242,13 +243,17 @@ impl ArchivedContactCard {
 }
 
 impl ArchivedContactCard {
-    pub fn index_document(&self) -> IndexDocument {
+    pub fn index_document(&self, index_fields: &AHashSet<SearchField>) -> IndexDocument {
         let mut document = IndexDocument::with_default_language(Language::Unknown);
 
-        document.index_integer(ContactSearchField::Created, self.created.to_native());
+        if index_fields.is_empty()
+            || index_fields.contains(&SearchField::Contact(ContactSearchField::Created))
+        {
+            document.index_integer(ContactSearchField::Created, self.created.to_native());
+        }
 
         for entry in self.card.entries.iter() {
-            let field = match entry.name {
+            let field = SearchField::Contact(match entry.name {
                 ArchivedVCardProperty::N => ContactSearchField::Name,
                 ArchivedVCardProperty::Nickname => ContactSearchField::Nickname,
                 ArchivedVCardProperty::Org => ContactSearchField::Organization,
@@ -263,28 +268,30 @@ impl ArchivedContactCard {
                 ArchivedVCardProperty::Uid => ContactSearchField::Uid,
                 ArchivedVCardProperty::Member => ContactSearchField::Member,
                 _ => continue,
-            };
+            });
 
-            for value in entry.values.iter() {
-                match value {
-                    ArchivedVCardValue::Text(v) => {
-                        document.index_text(field, v, Language::Unknown);
-                    }
-                    ArchivedVCardValue::Kind(v) => {
-                        document.index_text(field, v.as_str(), Language::Unknown);
-                    }
-                    ArchivedVCardValue::Component(v) => {
-                        for item in v.iter() {
-                            document.index_text(field, item, Language::Unknown);
+            if index_fields.is_empty() || index_fields.contains(&field) {
+                for value in entry.values.iter() {
+                    match value {
+                        ArchivedVCardValue::Text(v) => {
+                            document.index_text(field.clone(), v, Language::Unknown);
                         }
+                        ArchivedVCardValue::Kind(v) => {
+                            document.index_text(field.clone(), v.as_str(), Language::Unknown);
+                        }
+                        ArchivedVCardValue::Component(v) => {
+                            for item in v.iter() {
+                                document.index_text(field.clone(), item, Language::Unknown);
+                            }
+                        }
+                        _ => (),
                     }
-                    _ => (),
                 }
-            }
 
-            for param in entry.params.iter() {
-                if let ArchivedVCardParameterValue::Text(value) = &param.value {
-                    document.index_text(field, value, Language::Unknown);
+                for param in entry.params.iter() {
+                    if let ArchivedVCardParameterValue::Text(value) = &param.value {
+                        document.index_text(field.clone(), value, Language::Unknown);
+                    }
                 }
             }
         }

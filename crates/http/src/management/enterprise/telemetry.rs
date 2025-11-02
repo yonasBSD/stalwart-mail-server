@@ -18,7 +18,7 @@ use common::{
     auth::{AccessToken, oauth::GrantType},
     telemetry::{
         metrics::store::{Metric, MetricsStore},
-        tracers::store::{TracingQuery, TracingStore},
+        tracers::store::TracingStore,
     },
 };
 use directory::{Permission, backend::internal::manage};
@@ -31,7 +31,11 @@ use hyper::{
 use mail_parser::DateTime;
 use serde_json::json;
 use std::future::Future;
-use store::ahash::{AHashMap, AHashSet};
+use store::{
+    ahash::{AHashMap, AHashSet},
+    search::{SearchField, SearchFilter, SearchQuery, TracingSearchField},
+    write::SearchIndex,
+};
 use trc::{
     Collector, DeliveryEvent, EventType, Key, MetricType, QueueEvent, Value,
     ipc::{bitset::Bitset, subscriber::SubscriberBuilder},
@@ -72,11 +76,12 @@ impl TelemetryApi for Server {
                 let page: usize = params.parse("page").unwrap_or(0);
                 let limit: usize = params.parse("limit").unwrap_or(0);
                 let mut tracing_query = Vec::new();
-                if let Some(typ) = params.parse("type") {
-                    tracing_query.push(TracingQuery::EventType(typ));
+                tracing_query.push(SearchFilter::And);
+                if let Some(typ) = params.parse::<EventType>("type") {
+                    tracing_query.push(SearchFilter::eq(TracingSearchField::EventType, typ.id()));
                 }
-                if let Some(queue_id) = params.parse("queue_id") {
-                    tracing_query.push(TracingQuery::QueueId(queue_id));
+                if let Some(queue_id) = params.parse::<u64>("queue_id") {
+                    tracing_query.push(SearchFilter::eq(TracingSearchField::QueueId, queue_id));
                 }
                 if let Some(query) = params.get("filter") {
                     let mut buf = String::with_capacity(query.len());
@@ -86,14 +91,16 @@ impl TelemetryApi for Server {
                             if in_quote {
                                 buf.push(' ');
                             } else if !buf.is_empty() {
-                                tracing_query.push(TracingQuery::Keywords(buf));
+                                tracing_query
+                                    .push(SearchFilter::eq(TracingSearchField::Address, buf));
                                 buf = String::new();
                             }
                         } else if ch == '"' {
                             buf.push(ch);
                             if in_quote {
                                 if !buf.is_empty() {
-                                    tracing_query.push(TracingQuery::Keywords(buf));
+                                    tracing_query
+                                        .push(SearchFilter::eq(TracingSearchField::Address, buf));
                                     buf = String::new();
                                 }
                                 in_quote = false;
@@ -105,7 +112,7 @@ impl TelemetryApi for Server {
                         }
                     }
                     if !buf.is_empty() {
-                        tracing_query.push(TracingQuery::Keywords(buf));
+                        tracing_query.push(SearchFilter::eq(TracingSearchField::Address, buf));
                     }
                 }
                 let before = params
@@ -119,6 +126,11 @@ impl TelemetryApi for Server {
                     .and_then(SnowflakeIdGenerator::from_timestamp)
                     .unwrap_or(0);
                 let values = params.get("values").is_some();
+
+                tracing_query.push(SearchFilter::lt(SearchField::Id, after));
+                tracing_query.push(SearchFilter::gt(SearchField::Id, before));
+                tracing_query.push(SearchFilter::End);
+
                 let store = &self
                     .core
                     .enterprise
@@ -126,7 +138,11 @@ impl TelemetryApi for Server {
                     .and_then(|e| e.trace_store.as_ref())
                     .ok_or_else(|| manage::unsupported("No tracing store has been configured"))?
                     .store;
-                let span_ids = store.query_spans(&tracing_query, after, before).await?;
+
+                let span_ids = self
+                    .search_store()
+                    .query(SearchQuery::new(SearchIndex::TracingSpan).with_filters(tracing_query))
+                    .await?;
 
                 let (total, span_ids) = if limit > 0 {
                     let offset = page.saturating_sub(1) * limit;

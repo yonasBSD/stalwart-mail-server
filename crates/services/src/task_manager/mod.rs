@@ -152,9 +152,17 @@ pub fn spawn_task_manager(inner: Arc<Inner>) {
                 if !locked_batch.is_empty() {
                     let success = server.index(&locked_batch).await;
 
-                    // Remove entries from queue
-                    if success {
+                    if success.iter().all(|t| t.is_done()) {
                         delete_tasks(&server, &locked_batch).await;
+                    } else {
+                        // Remove successful entries from queue
+                        let mut to_delete = Vec::with_capacity(locked_batch.len());
+                        for (task, result) in locked_batch.into_iter().zip(success.into_iter()) {
+                            if result.is_done() {
+                                to_delete.push(task);
+                            }
+                        }
+                        delete_tasks(&server, &to_delete).await;
                     }
                 }
             }
@@ -512,6 +520,7 @@ impl TaskQueueManager for Server {
                 _ => {
                     trc::event!(
                         TaskQueue(TaskQueueEvent::TaskIgnored),
+                        Details = event.action.name(),
                         AccountId = event.account_id,
                         DocumentId = event.document_id,
                     );
@@ -551,6 +560,18 @@ async fn delete_tasks<T: TaskLock>(server: &Server, tasks: &[T]) {
     for task in tasks {
         if task.remove_lock() {
             server.remove_index_lock(task.lock_key()).await;
+        }
+    }
+}
+
+impl TaskAction {
+    pub fn name(&self) -> &'static str {
+        match self {
+            TaskAction::UpdateIndex(_) => "UpdateIndex",
+            TaskAction::BayesTrain(_) => "BayesTrain",
+            TaskAction::SendAlarm(_) => "SendAlarm",
+            TaskAction::SendImip => "SendImip",
+            TaskAction::MergeThreads(_) => "MergeThreads",
         }
     }
 }

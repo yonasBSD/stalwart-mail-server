@@ -683,6 +683,17 @@ impl SearchIndex {
         }
     }
 
+    pub fn name(&self) -> &'static str {
+        match self {
+            SearchIndex::Email => "email",
+            SearchIndex::Calendar => "calendar",
+            SearchIndex::Contacts => "contacts",
+            SearchIndex::File => "file",
+            SearchIndex::TracingSpan => "tracing",
+            SearchIndex::InMemory => "in_memory",
+        }
+    }
+
     pub fn try_from_str(value: &str) -> Option<Self> {
         match value {
             "email" => Some(SearchIndex::Email),

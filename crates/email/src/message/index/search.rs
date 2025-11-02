@@ -23,14 +23,29 @@ impl ArchivedMessageMetadata {
     pub fn index_document(
         &self,
         raw_message: &[u8],
-        index_headers: &AHashSet<HeaderName<'static>>,
+        index_fields: &AHashSet<SearchField>,
+        index_all_headers: bool,
     ) -> IndexDocument {
         let mut language = Language::Unknown;
         let message_contents = &self.contents[0];
         let mut document = IndexDocument::with_default_language(language);
 
-        document.index_unsigned(EmailSearchField::ReceivedAt, self.received_at.to_native());
-        document.index_unsigned(EmailSearchField::Size, self.size.to_native());
+        if index_fields.is_empty()
+            || index_fields.contains(&SearchField::Email(EmailSearchField::ReceivedAt))
+        {
+            document.index_unsigned(
+                SearchField::Email(EmailSearchField::ReceivedAt),
+                self.received_at.to_native(),
+            );
+        }
+        if index_fields.is_empty()
+            || index_fields.contains(&SearchField::Email(EmailSearchField::Size))
+        {
+            document.index_unsigned(
+                SearchField::Email(EmailSearchField::Size),
+                self.size.to_native(),
+            );
+        }
 
         for (part_id, part) in message_contents
             .parts
@@ -43,69 +58,98 @@ impl ArchivedMessageMetadata {
                 language = part_language;
 
                 for header in part.headers.iter().rev() {
-                    let header_name = HeaderName::from(&header.name);
-                    if !index_headers.is_empty() && !index_headers.contains(&header_name) {
-                        continue;
-                    }
-                    let header_name = match header_name {
-                        HeaderName::Other(name) => Cow::Owned(name.into_owned()),
-                        _ => Cow::Borrowed(header_name.as_static_str()),
-                    };
-
                     match &header.name {
                         ArchivedHeaderName::From => {
-                            header.value.visit_addresses(|_, value| {
-                                document.index_text(
-                                    EmailSearchField::From,
-                                    value,
-                                    Language::Unknown,
-                                );
-                            });
+                            if index_fields.is_empty()
+                                || index_fields
+                                    .contains(&SearchField::Email(EmailSearchField::From))
+                            {
+                                header.value.visit_addresses(|_, value| {
+                                    document.index_text(
+                                        SearchField::Email(EmailSearchField::From),
+                                        value,
+                                        Language::Unknown,
+                                    );
+                                });
+                            }
                         }
                         ArchivedHeaderName::To => {
-                            header.value.visit_addresses(|_, value| {
-                                document.index_text(EmailSearchField::To, value, Language::Unknown);
-                            });
+                            if index_fields.is_empty()
+                                || index_fields.contains(&SearchField::Email(EmailSearchField::To))
+                            {
+                                header.value.visit_addresses(|_, value| {
+                                    document.index_text(
+                                        SearchField::Email(EmailSearchField::To),
+                                        value,
+                                        Language::Unknown,
+                                    );
+                                });
+                            }
                         }
                         ArchivedHeaderName::Cc => {
-                            header.value.visit_addresses(|_, value| {
-                                document.index_text(EmailSearchField::Cc, value, Language::Unknown);
-                            });
+                            if index_fields.is_empty()
+                                || index_fields.contains(&SearchField::Email(EmailSearchField::Cc))
+                            {
+                                header.value.visit_addresses(|_, value| {
+                                    document.index_text(
+                                        SearchField::Email(EmailSearchField::Cc),
+                                        value,
+                                        Language::Unknown,
+                                    );
+                                });
+                            }
                         }
                         ArchivedHeaderName::Bcc => {
-                            header.value.visit_addresses(|_, value| {
-                                document.index_text(
-                                    EmailSearchField::Bcc,
-                                    value,
-                                    Language::Unknown,
-                                );
-                            });
+                            if index_fields.is_empty()
+                                || index_fields.contains(&SearchField::Email(EmailSearchField::Bcc))
+                            {
+                                header.value.visit_addresses(|_, value| {
+                                    document.index_text(
+                                        SearchField::Email(EmailSearchField::Bcc),
+                                        value,
+                                        Language::Unknown,
+                                    );
+                                });
+                            }
                         }
                         ArchivedHeaderName::Subject => {
-                            if let Some(subject) = header.value.as_text() {
+                            if (index_fields.is_empty()
+                                || index_fields
+                                    .contains(&SearchField::Email(EmailSearchField::Subject)))
+                                && let Some(subject) = header.value.as_text()
+                            {
                                 document.index_text(
-                                    EmailSearchField::Subject,
+                                    SearchField::Email(EmailSearchField::Subject),
                                     subject,
                                     part_language,
                                 );
                             }
                         }
                         ArchivedHeaderName::Date => {
-                            if let Some(date) = header.value.as_datetime() {
+                            if (index_fields.is_empty()
+                                || index_fields
+                                    .contains(&SearchField::Email(EmailSearchField::SentAt)))
+                                && let Some(date) = header.value.as_datetime()
+                            {
                                 document.index_integer(
-                                    EmailSearchField::SentAt,
+                                    SearchField::Email(EmailSearchField::SentAt),
                                     DateTime::from(date).to_timestamp(),
                                 );
                             }
                         }
                         _ => {
-                            header.value.visit_text(|text| {
-                                document.index_text(
-                                    EmailSearchField::Header(header_name.clone()),
-                                    text,
-                                    Language::Unknown,
-                                );
-                            });
+                            let field = SearchField::Email(EmailSearchField::Header(
+                                match HeaderName::from(&header.name) {
+                                    HeaderName::Other(name) => Cow::Owned(name.into_owned()),
+                                    header_name => Cow::Borrowed(header_name.as_static_str()),
+                                },
+                            ));
+
+                            if index_all_headers || index_fields.contains(&field) {
+                                header.value.visit_text(|text| {
+                                    document.index_text(field.clone(), text, Language::Unknown);
+                                });
+                            }
                         }
                     }
                 }
@@ -125,16 +169,30 @@ impl ArchivedMessageMetadata {
                     if message_contents.is_html_part(part_id)
                         || message_contents.is_text_part(part_id)
                     {
-                        document.index_text(EmailSearchField::Body, text.as_ref(), part_language);
-                    } else {
+                        if index_fields.is_empty()
+                            || index_fields.contains(&SearchField::Email(EmailSearchField::Body))
+                        {
+                            document.index_text(
+                                SearchField::Email(EmailSearchField::Body),
+                                text.as_ref(),
+                                part_language,
+                            );
+                        }
+                    } else if index_fields.is_empty()
+                        || index_fields.contains(&SearchField::Email(EmailSearchField::Attachment))
+                    {
                         document.index_text(
-                            EmailSearchField::Attachment,
+                            SearchField::Email(EmailSearchField::Attachment),
                             text.as_ref(),
                             part_language,
                         );
                     }
                 }
-                ArchivedMetadataPartType::Message(nested_message_id) => {
+                ArchivedMetadataPartType::Message(nested_message_id)
+                    if index_fields.is_empty()
+                        || index_fields
+                            .contains(&SearchField::Email(EmailSearchField::Attachment)) =>
+                {
                     let nested_message = self.message_id(*nested_message_id);
                     let nested_message_language = nested_message
                         .root_part()
@@ -146,7 +204,7 @@ impl ArchivedMessageMetadata {
                         .header_value(&ArchivedHeaderName::Subject)
                     {
                         document.index_text(
-                            EmailSearchField::Attachment,
+                            SearchField::Email(EmailSearchField::Attachment),
                             subject.as_ref(),
                             nested_message_language,
                         );
@@ -169,7 +227,7 @@ impl ArchivedMessageMetadata {
                                         _ => unreachable!(),
                                     };
                                 document.index_text(
-                                    EmailSearchField::Attachment,
+                                    SearchField::Email(EmailSearchField::Attachment),
                                     text.as_ref(),
                                     language,
                                 );
@@ -182,7 +240,8 @@ impl ArchivedMessageMetadata {
             }
         }
 
-        let has_attachment = document.has_field(&SearchField::Email(EmailSearchField::Attachment));
+        let has_attachment =
+            document.has_field(&(SearchField::Email(EmailSearchField::Attachment)));
 
         document.index_bool(EmailSearchField::HasAttachment, has_attachment);
 
