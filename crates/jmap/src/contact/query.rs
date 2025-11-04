@@ -13,11 +13,17 @@ use jmap_proto::{
     request::MaybeInvalid,
 };
 use store::{
+    IterateParams, U32_LEN, U64_LEN, ValueKey,
     roaring::RoaringBitmap,
     search::{ContactSearchField, SearchComparator, SearchFilter, SearchQuery},
-    write::SearchIndex,
+    write::{IndexPropertyClass, SearchIndex, ValueClass, key::DeserializeBigEndian},
 };
-use types::{acl::Acl, collection::SyncCollection};
+use trc::AddContext;
+use types::{
+    acl::Acl,
+    collection::{Collection, SyncCollection},
+    field::ContactField,
+};
 use utils::sanitize_email;
 
 pub trait ContactCardQuery: Sync + Send {
@@ -26,6 +32,13 @@ pub trait ContactCardQuery: Sync + Send {
         request: QueryRequest<ContactCard>,
         access_token: &AccessToken,
     ) -> impl Future<Output = trc::Result<QueryResponse>> + Send;
+}
+
+#[derive(Clone)]
+struct CreatedUpdated {
+    document_id: u32,
+    created: u64,
+    updated: u64,
 }
 
 impl ContactCardQuery for Server {
@@ -39,6 +52,62 @@ impl ContactCardQuery for Server {
         let cache = self
             .fetch_dav_resources(access_token, account_id, SyncCollection::AddressBook)
             .await?;
+        let mut created_to_updated = Vec::new();
+
+        if request.filter.iter().any(|cond| {
+            matches!(
+                cond,
+                Filter::Property(
+                    ContactCardFilter::CreatedBefore(_)
+                        | ContactCardFilter::CreatedAfter(_)
+                        | ContactCardFilter::UpdatedBefore(_)
+                        | ContactCardFilter::UpdatedAfter(_)
+                )
+            )
+        }) || request.sort.as_ref().is_some_and(|v| {
+            v.iter().any(|sort| {
+                matches!(
+                    sort.property,
+                    ContactCardComparator::Created | ContactCardComparator::Updated
+                )
+            })
+        }) {
+            self.store()
+                .iterate(
+                    IterateParams::new(
+                        ValueKey {
+                            account_id,
+                            collection: Collection::ContactCard.into(),
+                            document_id: 0,
+                            class: ValueClass::IndexProperty(IndexPropertyClass::Integer {
+                                property: ContactField::CreatedToUpdated.into(),
+                                value: 0,
+                            }),
+                        },
+                        ValueKey {
+                            account_id,
+                            collection: Collection::ContactCard.into(),
+                            document_id: 0,
+                            class: ValueClass::IndexProperty(IndexPropertyClass::Integer {
+                                property: ContactField::CreatedToUpdated.into(),
+                                value: u64::MAX,
+                            }),
+                        },
+                    )
+                    .ascending(),
+                    |key, value| {
+                        created_to_updated.push(CreatedUpdated {
+                            document_id: key.deserialize_be_u32(key.len() - U32_LEN)?,
+                            created: key.deserialize_be_u64(key.len() - U32_LEN - U64_LEN)?,
+                            updated: value.deserialize_be_u64(0)?,
+                        });
+
+                        Ok(true)
+                    },
+                )
+                .await
+                .caused_by(trc::location!())?;
+        }
 
         for cond in std::mem::take(&mut request.filter) {
             match cond {
@@ -149,22 +218,38 @@ impl ContactCardQuery for Server {
                         ));
                         filters.push(SearchFilter::End);
                     }
-                    ContactCardFilter::CreatedBefore(before) => filters.push(SearchFilter::lt(
-                        ContactSearchField::Created,
-                        before.timestamp(),
-                    )),
-                    ContactCardFilter::CreatedAfter(after) => filters.push(SearchFilter::gt(
-                        ContactSearchField::Created,
-                        after.timestamp(),
-                    )),
-                    /*ContactCardFilter::UpdatedBefore(before) => filters.push(SearchFilter::lt(
-                        ContactSearchField::Updated,
-                        before.timestamp(),
-                    )),
-                    ContactCardFilter::UpdatedAfter(after) => filters.push(SearchFilter::gt(
-                        ContactSearchField::Updated,
-                        after.timestamp(),
-                    )),*/
+                    ContactCardFilter::CreatedBefore(before) => {
+                        let before = before.timestamp() as u64;
+                        filters.push(SearchFilter::is_in_set(RoaringBitmap::from_iter(
+                            created_to_updated
+                                .iter()
+                                .filter_map(|cu| (cu.created < before).then_some(cu.document_id)),
+                        )));
+                    }
+                    ContactCardFilter::CreatedAfter(after) => {
+                        let after = after.timestamp() as u64;
+                        filters.push(SearchFilter::is_in_set(RoaringBitmap::from_iter(
+                            created_to_updated
+                                .iter()
+                                .filter_map(|cu| (cu.created > after).then_some(cu.document_id)),
+                        )));
+                    }
+                    ContactCardFilter::UpdatedBefore(before) => {
+                        let before = before.timestamp() as u64;
+                        filters.push(SearchFilter::is_in_set(RoaringBitmap::from_iter(
+                            created_to_updated
+                                .iter()
+                                .filter_map(|cu| (cu.updated < before).then_some(cu.document_id)),
+                        )));
+                    }
+                    ContactCardFilter::UpdatedAfter(after) => {
+                        let after = after.timestamp() as u64;
+                        filters.push(SearchFilter::is_in_set(RoaringBitmap::from_iter(
+                            created_to_updated
+                                .iter()
+                                .filter_map(|cu| (cu.updated > after).then_some(cu.document_id)),
+                        )));
+                    }
                     unsupported => {
                         return Err(trc::JmapEvent::UnsupportedFilter
                             .into_err()
@@ -192,14 +277,26 @@ impl ContactCardQuery for Server {
             .unwrap_or_default()
             .into_iter()
             .map(|comparator| match comparator.property {
-                ContactCardComparator::Created => Ok(SearchComparator::field(
-                    ContactSearchField::Created,
+                ContactCardComparator::Created => Ok(SearchComparator::sorted_set(
+                    created_to_updated
+                        .iter()
+                        .enumerate()
+                        .map(|(idx, u)| (u.document_id, idx as u32))
+                        .collect(),
                     comparator.is_ascending,
                 )),
-                /*ContactCardComparator::Updated => Ok(SearchComparator::field(
-                    ContactSearchField::Updated,
-                    comparator.is_ascending,
-                )),*/
+                ContactCardComparator::Updated => {
+                    let mut updated = created_to_updated.clone();
+                    updated.sort_by(|a, b| a.updated.cmp(&b.updated));
+                    Ok(SearchComparator::sorted_set(
+                        updated
+                            .iter()
+                            .enumerate()
+                            .map(|(idx, u)| (u.document_id, idx as u32))
+                            .collect(),
+                        comparator.is_ascending,
+                    ))
+                }
                 other => Err(trc::JmapEvent::UnsupportedSort
                     .into_err()
                     .details(other.into_string())),

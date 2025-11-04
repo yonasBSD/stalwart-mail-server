@@ -11,6 +11,8 @@ pub mod stopwords;
 
 use std::borrow::Cow;
 
+use utils::config::utils::ParseValue;
+
 use crate::tokenizers::{
     Token, chinese::ChineseTokenizer, japanese::JapaneseTokenizer, word::WordTokenizer,
 };
@@ -118,6 +120,10 @@ pub enum Language {
 }
 
 impl Language {
+    pub fn is_unknown(&self) -> bool {
+        matches!(self, Language::Unknown)
+    }
+
     pub fn from_iso_639(code: &str) -> Option<Self> {
         hashify::map!(
             code.split_once('-').map(|c| c.0).unwrap_or(code).as_bytes(),
@@ -191,5 +197,11 @@ impl Language {
                 .unwrap_or(default);
             (text, l)
         }
+    }
+}
+
+impl ParseValue for Language {
+    fn parse_value(value: &str) -> utils::config::Result<Self> {
+        Language::from_iso_639(value).ok_or_else(|| format!("Invalid language code: {}", value))
     }
 }

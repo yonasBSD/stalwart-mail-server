@@ -82,7 +82,6 @@ pub struct JmapConfig {
     pub encrypt_append: bool,
 
     pub index_batch_size: usize,
-    pub index_all_headers: bool,
     pub index_fields: AHashMap<SearchIndex, AHashSet<SearchField>>,
 
     pub capabilities: BaseCapabilities,
@@ -358,9 +357,6 @@ impl JmapConfig {
                 .property("jmap.calendar.parse.max-items")
                 .unwrap_or(10),
             index_batch_size: config.property("jmap.index.batch-size").unwrap_or(100),
-            index_all_headers: config
-                .property_or_default("jmap.index.email.all-headers", "false")
-                .unwrap_or(false),
             index_fields: AHashMap::new(),
             default_folders,
             shared_folder,

@@ -11,7 +11,10 @@ pub mod query;
 use ahash::AHashMap;
 use nlp::language::Language;
 use roaring::RoaringBitmap;
-use std::{borrow::Cow, collections::hash_map::Entry};
+use std::cmp::Ordering;
+use std::collections::hash_map::Entry;
+use std::ops::{BitAndAssign, BitOrAssign, BitXorAssign};
+use utils::map::vec_map::VecMap;
 
 use crate::write::SearchIndex;
 
@@ -23,7 +26,6 @@ pub enum SearchOperator {
     GreaterEqualThan,
     Equal,
     Contains,
-    Exists,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -51,7 +53,7 @@ pub enum EmailSearchField {
     SentAt,
     Size,
     HasAttachment,
-    Header(Cow<'static, str>),
+    Headers,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -67,7 +69,6 @@ pub enum CalendarSearchField {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ContactSearchField {
-    Created,
     Member,
     Kind,
     Name,
@@ -91,31 +92,30 @@ pub enum FileSearchField {
 pub enum TracingSearchField {
     EventType,
     QueueId,
-    Address,
-    RemoteIp,
+    Keywords,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SearchValue {
     Text { value: String, language: Language },
+    KeyValues(VecMap<String, String>),
     Int(i64),
     Uint(u64),
     Boolean(bool),
-    Keywords(Vec<SearchValue>),
 }
 
 pub trait SearchDocumentId: Sized {
     fn from_u32(id: u32) -> Self;
     fn from_u64(id: u64) -> Self;
-    fn field(&self) -> SearchField;
+    fn field() -> SearchField;
 }
 
 #[derive(Debug)]
 pub struct SearchQuery {
-    index: SearchIndex,
-    filters: Vec<SearchFilter>,
-    comparators: Vec<SearchComparator>,
-    mask: RoaringBitmap,
+    pub(crate) index: SearchIndex,
+    pub(crate) filters: Vec<SearchFilter>,
+    pub(crate) comparators: Vec<SearchComparator>,
+    pub(crate) mask: RoaringBitmap,
 }
 
 #[derive(Debug)]
@@ -134,15 +134,24 @@ pub enum SearchFilter {
 
 #[derive(Debug)]
 pub enum SearchComparator {
-    Field { field: SearchField, ascending: bool },
-    DocumentSet { set: RoaringBitmap, ascending: bool },
-    SortedList { list: Vec<u32>, ascending: bool },
+    Field {
+        field: SearchField,
+        ascending: bool,
+    },
+    DocumentSet {
+        set: RoaringBitmap,
+        ascending: bool,
+    },
+    SortedSet {
+        set: AHashMap<u32, u32>,
+        ascending: bool,
+    },
 }
 
 #[derive(Debug)]
 pub struct IndexDocument {
+    pub(crate) index: SearchIndex,
     pub(crate) fields: AHashMap<SearchField, SearchValue>,
-    pub(crate) default_language: Language,
 }
 
 impl SearchFilter {
@@ -155,14 +164,6 @@ impl SearchFilter {
             field: field.into(),
             op,
             value: value.into(),
-        }
-    }
-
-    pub fn exists(field: impl Into<SearchField>) -> Self {
-        SearchFilter::Operator {
-            field: field.into(),
-            op: SearchOperator::Exists,
-            value: SearchValue::Boolean(true),
         }
     }
 
@@ -279,8 +280,8 @@ impl SearchComparator {
         Self::DocumentSet { set, ascending }
     }
 
-    pub fn sorted_list(list: Vec<u32>, ascending: bool) -> Self {
-        Self::SortedList { list, ascending }
+    pub fn sorted_set(set: AHashMap<u32, u32>, ascending: bool) -> Self {
+        Self::SortedSet { set, ascending }
     }
 
     pub fn ascending(field: impl Into<SearchField>) -> Self {
@@ -299,10 +300,10 @@ impl SearchComparator {
 }
 
 impl IndexDocument {
-    pub fn with_default_language(default_language: Language) -> Self {
+    pub fn new(index: SearchIndex) -> Self {
         Self {
             fields: Default::default(),
-            default_language,
+            index,
         }
     }
 
@@ -361,21 +362,24 @@ impl IndexDocument {
             .insert(field.into(), SearchValue::Uint(value.into()));
     }
 
-    pub fn insert_keyword(
+    pub fn insert_key_value(
         &mut self,
         field: impl Into<SearchField>,
-        keyword: impl Into<SearchValue>,
+        key: impl Into<String>,
+        value: impl Into<String>,
     ) {
         let search_field = field.into();
 
         match self.fields.entry(search_field) {
             Entry::Occupied(mut entry) => {
-                if let SearchValue::Keywords(existing_keywords) = entry.get_mut() {
-                    existing_keywords.push(keyword.into());
+                if let SearchValue::KeyValues(existing_key_values) = entry.get_mut() {
+                    existing_key_values.append(key.into(), value.into());
                 }
             }
             Entry::Vacant(entry) => {
-                entry.insert(SearchValue::Keywords(vec![keyword.into()]));
+                let mut new_key_values = VecMap::new();
+                new_key_values.append(key.into(), value.into());
+                entry.insert(SearchValue::KeyValues(new_key_values));
             }
         }
     }
@@ -387,6 +391,21 @@ impl IndexDocument {
     pub fn has_field(&self, field: &SearchField) -> bool {
         self.fields.contains_key(field)
     }
+
+    pub fn set_unknown_language(&mut self, lang: Language) {
+        for value in self.fields.values_mut() {
+            if let SearchValue::Text { language, .. } = value
+                && language.is_unknown()
+            {
+                *language = lang;
+            }
+        }
+    }
+}
+
+struct State {
+    pub op: SearchFilter,
+    pub bm: Option<RoaringBitmap>,
 }
 
 impl SearchQuery {
@@ -446,9 +465,148 @@ impl SearchQuery {
         self
     }
 
-    pub fn execute(&self) -> RoaringBitmap {
-        let todo = "implement search execution logic";
-        todo!()
+    pub fn filter(self) -> QueryResults {
+        if self.filters.is_empty() {
+            return QueryResults {
+                results: self.mask,
+                comparators: self.comparators,
+            };
+        }
+        let mut state: State = State {
+            op: SearchFilter::And,
+            bm: None,
+        };
+        let mut stack = Vec::new();
+        let mut filters = self.filters.into_iter().peekable();
+        let not_mask = self.mask;
+
+        while let Some(filter) = filters.next() {
+            let mut result = match filter {
+                SearchFilter::DocumentSet(set) => Some(set),
+                op @ (SearchFilter::And | SearchFilter::Or | SearchFilter::Not) => {
+                    stack.push(state);
+                    state = State { op, bm: None };
+                    continue;
+                }
+                SearchFilter::End => {
+                    if let Some(prev_state) = stack.pop() {
+                        let bm = state.bm;
+                        state = prev_state;
+                        bm
+                    } else {
+                        break;
+                    }
+                }
+                SearchFilter::Operator { .. } => {
+                    continue;
+                }
+            };
+
+            // Apply logical operation
+            if let Some(dest) = &mut state.bm {
+                match state.op {
+                    SearchFilter::And => {
+                        if let Some(result) = result {
+                            dest.bitand_assign(result);
+                        } else {
+                            dest.clear();
+                        }
+                    }
+                    SearchFilter::Or => {
+                        if let Some(result) = result {
+                            dest.bitor_assign(result);
+                        }
+                    }
+                    SearchFilter::Not => {
+                        if let Some(mut result) = result {
+                            result.bitxor_assign(&not_mask);
+                            dest.bitand_assign(result);
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+            } else if let Some(ref mut result_) = result {
+                if let SearchFilter::Not = state.op {
+                    result_.bitxor_assign(&not_mask);
+                }
+                state.bm = result;
+            } else if let SearchFilter::Not = state.op {
+                state.bm = Some(not_mask.clone());
+            } else {
+                state.bm = Some(RoaringBitmap::new());
+            }
+
+            // And short-circuit
+            if matches!(state.op, SearchFilter::And) && state.bm.as_ref().unwrap().is_empty() {
+                while let Some(filter) = filters.peek() {
+                    if matches!(filter, SearchFilter::End) {
+                        break;
+                    } else {
+                        filters.next();
+                    }
+                }
+            }
+        }
+
+        QueryResults {
+            results: state.bm.unwrap_or_default(),
+            comparators: self.comparators,
+        }
+    }
+}
+
+pub struct QueryResults {
+    results: RoaringBitmap,
+    comparators: Vec<SearchComparator>,
+}
+
+impl QueryResults {
+    pub fn results(&self) -> &RoaringBitmap {
+        &self.results
+    }
+
+    pub fn update_results(&mut self, results: RoaringBitmap) {
+        self.results = results;
+    }
+
+    pub fn into_bitmap(self) -> RoaringBitmap {
+        self.results
+    }
+
+    pub fn into_sorted(self) -> Vec<u32> {
+        let comparators = self.comparators;
+        let mut results = self.results.into_iter().collect::<Vec<u32>>();
+
+        if !results.is_empty() && !comparators.is_empty() {
+            results.sort_by(|a, b| {
+                for comparator in &comparators {
+                    let (a, b, is_ascending) = match comparator {
+                        SearchComparator::DocumentSet { set, ascending } => {
+                            (set.contains(*a) as u32, set.contains(*b) as u32, *ascending)
+                        }
+                        SearchComparator::SortedSet { set, ascending } => (
+                            *set.get(a).unwrap_or(&u32::MAX),
+                            *set.get(b).unwrap_or(&u32::MAX),
+                            *ascending,
+                        ),
+                        SearchComparator::Field { .. } => continue,
+                    };
+
+                    let ordering = if is_ascending {
+                        a.cmp(&b).reverse()
+                    } else {
+                        a.cmp(&b)
+                    };
+
+                    if ordering != Ordering::Equal {
+                        return ordering;
+                    }
+                }
+                Ordering::Equal
+            });
+        }
+
+        results
     }
 }
 
@@ -536,7 +694,7 @@ impl SearchDocumentId for u32 {
         id as u32
     }
 
-    fn field(&self) -> SearchField {
+    fn field() -> SearchField {
         SearchField::DocumentId
     }
 }
@@ -550,7 +708,250 @@ impl SearchDocumentId for u64 {
         id
     }
 
-    fn field(&self) -> SearchField {
+    fn field() -> SearchField {
         SearchField::Id
+    }
+}
+
+impl SearchIndex {
+    pub fn all_fields(&self) -> &[SearchField] {
+        match self {
+            SearchIndex::Email => EmailSearchField::all_fields(),
+            SearchIndex::Calendar => CalendarSearchField::all_fields(),
+            SearchIndex::Contacts => ContactSearchField::all_fields(),
+            SearchIndex::File => FileSearchField::all_fields(),
+            SearchIndex::Tracing => TracingSearchField::all_fields(),
+            SearchIndex::InMemory => unreachable!(),
+        }
+    }
+
+    pub fn primary_keys(&self) -> &'static [SearchField] {
+        match self {
+            SearchIndex::Email => EmailSearchField::primary_keys(),
+            SearchIndex::Calendar => CalendarSearchField::primary_keys(),
+            SearchIndex::Contacts => ContactSearchField::primary_keys(),
+            SearchIndex::File => FileSearchField::primary_keys(),
+            SearchIndex::Tracing => TracingSearchField::primary_keys(),
+            SearchIndex::InMemory => unreachable!(),
+        }
+    }
+}
+
+pub trait SearchableField: Sized {
+    fn index() -> SearchIndex;
+    fn primary_keys() -> &'static [SearchField];
+    fn all_fields() -> &'static [SearchField];
+    fn is_indexed(&self) -> bool;
+    fn is_text(&self) -> bool;
+}
+
+impl SearchableField for EmailSearchField {
+    fn index() -> SearchIndex {
+        SearchIndex::Email
+    }
+
+    fn primary_keys() -> &'static [SearchField] {
+        &[SearchField::AccountId, SearchField::DocumentId]
+    }
+
+    fn all_fields() -> &'static [SearchField] {
+        &[
+            SearchField::Email(EmailSearchField::From),
+            SearchField::Email(EmailSearchField::To),
+            SearchField::Email(EmailSearchField::Cc),
+            SearchField::Email(EmailSearchField::Bcc),
+            SearchField::Email(EmailSearchField::Subject),
+            SearchField::Email(EmailSearchField::Body),
+            SearchField::Email(EmailSearchField::Attachment),
+            SearchField::Email(EmailSearchField::ReceivedAt),
+            SearchField::Email(EmailSearchField::SentAt),
+            SearchField::Email(EmailSearchField::Size),
+            SearchField::Email(EmailSearchField::HasAttachment),
+            SearchField::Email(EmailSearchField::Headers),
+        ]
+    }
+
+    fn is_indexed(&self) -> bool {
+        matches!(
+            self,
+            EmailSearchField::From
+                | EmailSearchField::To
+                | EmailSearchField::Subject
+                | EmailSearchField::ReceivedAt
+                | EmailSearchField::Size
+                | EmailSearchField::HasAttachment,
+        )
+    }
+
+    fn is_text(&self) -> bool {
+        matches!(
+            self,
+            EmailSearchField::From
+                | EmailSearchField::To
+                | EmailSearchField::Cc
+                | EmailSearchField::Bcc
+                | EmailSearchField::Subject
+                | EmailSearchField::Body
+                | EmailSearchField::Attachment,
+        )
+    }
+}
+
+impl SearchableField for CalendarSearchField {
+    fn index() -> SearchIndex {
+        SearchIndex::Calendar
+    }
+
+    fn primary_keys() -> &'static [SearchField] {
+        &[SearchField::AccountId, SearchField::DocumentId]
+    }
+
+    fn all_fields() -> &'static [SearchField] {
+        &[
+            SearchField::Calendar(CalendarSearchField::Title),
+            SearchField::Calendar(CalendarSearchField::Description),
+            SearchField::Calendar(CalendarSearchField::Location),
+            SearchField::Calendar(CalendarSearchField::Owner),
+            SearchField::Calendar(CalendarSearchField::Attendee),
+            SearchField::Calendar(CalendarSearchField::Start),
+            SearchField::Calendar(CalendarSearchField::Uid),
+        ]
+    }
+
+    fn is_indexed(&self) -> bool {
+        matches!(self, CalendarSearchField::Start | CalendarSearchField::Uid)
+    }
+
+    fn is_text(&self) -> bool {
+        matches!(
+            self,
+            CalendarSearchField::Title
+                | CalendarSearchField::Description
+                | CalendarSearchField::Location
+                | CalendarSearchField::Owner
+                | CalendarSearchField::Attendee
+        )
+    }
+}
+
+impl SearchableField for ContactSearchField {
+    fn index() -> SearchIndex {
+        SearchIndex::Contacts
+    }
+
+    fn primary_keys() -> &'static [SearchField] {
+        &[SearchField::AccountId, SearchField::DocumentId]
+    }
+
+    fn all_fields() -> &'static [SearchField] {
+        &[
+            SearchField::Contact(ContactSearchField::Member),
+            SearchField::Contact(ContactSearchField::Kind),
+            SearchField::Contact(ContactSearchField::Name),
+            SearchField::Contact(ContactSearchField::Nickname),
+            SearchField::Contact(ContactSearchField::Organization),
+            SearchField::Contact(ContactSearchField::Email),
+            SearchField::Contact(ContactSearchField::Phone),
+            SearchField::Contact(ContactSearchField::OnlineService),
+            SearchField::Contact(ContactSearchField::Address),
+            SearchField::Contact(ContactSearchField::Note),
+            SearchField::Contact(ContactSearchField::Uid),
+        ]
+    }
+
+    fn is_indexed(&self) -> bool {
+        matches!(self, ContactSearchField::Uid | ContactSearchField::Kind)
+    }
+
+    fn is_text(&self) -> bool {
+        matches!(
+            self,
+            ContactSearchField::Name
+                | ContactSearchField::Nickname
+                | ContactSearchField::Organization
+                | ContactSearchField::Email
+                | ContactSearchField::Phone
+                | ContactSearchField::OnlineService
+                | ContactSearchField::Address
+                | ContactSearchField::Note
+        )
+    }
+}
+
+impl SearchableField for FileSearchField {
+    fn index() -> SearchIndex {
+        SearchIndex::File
+    }
+
+    fn primary_keys() -> &'static [SearchField] {
+        &[SearchField::AccountId, SearchField::DocumentId]
+    }
+
+    fn all_fields() -> &'static [SearchField] {
+        &[
+            SearchField::File(FileSearchField::Name),
+            SearchField::File(FileSearchField::Content),
+        ]
+    }
+
+    fn is_indexed(&self) -> bool {
+        false
+    }
+
+    fn is_text(&self) -> bool {
+        true
+    }
+}
+
+impl SearchableField for TracingSearchField {
+    fn index() -> SearchIndex {
+        SearchIndex::Tracing
+    }
+
+    fn primary_keys() -> &'static [SearchField] {
+        &[SearchField::Id]
+    }
+
+    fn all_fields() -> &'static [SearchField] {
+        &[
+            SearchField::Tracing(TracingSearchField::EventType),
+            SearchField::Tracing(TracingSearchField::QueueId),
+            SearchField::Tracing(TracingSearchField::Keywords),
+        ]
+    }
+
+    fn is_indexed(&self) -> bool {
+        matches!(
+            self,
+            TracingSearchField::QueueId | TracingSearchField::EventType
+        )
+    }
+
+    fn is_text(&self) -> bool {
+        matches!(self, TracingSearchField::Keywords)
+    }
+}
+
+impl SearchField {
+    pub(crate) fn is_indexed(&self) -> bool {
+        match self {
+            SearchField::Email(field) => field.is_indexed(),
+            SearchField::Calendar(field) => field.is_indexed(),
+            SearchField::Contact(field) => field.is_indexed(),
+            SearchField::File(field) => field.is_indexed(),
+            SearchField::Tracing(field) => field.is_indexed(),
+            SearchField::AccountId | SearchField::DocumentId | SearchField::Id => false,
+        }
+    }
+
+    pub(crate) fn is_text(&self) -> bool {
+        match self {
+            SearchField::Email(field) => field.is_text(),
+            SearchField::Calendar(field) => field.is_text(),
+            SearchField::Contact(field) => field.is_text(),
+            SearchField::File(field) => field.is_text(),
+            SearchField::Tracing(field) => field.is_text(),
+            SearchField::AccountId | SearchField::DocumentId | SearchField::Id => false,
+        }
     }
 }

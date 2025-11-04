@@ -30,7 +30,8 @@ impl SQLReadReplica {
         config: &mut Config,
         prefix: impl AsKey,
         stores: &Stores,
-        create_tables: bool,
+        create_store_tables: bool,
+        create_search_tables: bool,
     ) -> Option<Self> {
         let prefix = prefix.as_key();
         let primary_id = config.value_require((&prefix, "primary"))?.to_string();
@@ -77,12 +78,12 @@ impl SQLReadReplica {
             }
         }
         if !replicas.is_empty() {
-            if create_tables {
+            if create_store_tables {
                 let result = match &primary {
                     #[cfg(feature = "postgres")]
-                    Store::PostgreSQL(store) => store.create_tables().await,
+                    Store::PostgreSQL(store) => store.create_storage_tables().await,
                     #[cfg(feature = "mysql")]
-                    Store::MySQL(store) => store.create_tables().await,
+                    Store::MySQL(store) => store.create_storage_tables().await,
                     _ => panic!("Invalid store type"),
                 };
 
@@ -90,6 +91,23 @@ impl SQLReadReplica {
                     config.new_build_error(
                         (&prefix, "primary"),
                         format!("Failed to create tables: {err}"),
+                    );
+                }
+            }
+
+            if create_search_tables {
+                let result = match &primary {
+                    #[cfg(feature = "postgres")]
+                    Store::PostgreSQL(store) => store.create_search_tables().await,
+                    #[cfg(feature = "mysql")]
+                    Store::MySQL(store) => store.create_search_tables().await,
+                    _ => panic!("Invalid store type"),
+                };
+
+                if let Err(err) = result {
+                    config.new_build_warning(
+                        (&prefix, "primary"),
+                        format!("Failed to create search tables: {err}"),
                     );
                 }
             }

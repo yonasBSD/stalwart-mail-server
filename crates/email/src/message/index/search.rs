@@ -9,14 +9,17 @@ use crate::message::{
     metadata::{ArchivedMessageMetadata, ArchivedMetadataPartType, DecodedPartContent},
 };
 use mail_parser::{
-    ArchivedHeaderName, ArchivedHeaderValue, DateTime, HeaderName, core::rkyv::ArchivedGetHeader,
-    decoders::html::html_to_text,
+    ArchivedHeaderName, ArchivedHeaderValue, DateTime, core::rkyv::ArchivedGetHeader,
+    decoders::html::html_to_text, parsers::fields::thread::thread_name,
 };
-use nlp::language::Language;
-use std::borrow::Cow;
+use nlp::language::{
+    Language,
+    detect::{LanguageDetector, MIN_LANGUAGE_SCORE},
+};
 use store::{
     ahash::AHashSet,
     search::{EmailSearchField, IndexDocument, SearchField},
+    write::SearchIndex,
 };
 
 impl ArchivedMessageMetadata {
@@ -24,11 +27,11 @@ impl ArchivedMessageMetadata {
         &self,
         raw_message: &[u8],
         index_fields: &AHashSet<SearchField>,
-        index_all_headers: bool,
     ) -> IndexDocument {
+        let mut detector = LanguageDetector::new();
         let mut language = Language::Unknown;
         let message_contents = &self.contents[0];
-        let mut document = IndexDocument::with_default_language(language);
+        let mut document = IndexDocument::new(SearchIndex::Email);
 
         if index_fields.is_empty()
             || index_fields.contains(&SearchField::Email(EmailSearchField::ReceivedAt))
@@ -68,7 +71,7 @@ impl ArchivedMessageMetadata {
                                     document.index_text(
                                         SearchField::Email(EmailSearchField::From),
                                         value,
-                                        Language::Unknown,
+                                        Language::None,
                                     );
                                 });
                             }
@@ -81,7 +84,7 @@ impl ArchivedMessageMetadata {
                                     document.index_text(
                                         SearchField::Email(EmailSearchField::To),
                                         value,
-                                        Language::Unknown,
+                                        Language::None,
                                     );
                                 });
                             }
@@ -94,7 +97,7 @@ impl ArchivedMessageMetadata {
                                     document.index_text(
                                         SearchField::Email(EmailSearchField::Cc),
                                         value,
-                                        Language::Unknown,
+                                        Language::None,
                                     );
                                 });
                             }
@@ -107,7 +110,7 @@ impl ArchivedMessageMetadata {
                                     document.index_text(
                                         SearchField::Email(EmailSearchField::Bcc),
                                         value,
-                                        Language::Unknown,
+                                        Language::None,
                                     );
                                 });
                             }
@@ -118,6 +121,12 @@ impl ArchivedMessageMetadata {
                                     .contains(&SearchField::Email(EmailSearchField::Subject)))
                                 && let Some(subject) = header.value.as_text()
                             {
+                                let subject = thread_name(subject);
+
+                                if part_language.is_unknown() {
+                                    detector.detect(subject, MIN_LANGUAGE_SCORE);
+                                }
+
                                 document.index_text(
                                     SearchField::Email(EmailSearchField::Subject),
                                     subject,
@@ -138,17 +147,18 @@ impl ArchivedMessageMetadata {
                             }
                         }
                         _ => {
-                            let field = SearchField::Email(EmailSearchField::Header(
-                                match HeaderName::from(&header.name) {
-                                    HeaderName::Other(name) => Cow::Owned(name.into_owned()),
-                                    header_name => Cow::Borrowed(header_name.as_static_str()),
-                                },
-                            ));
-
-                            if index_all_headers || index_fields.contains(&field) {
+                            if index_fields.contains(&SearchField::Email(EmailSearchField::Headers))
+                            {
+                                let mut value = String::new();
                                 header.value.visit_text(|text| {
-                                    document.index_text(field.clone(), text, Language::Unknown);
+                                    value.push_str(text);
                                 });
+
+                                document.insert_key_value(
+                                    EmailSearchField::Headers,
+                                    header.name.as_str().to_string(),
+                                    value,
+                                );
                             }
                         }
                     }
@@ -172,6 +182,10 @@ impl ArchivedMessageMetadata {
                         if index_fields.is_empty()
                             || index_fields.contains(&SearchField::Email(EmailSearchField::Body))
                         {
+                            if part_language.is_unknown() {
+                                detector.detect(text.as_ref(), MIN_LANGUAGE_SCORE);
+                            }
+
                             document.index_text(
                                 SearchField::Email(EmailSearchField::Body),
                                 text.as_ref(),
@@ -181,6 +195,10 @@ impl ArchivedMessageMetadata {
                     } else if index_fields.is_empty()
                         || index_fields.contains(&SearchField::Email(EmailSearchField::Attachment))
                     {
+                        if part_language.is_unknown() {
+                            detector.detect(text.as_ref(), MIN_LANGUAGE_SCORE);
+                        }
+
                         document.index_text(
                             SearchField::Email(EmailSearchField::Attachment),
                             text.as_ref(),
@@ -203,6 +221,10 @@ impl ArchivedMessageMetadata {
                         .headers
                         .header_value(&ArchivedHeaderName::Subject)
                     {
+                        if nested_message_language.is_unknown() {
+                            detector.detect(subject.as_ref(), MIN_LANGUAGE_SCORE);
+                        }
+
                         document.index_text(
                             SearchField::Email(EmailSearchField::Attachment),
                             subject.as_ref(),
@@ -226,6 +248,11 @@ impl ArchivedMessageMetadata {
                                         ) => html_to_text(html.as_ref()).into(),
                                         _ => unreachable!(),
                                     };
+
+                                if language.is_unknown() {
+                                    detector.detect(text.as_ref(), MIN_LANGUAGE_SCORE);
+                                }
+
                                 document.index_text(
                                     SearchField::Email(EmailSearchField::Attachment),
                                     text.as_ref(),
@@ -238,6 +265,10 @@ impl ArchivedMessageMetadata {
                 }
                 _ => {}
             }
+        }
+
+        if let Some(detected_language) = detector.most_frequent_language() {
+            document.set_unknown_language(detected_language);
         }
 
         let has_attachment =

@@ -176,7 +176,8 @@ impl PrincipalQuery for Server {
         let results = SearchQuery::new(SearchIndex::InMemory)
             .with_filters(filters)
             .with_mask(principal_ids)
-            .execute();
+            .filter()
+            .into_bitmap();
 
         let mut response = QueryResponseBuilder::new(
             results.len() as usize,

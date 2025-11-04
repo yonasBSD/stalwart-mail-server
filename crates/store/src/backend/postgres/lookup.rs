@@ -15,7 +15,7 @@ use crate::IntoRows;
 use super::{PostgresStore, into_error};
 
 impl PostgresStore {
-    pub(crate) async fn query<T: QueryResult>(
+    pub(crate) async fn sql_query<T: QueryResult>(
         &self,
         query: &str,
         params_: &[crate::Value<'_>],

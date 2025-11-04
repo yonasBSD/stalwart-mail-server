@@ -85,7 +85,8 @@ impl Stores {
                         .map(Store::from)
                     {
                         self.stores.insert(store_id.clone(), db.clone());
-                        self.search_stores.insert(store_id.clone(), db.clone().into());
+                        self.search_stores
+                            .insert(store_id.clone(), db.clone().into());
                         self.blob_stores.insert(
                             store_id.clone(),
                             BlobStore::from(db.clone()).with_compression(compression_algo),
@@ -110,7 +111,8 @@ impl Stores {
                         .map(Store::from)
                     {
                         self.stores.insert(store_id.clone(), db.clone());
-                        self.search_stores.insert(store_id.clone(), db.clone().into());
+                        self.search_stores
+                            .insert(store_id.clone(), db.clone().into());
                         self.blob_stores.insert(
                             store_id.clone(),
                             BlobStore::from(db.clone()).with_compression(compression_algo),
@@ -124,12 +126,14 @@ impl Stores {
                         config,
                         prefix,
                         config.is_active_store(id),
+                        config.is_active_search_store(id),
                     )
                     .await
                     .map(Store::from)
                     {
                         self.stores.insert(store_id.clone(), db.clone());
-                        self.search_stores.insert(store_id.clone(), db.clone().into());
+                        self.search_stores
+                            .insert(store_id.clone(), db.clone().into());
                         self.blob_stores.insert(
                             store_id.clone(),
                             BlobStore::from(db.clone()).with_compression(compression_algo),
@@ -143,12 +147,14 @@ impl Stores {
                         config,
                         prefix,
                         config.is_active_store(id),
+                        config.is_active_search_store(id),
                     )
                     .await
                     .map(Store::from)
                     {
                         self.stores.insert(store_id.clone(), db.clone());
-                        self.search_stores.insert(store_id.clone(), db.clone().into());
+                        self.search_stores
+                            .insert(store_id.clone(), db.clone().into());
                         self.blob_stores.insert(
                             store_id.clone(),
                             BlobStore::from(db.clone()).with_compression(compression_algo),
@@ -172,7 +178,8 @@ impl Stores {
                         crate::backend::sqlite::SqliteStore::open(config, prefix).map(Store::from)
                     {
                         self.stores.insert(store_id.clone(), db.clone());
-                        self.search_stores.insert(store_id.clone(), db.clone().into());
+                        self.search_stores
+                            .insert(store_id.clone(), db.clone().into());
                         self.blob_stores.insert(
                             store_id.clone(),
                             BlobStore::from(db.clone()).with_compression(compression_algo),
@@ -298,6 +305,7 @@ impl Stores {
                         prefix,
                         self,
                         config.is_active_store(&id),
+                        config.is_active_search_store(&id),
                     )
                     .await
                     {
@@ -419,6 +427,7 @@ impl Stores {
 trait IsActiveStore {
     fn is_active_store(&self, id: &str) -> bool;
     fn is_active_in_memory_store(&self, id: &str) -> bool;
+    fn is_active_search_store(&self, id: &str) -> bool;
 }
 
 impl IsActiveStore for Config {
@@ -427,7 +436,6 @@ impl IsActiveStore for Config {
             "storage.data",
             "storage.blob",
             "storage.lookup",
-            "storage.fts",
             "tracing.history.store",
             "metrics.history.store",
         ] {
@@ -439,6 +447,11 @@ impl IsActiveStore for Config {
         }
 
         false
+    }
+
+    fn is_active_search_store(&self, id: &str) -> bool {
+        self.value("storage.fts")
+            .is_some_and(|store_id| store_id == id)
     }
 
     fn is_active_in_memory_store(&self, id: &str) -> bool {

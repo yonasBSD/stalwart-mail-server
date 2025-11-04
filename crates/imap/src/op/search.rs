@@ -22,16 +22,19 @@ use imap_proto::{
 };
 use mail_parser::HeaderName;
 use nlp::language::Language;
-use std::{borrow::Cow, str::FromStr, sync::Arc, time::Instant};
+use std::{str::FromStr, sync::Arc, time::Instant};
 use store::{
     query::log::Query,
     roaring::RoaringBitmap,
-    search::{EmailSearchField, SearchComparator, SearchFilter, SearchQuery},
+    search::{
+        EmailSearchField, SearchComparator, SearchFilter, SearchOperator, SearchQuery, SearchValue,
+    },
     write::{SearchIndex, now},
 };
 use tokio::sync::watch;
 use trc::AddContext;
 use types::{collection::SyncCollection, id::Id, keyword::Keyword};
+use utils::map::vec_map::VecMap;
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_search(
@@ -463,29 +466,26 @@ impl<T: SessionStream> SessionData<T> {
                 }
                 Filter::Header(header, value) => {
                     if let Some(header) = HeaderName::parse(header) {
-                        let is_id = matches!(
+                        let op = if matches!(
                             header,
                             HeaderName::MessageId
                                 | HeaderName::InReplyTo
                                 | HeaderName::References
                                 | HeaderName::ResentMessageId
-                        );
-                        let header = match header {
-                            HeaderName::Other(value) => {
-                                EmailSearchField::Header(Cow::Owned(value.to_ascii_lowercase()))
-                            }
-                            _ => EmailSearchField::Header(Cow::Borrowed(header.as_static_str())),
+                        ) || value.is_empty()
+                        {
+                            SearchOperator::Equal
+                        } else {
+                            SearchOperator::Contains
                         };
 
-                        if !value.is_empty() {
-                            if is_id {
-                                filters.push(SearchFilter::eq(header, value));
-                            } else {
-                                filters.push(SearchFilter::has_text(header, value, Language::None));
-                            }
-                        } else {
-                            filters.push(SearchFilter::exists(header));
-                        }
+                        filters.push(SearchFilter::cond(
+                            EmailSearchField::Headers,
+                            op,
+                            SearchValue::KeyValues(
+                                VecMap::with_capacity(1).with_append(header.into_string(), value),
+                            ),
+                        ));
                     }
                 }
                 Filter::Subject(text) => {

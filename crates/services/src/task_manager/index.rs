@@ -96,7 +96,7 @@ impl SearchIndexTask for Server {
                         // File indexing not implemented yet
                         continue;
                     }
-                    SearchIndex::TracingSpan => (
+                    SearchIndex::Tracing => (
                         4,
                         build_tracing_span_document(self, task.account_id, task.document_id).await,
                     ),
@@ -164,7 +164,7 @@ impl SearchIndexTask for Server {
                     SearchIndex::Calendar => 1,
                     SearchIndex::Contacts => 2,
                     SearchIndex::File => 3,
-                    SearchIndex::TracingSpan | SearchIndex::InMemory => unreachable!(),
+                    SearchIndex::Tracing | SearchIndex::InMemory => unreachable!(),
                 };
 
                 document_deletions[idx]
@@ -205,7 +205,7 @@ impl SearchIndexTask for Server {
             SearchIndex::Calendar,
             SearchIndex::Contacts,
             SearchIndex::File,
-            SearchIndex::TracingSpan,
+            SearchIndex::Tracing,
         ]) {
             if !documents.is_empty()
                 && let Err(err) = self.search_store().index(index, documents).await
@@ -431,7 +431,7 @@ impl ReindexIndexTask for Server {
                     }
                 }
             }
-            SearchIndex::File | SearchIndex::TracingSpan | SearchIndex::InMemory => (),
+            SearchIndex::File | SearchIndex::Tracing | SearchIndex::InMemory => (),
         }
 
         // Request indexing
@@ -475,11 +475,7 @@ async fn build_email_document(
                         .details("Blob not found")
                 })?;
 
-            Ok(Some(metadata.index_document(
-                &raw_message,
-                index_fields,
-                server.core.jmap.index_all_headers,
-            )))
+            Ok(Some(metadata.index_document(&raw_message, index_fields)))
         }
         None => Ok(None),
     }
@@ -536,7 +532,7 @@ async fn build_tracing_span_document(
     account_id: u32,
     document_id: u32,
 ) -> trc::Result<Option<IndexDocument>> {
-    let Some(index_fields) = server.core.jmap.index_fields.get(&SearchIndex::TracingSpan) else {
+    let Some(index_fields) = server.core.jmap.index_fields.get(&SearchIndex::Tracing) else {
         return Ok(None);
     };
 

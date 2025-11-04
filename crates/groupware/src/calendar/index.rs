@@ -18,7 +18,10 @@ use calcard::icalendar::{
     ICalendarParameterValue, ICalendarProperty, ICalendarValue,
 };
 use common::storage::index::{IndexValue, IndexableAndSerializableObject, IndexableObject};
-use nlp::language::Language;
+use nlp::language::{
+    Language,
+    detect::{LanguageDetector, MIN_LANGUAGE_SCORE},
+};
 use store::{
     search::{CalendarSearchField, IndexDocument, SearchField},
     write::{IndexPropertyClass, SearchIndex, ValueClass},
@@ -338,7 +341,7 @@ impl ArchivedCalendarEvent {
 
 impl ArchivedCalendarEvent {
     pub fn index_document(&self, index_fields: &AHashSet<SearchField>) -> IndexDocument {
-        let mut document = IndexDocument::with_default_language(Language::Unknown);
+        let mut document = IndexDocument::new(SearchIndex::Calendar);
 
         if index_fields.is_empty()
             || index_fields.contains(&SearchField::Calendar(CalendarSearchField::Start))
@@ -346,6 +349,7 @@ impl ArchivedCalendarEvent {
             document.index_integer(CalendarSearchField::Start, self.data.event_range_start());
         }
 
+        let mut detector = LanguageDetector::new();
         for component in self
             .data
             .event
@@ -354,13 +358,15 @@ impl ArchivedCalendarEvent {
             .filter(|e| e.component_type.is_scheduling_object())
         {
             for entry in component.entries.iter() {
-                let field = SearchField::Calendar(match entry.name {
-                    ArchivedICalendarProperty::Summary => CalendarSearchField::Title,
-                    ArchivedICalendarProperty::Description => CalendarSearchField::Description,
-                    ArchivedICalendarProperty::Location => CalendarSearchField::Location,
-                    ArchivedICalendarProperty::Organizer => CalendarSearchField::Owner,
-                    ArchivedICalendarProperty::Attendee => CalendarSearchField::Attendee,
-                    ArchivedICalendarProperty::Uid => CalendarSearchField::Uid,
+                let (is_lang, field) = SearchField::Calendar(match entry.name {
+                    ArchivedICalendarProperty::Summary => (true, CalendarSearchField::Title),
+                    ArchivedICalendarProperty::Description => {
+                        (true, CalendarSearchField::Description)
+                    }
+                    ArchivedICalendarProperty::Location => (false, CalendarSearchField::Location),
+                    ArchivedICalendarProperty::Organizer => (false, CalendarSearchField::Owner),
+                    ArchivedICalendarProperty::Attendee => (false, CalendarSearchField::Attendee),
+                    ArchivedICalendarProperty::Uid => (false, CalendarSearchField::Uid),
                     _ => continue,
                 });
 
@@ -379,14 +385,22 @@ impl ArchivedCalendarEvent {
                             _ => None,
                         }))
                     {
-                        document.index_text(
-                            field.clone(),
-                            value.strip_prefix("mailto:").unwrap_or(value),
-                            Language::Unknown,
-                        );
+                        let value = value.strip_prefix("mailto:").unwrap_or(value);
+                        let lang = if is_lang {
+                            detector.detect(value, MIN_LANGUAGE_SCORE);
+                            Language::Unknown
+                        } else {
+                            Language::None
+                        };
+
+                        document.index_text(field.clone(), value, lang);
                     }
                 }
             }
+        }
+
+        if let Some(detected_language) = detector.most_frequent_language() {
+            document.set_unknown_language(detected_language);
         }
 
         document

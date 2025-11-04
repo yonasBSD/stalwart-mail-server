@@ -13,15 +13,18 @@ use jmap_proto::{
 };
 use mail_parser::HeaderName;
 use nlp::language::Language;
-use std::{borrow::Cow, future::Future};
+use std::future::Future;
 use store::{
     ahash::{AHashMap, AHashSet},
     roaring::RoaringBitmap,
-    search::{EmailSearchField, SearchComparator, SearchFilter, SearchQuery},
+    search::{
+        EmailSearchField, SearchComparator, SearchFilter, SearchOperator, SearchQuery, SearchValue,
+    },
     write::SearchIndex,
 };
 use trc::AddContext;
 use types::{acl::Acl, keyword::Keyword};
+use utils::map::vec_map::VecMap;
 
 pub trait EmailQuery: Sync + Send {
     fn email_query(
@@ -125,35 +128,28 @@ impl EmailQuery for Server {
                         })?;
 
                         if let Some(header_name) = HeaderName::parse(header_name) {
-                            let is_id = matches!(
+                            let value = header.next();
+                            let op = if matches!(
                                 header_name,
                                 HeaderName::MessageId
                                     | HeaderName::InReplyTo
                                     | HeaderName::References
                                     | HeaderName::ResentMessageId
-                            );
-                            let header_name = match header_name {
-                                HeaderName::Other(value) => {
-                                    EmailSearchField::Header(Cow::Owned(value.to_ascii_lowercase()))
-                                }
-                                _ => EmailSearchField::Header(Cow::Borrowed(
-                                    header_name.as_static_str(),
-                                )),
+                            ) || value.is_none()
+                            {
+                                SearchOperator::Equal
+                            } else {
+                                SearchOperator::Contains
                             };
 
-                            if let Some(value) = header.next() {
-                                if is_id {
-                                    filters.push(SearchFilter::eq(header_name, value));
-                                } else {
-                                    filters.push(SearchFilter::has_text(
-                                        header_name,
-                                        value,
-                                        Language::None,
-                                    ));
-                                }
-                            } else {
-                                filters.push(SearchFilter::exists(header_name));
-                            }
+                            filters.push(SearchFilter::cond(
+                                EmailSearchField::Headers,
+                                op,
+                                SearchValue::KeyValues(VecMap::with_capacity(1).with_append(
+                                    header_name.into_string(),
+                                    value.unwrap_or_default(),
+                                )),
+                            ));
                         }
                     }
                     EmailFilter::InMailbox(mailbox) => {

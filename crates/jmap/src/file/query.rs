@@ -149,7 +149,8 @@ impl FileNodeQuery for Server {
             } else {
                 cache.document_ids(false).collect()
             })
-            .execute();
+            .filter()
+            .into_bitmap();
 
         let mut response = QueryResponseBuilder::new(
             results.len() as usize,

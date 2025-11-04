@@ -196,7 +196,8 @@ impl EmailSubmissionQuery for Server {
         let results = SearchQuery::new(SearchIndex::InMemory)
             .with_filters(filters)
             .with_mask(document_ids)
-            .execute();
+            .filter()
+            .into_bitmap();
 
         let mut response = QueryResponseBuilder::new(
             results.len() as usize,

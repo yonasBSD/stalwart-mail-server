@@ -127,11 +127,11 @@ impl Store {
     ) -> trc::Result<T> {
         let result = match self {
             #[cfg(feature = "sqlite")]
-            Self::SQLite(store) => store.query(query, &params).await,
+            Self::SQLite(store) => store.sql_query(query, &params).await,
             #[cfg(feature = "postgres")]
-            Self::PostgreSQL(store) => store.query(query, &params).await,
+            Self::PostgreSQL(store) => store.sql_query(query, &params).await,
             #[cfg(feature = "mysql")]
-            Self::MySQL(store) => store.query(query, &params).await,
+            Self::MySQL(store) => store.sql_query(query, &params).await,
             _ => Err(trc::StoreEvent::NotSupported.into_err()),
         };
 

@@ -1,0 +1,351 @@
+/*
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
+ *
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
+
+use crate::{
+    backend::postgres::{PostgresStore, PsqlSearchField, into_error},
+    search::{
+        IndexDocument, SearchComparator, SearchDocumentId, SearchFilter, SearchOperator,
+        SearchQuery, SearchValue,
+    },
+    write::SearchIndex,
+};
+use nlp::language::Language;
+use tokio_postgres::{
+    IsolationLevel,
+    types::{ToSql, Type},
+};
+
+impl PostgresStore {
+    pub async fn index(&self, documents: Vec<IndexDocument>) -> trc::Result<()> {
+        let mut conn = self.conn_pool.get().await.map_err(into_error)?;
+        let trx = conn
+            .build_transaction()
+            .isolation_level(IsolationLevel::ReadCommitted)
+            .start()
+            .await
+            .map_err(into_error)?;
+
+        for document in documents {
+            let index = document.index;
+            let primary_keys = index.primary_keys();
+            let all_fields = index.all_fields();
+            let fields = document.fields;
+            let mut values = Vec::with_capacity(fields.len() + 2);
+            let mut query = format!("INSERT INTO {} (", index.psql_table());
+
+            for (i, field) in primary_keys.iter().chain(all_fields).enumerate() {
+                if i > 0 {
+                    query.push(',');
+                }
+                query.push_str(field.column());
+
+                if let Some(sort_column) = field.sort_column() {
+                    query.push(',');
+                    query.push_str(sort_column);
+                }
+            }
+
+            query.push_str(") VALUES (");
+
+            for (i, field) in primary_keys.iter().chain(all_fields).enumerate() {
+                if i > 0 {
+                    query.push(',');
+                }
+
+                if let Some(value) = fields.get(field) {
+                    let value_ref = format!("${}", values.len() + 1);
+
+                    if field.is_text() {
+                        let language = match &value {
+                            SearchValue::Text { language, .. }
+                                if self.languages.contains(language) =>
+                            {
+                                pg_lang(language).unwrap_or("simple")
+                            }
+                            _ => "simple",
+                        };
+
+                        query.push_str(&format!("to_tsvector('{language}',{value_ref})"));
+                    } else {
+                        query.push_str(&value_ref);
+                    }
+
+                    if field.sort_column().is_some() {
+                        query.push(',');
+                        query.push_str(&value_ref);
+                    }
+
+                    values.push(value as &(dyn ToSql + Sync));
+                } else {
+                    query.push_str("NULL");
+                    if field.sort_column().is_some() {
+                        query.push_str(",NULL");
+                    }
+                }
+            }
+
+            query.push_str(") ON CONFLICT (");
+            for (i, pkey) in primary_keys.iter().enumerate() {
+                if i > 0 {
+                    query.push(',');
+                }
+                query.push_str(pkey.column());
+            }
+            query.push_str(") DO UPDATE SET ");
+            for (i, field) in all_fields.iter().enumerate() {
+                if i > 0 {
+                    query.push(',');
+                }
+                let column = field.column();
+                query.push_str(&format!("{column} = EXCLUDED.{column}"));
+            }
+
+            trx.execute(&query, &values).await.map_err(into_error)?;
+        }
+
+        trx.commit().await.map_err(into_error)
+    }
+
+    pub async fn query<R: SearchDocumentId>(
+        &self,
+        index: SearchIndex,
+        filters: &[SearchFilter],
+        sort: &[SearchComparator],
+    ) -> trc::Result<Vec<R>> {
+        let mut query = format!(
+            "SELECT {} FROM {} ",
+            R::field().column(),
+            index.psql_table()
+        );
+
+        todo!()
+    }
+
+    pub async fn unindex(&self, query: SearchQuery) -> trc::Result<()> {
+        todo!()
+    }
+
+    fn build_filter<'x>(
+        &self,
+        query: &mut String,
+        filters: &'x [SearchFilter],
+    ) -> Vec<&'x (dyn ToSql + Sync)> {
+        query.push_str("WHERE ");
+        let mut operator_stack = Vec::new();
+        let mut operator = &SearchFilter::And;
+        let mut is_first = true;
+        let values = Vec::new();
+
+        for filter in filters {
+            match filter {
+                SearchFilter::Operator { field, op, value } => {
+                    if !is_first {
+                        match operator {
+                            SearchFilter::And => query.push_str(" AND "),
+                            SearchFilter::Or => query.push_str(" OR "),
+                            _ => (),
+                        }
+                    } else {
+                        is_first = false;
+                    }
+                    query.push_str(field.column());
+                    query.push(' ');
+
+                    let value_ref = format!("${}", values.len() + 1);
+                    if field.is_text() {
+                        let language = match &value {
+                            SearchValue::Text { language, .. }
+                                if self.languages.contains(language) =>
+                            {
+                                pg_lang(language).unwrap_or("simple")
+                            }
+                            _ => "simple",
+                        };
+                        let method = match op {
+                            SearchOperator::Equal => "phraseto_tsquery",
+                            _ => "plainto_tsquery",
+                        };
+                        query.push_str(&format!("@@ {method}('{language}', {value_ref})"));
+                    } else {
+                        let todo = "jsonb query";
+                        match op {
+                            SearchOperator::LowerThan => {
+                                query.push_str(" < ");
+                            }
+                            SearchOperator::LowerEqualThan => {
+                                query.push_str(" <= ");
+                            }
+                            SearchOperator::GreaterThan => {
+                                query.push_str(" > ");
+                            }
+                            SearchOperator::GreaterEqualThan => {
+                                query.push_str(" >= ");
+                            }
+                            SearchOperator::Equal => {
+                                query.push_str(" = ");
+                            }
+                            SearchOperator::Contains => {
+                                query.push_str(" LIKE ");
+                            }
+                        }
+                        query.push_str(&value_ref);
+                    }
+                }
+                SearchFilter::And | SearchFilter::Or => {
+                    operator_stack.push((operator, is_first));
+                    operator = filter;
+                    query.push('(');
+                }
+                SearchFilter::Not => {
+                    operator_stack.push((operator, is_first));
+                    operator = &SearchFilter::And;
+                    query.push_str("NOT (");
+                }
+                SearchFilter::End => {
+                    let p = operator_stack.pop().unwrap_or((&SearchFilter::And, true));
+                    operator = p.0;
+                    is_first = p.1;
+                    query.push(')');
+                }
+                SearchFilter::DocumentSet(_) => (),
+            }
+        }
+
+        values
+    }
+}
+
+impl ToSql for SearchValue {
+    fn to_sql(
+        &self,
+        ty: &tokio_postgres::types::Type,
+        out: &mut bytes::BytesMut,
+    ) -> Result<tokio_postgres::types::IsNull, Box<dyn std::error::Error + Sync + Send>>
+    where
+        Self: Sized,
+    {
+        match self {
+            SearchValue::Text { value, .. } => value.to_sql(ty, out),
+            SearchValue::Int(v) => match *ty {
+                Type::INT4 => (*v as i32).to_sql(ty, out),
+                _ => v.to_sql(ty, out),
+            },
+            SearchValue::Uint(v) => match *ty {
+                Type::INT4 => (*v as i32).to_sql(ty, out),
+                _ => (*v as i64).to_sql(ty, out),
+            },
+            SearchValue::Boolean(v) => v.to_sql(ty, out),
+            SearchValue::KeyValues(kv) => serde_json::to_string(kv)
+                .unwrap_or_default()
+                .to_sql(ty, out),
+        }
+    }
+
+    fn accepts(_: &tokio_postgres::types::Type) -> bool
+    where
+        Self: Sized,
+    {
+        true
+    }
+
+    fn to_sql_checked(
+        &self,
+        ty: &tokio_postgres::types::Type,
+        out: &mut bytes::BytesMut,
+    ) -> Result<tokio_postgres::types::IsNull, Box<dyn std::error::Error + Sync + Send>> {
+        match self {
+            SearchValue::Text { value, .. } => value.to_sql_checked(ty, out),
+            SearchValue::Int(v) => match *ty {
+                Type::INT4 => (*v as i32).to_sql_checked(ty, out),
+                _ => v.to_sql_checked(ty, out),
+            },
+            SearchValue::Uint(v) => match *ty {
+                Type::INT4 => (*v as i32).to_sql_checked(ty, out),
+                _ => (*v as i64).to_sql_checked(ty, out),
+            },
+            SearchValue::Boolean(v) => v.to_sql_checked(ty, out),
+            SearchValue::KeyValues(kv) => serde_json::to_string(kv)
+                .unwrap_or_default()
+                .to_sql_checked(ty, out),
+        }
+    }
+}
+
+#[inline(always)]
+fn pg_lang(lang: &Language) -> Option<&'static str> {
+    match lang {
+        Language::Esperanto => None,
+        Language::English => Some("english"),
+        Language::Russian => Some("russian"),
+        Language::Mandarin => None,
+        Language::Spanish => Some("spanish"),
+        Language::Portuguese => Some("portuguese"),
+        Language::Italian => Some("italian"),
+        Language::Bengali => None,
+        Language::French => Some("french"),
+        Language::German => Some("german"),
+        Language::Ukrainian => None,
+        Language::Georgian => None,
+        Language::Arabic => Some("arabic"),
+        Language::Hindi => Some("hindi"),
+        Language::Japanese => None,
+        Language::Hebrew => None,
+        Language::Yiddish => Some("yiddish"),
+        Language::Polish => Some("polish"),
+        Language::Amharic => None,
+        Language::Javanese => None,
+        Language::Korean => None,
+        Language::Bokmal => Some("norwegian"), // Norwegian covers Bokmål
+        Language::Danish => Some("danish"),
+        Language::Swedish => Some("swedish"),
+        Language::Finnish => Some("finnish"),
+        Language::Turkish => Some("turkish"),
+        Language::Dutch => Some("dutch"),
+        Language::Hungarian => Some("hungarian"),
+        Language::Czech => Some("czech"),
+        Language::Greek => Some("greek"),
+        Language::Bulgarian => None,
+        Language::Belarusian => None,
+        Language::Marathi => None,
+        Language::Kannada => None,
+        Language::Romanian => Some("romanian"),
+        Language::Slovene => None,
+        Language::Croatian => None,
+        Language::Serbian => Some("serbian"),
+        Language::Macedonian => None,
+        Language::Lithuanian => Some("lithuanian"),
+        Language::Latvian => None,
+        Language::Estonian => None,
+        Language::Tamil => Some("tamil"),
+        Language::Vietnamese => None,
+        Language::Urdu => None,
+        Language::Thai => None,
+        Language::Gujarati => None,
+        Language::Uzbek => None,
+        Language::Punjabi => None,
+        Language::Azerbaijani => None,
+        Language::Indonesian => Some("indonesian"),
+        Language::Telugu => None,
+        Language::Persian => None,
+        Language::Malayalam => None,
+        Language::Oriya => None,
+        Language::Burmese => None,
+        Language::Nepali => Some("nepali"),
+        Language::Sinhalese => None,
+        Language::Khmer => None,
+        Language::Turkmen => None,
+        Language::Akan => None,
+        Language::Zulu => None,
+        Language::Shona => None,
+        Language::Afrikaans => None,
+        Language::Latin => None,
+        Language::Slovak => None,
+        Language::Catalan => Some("catalan"),
+        Language::Tagalog => None,
+        Language::Armenian => Some("armenian"),
+        Language::Unknown | Language::None => None,
+    }
+}

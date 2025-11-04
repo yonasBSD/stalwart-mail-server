@@ -19,6 +19,7 @@ pub enum ContactField {
     Uid,
     Email,
     Archive,
+    CreatedToUpdated,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -83,6 +84,7 @@ impl From<ContactField> for u8 {
         match value {
             ContactField::Uid => 0,
             ContactField::Email => 1,
+            ContactField::CreatedToUpdated => 2,
             ContactField::Archive => ARCHIVE_FIELD,
         }
     }

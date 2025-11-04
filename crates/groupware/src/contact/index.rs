@@ -14,10 +14,13 @@ use calcard::{
     },
 };
 use common::storage::index::{IndexValue, IndexableAndSerializableObject, IndexableObject};
-use nlp::language::Language;
+use nlp::language::{
+    Language,
+    detect::{LanguageDetector, MIN_LANGUAGE_SCORE},
+};
 use store::{
     search::{ContactSearchField, IndexDocument, SearchField},
-    write::SearchIndex,
+    write::{IndexPropertyClass, SearchIndex, ValueClass},
     xxhash_rust::xxh3,
 };
 use types::{acl::AclGrant, collection::SyncCollection, field::ContactField};
@@ -97,6 +100,13 @@ impl IndexableObject for ContactCard {
                 field: ContactField::Email.into(),
                 value: self.emails().next().into(),
             },
+            IndexValue::Property {
+                field: ValueClass::IndexProperty(IndexPropertyClass::Integer {
+                    property: ContactField::CreatedToUpdated.into(),
+                    value: self.created as u64,
+                }),
+                value: self.modified.into(),
+            },
             IndexValue::SearchIndex {
                 index: SearchIndex::Contacts,
                 hash: self.hashes().fold(0, |acc, hash| acc ^ hash),
@@ -126,6 +136,13 @@ impl IndexableObject for &ArchivedContactCard {
             IndexValue::Index {
                 field: ContactField::Email.into(),
                 value: self.emails().next().into(),
+            },
+            IndexValue::Property {
+                field: ValueClass::IndexProperty(IndexPropertyClass::Integer {
+                    property: ContactField::CreatedToUpdated.into(),
+                    value: self.created.to_native() as u64,
+                }),
+                value: (self.modified.to_native() as u64).into(),
             },
             IndexValue::SearchIndex {
                 index: SearchIndex::Contacts,
@@ -244,29 +261,24 @@ impl ArchivedContactCard {
 
 impl ArchivedContactCard {
     pub fn index_document(&self, index_fields: &AHashSet<SearchField>) -> IndexDocument {
-        let mut document = IndexDocument::with_default_language(Language::Unknown);
-
-        if index_fields.is_empty()
-            || index_fields.contains(&SearchField::Contact(ContactSearchField::Created))
-        {
-            document.index_integer(ContactSearchField::Created, self.created.to_native());
-        }
+        let mut document = IndexDocument::new(SearchIndex::Contacts);
+        let mut detector = LanguageDetector::new();
 
         for entry in self.card.entries.iter() {
-            let field = SearchField::Contact(match entry.name {
-                ArchivedVCardProperty::N => ContactSearchField::Name,
-                ArchivedVCardProperty::Nickname => ContactSearchField::Nickname,
-                ArchivedVCardProperty::Org => ContactSearchField::Organization,
-                ArchivedVCardProperty::Email => ContactSearchField::Email,
-                ArchivedVCardProperty::Tel => ContactSearchField::Phone,
+            let (is_text, field) = SearchField::Contact(match entry.name {
+                ArchivedVCardProperty::N => (false, ContactSearchField::Name),
+                ArchivedVCardProperty::Nickname => (false, ContactSearchField::Nickname),
+                ArchivedVCardProperty::Org => (false, ContactSearchField::Organization),
+                ArchivedVCardProperty::Email => (false, ContactSearchField::Email),
+                ArchivedVCardProperty::Tel => (false, ContactSearchField::Phone),
                 ArchivedVCardProperty::Impp | ArchivedVCardProperty::Socialprofile => {
-                    ContactSearchField::OnlineService
+                    (false, ContactSearchField::OnlineService)
                 }
-                ArchivedVCardProperty::Adr => ContactSearchField::Address,
-                ArchivedVCardProperty::Note => ContactSearchField::Note,
-                ArchivedVCardProperty::Kind => ContactSearchField::Kind,
-                ArchivedVCardProperty::Uid => ContactSearchField::Uid,
-                ArchivedVCardProperty::Member => ContactSearchField::Member,
+                ArchivedVCardProperty::Adr => (false, ContactSearchField::Address),
+                ArchivedVCardProperty::Note => (true, ContactSearchField::Note),
+                ArchivedVCardProperty::Kind => (false, ContactSearchField::Kind),
+                ArchivedVCardProperty::Uid => (false, ContactSearchField::Uid),
+                ArchivedVCardProperty::Member => (false, ContactSearchField::Member),
                 _ => continue,
             });
 
@@ -274,14 +286,21 @@ impl ArchivedContactCard {
                 for value in entry.values.iter() {
                     match value {
                         ArchivedVCardValue::Text(v) => {
-                            document.index_text(field.clone(), v, Language::Unknown);
+                            let lang = if is_text {
+                                detector.detect(v.as_str(), MIN_LANGUAGE_SCORE);
+                                Language::Unknown
+                            } else {
+                                Language::None
+                            };
+
+                            document.index_text(field.clone(), v, lang);
                         }
                         ArchivedVCardValue::Kind(v) => {
-                            document.index_text(field.clone(), v.as_str(), Language::Unknown);
+                            document.index_text(field.clone(), v.as_str(), Language::None);
                         }
                         ArchivedVCardValue::Component(v) => {
                             for item in v.iter() {
-                                document.index_text(field.clone(), item, Language::Unknown);
+                                document.index_text(field.clone(), item, Language::None);
                             }
                         }
                         _ => (),
@@ -290,10 +309,20 @@ impl ArchivedContactCard {
 
                 for param in entry.params.iter() {
                     if let ArchivedVCardParameterValue::Text(value) = &param.value {
-                        document.index_text(field.clone(), value, Language::Unknown);
+                        let lang = if is_text {
+                            detector.detect(v.as_str(), MIN_LANGUAGE_SCORE);
+                            Language::Unknown
+                        } else {
+                            Language::None
+                        };
+                        document.index_text(field.clone(), value, lang);
                     }
                 }
             }
+        }
+
+        if let Some(detected_language) = detector.most_frequent_language() {
+            document.set_unknown_language(detected_language);
         }
 
         document

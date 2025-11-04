@@ -667,7 +667,7 @@ impl SearchIndex {
             SearchIndex::Calendar => 1,
             SearchIndex::Contacts => 2,
             SearchIndex::File => 3,
-            SearchIndex::TracingSpan => 4,
+            SearchIndex::Tracing => 4,
             SearchIndex::InMemory => unreachable!(),
         }
     }
@@ -678,7 +678,7 @@ impl SearchIndex {
             1 => Some(SearchIndex::Calendar),
             2 => Some(SearchIndex::Contacts),
             3 => Some(SearchIndex::File),
-            4 => Some(SearchIndex::TracingSpan),
+            4 => Some(SearchIndex::Tracing),
             _ => None,
         }
     }
@@ -689,7 +689,7 @@ impl SearchIndex {
             SearchIndex::Calendar => "calendar",
             SearchIndex::Contacts => "contacts",
             SearchIndex::File => "file",
-            SearchIndex::TracingSpan => "tracing",
+            SearchIndex::Tracing => "tracing",
             SearchIndex::InMemory => "in_memory",
         }
     }
@@ -700,7 +700,7 @@ impl SearchIndex {
             "calendar" => Some(SearchIndex::Calendar),
             "contacts" => Some(SearchIndex::Contacts),
             "file" => Some(SearchIndex::File),
-            "tracing" => Some(SearchIndex::TracingSpan),
+            "tracing" => Some(SearchIndex::Tracing),
             _ => None,
         }
     }

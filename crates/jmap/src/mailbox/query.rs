@@ -16,6 +16,7 @@ use std::{
     future::Future,
 };
 use store::{
+    ahash::AHashMap,
     roaring::RoaringBitmap,
     search::{SearchComparator, SearchFilter, SearchQuery},
     write::SearchIndex,
@@ -155,14 +156,18 @@ impl MailboxQuery for Server {
 
         // Sort as tree
         if sort_as_tree {
-            let sorted_list = mailboxes
+            let sorted_set = mailboxes
                 .mailboxes
                 .items
                 .iter()
                 .map(|mailbox| (mailbox.path.as_str(), mailbox.document_id))
                 .collect::<BTreeMap<_, _>>();
-            comparators.push(SearchComparator::sorted_list(
-                sorted_list.into_values().collect(),
+            comparators.push(SearchComparator::sorted_set(
+                sorted_set
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, (_, v))| (i as u32, v))
+                    .collect(),
                 true,
             ));
         }
@@ -176,48 +181,46 @@ impl MailboxQuery for Server {
         {
             comparators.push(match comparator.property {
                 MailboxComparator::Name => {
-                    let sorted_list = mailboxes
+                    let sorted_set = mailboxes
                         .mailboxes
                         .items
                         .iter()
                         .map(|mailbox| (mailbox.name.as_str(), mailbox.document_id))
                         .collect::<BTreeSet<_>>();
 
-                    SearchComparator::sorted_list(
-                        sorted_list.into_iter().map(|v| v.1).collect(),
+                    SearchComparator::sorted_set(
+                        sorted_set
+                            .into_iter()
+                            .enumerate()
+                            .map(|(i, (_, v))| (i as u32, v))
+                            .collect(),
                         comparator.is_ascending,
                     )
                 }
                 MailboxComparator::SortOrder => {
-                    let sorted_list = mailboxes
+                    let sorted_set = mailboxes
                         .mailboxes
                         .items
                         .iter()
-                        .map(|mailbox| (mailbox.sort_order, mailbox.document_id))
-                        .collect::<BTreeSet<_>>();
+                        .map(|mailbox| (mailbox.document_id, mailbox.sort_order))
+                        .collect::<AHashMap<_, _>>();
 
-                    SearchComparator::sorted_list(
-                        sorted_list.into_iter().map(|v| v.1).collect(),
-                        comparator.is_ascending,
-                    )
+                    SearchComparator::sorted_set(sorted_set, comparator.is_ascending)
                 }
                 MailboxComparator::ParentId => {
-                    let sorted_list = mailboxes
+                    let sorted_set = mailboxes
                         .mailboxes
                         .items
                         .iter()
                         .map(|mailbox| {
                             (
-                                mailbox.parent_id().map(|id| id + 1).unwrap_or_default(),
                                 mailbox.document_id,
+                                mailbox.parent_id().map(|id| id + 1).unwrap_or_default(),
                             )
                         })
-                        .collect::<BTreeSet<_>>();
+                        .collect::<AHashMap<_, _>>();
 
-                    SearchComparator::sorted_list(
-                        sorted_list.into_iter().map(|v| v.1).collect(),
-                        comparator.is_ascending,
-                    )
+                    SearchComparator::sorted_set(sorted_set, comparator.is_ascending)
                 }
 
                 MailboxComparator::_T(other) => {
@@ -226,7 +229,7 @@ impl MailboxQuery for Server {
             });
         }
 
-        let results = SearchQuery::new(SearchIndex::InMemory)
+        let mut results = SearchQuery::new(SearchIndex::InMemory)
             .with_filters(filters)
             .with_comparators(comparators)
             .with_mask(if access_token.is_shared(account_id) {
@@ -239,50 +242,42 @@ impl MailboxQuery for Server {
                     .map(|m| m.document_id)
                     .collect()
             })
-            .execute();
+            .filter();
+
+        // Filter as tree
+        if filter_as_tree {
+            let mut new_results = RoaringBitmap::new();
+
+            for document_id in results.results() {
+                let mut check_id = document_id;
+                for _ in 0..self.core.jmap.mailbox_max_depth {
+                    if let Some(mailbox) = mailboxes.mailbox_by_id(&check_id) {
+                        if let Some(parent_id) = mailbox.parent_id() {
+                            if results.results().contains(parent_id) {
+                                check_id = parent_id;
+                            } else {
+                                break;
+                            }
+                        } else {
+                            new_results.insert(document_id);
+                        }
+                    }
+                }
+            }
+
+            results.update_results(new_results);
+        }
 
         let mut response = QueryResponseBuilder::new(
-            results.len() as usize,
+            results.results().len() as usize,
             self.core.jmap.query_max_results,
             mailboxes.get_state(true),
             &request,
         );
 
-        if !results.is_empty() {
-            // Filter as tree
-            if filter_as_tree {
-                let mut total_filtered = 0;
-                let mut is_page_full = false;
-
-                for document_id in &results {
-                    let mut check_id = document_id;
-                    for _ in 0..self.core.jmap.mailbox_max_depth {
-                        if let Some(mailbox) = mailboxes.mailbox_by_id(&check_id) {
-                            if let Some(parent_id) = mailbox.parent_id() {
-                                if results.contains(parent_id) {
-                                    check_id = parent_id;
-                                } else {
-                                    break;
-                                }
-                            } else {
-                                total_filtered += 1;
-                                if !is_page_full && !response.add(0, document_id) {
-                                    is_page_full = true;
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if total_filtered != results.len() {
-                    response.response.total = Some(total_filtered as usize);
-                }
-            } else {
-                for document_id in results {
-                    if !response.add(0, document_id) {
-                        break;
-                    }
-                }
+        for document_id in results.into_sorted() {
+            if !response.add(0, document_id) {
+                break;
             }
         }
 

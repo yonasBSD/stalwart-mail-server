@@ -220,7 +220,7 @@ pub enum SearchIndex {
     Calendar,
     Contacts,
     File,
-    TracingSpan,
+    Tracing,
     InMemory,
 }
 

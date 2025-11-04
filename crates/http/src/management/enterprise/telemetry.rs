@@ -91,16 +91,20 @@ impl TelemetryApi for Server {
                             if in_quote {
                                 buf.push(' ');
                             } else if !buf.is_empty() {
-                                tracing_query
-                                    .push(SearchFilter::eq(TracingSearchField::Address, buf));
+                                tracing_query.push(SearchFilter::has_unknown_text(
+                                    TracingSearchField::Keywords,
+                                    buf,
+                                ));
                                 buf = String::new();
                             }
                         } else if ch == '"' {
                             buf.push(ch);
                             if in_quote {
                                 if !buf.is_empty() {
-                                    tracing_query
-                                        .push(SearchFilter::eq(TracingSearchField::Address, buf));
+                                    tracing_query.push(SearchFilter::has_unknown_text(
+                                        TracingSearchField::Keywords,
+                                        buf,
+                                    ));
                                     buf = String::new();
                                 }
                                 in_quote = false;
@@ -112,7 +116,10 @@ impl TelemetryApi for Server {
                         }
                     }
                     if !buf.is_empty() {
-                        tracing_query.push(SearchFilter::eq(TracingSearchField::Address, buf));
+                        tracing_query.push(SearchFilter::has_unknown_text(
+                            TracingSearchField::Keywords,
+                            buf,
+                        ));
                     }
                 }
                 let before = params
@@ -131,6 +138,8 @@ impl TelemetryApi for Server {
                 tracing_query.push(SearchFilter::gt(SearchField::Id, before));
                 tracing_query.push(SearchFilter::End);
 
+                let todo = "if there is no search index, do full scan";
+
                 let store = &self
                     .core
                     .enterprise
@@ -141,7 +150,7 @@ impl TelemetryApi for Server {
 
                 let span_ids = self
                     .search_store()
-                    .query(SearchQuery::new(SearchIndex::TracingSpan).with_filters(tracing_query))
+                    .query(SearchQuery::new(SearchIndex::Tracing).with_filters(tracing_query))
                     .await?;
 
                 let (total, span_ids) = if limit > 0 {

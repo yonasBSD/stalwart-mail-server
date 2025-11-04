@@ -71,7 +71,7 @@ pub(crate) fn spawn_store_tracer(builder: SubscriberBuilder, settings: StoreTrac
                                 .set(
                                     ValueClass::TaskQueue(TaskQueueClass::UpdateIndex {
                                         due: now,
-                                        index: SearchIndex::TracingSpan,
+                                        index: SearchIndex::Tracing,
                                         is_insert: true,
                                     }),
                                     vec![],
@@ -149,7 +149,7 @@ impl TracingStore for Store {
         if let Some(search_store) = search_store {
             search_store
                 .unindex(
-                    SearchQuery::new(SearchIndex::TracingSpan)
+                    SearchQuery::new(SearchIndex::Tracing)
                         .with_filter(SearchFilter::lt(SearchField::Id, until_span_id)),
                 )
                 .await
@@ -246,7 +246,7 @@ pub fn build_span_document(
     events: Vec<Event<EventDetails>>,
     index_fields: &AHashSet<SearchField>,
 ) -> IndexDocument {
-    let mut document = IndexDocument::with_default_language(Language::None);
+    let mut document = IndexDocument::new(SearchIndex::Tracing);
 
     document.index_unsigned(SearchField::Id, span_id);
 
@@ -264,25 +264,30 @@ pub fn build_span_document(
                     if index_fields.is_empty()
                         || index_fields.contains(&TracingSearchField::QueueId.into())
                     {
-                        document.insert_keyword(TracingSearchField::QueueId, queue_id);
+                        document.index_unsigned(TracingSearchField::QueueId, queue_id);
                     }
                 }
                 (Key::From | Key::To | Key::Domain | Key::Hostname, Value::String(address)) => {
                     if index_fields.is_empty()
-                        || index_fields.contains(&TracingSearchField::Address.into())
+                        || index_fields.contains(&TracingSearchField::Keywords.into())
                     {
-                        document.insert_keyword(TracingSearchField::Address, address.into_string());
+                        document.index_text(
+                            TracingSearchField::Keywords,
+                            &address,
+                            Language::Unknown,
+                        );
                     }
                 }
                 (Key::To, Value::Array(value)) => {
                     if index_fields.is_empty()
-                        || index_fields.contains(&TracingSearchField::Address.into())
+                        || index_fields.contains(&TracingSearchField::Keywords.into())
                     {
                         for value in value {
                             if let Value::String(address) = value {
-                                document.insert_keyword(
-                                    TracingSearchField::Address,
-                                    address.into_string(),
+                                document.index_text(
+                                    TracingSearchField::Keywords,
+                                    &address,
+                                    Language::Unknown,
                                 );
                             }
                         }
@@ -290,16 +295,24 @@ pub fn build_span_document(
                 }
                 (Key::RemoteIp, Value::Ipv4(ip)) => {
                     if index_fields.is_empty()
-                        || index_fields.contains(&TracingSearchField::RemoteIp.into())
+                        || index_fields.contains(&TracingSearchField::Keywords.into())
                     {
-                        document.insert_keyword(TracingSearchField::RemoteIp, ip.to_string());
+                        document.index_text(
+                            TracingSearchField::Keywords,
+                            &ip.to_string(),
+                            Language::Unknown,
+                        );
                     }
                 }
                 (Key::RemoteIp, Value::Ipv6(ip)) => {
                     if index_fields.is_empty()
-                        || index_fields.contains(&TracingSearchField::RemoteIp.into())
+                        || index_fields.contains(&TracingSearchField::Keywords.into())
                     {
-                        document.insert_keyword(TracingSearchField::RemoteIp, ip.to_string());
+                        document.index_text(
+                            TracingSearchField::Keywords,
+                            &ip.to_string(),
+                            Language::Unknown,
+                        );
                     }
                 }
 
