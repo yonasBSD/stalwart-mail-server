@@ -216,10 +216,10 @@ async fn create_search_tables<T: SearchableField + PsqlSearchField + 'static>(
 
     // Create indexes
     for field in T::all_fields() {
-        if field.is_text() {
+        if field.is_text() || field.is_json() {
             let column_name = field.column();
             let create_index_query = format!(
-                "CREATE INDEX IF NOT EXISTS fts_{table_name}_{column_name} ON {table_name} USING GIN({column_name})",
+                "CREATE INDEX IF NOT EXISTS gin_{table_name}_{column_name} ON {table_name} USING GIN({column_name})",
             );
             conn.execute(&create_index_query, &[])
                 .await

@@ -358,7 +358,7 @@ impl ArchivedCalendarEvent {
             .filter(|e| e.component_type.is_scheduling_object())
         {
             for entry in component.entries.iter() {
-                let (is_lang, field) = SearchField::Calendar(match entry.name {
+                let (is_lang, field) = match entry.name {
                     ArchivedICalendarProperty::Summary => (true, CalendarSearchField::Title),
                     ArchivedICalendarProperty::Description => {
                         (true, CalendarSearchField::Description)
@@ -368,7 +368,8 @@ impl ArchivedCalendarEvent {
                     ArchivedICalendarProperty::Attendee => (false, CalendarSearchField::Attendee),
                     ArchivedICalendarProperty::Uid => (false, CalendarSearchField::Uid),
                     _ => continue,
-                });
+                };
+                let field = SearchField::Calendar(field);
 
                 if index_fields.is_empty() || index_fields.contains(&field) {
                     for value in entry

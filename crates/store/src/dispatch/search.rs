@@ -7,7 +7,6 @@
 use super::DocumentSet;
 use crate::{
     SearchStore,
-    backend::elastic::query,
     search::{IndexDocument, SearchComparator, SearchDocumentId, SearchFilter, SearchQuery},
     write::SearchIndex,
 };
@@ -23,7 +22,7 @@ impl SearchStore {
                     .index_query(account_id, collection, filters, comparators)
                     .await
             }
-            #[cfg(feature = "elastic")]
+            
             SearchStore::ElasticSearch(store) => {
                 store
                     .index_query(account_id, collection, filters, comparators)
@@ -33,15 +32,11 @@ impl SearchStore {
         .caused_by(trc::location!())*/
     }
 
-    pub async fn index(
-        &self,
-        index: SearchIndex,
-        documents: Vec<IndexDocument>,
-    ) -> trc::Result<()> {
+    pub async fn index(&self, documents: Vec<IndexDocument>) -> trc::Result<()> {
         todo!()
         /*match self {
             SearchStore::Store(store) => store.index_insert(document).await,
-            #[cfg(feature = "elastic")]
+            
             SearchStore::ElasticSearch(store) => store.index_insert(document).await,
         }
         .caused_by(trc::location!())*/
@@ -55,7 +50,7 @@ impl SearchStore {
                     .index_remove(account_id, collection, document_ids)
                     .await
             }
-            #[cfg(feature = "elastic")]
+            
             SearchStore::ElasticSearch(store) => {
                 store
                     .index_remove(account_id, collection, document_ids)

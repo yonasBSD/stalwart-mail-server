@@ -13,6 +13,7 @@ use crate::{
     write::SearchIndex,
 };
 use nlp::language::Language;
+use std::fmt::Write;
 use tokio_postgres::{
     IsolationLevel,
     types::{ToSql, Type},
@@ -68,7 +69,7 @@ impl PostgresStore {
                             _ => "simple",
                         };
 
-                        query.push_str(&format!("to_tsvector('{language}',{value_ref})"));
+                        let _ = write!(&mut query, "to_tsvector('{language}',{value_ref})");
                     } else {
                         query.push_str(&value_ref);
                     }
@@ -100,7 +101,7 @@ impl PostgresStore {
                     query.push(',');
                 }
                 let column = field.column();
-                query.push_str(&format!("{column} = EXCLUDED.{column}"));
+                let _ = write!(&mut query, "{column} = EXCLUDED.{column}");
             }
 
             trx.execute(&query, &values).await.map_err(into_error)?;
@@ -120,12 +121,32 @@ impl PostgresStore {
             R::field().column(),
             index.psql_table()
         );
+        let params = self.build_filter(&mut query, filters);
+        if !sort.is_empty() {
+            build_sort(&mut query, sort);
+        }
+        let conn = self.conn_pool.get().await.map_err(into_error)?;
+        let s = conn.prepare_cached(&query).await.map_err(into_error)?;
 
-        todo!()
+        conn.query(&s, params.as_slice())
+            .await
+            .and_then(|rows| {
+                rows.into_iter()
+                    .map(|row| row.try_get::<_, i64>(0).map(|v| R::from_u64(v as u64)))
+                    .collect::<Result<Vec<R>, _>>()
+            })
+            .map_err(into_error)
     }
 
-    pub async fn unindex(&self, query: SearchQuery) -> trc::Result<()> {
-        todo!()
+    pub async fn unindex(&self, filter: SearchQuery) -> trc::Result<u64> {
+        let mut query = format!("DELETE FROM {} ", filter.index.psql_table());
+        let params = self.build_filter(&mut query, &filter.filters);
+        let conn = self.conn_pool.get().await.map_err(into_error)?;
+        let s = conn.prepare_cached(&query).await.map_err(into_error)?;
+
+        conn.execute(&s, params.as_slice())
+            .await
+            .map_err(into_error)
     }
 
     fn build_filter<'x>(
@@ -137,7 +158,7 @@ impl PostgresStore {
         let mut operator_stack = Vec::new();
         let mut operator = &SearchFilter::And;
         let mut is_first = true;
-        let values = Vec::new();
+        let mut values = Vec::new();
 
         for filter in filters {
             match filter {
@@ -154,7 +175,7 @@ impl PostgresStore {
                     query.push_str(field.column());
                     query.push(' ');
 
-                    let value_ref = format!("${}", values.len() + 1);
+                    let value_pos = values.len() + 1;
                     if field.is_text() {
                         let language = match &value {
                             SearchValue::Text { language, .. }
@@ -168,30 +189,22 @@ impl PostgresStore {
                             SearchOperator::Equal => "phraseto_tsquery",
                             _ => "plainto_tsquery",
                         };
-                        query.push_str(&format!("@@ {method}('{language}', {value_ref})"));
-                    } else {
-                        let todo = "jsonb query";
-                        match op {
-                            SearchOperator::LowerThan => {
-                                query.push_str(" < ");
-                            }
-                            SearchOperator::LowerEqualThan => {
-                                query.push_str(" <= ");
-                            }
-                            SearchOperator::GreaterThan => {
-                                query.push_str(" > ");
-                            }
-                            SearchOperator::GreaterEqualThan => {
-                                query.push_str(" >= ");
-                            }
-                            SearchOperator::Equal => {
-                                query.push_str(" = ");
-                            }
-                            SearchOperator::Contains => {
-                                query.push_str(" LIKE ");
-                            }
+                        let _ = write!(query, "@@ {method}('{language}', ${value_pos})");
+                        values.push(value as &(dyn ToSql + Sync));
+                    } else if let SearchValue::KeyValues(kv) = value {
+                        let (key, value) = kv.iter().next().unwrap();
+                        values.push(key as &(dyn ToSql + Sync));
+
+                        if !value.is_empty() {
+                            query.push_str("->>?");
+                            op.write_pqsql(query, values.len() + 1);
+                            values.push(value as &(dyn ToSql + Sync));
+                        } else {
+                            let _ = write!(query, " ? ${value_pos}");
                         }
-                        query.push_str(&value_ref);
+                    } else {
+                        op.write_pqsql(query, value_pos);
+                        values.push(value as &(dyn ToSql + Sync));
                     }
                 }
                 SearchFilter::And | SearchFilter::Or => {
@@ -210,11 +223,41 @@ impl PostgresStore {
                     is_first = p.1;
                     query.push(')');
                 }
-                SearchFilter::DocumentSet(_) => (),
+                SearchFilter::DocumentSet(_) => {
+                    debug_assert!(
+                        false,
+                        "DocumentSet filters are not supported in Postgres backend"
+                    )
+                }
             }
         }
 
         values
+    }
+}
+
+fn build_sort(query: &mut String, sort: &[SearchComparator]) {
+    query.push_str(" ORDER BY ");
+    for (i, comparator) in sort.iter().enumerate() {
+        if i > 0 {
+            query.push_str(", ");
+        }
+        match comparator {
+            SearchComparator::Field { field, ascending } => {
+                query.push_str(field.sort_column().unwrap_or(field.column()));
+                if *ascending {
+                    query.push_str(" ASC");
+                } else {
+                    query.push_str(" DESC");
+                }
+            }
+            SearchComparator::DocumentSet { .. } | SearchComparator::SortedSet { .. } => {
+                debug_assert!(
+                    false,
+                    "DocumentSet and SortedSet comparators are not supported "
+                );
+            }
+        }
     }
 }
 
@@ -270,6 +313,31 @@ impl ToSql for SearchValue {
             SearchValue::KeyValues(kv) => serde_json::to_string(kv)
                 .unwrap_or_default()
                 .to_sql_checked(ty, out),
+        }
+    }
+}
+
+impl SearchOperator {
+    fn write_pqsql(&self, query: &mut String, value_pos: usize) {
+        match self {
+            SearchOperator::LowerThan => {
+                let _ = write!(query, " < ${value_pos}");
+            }
+            SearchOperator::LowerEqualThan => {
+                let _ = write!(query, " <= ${value_pos}");
+            }
+            SearchOperator::GreaterThan => {
+                let _ = write!(query, " > ${value_pos}");
+            }
+            SearchOperator::GreaterEqualThan => {
+                let _ = write!(query, " >= ${value_pos}");
+            }
+            SearchOperator::Equal => {
+                let _ = write!(query, " = ${value_pos}");
+            }
+            SearchOperator::Contains => {
+                let _ = write!(query, " LIKE '%' || ${value_pos} || '%'");
+            }
         }
     }
 }

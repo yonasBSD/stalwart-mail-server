@@ -185,7 +185,6 @@ pub enum BlobBackend {
 #[derive(Clone)]
 pub enum SearchStore {
     Store(Store),
-    #[cfg(feature = "elastic")]
     ElasticSearch(Arc<backend::elastic::ElasticSearchStore>),
 }
 
@@ -282,7 +281,6 @@ impl From<backend::azure::AzureStore> for BlobStore {
     }
 }
 
-#[cfg(feature = "elastic")]
 impl From<backend::elastic::ElasticSearchStore> for SearchStore {
     fn from(store: backend::elastic::ElasticSearchStore) -> Self {
         Self::ElasticSearch(Arc::new(store))

@@ -5,6 +5,7 @@
  */
 
 pub mod cron;
+pub mod http;
 pub mod ipmask;
 pub mod parser;
 pub mod utils;

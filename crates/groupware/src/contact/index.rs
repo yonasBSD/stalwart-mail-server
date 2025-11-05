@@ -265,7 +265,7 @@ impl ArchivedContactCard {
         let mut detector = LanguageDetector::new();
 
         for entry in self.card.entries.iter() {
-            let (is_text, field) = SearchField::Contact(match entry.name {
+            let (is_text, field) = match entry.name {
                 ArchivedVCardProperty::N => (false, ContactSearchField::Name),
                 ArchivedVCardProperty::Nickname => (false, ContactSearchField::Nickname),
                 ArchivedVCardProperty::Org => (false, ContactSearchField::Organization),
@@ -280,7 +280,8 @@ impl ArchivedContactCard {
                 ArchivedVCardProperty::Uid => (false, ContactSearchField::Uid),
                 ArchivedVCardProperty::Member => (false, ContactSearchField::Member),
                 _ => continue,
-            });
+            };
+            let field = SearchField::Contact(field);
 
             if index_fields.is_empty() || index_fields.contains(&field) {
                 for value in entry.values.iter() {
@@ -310,7 +311,7 @@ impl ArchivedContactCard {
                 for param in entry.params.iter() {
                     if let ArchivedVCardParameterValue::Text(value) = &param.value {
                         let lang = if is_text {
-                            detector.detect(v.as_str(), MIN_LANGUAGE_SCORE);
+                            detector.detect(value.as_str(), MIN_LANGUAGE_SCORE);
                             Language::Unknown
                         } else {
                             Language::None

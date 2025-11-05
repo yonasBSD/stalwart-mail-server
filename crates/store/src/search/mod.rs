@@ -478,7 +478,7 @@ impl SearchQuery {
         };
         let mut stack = Vec::new();
         let mut filters = self.filters.into_iter().peekable();
-        let not_mask = self.mask;
+        let mask = self.mask;
 
         while let Some(filter) = filters.next() {
             let mut result = match filter {
@@ -519,7 +519,7 @@ impl SearchQuery {
                     }
                     SearchFilter::Not => {
                         if let Some(mut result) = result {
-                            result.bitxor_assign(&not_mask);
+                            result.bitxor_assign(&mask);
                             dest.bitand_assign(result);
                         }
                     }
@@ -527,11 +527,11 @@ impl SearchQuery {
                 }
             } else if let Some(ref mut result_) = result {
                 if let SearchFilter::Not = state.op {
-                    result_.bitxor_assign(&not_mask);
+                    result_.bitxor_assign(&mask);
                 }
                 state.bm = result;
             } else if let SearchFilter::Not = state.op {
-                state.bm = Some(not_mask.clone());
+                state.bm = Some(mask.clone());
             } else {
                 state.bm = Some(RoaringBitmap::new());
             }
@@ -548,8 +548,11 @@ impl SearchQuery {
             }
         }
 
+        // AND with mask
+        let mut results = state.bm.unwrap_or_default();
+        results.bitand_assign(&mask);
         QueryResults {
-            results: state.bm.unwrap_or_default(),
+            results,
             comparators: self.comparators,
         }
     }
@@ -953,5 +956,9 @@ impl SearchField {
             SearchField::Tracing(field) => field.is_text(),
             SearchField::AccountId | SearchField::DocumentId | SearchField::Id => false,
         }
+    }
+
+    pub(crate) fn is_json(&self) -> bool {
+        matches!(self, SearchField::Email(EmailSearchField::Headers))
     }
 }

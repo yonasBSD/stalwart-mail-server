@@ -72,40 +72,35 @@ impl SearchIndexTask for Server {
     async fn index(&self, tasks: &[Task<IndexAction>]) -> Vec<IndexTaskResult> {
         let mut results: Vec<IndexTaskResult> = Vec::with_capacity(tasks.len());
         let mut batch = BatchBuilder::new();
-        let mut document_insertions: [Vec<IndexDocument>; NUM_INDEXES] =
-            std::array::from_fn(|_| Vec::new());
+        let mut document_insertions = Vec::new();
         let mut document_deletions: [AHashMap<u32, Vec<u32>>; NUM_INDEXES] =
             std::array::from_fn(|_| AHashMap::new());
 
         for task in tasks {
             if task.action.is_insert {
-                let (idx, document) = match task.action.index {
-                    SearchIndex::Email => (
-                        0,
-                        build_email_document(self, task.account_id, task.document_id).await,
-                    ),
-                    SearchIndex::Calendar => (
-                        1,
-                        build_calendar_document(self, task.account_id, task.document_id).await,
-                    ),
-                    SearchIndex::Contacts => (
-                        2,
-                        build_contact_document(self, task.account_id, task.document_id).await,
-                    ),
+                let document = match task.action.index {
+                    SearchIndex::Email => {
+                        build_email_document(self, task.account_id, task.document_id).await
+                    }
+                    SearchIndex::Calendar => {
+                        build_calendar_document(self, task.account_id, task.document_id).await
+                    }
+                    SearchIndex::Contacts => {
+                        build_contact_document(self, task.account_id, task.document_id).await
+                    }
                     SearchIndex::File => {
                         // File indexing not implemented yet
                         continue;
                     }
-                    SearchIndex::Tracing => (
-                        4,
-                        build_tracing_span_document(self, task.account_id, task.document_id).await,
-                    ),
+                    SearchIndex::Tracing => {
+                        build_tracing_span_document(self, task.account_id, task.document_id).await
+                    }
                     SearchIndex::InMemory => unreachable!(),
                 };
 
                 let result = match document {
                     Ok(Some(doc)) if !doc.is_empty() => {
-                        document_insertions[idx].push(doc);
+                        document_insertions.push(doc);
                         TaskStatus::Success
                     }
                     Err(err) => {
@@ -200,28 +195,19 @@ impl SearchIndexTask for Server {
         }
 
         // Index documents
-        for (documents, index) in document_insertions.into_iter().zip([
-            SearchIndex::Email,
-            SearchIndex::Calendar,
-            SearchIndex::Contacts,
-            SearchIndex::File,
-            SearchIndex::Tracing,
-        ]) {
-            if !documents.is_empty()
-                && let Err(err) = self.search_store().index(index, documents).await
-            {
-                trc::error!(
-                    err.caused_by(trc::location!())
-                        .details("Failed to index documents")
-                        .ctx(trc::Key::Collection, index.name())
-                );
-                for r in results.iter_mut() {
-                    if r.task_type == TaskType::Delete && r.status == TaskStatus::Success {
-                        r.status = TaskStatus::Failed;
-                    }
+        if !document_insertions.is_empty()
+            && let Err(err) = self.search_store().index(document_insertions).await
+        {
+            trc::error!(
+                err.caused_by(trc::location!())
+                    .details("Failed to index documents")
+            );
+            for r in results.iter_mut() {
+                if r.task_type == TaskType::Delete && r.status == TaskStatus::Success {
+                    r.status = TaskStatus::Failed;
                 }
-                return results;
             }
+            return results;
         }
 
         // Delete documents

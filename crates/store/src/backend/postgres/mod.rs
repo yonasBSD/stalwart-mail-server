@@ -35,7 +35,7 @@ fn into_error(err: impl Display) -> trc::Error {
 }
 
 impl SearchIndex {
-    pub(super) fn psql_table(&self) -> &'static str {
+    fn psql_table(&self) -> &'static str {
         match self {
             SearchIndex::Email => "s_email",
             SearchIndex::Calendar => "s_cal",
@@ -47,7 +47,7 @@ impl SearchIndex {
     }
 }
 
-pub(super) trait PsqlSearchField {
+trait PsqlSearchField {
     fn column(&self) -> &'static str;
     fn column_type(&self) -> &'static str;
     fn sort_column_type(&self) -> Option<&'static str>;

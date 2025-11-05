@@ -31,7 +31,7 @@ fn into_error(err: impl Display) -> trc::Error {
 }
 
 impl SearchIndex {
-    pub(super) fn mysql_table(&self) -> &'static str {
+    fn mysql_table(&self) -> &'static str {
         match self {
             SearchIndex::Email => "s_email",
             SearchIndex::Calendar => "s_cal",
@@ -43,7 +43,7 @@ impl SearchIndex {
     }
 }
 
-pub(super) trait MysqlSearchField {
+trait MysqlSearchField {
     fn column(&self) -> &'static str;
     fn column_type(&self) -> &'static str;
 }

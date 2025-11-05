@@ -41,8 +41,7 @@ rustls-pki-types = { version = "1", optional = true }
 ring = { version = "0.17", optional = true }
 bytes = { version = "1.10", optional = true }
 mysql_async = { version = "0.36", default-features = false, features = ["default-rustls-ring", "minimal"], optional = true }
-elasticsearch = { version = "8.5.0-alpha.1", default-features = false, features = ["rustls-tls"], optional = true }
-serde_json = {version = "1.0.64", optional = true }
+serde_json = { version = "1.0.64" }
 regex = "1.12"
 flate2 = "1.1"
 redis = { version = "0.32", features = [ "tokio-comp", "tokio-rustls-comp", "tls-rustls-insecure", "tls-rustls-webpki-roots", "cluster-async"], optional = true }
@@ -71,9 +70,6 @@ fdb-chunked-bm = []
 # Blob stores
 s3 = ["rust-s3"]
 azure = ["azure_core", "azure_storage", "azure_storage_blobs"]
-
-# Full-text stores
-elastic = ["elasticsearch", "serde_json"]
 
 # In-memory stores
 redis = ["dep:redis", "deadpool", "futures"]

@@ -6,7 +6,7 @@
 
 use crate::{
     BlobStore, CompressionAlgo, InMemoryStore, PurgeSchedule, PurgeStore, Store, Stores,
-    backend::fs::FsStore,
+    backend::{elastic::ElasticSearchStore, fs::FsStore},
 };
 use utils::config::{Config, cron::SimpleCron, utils::ParseValue};
 
@@ -203,12 +203,10 @@ impl Stores {
                             .insert(store_id, db.with_compression(compression_algo));
                     }
                 }
-                #[cfg(feature = "elastic")]
                 "elasticsearch" => {
-                    if let Some(db) =
-                        crate::backend::elastic::ElasticSearchStore::open(config, prefix)
-                            .await
-                            .map(crate::SearchStore::from)
+                    if let Some(db) = ElasticSearchStore::open(config, prefix)
+                        .await
+                        .map(crate::SearchStore::from)
                     {
                         self.search_stores.insert(store_id, db);
                     }
