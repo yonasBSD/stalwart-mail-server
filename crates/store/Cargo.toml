@@ -2,7 +2,6 @@
 name = "store"
 version = "0.14.1"
 edition = "2024"
-resolver = "2"
 
 [dependencies]
 utils = { path = "../utils" }
@@ -58,7 +57,6 @@ rdkafka = { version = "0.38", features = ["cmake-build"], optional = true }
 tokio = { version = "1.47", features = ["full"] }
 
 [features]
-
 # Data Stores
 rocks = ["rocksdb", "rayon", "num_cpus"]
 sqlite = ["rusqlite", "rayon", "r2d2", "num_cpus", "lru-cache"]

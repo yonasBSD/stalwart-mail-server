@@ -4,11 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::time::Duration;
-
 use crate::backend::elastic::ElasticSearchStore;
 use reqwest::Client;
 use serde_json::json;
+use std::time::Duration;
 use utils::config::{Config, http::build_http_client, utils::AsKey};
 
 pub(crate) static INDEX_NAMES: &[&str] = &["stalwart_email"];

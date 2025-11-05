@@ -8,7 +8,6 @@ homepage = "https://github.com/stalwartlabs/cli"
 version = "0.14.1"
 edition = "2024"
 readme = "README.md"
-resolver = "2"
 
 [dependencies]
 jmap-client = { version = "0.3", features = ["async"] } 
