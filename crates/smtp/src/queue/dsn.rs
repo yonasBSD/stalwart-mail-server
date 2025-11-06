@@ -126,6 +126,8 @@ impl SendDsn for Server {
     }
 }
 
+const MAX_HEADER_SIZE: usize = 4096;
+
 impl MessageWrapper {
     pub async fn build_dsn(&mut self, server: &Server) -> Option<Vec<u8>> {
         let config = &server.core.smtp.queue;
@@ -310,10 +312,10 @@ impl MessageWrapper {
             .write_dsn_headers(&mut dsn_header, &reporting_mta);
         let dsn = dsn_header + dsn.as_str();
 
-        // Fetch up to 1024 bytes of message headers
+        // Fetch up to MAX_HEADER_SIZE bytes of message headers
         let headers = match server
             .blob_store()
-            .get_blob(self.message.blob_hash.as_slice(), 0..1024)
+            .get_blob(self.message.blob_hash.as_slice(), 0..MAX_HEADER_SIZE)
             .await
         {
             Ok(Some(mut buf)) => {
@@ -336,7 +338,7 @@ impl MessageWrapper {
                         }
                     }
                 }
-                if last_lf < 1024 {
+                if last_lf < MAX_HEADER_SIZE {
                     buf.truncate(last_lf);
                 }
                 String::from_utf8(buf).unwrap_or_default()
