@@ -6,9 +6,10 @@
 
 use super::{MysqlStore, into_error};
 use crate::{
-    IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_QUOTA, U64_LEN,
+    IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_QUOTA,
     write::{
-        AssignedIds, Batch, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME, Operation, ValueClass, ValueOp,
+        AssignedIds, Batch, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME, MergeResult, Operation,
+        ValueClass, ValueOp,
     },
 };
 use ahash::AHashMap;
@@ -110,7 +111,7 @@ impl MysqlStore {
                 } => {
                     account_id = *account_id_;
                     if has_changes {
-                        change_id = result.last_change_id(account_id)?;
+                        change_id = result.set_current_change_id(account_id)?;
                     }
                 }
                 Operation::Collection {
@@ -128,15 +129,7 @@ impl MysqlStore {
                     let table = char::from(class.subspace(collection));
 
                     match op {
-                        ValueOp::Set {
-                            value,
-                            version_offset,
-                        } => {
-                            if let Some(offset) = version_offset {
-                                value[*offset..*offset + U64_LEN]
-                                    .copy_from_slice(&change_id.to_be_bytes());
-                            }
-
+                        ValueOp::Set(value) => {
                             let exists = asserted_values.get(&key);
                             let s = if let Some(exists) = exists {
                                 if *exists {
@@ -176,6 +169,94 @@ impl MysqlStore {
                                 }
                             }
                         }
+                        ValueOp::SetFnc(set_op) => {
+                            let value = (set_op.fnc)(&set_op.params, &result)?;
+                            let exists = asserted_values.get(&key);
+                            let s = if let Some(exists) = exists {
+                                if *exists {
+                                    trx.prep(format!("UPDATE {} SET v = :v WHERE k = :k", table))
+                                        .await?
+                                } else {
+                                    trx.prep(format!(
+                                        "INSERT INTO {} (k, v) VALUES (:k, :v)",
+                                        table
+                                    ))
+                                    .await?
+                                }
+                            } else {
+                                trx
+                            .prep(
+                                format!("INSERT INTO {} (k, v) VALUES (:k, :v) ON DUPLICATE KEY UPDATE v = VALUES(v)", table),
+                            )
+                            .await?
+                            };
+
+                            match trx.exec_drop(&s, params! {"k" => key, "v" => &value}).await {
+                                Ok(_) => {
+                                    if exists.is_some() && trx.affected_rows() == 0 {
+                                        trx.rollback().await?;
+                                        return Err(trc::StoreEvent::AssertValueFailed
+                                            .into_err()
+                                            .caused_by(trc::location!())
+                                            .into());
+                                    }
+                                }
+                                Err(err) => {
+                                    trx.rollback().await?;
+                                    return Err(err.into());
+                                }
+                            }
+                        }
+                        ValueOp::MergeFnc(merge_op) => {
+                            let s = trx
+                                .prep(format!("SELECT v FROM {} WHERE k = ? FOR UPDATE", table))
+                                .await?;
+                            let (exists, merge_result) = trx
+                                .exec_first::<Vec<u8>, _, _>(&s, (&key,))
+                                .await?
+                                .map(|bytes| {
+                                    (merge_op.fnc)(&merge_op.params, &result, Some(bytes.as_ref()))
+                                        .map(|v| (true, v))
+                                        .map_err(CommitError::from)
+                                })
+                                .unwrap_or_else(|| {
+                                    (merge_op.fnc)(&merge_op.params, &result, None)
+                                        .map(|v| (false, v))
+                                        .map_err(CommitError::from)
+                                })?;
+
+                            let s = if exists {
+                                trx.prep(format!("UPDATE {} SET v = :v WHERE k = :k", table))
+                                    .await?
+                            } else {
+                                trx.prep(format!("INSERT INTO {} (k, v) VALUES (:k, :v)", table))
+                                    .await?
+                            };
+
+                            match merge_result {
+                                MergeResult::Update(value) => {
+                                    if let Err(err) =
+                                        trx.exec_drop(&s, params! {"k" => key, "v" => &value}).await
+                                    {
+                                        trx.rollback().await?;
+                                        return Err(err.into());
+                                    }
+                                }
+                                MergeResult::Delete if exists => {
+                                    // Update asserted value
+                                    if let Some(exists) = asserted_values.get_mut(&key) {
+                                        *exists = false;
+                                    }
+
+                                    let s = trx
+                                        .prep(format!("DELETE FROM {} WHERE k = ?", table))
+                                        .await?;
+                                    trx.exec_drop(&s, (key,)).await?;
+                                }
+                                _ => (),
+                            }
+                        }
+
                         ValueOp::AtomicAdd(by) => {
                             if *by >= 0 {
                                 let s = trx
@@ -216,39 +297,6 @@ impl MysqlStore {
                                     ))
                                 })?,
                             );
-                        }
-                        ValueOp::Merge(merge) => {
-                            let s = trx
-                                .prep(format!("SELECT v FROM {} WHERE k = ? FOR UPDATE", table))
-                                .await?;
-                            let (exists, value) = trx
-                                .exec_first::<Vec<u8>, _, _>(&s, (&key,))
-                                .await?
-                                .map(|bytes| {
-                                    (merge.fnc)(Some(bytes.as_ref()))
-                                        .map(|v| (true, v))
-                                        .map_err(CommitError::from)
-                                })
-                                .unwrap_or_else(|| {
-                                    (merge.fnc)(None)
-                                        .map(|v| (false, v))
-                                        .map_err(CommitError::from)
-                                })?;
-
-                            let s = if exists {
-                                trx.prep(format!("UPDATE {} SET v = :v WHERE k = :k", table))
-                                    .await?
-                            } else {
-                                trx.prep(format!("INSERT INTO {} (k, v) VALUES (:k, :v)", table))
-                                    .await?
-                            };
-
-                            if let Err(err) =
-                                trx.exec_drop(&s, params! {"k" => key, "v" => &value}).await
-                            {
-                                trx.rollback().await?;
-                                return Err(err.into());
-                            }
                         }
                         ValueOp::Clear => {
                             // Update asserted value

@@ -8,13 +8,21 @@ use crate::config::{Config, utils::AsKey};
 use base64::{Engine, engine::general_purpose};
 use reqwest::{
     Client,
-    header::{AUTHORIZATION, HeaderMap, HeaderName, HeaderValue, USER_AGENT},
+    header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue, USER_AGENT},
 };
 use std::{str::FromStr, time::Duration};
 
-pub fn build_http_client(config: &mut Config, prefix: impl AsKey) -> Option<Client> {
+pub fn build_http_client(
+    config: &mut Config,
+    prefix: impl AsKey,
+    content_type: Option<&str>,
+) -> Option<Client> {
     let mut headers = parse_http_headers(config, prefix.clone());
     headers.insert(USER_AGENT, "Stalwart/1.0.0".parse().unwrap());
+
+    if let Some(content_type) = content_type {
+        headers.insert(CONTENT_TYPE, HeaderValue::from_str(content_type).unwrap());
+    }
 
     let prefix = prefix.as_key();
     match Client::builder()

@@ -13,16 +13,12 @@ use crate::{
     listener::tls::AcmeProviders, manager::config::ConfigManager,
 };
 use arc_swap::ArcSwap;
-use base64::{Engine, engine::general_purpose};
 use directory::{Directories, Directory};
 use groupware::GroupwareConfig;
-use hyper::{
-    HeaderMap,
-    header::{AUTHORIZATION, HeaderName, HeaderValue},
-};
+use hyper::HeaderMap;
 use ring::signature::{EcdsaKeyPair, RsaKeyPair};
 use spamfilter::SpamFilterConfig;
-use std::{str::FromStr, sync::Arc};
+use std::sync::Arc;
 use store::{BlobBackend, BlobStore, InMemoryStore, SearchStore, Store, Stores};
 use telemetry::Metrics;
 use utils::config::{Config, utils::AsKey};

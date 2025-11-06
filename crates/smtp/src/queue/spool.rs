@@ -22,8 +22,10 @@ use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr};
 use std::time::SystemTime;
 use store::write::key::DeserializeBigEndian;
+use store::write::serialize::rkyv_deserialize;
 use store::write::{
-    AlignedBytes, Archive, Archiver, BatchBuilder, BlobOp, QueueClass, ValueClass, now,
+    AlignedBytes, Archive, Archiver, BatchBuilder, BlobOp, MergeResult, Params, QueueClass,
+    ValueClass, now,
 };
 use store::{Deserialize, IterateParams, Serialize, SerializeInfallible, U64_LEN, ValueKey};
 use trc::{AddContext, ServerEvent};
@@ -533,61 +535,75 @@ impl MessageWrapper {
             );
         }
 
+        let message_bytes = match Archiver::new(self.message).serialize() {
+            Ok(data) => data,
+            Err(err) => {
+                trc::error!(
+                    err.details("Failed to serialize message.")
+                        .span_id(self.span_id)
+                        .caused_by(trc::location!())
+                );
+                return false;
+            }
+        };
         if self.is_multi_queue {
-            batch.merge(
+            batch.merge_fnc(
                 ValueClass::Queue(QueueClass::Message(self.queue_id)),
-                move |bytes| {
+                Params::with_capacity(3)
+                    .with_u64(self.queue_id)
+                    .with_bytes(self.queue_name.into_inner().to_vec())
+                    .with_bytes(message_bytes),
+                |params, _, bytes| {
                     let mut cur_message = <Archive<AlignedBytes> as Deserialize>::deserialize(
                         bytes.ok_or_else(|| {
                             trc::StoreEvent::NotFound
                                 .into_err()
                                 .details("Message no longer exists.")
                                 .caused_by(trc::location!())
-                                .ctx(trc::Key::QueueId, self.queue_id)
+                                .ctx(trc::Key::QueueId, params.u64(0))
                         })?,
                     )
                     .and_then(|archive| archive.deserialize::<Message>())
                     .caused_by(trc::location!())?;
 
-                    if cur_message.blob_hash == self.message.blob_hash
-                        && cur_message.recipients.len() == self.message.recipients.len()
+                    let new_message_ =
+                        <Archive<AlignedBytes> as Deserialize>::deserialize(params.bytes(2))
+                            .caused_by(trc::location!())?;
+                    let new_message = new_message_
+                        .unarchive::<Message>()
+                        .caused_by(trc::location!())?;
+
+                    if cur_message.blob_hash.as_slice() == new_message.blob_hash.0.as_slice()
+                        && cur_message.recipients.len() == new_message.recipients.len()
                     {
-                        for (rcpt_idx, rcpt) in self
-                            .message
+                        let queue_name = params.bytes(1);
+                        for (rcpt_idx, rcpt) in new_message
                             .recipients
                             .iter()
                             .enumerate()
-                            .filter(|(_, rcpt)| rcpt.queue == self.queue_name)
+                            .filter(|(_, rcpt)| rcpt.queue.as_slice() == queue_name)
                         {
-                            cur_message.recipients[rcpt_idx] = rcpt.clone();
+                            cur_message.recipients[rcpt_idx] =
+                                rkyv_deserialize(rcpt).caused_by(trc::location!())?;
                         }
 
                         Archiver::new(cur_message)
                             .serialize()
                             .caused_by(trc::location!())
+                            .map(MergeResult::Update)
                     } else {
                         Err(trc::StoreEvent::UnexpectedError
                             .into_err()
                             .details("Message blob hash or recipient count mismatch.")
                             .caused_by(trc::location!())
-                            .ctx(trc::Key::QueueId, self.queue_id))
+                            .ctx(trc::Key::QueueId, params.u64(0)))
                     }
                 },
             );
         } else {
             batch.set(
                 ValueClass::Queue(QueueClass::Message(self.queue_id)),
-                match Archiver::new(self.message).serialize() {
-                    Ok(data) => data,
-                    Err(err) => {
-                        trc::error!(
-                            err.details("Failed to serialize message.")
-                                .span_id(self.span_id)
-                                .caused_by(trc::location!())
-                        );
-                        return false;
-                    }
-                },
+                message_bytes,
             );
         }
 

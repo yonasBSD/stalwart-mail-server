@@ -9,12 +9,12 @@ use super::{
     read::{ChunkedValue, read_chunked_value},
 };
 use crate::{
-    IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_QUOTA, U64_LEN,
+    IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_QUOTA,
     WITH_SUBSPACE,
     backend::deserialize_i64_le,
     write::{
-        AssignedIds, Batch, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME, Operation, ValueClass, ValueOp,
-        key::KeySerializer,
+        AssignedIds, Batch, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME, MergeResult, Operation,
+        ValueClass, ValueOp, key::KeySerializer,
     },
 };
 use foundationdb::{
@@ -66,7 +66,7 @@ impl FdbStore {
                     } => {
                         account_id = *account_id_;
                         if has_changes {
-                            change_id = result.last_change_id(account_id)?;
+                            change_id = result.set_current_change_id(account_id)?;
                         }
                     }
                     Operation::Collection {
@@ -85,41 +85,74 @@ impl FdbStore {
                         let do_chunk = !class.is_counter(collection);
 
                         match op {
-                            ValueOp::Set {
-                                value,
-                                version_offset,
-                            } => {
-                                if let Some(offset) = version_offset {
-                                    value[*offset..*offset + U64_LEN]
-                                        .copy_from_slice(&change_id.to_be_bytes());
-                                }
-
-                                if !value.is_empty() && do_chunk {
-                                    for (pos, chunk) in value.chunks(MAX_VALUE_SIZE).enumerate() {
-                                        match pos.cmp(&1) {
-                                            Ordering::Less => {}
-                                            Ordering::Equal => {
-                                                key.push(0);
-                                            }
-                                            Ordering::Greater => {
-                                                if pos < u8::MAX as usize {
-                                                    *key.last_mut().unwrap() += 1;
-                                                } else {
-                                                    trx.cancel();
-                                                    return Err(trc::StoreEvent::FoundationdbError
-                                                        .ctx(
-                                                            trc::Key::Reason,
-                                                            "Value is too large",
-                                                        ));
-                                                }
-                                            }
-                                        }
-                                        trx.set(&key, chunk);
-                                    }
-                                } else {
-                                    trx.set(&key, value.as_ref());
+                            ValueOp::Set(value) => {
+                                if !chunk_value(&trx, &mut key, value) {
+                                    trx.cancel();
+                                    return Err(trc::StoreEvent::FoundationdbError
+                                        .ctx(trc::Key::Reason, "Value is too large"));
                                 }
                             }
+                            ValueOp::SetFnc(set_op) => {
+                                let value = (set_op.fnc)(&set_op.params, &result)?;
+                                if !chunk_value(&trx, &mut key, &value) {
+                                    trx.cancel();
+                                    return Err(trc::StoreEvent::FoundationdbError
+                                        .ctx(trc::Key::Reason, "Value is too large"));
+                                }
+                            }
+                            ValueOp::MergeFnc(merge_op) => {
+                                let (merge_result, is_chunked) =
+                                    match read_chunked_value(&key, &trx, false)
+                                        .await
+                                        .caused_by(trc::location!())?
+                                    {
+                                        ChunkedValue::Single(slice) => (
+                                            (merge_op.fnc)(
+                                                &merge_op.params,
+                                                &result,
+                                                Some(slice.as_ref()),
+                                            )?,
+                                            false,
+                                        ),
+                                        ChunkedValue::Chunked { bytes, .. } => (
+                                            (merge_op.fnc)(
+                                                &merge_op.params,
+                                                &result,
+                                                Some(bytes.as_ref()),
+                                            )?,
+                                            true,
+                                        ),
+                                        ChunkedValue::None => (
+                                            (merge_op.fnc)(&merge_op.params, &result, None)?,
+                                            false,
+                                        ),
+                                    };
+
+                                match merge_result {
+                                    MergeResult::Update(value) => {
+                                        if !chunk_value(&trx, &mut key, &value) {
+                                            trx.cancel();
+                                            return Err(trc::StoreEvent::FoundationdbError
+                                                .ctx(trc::Key::Reason, "Value is too large"));
+                                        }
+                                    }
+                                    MergeResult::Delete => {
+                                        if is_chunked {
+                                            trx.clear_range(
+                                                &key,
+                                                &KeySerializer::new(key.len() + 1)
+                                                    .write(key.as_slice())
+                                                    .write(u8::MAX)
+                                                    .finalize(),
+                                            );
+                                        } else {
+                                            trx.clear(&key);
+                                        }
+                                    }
+                                    MergeResult::Skip => (),
+                                }
+                            }
+
                             ValueOp::AtomicAdd(by) => {
                                 trx.atomic_op(&key, &by.to_le_bytes()[..], MutationType::Add);
                             }
@@ -133,21 +166,6 @@ impl FdbStore {
                                 };
                                 trx.set(&key, &num.to_le_bytes()[..]);
                                 result.push_counter_id(num);
-                            }
-                            ValueOp::Merge(merge) => {
-                                let value = match read_chunked_value(&key, &trx, false)
-                                    .await
-                                    .caused_by(trc::location!())?
-                                {
-                                    ChunkedValue::Single(slice) => {
-                                        (merge.fnc)(Some(slice.as_ref()))
-                                    }
-                                    ChunkedValue::Chunked { bytes, .. } => {
-                                        (merge.fnc)(Some(bytes.as_ref()))
-                                    }
-                                    ChunkedValue::None => (merge.fnc)(None),
-                                }?;
-                                trx.set(&key, value.as_ref());
                             }
                             ValueOp::Clear => {
                                 if do_chunk {
@@ -310,4 +328,29 @@ impl FdbStore {
         trx.clear_range(&from, &to);
         self.commit(trx, false).await.map(|_| ())
     }
+}
+
+fn chunk_value(trx: &Transaction, key: &mut Vec<u8>, value: &[u8]) -> bool {
+    if !value.is_empty() && value.len() > MAX_VALUE_SIZE {
+        for (pos, chunk) in value.chunks(MAX_VALUE_SIZE).enumerate() {
+            match pos.cmp(&1) {
+                Ordering::Less => {}
+                Ordering::Equal => {
+                    key.push(0);
+                }
+                Ordering::Greater => {
+                    if pos < u8::MAX as usize {
+                        *key.last_mut().unwrap() += 1;
+                    } else {
+                        return false;
+                    }
+                }
+            }
+            trx.set(key, chunk);
+        }
+    } else {
+        trx.set(key, value.as_ref());
+    }
+
+    true
 }

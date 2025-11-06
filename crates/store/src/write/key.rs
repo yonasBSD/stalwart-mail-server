@@ -13,9 +13,10 @@ use crate::{
     SUBSPACE_BLOB_RESERVE, SUBSPACE_COUNTER, SUBSPACE_DIRECTORY, SUBSPACE_IN_MEMORY_COUNTER,
     SUBSPACE_IN_MEMORY_VALUE, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_PROPERTY,
     SUBSPACE_QUEUE_EVENT, SUBSPACE_QUEUE_MESSAGE, SUBSPACE_QUOTA, SUBSPACE_REPORT_IN,
-    SUBSPACE_REPORT_OUT, SUBSPACE_SETTINGS, SUBSPACE_TASK_QUEUE, SUBSPACE_TELEMETRY_METRIC,
-    SUBSPACE_TELEMETRY_SPAN, U16_LEN, U32_LEN, U64_LEN, ValueKey, WITH_SUBSPACE,
-    write::{IndexPropertyClass, SearchIndex},
+    SUBSPACE_REPORT_OUT, SUBSPACE_SEARCH_INDEX, SUBSPACE_SETTINGS, SUBSPACE_TASK_QUEUE,
+    SUBSPACE_TELEMETRY_METRIC, SUBSPACE_TELEMETRY_SPAN, U16_LEN, U32_LEN, U64_LEN, ValueKey,
+    WITH_SUBSPACE,
+    write::{IndexPropertyClass, SearchIndex, SearchIndexId, SearchIndexType},
 };
 use std::convert::TryInto;
 use types::{blob_hash::BLOB_HASH_LEN, collection::SyncCollection};
@@ -440,6 +441,51 @@ impl ValueClass {
                 .write(*notify_account_id)
                 .write(u8::from(SyncCollection::ShareNotification))
                 .write(*notification_id),
+            ValueClass::SearchIndex(index) => match &index.typ {
+                SearchIndexType::Term { account_id, hash } => {
+                    let class = index.index.as_u8();
+                    if let Some(account_id) = account_id {
+                        serializer
+                            .write(class)
+                            .write(*account_id)
+                            .write(hash.as_bytes())
+                    } else {
+                        serializer.write(class).write(hash.as_bytes())
+                    }
+                }
+                SearchIndexType::Index { id, field } => {
+                    let class = index.index.as_u8() | 1 << 6;
+                    match id {
+                        SearchIndexId::Account {
+                            account_id,
+                            document_id,
+                        } => serializer
+                            .write(class)
+                            .write(*account_id)
+                            .write(field.field_id)
+                            .write(&field.data[..field.len as usize])
+                            .write(*document_id),
+                        SearchIndexId::Global { id } => serializer
+                            .write(class)
+                            .write(field.field_id)
+                            .write(&field.data[..field.len as usize])
+                            .write(*id),
+                    }
+                }
+                SearchIndexType::Document { id } => {
+                    let class = index.index.as_u8() | 2 << 6;
+                    match id {
+                        SearchIndexId::Account {
+                            account_id,
+                            document_id,
+                        } => serializer
+                            .write(class)
+                            .write(*account_id)
+                            .write(*document_id),
+                        SearchIndexId::Global { id } => serializer.write(class).write(*id),
+                    }
+                }
+            },
             ValueClass::Any(any) => serializer.write(any.key.as_slice()),
         }
         .finalize()
@@ -543,6 +589,20 @@ impl ValueClass {
             ValueClass::DocumentId => U32_LEN + 1,
             ValueClass::ChangeId => U32_LEN,
             ValueClass::ShareNotification { .. } => U32_LEN + U64_LEN + 1,
+            ValueClass::SearchIndex(v) => match &v.typ {
+                SearchIndexType::Term { account_id, hash } => {
+                    if account_id.is_some() {
+                        1 + U32_LEN + hash.len()
+                    } else {
+                        1 + hash.len()
+                    }
+                }
+                SearchIndexType::Index { field, .. } => 1 + field.len as usize + U64_LEN,
+                SearchIndexType::Document { id } => match id {
+                    SearchIndexId::Account { .. } => 1 + U32_LEN * 2,
+                    SearchIndexId::Global { .. } => 1 + U64_LEN,
+                },
+            },
             ValueClass::Any(v) => v.key.len(),
         }
     }
@@ -590,6 +650,7 @@ impl ValueClass {
             },
             ValueClass::DocumentId | ValueClass::ChangeId => SUBSPACE_COUNTER,
             ValueClass::ShareNotification { .. } => SUBSPACE_LOGS,
+            ValueClass::SearchIndex(_) => SUBSPACE_SEARCH_INDEX,
             ValueClass::Any(any) => any.subspace,
         }
     }

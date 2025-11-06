@@ -10,7 +10,7 @@ use super::{
 };
 use crate::{
     SerializeInfallible, U32_LEN,
-    write::{LogCollection, MergeFn},
+    write::{LogCollection, MergeFnc, MergeOperation, Params, SetFnc, SetOperation},
 };
 use types::{
     collection::{Collection, SyncCollection, VanishedCollection},
@@ -143,47 +143,35 @@ impl BatchBuilder {
         self.batch_size += class.serialized_size() + value.len();
         self.ops.push(Operation::Value {
             class,
-            op: ValueOp::Set {
-                value,
-                version_offset: None,
-            },
+            op: ValueOp::Set(value),
         });
         self.batch_ops += 1;
         self
     }
 
-    pub fn merge(
+    pub fn set_fnc(
         &mut self,
         class: impl Into<ValueClass>,
-        value: impl Fn(Option<&[u8]>) -> trc::Result<Vec<u8>> + Sync + Send + 'static,
+        params: Params,
+        fnc: SetFnc,
     ) -> &mut Self {
         self.ops.push(Operation::Value {
             class: class.into(),
-            op: ValueOp::Merge(MergeFn {
-                fnc: Box::new(value),
-                fnc_id: rand::random::<u64>(),
-            }),
+            op: ValueOp::SetFnc(SetOperation { fnc, params }),
         });
         self
     }
 
-    pub fn set_versioned(
+    pub fn merge_fnc(
         &mut self,
         class: impl Into<ValueClass>,
-        value: impl Into<Vec<u8>>,
-        version_offset: usize,
+        params: Params,
+        fnc: MergeFnc,
     ) -> &mut Self {
-        let class = class.into();
-        let value = value.into();
-        self.batch_size += class.serialized_size() + value.len();
         self.ops.push(Operation::Value {
-            class,
-            op: ValueOp::Set {
-                value,
-                version_offset: Some(version_offset),
-            },
+            class: class.into(),
+            op: ValueOp::MergeFnc(MergeOperation { fnc, params }),
         });
-        self.batch_ops += 1;
         self
     }
 
@@ -202,10 +190,7 @@ impl BatchBuilder {
         self.batch_size += (U32_LEN * 3) + op.len();
         self.ops.push(Operation::Value {
             class: ValueClass::Acl(grant_account_id),
-            op: ValueOp::Set {
-                value: op,
-                version_offset: None,
-            },
+            op: ValueOp::Set(op),
         });
         self.batch_ops += 1;
         self

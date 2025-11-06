@@ -116,11 +116,7 @@ impl PostgresStore {
         filters: &[SearchFilter],
         sort: &[SearchComparator],
     ) -> trc::Result<Vec<R>> {
-        let mut query = format!(
-            "SELECT {} FROM {} ",
-            R::field().column(),
-            index.psql_table()
-        );
+        let mut query = format!("SELECT {} FROM {}", R::field().column(), index.psql_table());
         let params = self.build_filter(&mut query, filters);
         if !sort.is_empty() {
             build_sort(&mut query, sort);
@@ -139,6 +135,7 @@ impl PostgresStore {
     }
 
     pub async fn unindex(&self, filter: SearchQuery) -> trc::Result<u64> {
+        debug_assert!(!filter.filters.is_empty());
         let mut query = format!("DELETE FROM {} ", filter.index.psql_table());
         let params = self.build_filter(&mut query, &filter.filters);
         let conn = self.conn_pool.get().await.map_err(into_error)?;
@@ -154,7 +151,10 @@ impl PostgresStore {
         query: &mut String,
         filters: &'x [SearchFilter],
     ) -> Vec<&'x (dyn ToSql + Sync)> {
-        query.push_str("WHERE ");
+        if filters.is_empty() {
+            return Vec::new();
+        }
+        query.push_str(" WHERE ");
         let mut operator_stack = Vec::new();
         let mut operator = &SearchFilter::And;
         let mut is_first = true;

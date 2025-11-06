@@ -4,37 +4,65 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::backend::elastic::ElasticSearchStore;
-use reqwest::Client;
-use serde_json::json;
-use std::time::Duration;
+use crate::{
+    backend::elastic::ElasticSearchStore,
+    search::{
+        CalendarSearchField, ContactSearchField, EmailSearchField, FileSearchField, SearchField,
+        SearchableField, TracingSearchField,
+    },
+    write::SearchIndex,
+};
+use reqwest::{Error, Response, Url};
+use serde_json::{Value, json};
 use utils::config::{Config, http::build_http_client, utils::AsKey};
-
-pub(crate) static INDEX_NAMES: &[&str] = &["stalwart_email"];
 
 impl ElasticSearchStore {
     pub async fn open(config: &mut Config, prefix: impl AsKey) -> Option<Self> {
-        let client = build_http_client(config, prefix.clone())?;
+        let client = build_http_client(config, prefix.clone(), "application/json".into())?;
+        let prefix = prefix.as_key();
         let url = config
             .value_require((&prefix, "url"))?
-            .trim_end_matches("/");
-        Url::parse(url)
+            .trim_end_matches("/")
+            .to_string();
+        Url::parse(&url)
             .map_err(|e| config.new_parse_error((&prefix, "url"), format!("Invalid URL: {e}",)))
             .ok()?;
-        let es = Self {
-            client,
-            url: url.to_string(),
-        };
+
+        let es = Self { client, url };
+
+        let shards = config
+            .property_or_default((&prefix, "index.shards"), "3")
+            .unwrap_or(3);
+        let replicas = config
+            .property_or_default((&prefix, "index.replicas"), "0")
+            .unwrap_or(0);
+        let with_source = config
+            .property_or_default((&prefix, "index.include-source"), "false")
+            .unwrap_or(false);
 
         if let Err(err) = es
-            .create_index(
-                config
-                    .property_or_default((&prefix, "index.shards"), "3")
-                    .unwrap_or(3),
-                config
-                    .property_or_default((&prefix, "index.replicas"), "0")
-                    .unwrap_or(0),
-            )
+            .create_index::<EmailSearchField>(shards, replicas, with_source)
+            .await
+        {
+            config.new_build_error(prefix.as_str(), err.to_string());
+        }
+
+        if let Err(err) = es
+            .create_index::<CalendarSearchField>(shards, replicas, with_source)
+            .await
+        {
+            config.new_build_error(prefix.as_str(), err.to_string());
+        }
+
+        if let Err(err) = es
+            .create_index::<ContactSearchField>(shards, replicas, with_source)
+            .await
+        {
+            config.new_build_error(prefix.as_str(), err.to_string());
+        }
+
+        if let Err(err) = es
+            .create_index::<TracingSearchField>(shards, replicas, with_source)
             .await
         {
             config.new_build_error(prefix.as_str(), err.to_string());
@@ -43,82 +71,54 @@ impl ElasticSearchStore {
         Some(es)
     }
 
-    async fn create_index(&self, shards: usize, replicas: usize) -> trc::Result<()> {
-        let exists = self
-            .index
-            .indices()
-            .exists(IndicesExistsParts::Index(&[INDEX_NAMES[0]]))
-            .send()
-            .await
-            .map_err(|err| trc::StoreEvent::ElasticsearchError.reason(err))?;
-
-        if exists.status_code() == StatusCode::NOT_FOUND {
-            let response = self
-                .index
-                .indices()
-                .create(IndicesCreateParts::Index(INDEX_NAMES[0]))
-                .body(json!({
-                  "mappings": {
-                    "properties": {
-                      "document_id": {
-                        "type": "integer"
-                      },
-                      "account_id": {
-                        "type": "integer"
-                      },
-                      "header": {
-                        "type": "object",
-                        "properties": {
-                          "name": {
-                            "type": "keyword"
-                          },
-                          "value": {
-                            "type": "text",
-                            "analyzer": "default_analyzer",
-                          }
-                        }
-                      },
-                      "body": {
-                        "analyzer": "default_analyzer",
-                        "type": "text"
-                      },
-                      "attachment": {
-                        "analyzer": "default_analyzer",
-                        "type": "text"
-                      },
-                      "keyword": {
-                        "type": "keyword"
-                      }
-                    }
-                  },
-                  "settings": {
-                    "index.number_of_shards": shards,
-                    "index.number_of_replicas": replicas,
-                    "analysis": {
-                      "analyzer": {
-                        "default_analyzer": {
-                          "type": "custom",
-                          "tokenizer": "standard",
-                          "filter": ["lowercase"]
-                        }
-                      }
-                    }
-                  }
-                }))
-                .send()
-                .await;
-
-            assert_success(response).await?;
+    async fn create_index<T: SearchableField>(
+        &self,
+        shards: usize,
+        replicas: usize,
+        with_source: bool,
+    ) -> trc::Result<()> {
+        let mut mappings = T::primary_keys()
+            .iter()
+            .chain(T::all_fields())
+            .map(|field| (field.es_field().to_string(), field.es_schema()))
+            .collect::<serde_json::Map<String, Value>>();
+        if !with_source {
+            mappings.insert("_source".to_string(), json!({ "enabled": false }));
         }
+        let body = json!({
+          "mappings": mappings,
+          "settings": {
+            "index.number_of_shards": shards,
+            "index.number_of_replicas": replicas,
+            "analysis": {
+              "analyzer": {
+                "default": {
+                  "type": "custom",
+                  "tokenizer": "standard",
+                  "filter": ["lowercase"]
+                }
+              }
+            }
+          }
+        });
+        let body = serde_json::to_string(&body).unwrap_or_default();
 
-        Ok(())
+        assert_success(
+            self.client
+                .put(format!("{}/{}", self.url, T::index().es_index_name()))
+                .body(body)
+                .send()
+                .await,
+        )
+        .await
+        .map(|_| ())
     }
 }
 
-/*pub(crate) async fn assert_success(response: Result<Response, Error>) -> trc::Result<Response> {
+pub(crate) async fn assert_success(response: Result<Response, Error>) -> trc::Result<Response> {
     match response {
         Ok(response) => {
-            let status = response.status_code();
+            let status = response.status();
             if status.is_success() {
                 Ok(response)
             } else {
@@ -130,4 +130,141 @@ impl ElasticSearchStore {
         Err(err) => Err(trc::StoreEvent::ElasticsearchError.reason(err)),
     }
 }
-*/
+
+impl SearchIndex {
+    pub fn es_index_name(&self) -> &'static str {
+        match self {
+            SearchIndex::Email => "st_email",
+            SearchIndex::Calendar => "st_calendar",
+            SearchIndex::Contacts => "st_contact",
+            SearchIndex::File => "st_file",
+            SearchIndex::Tracing => "st_tracing",
+            SearchIndex::InMemory => unreachable!(),
+        }
+    }
+}
+
+impl SearchField {
+    pub fn es_field(&self) -> &'static str {
+        match self {
+            SearchField::AccountId => "doc_id",
+            SearchField::DocumentId => "acc_id",
+            SearchField::Id => "id",
+            SearchField::Email(field) => match field {
+                EmailSearchField::From => "from",
+                EmailSearchField::To => "to",
+                EmailSearchField::Cc => "cc",
+                EmailSearchField::Bcc => "bcc",
+                EmailSearchField::Subject => "subj",
+                EmailSearchField::Body => "body",
+                EmailSearchField::Attachment => "attach",
+                EmailSearchField::ReceivedAt => "received",
+                EmailSearchField::SentAt => "sent",
+                EmailSearchField::Size => "size",
+                EmailSearchField::HasAttachment => "has_att",
+                EmailSearchField::Headers => "headers",
+            },
+            SearchField::Calendar(field) => match field {
+                CalendarSearchField::Title => "title",
+                CalendarSearchField::Description => "desc",
+                CalendarSearchField::Location => "loc",
+                CalendarSearchField::Owner => "owner",
+                CalendarSearchField::Attendee => "attendee",
+                CalendarSearchField::Start => "start",
+                CalendarSearchField::Uid => "uid",
+            },
+            SearchField::Contact(field) => match field {
+                ContactSearchField::Member => "member",
+                ContactSearchField::Kind => "kind",
+                ContactSearchField::Name => "name",
+                ContactSearchField::Nickname => "nick",
+                ContactSearchField::Organization => "org",
+                ContactSearchField::Email => "email",
+                ContactSearchField::Phone => "phone",
+                ContactSearchField::OnlineService => "online",
+                ContactSearchField::Address => "addr",
+                ContactSearchField::Note => "note",
+                ContactSearchField::Uid => "uid",
+            },
+            SearchField::File(field) => match field {
+                FileSearchField::Name => "name",
+                FileSearchField::Content => "content",
+            },
+            SearchField::Tracing(field) => match field {
+                TracingSearchField::EventType => "ev_type",
+                TracingSearchField::QueueId => "queue_id",
+                TracingSearchField::Keywords => "keywords",
+            },
+        }
+    }
+
+    pub fn es_schema(&self) -> Value {
+        match self {
+            SearchField::AccountId
+            | SearchField::DocumentId
+            | SearchField::Email(EmailSearchField::Size) => json!({
+              "type": "integer"
+            }),
+            SearchField::Id
+            | SearchField::Email(EmailSearchField::SentAt | EmailSearchField::ReceivedAt)
+            | SearchField::Calendar(CalendarSearchField::Start)
+            | SearchField::Tracing(TracingSearchField::QueueId | TracingSearchField::EventType) => {
+                json!({
+                  "type": "long"
+                })
+            }
+            SearchField::Email(EmailSearchField::HasAttachment) => json!({
+              "type": "boolean"
+            }),
+            SearchField::Calendar(CalendarSearchField::Uid)
+            | SearchField::Contact(ContactSearchField::Uid) => json!({
+              "type": "keyword",
+            }),
+            SearchField::Email(
+                EmailSearchField::From | EmailSearchField::To | EmailSearchField::Subject,
+            ) => json!({
+              "type": "text",
+              "fields": {
+                "keyword": {
+                  "type": "keyword"
+                }
+              }
+            }),
+            SearchField::Email(EmailSearchField::Headers) => {
+                json!({
+                  "type": "object",
+                  "enabled": true
+                })
+            }
+            SearchField::Email(
+                EmailSearchField::Cc
+                | EmailSearchField::Bcc
+                | EmailSearchField::Body
+                | EmailSearchField::Attachment,
+            )
+            | SearchField::Calendar(
+                CalendarSearchField::Title
+                | CalendarSearchField::Description
+                | CalendarSearchField::Location
+                | CalendarSearchField::Owner
+                | CalendarSearchField::Attendee,
+            )
+            | SearchField::Contact(
+                ContactSearchField::Member
+                | ContactSearchField::Kind
+                | ContactSearchField::Name
+                | ContactSearchField::Nickname
+                | ContactSearchField::Organization
+                | ContactSearchField::Email
+                | ContactSearchField::Phone
+                | ContactSearchField::OnlineService
+                | ContactSearchField::Address
+                | ContactSearchField::Note,
+            )
+            | SearchField::File(FileSearchField::Name | FileSearchField::Content)
+            | SearchField::Tracing(TracingSearchField::Keywords) => json!({
+              "type": "text"
+            }),
+        }
+    }
+}

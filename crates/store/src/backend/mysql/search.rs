@@ -78,7 +78,7 @@ impl MysqlStore {
         sort: &[SearchComparator],
     ) -> trc::Result<Vec<R>> {
         let mut query = format!(
-            "SELECT {} FROM {} ",
+            "SELECT {} FROM {}",
             R::field().column(),
             index.mysql_table()
         );
@@ -110,7 +110,10 @@ impl MysqlStore {
 }
 
 fn build_filter(query: &mut String, filters: &[SearchFilter]) -> Vec<Value> {
-    query.push_str("WHERE ");
+    if filters.is_empty() {
+        return Vec::new();
+    }
+    query.push_str(" WHERE ");
     let mut operator_stack = Vec::new();
     let mut operator = &SearchFilter::And;
     let mut is_first = true;

@@ -6,25 +6,42 @@
 
 use nohash_hasher::IsEnabled;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     hash::Hash,
 };
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+// A hash that can cheekily store small inputs directly without hashing them.
+#[derive(
+    Debug,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    rkyv::Archive,
+)]
 #[repr(transparent)]
 pub struct CheekyHash([u8; HASH_SIZE]);
+
 const HASH_SIZE: usize = std::mem::size_of::<u64>() * 2;
 const HASH_PAYLOAD: usize = HASH_SIZE - 1;
 
 pub type CheekyHashSet = HashSet<CheekyHash, nohash_hasher::BuildNoHashHasher<CheekyHash>>;
 pub type CheekyHashMap<V> = HashMap<CheekyHash, V, nohash_hasher::BuildNoHashHasher<CheekyHash>>;
+pub type CheekyBTreeMap<V> = BTreeMap<CheekyHash, V>;
 
 impl CheekyHash {
+    pub const NULL: CheekyHash = CheekyHash([0u8; HASH_SIZE]);
+    pub const FULL: CheekyHash = CheekyHash([u8::MAX; HASH_SIZE]);
+
     pub fn new(bytes: impl AsRef<[u8]>) -> Self {
         let mut hash = [0u8; HASH_SIZE];
         let bytes = bytes.as_ref();
 
-        if bytes.len() < HASH_PAYLOAD {
+        if bytes.len() <= HASH_PAYLOAD {
             hash[0] = bytes.len() as u8;
             hash[1..1 + bytes.len()].copy_from_slice(bytes);
         } else {
@@ -58,6 +75,15 @@ impl CheekyHash {
     pub fn as_bytes(&self) -> &[u8] {
         &self.0[..self.len()]
     }
+
+    #[inline(always)]
+    pub fn as_raw_bytes(&self) -> &[u8; HASH_SIZE] {
+        &self.0
+    }
+
+    pub fn into_inner(self) -> [u8; HASH_SIZE] {
+        self.0
+    }
 }
 
 impl AsRef<[u8]> for CheekyHash {
@@ -69,7 +95,7 @@ impl AsRef<[u8]> for CheekyHash {
 impl Hash for CheekyHash {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         let len = self.0[0] as usize;
-        if len < HASH_PAYLOAD {
+        if len <= HASH_PAYLOAD {
             state.write_u64(xxhash_rust::xxh3::xxh3_64(&self.0[1..1 + len]));
         } else {
             state.write_u64(u64::from_be_bytes(
@@ -82,6 +108,24 @@ impl Hash for CheekyHash {
 }
 
 impl IsEnabled for CheekyHash {}
+
+impl ArchivedCheekyHash {
+    #[inline(always)]
+    pub fn as_raw_bytes(&self) -> &[u8; HASH_SIZE] {
+        &self.0
+    }
+
+    #[inline(always)]
+    pub fn as_bytes(&self) -> &[u8] {
+        let len = self.0[0] as usize;
+        &self.0[..1 + len.min(HASH_PAYLOAD)]
+    }
+
+    #[inline(always)]
+    pub fn to_native(&self) -> CheekyHash {
+        CheekyHash(self.0)
+    }
+}
 
 #[cfg(test)]
 mod tests {

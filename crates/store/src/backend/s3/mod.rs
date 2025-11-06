@@ -48,6 +48,9 @@ impl S3Store {
         let timeout = config
             .property_or_default::<Duration>((&prefix, "timeout"), "30s")
             .unwrap_or_else(|| Duration::from_secs(30));
+        let allow_invalid = config
+            .property_or_default::<bool>((&prefix, "tls.allow-invalid"), "false")
+            .unwrap_or_default();
 
         Some(S3Store {
             bucket: Bucket::new(
@@ -60,6 +63,11 @@ impl S3Store {
             })
             .ok()?
             .with_path_style()
+            .set_dangereous_config(allow_invalid, allow_invalid)
+            .map_err(|err| {
+                config.new_build_error(prefix.as_str(), format!("Failed to create bucket: {err:?}"))
+            })
+            .ok()?
             .with_request_timeout(timeout)
             .map_err(|err| {
                 config.new_build_error(prefix.as_str(), format!("Failed to create bucket: {err:?}"))

@@ -293,10 +293,7 @@ async fn restore_file(store: Store, blob_store: BlobStore, path: &Path) {
                                 }
                                 .serialize(0),
                             }),
-                            op: ValueOp::Set {
-                                value,
-                                version_offset: None,
-                            },
+                            op: ValueOp::Set(value),
                         });
                     }
                     Family::None => failed("No family specified in file"),

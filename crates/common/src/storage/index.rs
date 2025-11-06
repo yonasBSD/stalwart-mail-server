@@ -14,8 +14,8 @@ use std::{borrow::Cow, fmt::Debug};
 use store::{
     Serialize, SerializeInfallible,
     write::{
-        Archive, Archiver, BatchBuilder, BlobOp, DirectoryClass, IntoOperations, SearchIndex,
-        TaskQueueClass, ValueClass, now,
+        Archive, Archiver, BatchBuilder, BlobOp, DirectoryClass, IntoOperations, Params,
+        SearchIndex, TaskQueueClass, ValueClass, now,
     },
 };
 use types::{
@@ -310,7 +310,21 @@ impl<C: IndexableObject, N: IndexableAndSerializableObject> IntoOperations
                 }
                 if N::is_versioned() {
                     let (offset, bytes) = Archiver::new(changes).serialize_versioned()?;
-                    batch.set_versioned(Field::ARCHIVE, bytes, offset);
+                    batch.set_fnc(
+                        Field::ARCHIVE,
+                        Params::with_capacity(2).with_bytes(bytes).with_u64(offset),
+                        |params, ids| {
+                            let change_id = ids.current_change_id()?;
+                            let archive = params.bytes(0);
+                            let offset = params.u64(1);
+
+                            let mut bytes = Vec::with_capacity(archive.len());
+                            bytes.extend_from_slice(&archive[..offset as usize]);
+                            bytes.extend_from_slice(&change_id.to_be_bytes()[..]);
+                            bytes.push(archive.last().copied().unwrap()); // Marker
+                            Ok(bytes)
+                        },
+                    );
                 } else {
                     batch.set(Field::ARCHIVE, Archiver::new(changes).serialize()?);
                 }
@@ -338,7 +352,21 @@ impl<C: IndexableObject, N: IndexableAndSerializableObject> IntoOperations
                 }
                 if N::is_versioned() {
                     let (offset, bytes) = Archiver::new(changes).serialize_versioned()?;
-                    batch.set_versioned(Field::ARCHIVE, bytes, offset);
+                    batch.set_fnc(
+                        Field::ARCHIVE,
+                        Params::with_capacity(2).with_bytes(bytes).with_u64(offset),
+                        |params, ids| {
+                            let change_id = ids.current_change_id()?;
+                            let archive = params.bytes(0);
+                            let offset = params.u64(1);
+
+                            let mut bytes = Vec::with_capacity(archive.len());
+                            bytes.extend_from_slice(&archive[..offset as usize]);
+                            bytes.extend_from_slice(&change_id.to_be_bytes()[..]);
+                            bytes.push(archive.last().copied().unwrap()); // Marker
+                            Ok(bytes)
+                        },
+                    );
                 } else {
                     batch.set(Field::ARCHIVE, Archiver::new(changes).serialize()?);
                 }

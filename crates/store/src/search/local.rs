@@ -4,93 +4,210 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::search::SearchFilter;
+use crate::search::*;
+use roaring::RoaringBitmap;
 
-/*pub enum FilterGroup<T: FilterItem> {
-    Fts(Vec<T>),
-    Store(T),
+struct State {
+    pub op: SearchFilter,
+    pub bm: Option<RoaringBitmap>,
 }
 
-fn split_local_remote(filter: Vec<SearchFilter>) -> Vec<FilterGroup<T>> {
-    let mut filter = Vec::with_capacity(self.len());
-    let mut iter = self.into_iter();
-    let mut logical_op = None;
-
-    while let Some(item) = iter.next() {
-        if matches!(item.filter_type(), FilterType::Fts) {
-            let mut store_item = None;
-            let mut depth = 0;
-            let mut fts = Vec::with_capacity(5);
-
-            // Add the logical operator if there is one
-            let in_logical_op = if let Some(op) = logical_op.take() {
-                fts.push(op);
-                true
-            } else {
-                false
-            };
-            fts.push(item);
-
-            for item in iter.by_ref() {
-                match item.filter_type() {
-                    FilterType::And | FilterType::Or | FilterType::Not => {
-                        depth += 1;
-                        fts.push(item);
-                    }
-                    FilterType::End if depth > 0 => {
-                        depth -= 1;
-                        fts.push(item);
-                    }
-                    FilterType::Fts => {
-                        fts.push(item);
-                    }
-                    _ => {
-                        store_item = Some(item);
-                        break;
-                    }
-                }
-            }
-
-            if in_logical_op {
-                fts.push(T::from(FilterType::End));
-            }
-
-            if depth > 0 {
-                let mut store = Vec::with_capacity(depth * 2);
-                while depth > 0 {
-                    let item = fts.pop().unwrap();
-                    if matches!(
-                        item.filter_type(),
-                        FilterType::And | FilterType::Or | FilterType::Not
-                    ) {
-                        depth -= 1;
-                    }
-                    store.push(FilterGroup::Store(item));
-                }
-
-                filter.push(FilterGroup::Fts(fts));
-                filter.extend(store);
-            } else {
-                filter.push(FilterGroup::Fts(fts));
-            }
-
-            if let Some(item) = store_item {
-                filter.push(FilterGroup::Store(item));
-            }
-        } else {
-            match item.filter_type() {
-                FilterType::And | FilterType::Or => {
-                    logical_op = Some(item.clone());
-                }
-                FilterType::Not => {
-                    logical_op = Some(T::from(FilterType::And));
-                }
-                _ => {}
-            }
-            filter.push(FilterGroup::Store(item));
+impl SearchQuery {
+    pub fn new(index: SearchIndex) -> Self {
+        Self {
+            index,
+            filters: Vec::new(),
+            comparators: Vec::new(),
+            mask: RoaringBitmap::new(),
         }
     }
 
-    filter
+    pub fn with_filters(mut self, filters: Vec<SearchFilter>) -> Self {
+        if self.filters.is_empty() {
+            self.filters = filters;
+        } else {
+            self.filters.extend(filters);
+        }
+        self
+    }
+
+    pub fn with_comparators(mut self, comparators: Vec<SearchComparator>) -> Self {
+        if self.comparators.is_empty() {
+            self.comparators = comparators;
+        } else {
+            self.comparators.extend(comparators);
+        }
+        self
+    }
+
+    pub fn with_filter(mut self, filter: SearchFilter) -> Self {
+        self.filters.push(filter);
+        self
+    }
+
+    pub fn add_filter(&mut self, filter: SearchFilter) -> &mut Self {
+        self.filters.push(filter);
+        self
+    }
+
+    pub fn with_comparator(mut self, comparator: SearchComparator) -> Self {
+        self.comparators.push(comparator);
+        self
+    }
+
+    pub fn with_mask(mut self, mask: RoaringBitmap) -> Self {
+        self.mask = mask;
+        self
+    }
+
+    pub fn with_account_id(mut self, account_id: u32) -> Self {
+        self.filters.push(SearchFilter::cond(
+            SearchField::AccountId,
+            SearchOperator::Equal,
+            SearchValue::Uint(account_id as u64),
+        ));
+        self
+    }
+
+    pub fn filter(self) -> QueryResults {
+        if self.filters.is_empty() {
+            return QueryResults {
+                results: self.mask,
+                comparators: self.comparators,
+            };
+        }
+        let mut state: State = State {
+            op: SearchFilter::And,
+            bm: None,
+        };
+        let mut stack = Vec::new();
+        let mut filters = self.filters.into_iter().peekable();
+        let mask = self.mask;
+
+        while let Some(filter) = filters.next() {
+            let mut result = match filter {
+                SearchFilter::DocumentSet(set) => Some(set),
+                op @ (SearchFilter::And | SearchFilter::Or | SearchFilter::Not) => {
+                    stack.push(state);
+                    state = State { op, bm: None };
+                    continue;
+                }
+                SearchFilter::End => {
+                    if let Some(prev_state) = stack.pop() {
+                        let bm = state.bm;
+                        state = prev_state;
+                        bm
+                    } else {
+                        break;
+                    }
+                }
+                SearchFilter::Operator { .. } => {
+                    continue;
+                }
+            };
+
+            // Apply logical operation
+            if let Some(dest) = &mut state.bm {
+                match state.op {
+                    SearchFilter::And => {
+                        if let Some(result) = result {
+                            dest.bitand_assign(result);
+                        } else {
+                            dest.clear();
+                        }
+                    }
+                    SearchFilter::Or => {
+                        if let Some(result) = result {
+                            dest.bitor_assign(result);
+                        }
+                    }
+                    SearchFilter::Not => {
+                        if let Some(mut result) = result {
+                            result.bitxor_assign(&mask);
+                            dest.bitand_assign(result);
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+            } else if let Some(ref mut result_) = result {
+                if let SearchFilter::Not = state.op {
+                    result_.bitxor_assign(&mask);
+                }
+                state.bm = result;
+            } else if let SearchFilter::Not = state.op {
+                state.bm = Some(mask.clone());
+            } else {
+                state.bm = Some(RoaringBitmap::new());
+            }
+
+            // And short-circuit
+            if matches!(state.op, SearchFilter::And) && state.bm.as_ref().unwrap().is_empty() {
+                while let Some(filter) = filters.peek() {
+                    if matches!(filter, SearchFilter::End) {
+                        break;
+                    } else {
+                        filters.next();
+                    }
+                }
+            }
+        }
+
+        // AND with mask
+        let mut results = state.bm.unwrap_or_default();
+        results.bitand_assign(&mask);
+        QueryResults {
+            results,
+            comparators: self.comparators,
+        }
+    }
 }
-*/
+
+impl QueryResults {
+    pub fn results(&self) -> &RoaringBitmap {
+        &self.results
+    }
+
+    pub fn update_results(&mut self, results: RoaringBitmap) {
+        self.results = results;
+    }
+
+    pub fn into_bitmap(self) -> RoaringBitmap {
+        self.results
+    }
+
+    pub fn into_sorted(self) -> Vec<u32> {
+        let comparators = self.comparators;
+        let mut results = self.results.into_iter().collect::<Vec<u32>>();
+
+        if !results.is_empty() && !comparators.is_empty() {
+            results.sort_by(|a, b| {
+                for comparator in &comparators {
+                    let (a, b, is_ascending) = match comparator {
+                        SearchComparator::DocumentSet { set, ascending } => {
+                            (set.contains(*a) as u32, set.contains(*b) as u32, *ascending)
+                        }
+                        SearchComparator::SortedSet { set, ascending } => (
+                            *set.get(a).unwrap_or(&u32::MAX),
+                            *set.get(b).unwrap_or(&u32::MAX),
+                            *ascending,
+                        ),
+                        SearchComparator::Field { .. } => continue,
+                    };
+
+                    let ordering = if is_ascending {
+                        a.cmp(&b).reverse()
+                    } else {
+                        a.cmp(&b)
+                    };
+
+                    if ordering != Ordering::Equal {
+                        return ordering;
+                    }
+                }
+                Ordering::Equal
+            });
+        }
+
+        results
+    }
+}

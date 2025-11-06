@@ -8,7 +8,7 @@ use super::*;
 use crate::expr::{if_block::IfBlock, tokenizer::TokenMap};
 use ahash::AHashSet;
 use std::{hash::Hasher, time::Duration};
-use utils::config::{Config, Rate, utils::ParseValue};
+use utils::config::{Config, Rate, http::parse_http_headers, utils::ParseValue};
 use xxhash_rust::xxh3::Xxh3Builder;
 
 #[derive(Clone)]

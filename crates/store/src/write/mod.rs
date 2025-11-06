@@ -11,6 +11,7 @@ use nlp::tokenizers::word::WordTokenizer;
 use rkyv::util::AlignedVec;
 use std::{
     collections::HashSet,
+    hash::Hash,
     time::{Duration, SystemTime},
 };
 use types::{
@@ -73,6 +74,7 @@ where
 #[derive(Debug, Default)]
 pub struct AssignedIds {
     pub ids: Vec<AssignedId>,
+    current_change_id: Option<u64>,
 }
 
 #[derive(Debug)]
@@ -173,6 +175,7 @@ pub enum ValueClass {
     Queue(QueueClass),
     Report(ReportClass),
     Telemetry(TelemetryClass),
+    SearchIndex(SearchIndexClass),
     Any(AnyClass),
     ShareNotification {
         notification_id: u64,
@@ -186,6 +189,42 @@ pub enum ValueClass {
 pub enum IndexPropertyClass {
     Hash { property: u8, hash: CheekyHash },
     Integer { property: u8, value: u64 },
+}
+
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
+pub struct SearchIndexClass {
+    pub index: SearchIndex,
+    pub typ: SearchIndexType,
+}
+
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
+pub enum SearchIndexType {
+    Term {
+        account_id: Option<u32>,
+        hash: CheekyHash,
+    },
+    Index {
+        id: SearchIndexId,
+        field: SearchIndexField,
+    },
+    Document {
+        id: SearchIndexId,
+    },
+}
+
+pub(crate) const SEARCH_INDEX_MAX_FIELD_LEN: usize = 16;
+
+#[derive(Debug, PartialEq, Eq, Clone, Hash, rkyv::Serialize, rkyv::Deserialize, rkyv::Archive)]
+pub struct SearchIndexField {
+    pub(crate) field_id: u8,
+    pub(crate) len: u8,
+    pub(crate) data: [u8; SEARCH_INDEX_MAX_FIELD_LEN],
+}
+
+#[derive(Debug, PartialEq, Clone, Copy, Eq, Hash)]
+pub enum SearchIndexId {
+    Account { account_id: u32, document_id: u32 },
+    Global { id: u64 },
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
@@ -295,21 +334,47 @@ pub struct ReportEvent {
 
 #[derive(Debug, PartialEq, Eq, Hash, Default)]
 pub enum ValueOp {
-    Set {
-        value: Vec<u8>,
-        version_offset: Option<usize>,
-    },
+    Set(Vec<u8>),
+    SetFnc(SetOperation),
+    MergeFnc(MergeOperation),
     AtomicAdd(i64),
     AddAndGet(i64),
-    Merge(MergeFn),
     #[default]
     Clear,
 }
 
-#[allow(clippy::type_complexity)]
-pub struct MergeFn {
-    pub fnc: Box<dyn Fn(Option<&[u8]>) -> trc::Result<Vec<u8>> + Send + Sync>,
-    pub fnc_id: u64,
+pub enum MergeResult {
+    Update(Vec<u8>),
+    Skip,
+    Delete,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Param {
+    I64(i64),
+    U64(u64),
+    String(String),
+    Bytes(Vec<u8>),
+    Bool(bool),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[repr(transparent)]
+pub struct Params(Vec<Param>);
+
+pub type SetFnc = fn(&Params, &AssignedIds) -> trc::Result<Vec<u8>>;
+pub type MergeFnc = fn(&Params, &AssignedIds, Option<&[u8]>) -> trc::Result<MergeResult>;
+
+#[derive(Debug, Clone)]
+pub struct MergeOperation {
+    pub(crate) fnc: MergeFnc,
+    pub(crate) params: Params,
+}
+
+#[derive(Debug, Clone)]
+pub struct SetOperation {
+    pub(crate) fnc: SetFnc,
+    pub(crate) params: Params,
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
@@ -391,6 +456,20 @@ impl AssignedIds {
             })
     }
 
+    pub fn current_change_id(&self) -> trc::Result<u64> {
+        self.current_change_id.ok_or_else(|| {
+            trc::StoreEvent::UnexpectedError
+                .caused_by(trc::location!())
+                .ctx(trc::Key::Reason, "No current change id is set")
+        })
+    }
+
+    pub(crate) fn set_current_change_id(&mut self, account_id: u32) -> trc::Result<u64> {
+        let change_id = self.last_change_id(account_id)?;
+        self.current_change_id = Some(change_id);
+        Ok(change_id)
+    }
+
     pub fn last_counter_id(&self) -> trc::Result<i64> {
         self.ids
             .iter()
@@ -449,28 +528,6 @@ impl From<LogCollection> for u8 {
     }
 }
 
-impl std::fmt::Debug for MergeFn {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("MergeFn")
-            .field("fnc_id", &self.fnc_id)
-            .finish()
-    }
-}
-
-impl PartialEq for MergeFn {
-    fn eq(&self, other: &Self) -> bool {
-        self.fnc_id == other.fnc_id
-    }
-}
-
-impl Eq for MergeFn {}
-
-impl std::hash::Hash for MergeFn {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.fnc_id.hash(state);
-    }
-}
-
 impl From<ContactField> for ValueClass {
     fn from(value: ContactField) -> Self {
         ValueClass::Property(value.into())
@@ -522,5 +579,144 @@ impl From<EmailSubmissionField> for ValueClass {
 impl From<Field> for ValueClass {
     fn from(value: Field) -> Self {
         ValueClass::Property(value.into())
+    }
+}
+
+impl PartialEq for MergeOperation {
+    fn eq(&self, other: &Self) -> bool {
+        self.params == other.params
+    }
+}
+
+impl Eq for MergeOperation {}
+
+impl PartialEq for SetOperation {
+    fn eq(&self, other: &Self) -> bool {
+        self.params == other.params
+    }
+}
+
+impl Eq for SetOperation {}
+
+impl Hash for MergeOperation {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.params.hash(state);
+    }
+}
+
+impl Hash for SetOperation {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.params.hash(state);
+    }
+}
+
+impl SetOperation {
+    pub fn params(&self) -> &Params {
+        &self.params
+    }
+}
+
+impl MergeOperation {
+    pub fn params(&self) -> &Params {
+        &self.params
+    }
+}
+
+impl Params {
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self(Vec::with_capacity(capacity))
+    }
+
+    pub fn new() -> Self {
+        Self(Vec::new())
+    }
+
+    pub fn with_i64(mut self, value: i64) -> Self {
+        self.0.push(Param::I64(value));
+        self
+    }
+
+    pub fn with_u64(mut self, value: u64) -> Self {
+        self.0.push(Param::U64(value));
+        self
+    }
+
+    pub fn with_string(mut self, value: String) -> Self {
+        self.0.push(Param::String(value));
+        self
+    }
+
+    pub fn with_str(mut self, value: &str) -> Self {
+        self.0.push(Param::String(value.to_string()));
+        self
+    }
+
+    pub fn with_bytes(mut self, value: Vec<u8>) -> Self {
+        self.0.push(Param::Bytes(value));
+        self
+    }
+
+    pub fn with_bool(mut self, value: bool) -> Self {
+        self.0.push(Param::Bool(value));
+        self
+    }
+
+    pub fn i64(&self, idx: usize) -> i64 {
+        match &self.0[idx] {
+            Param::I64(v) => *v,
+            _ => panic!("Param at index {} is not an i64", idx),
+        }
+    }
+
+    pub fn u64(&self, idx: usize) -> u64 {
+        match &self.0[idx] {
+            Param::U64(v) => *v,
+            _ => panic!("Param at index {} is not a u64", idx),
+        }
+    }
+
+    pub fn string(&self, idx: usize) -> &str {
+        match &self.0[idx] {
+            Param::String(v) => v.as_str(),
+            _ => panic!("Param at index {} is not a String", idx),
+        }
+    }
+
+    pub fn bytes(&self, idx: usize) -> &[u8] {
+        match &self.0[idx] {
+            Param::Bytes(v) => v.as_slice(),
+            _ => panic!("Param at index {} is not Bytes", idx),
+        }
+    }
+
+    pub fn bool(&self, idx: usize) -> bool {
+        match &self.0[idx] {
+            Param::Bool(v) => *v,
+            _ => panic!("Param at index {} is not a bool", idx),
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn as_slice(&self) -> &[Param] {
+        &self.0
+    }
+}
+
+impl Default for Params {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl AsRef<[Param]> for Params {
+    fn as_ref(&self) -> &[Param] {
+        &self.0
     }
 }

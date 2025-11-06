@@ -119,18 +119,16 @@ impl SqliteStore {
             .map_err(into_error)?;
         }
 
-        for table in [SUBSPACE_INDEXES] {
-            let table = char::from(table);
-            conn.execute(
-                &format!(
-                    "CREATE TABLE IF NOT EXISTS {table} (
+        let table = char::from(SUBSPACE_INDEXES);
+        conn.execute(
+            &format!(
+                "CREATE TABLE IF NOT EXISTS {table} (
                         k BLOB PRIMARY KEY
-                    )"
-                ),
-                [],
-            )
-            .map_err(into_error)?;
-        }
+                )"
+            ),
+            [],
+        )
+        .map_err(into_error)?;
 
         for table in [SUBSPACE_COUNTER, SUBSPACE_QUOTA, SUBSPACE_IN_MEMORY_COUNTER] {
             conn.execute(

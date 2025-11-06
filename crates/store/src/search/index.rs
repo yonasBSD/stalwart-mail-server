@@ -4,249 +4,275 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, fmt::Display};
-
-use ahash::AHashMap;
-use nlp::{
-    language::{
-        Language,
-        detect::{LanguageDetector, MIN_LANGUAGE_SCORE},
-        stemmer::Stemmer,
-    },
-    tokenizers::word::WordTokenizer,
-};
-use trc::AddContext;
-use types::collection::Collection;
-
 use crate::{
-    IterateParams, SerializeInfallible, Store, U32_LEN, ValueKey,
-    backend::MAX_TOKEN_LENGTH,
-    dispatch::DocumentSet,
-    search::IndexDocument,
-    write::{BatchBuilder, Operation, ValueClass, ValueOp, key::DeserializeBigEndian},
+    Deserialize, IterateParams, Store, U64_LEN, ValueKey,
+    search::{
+        IndexDocument, SearchField, SearchFilter, SearchOperator, SearchQuery, SearchValue,
+        term::{TermIndex, TermIndexBuilder},
+    },
+    write::{
+        AlignedBytes, Archive, BatchBuilder, SEARCH_INDEX_MAX_FIELD_LEN, SearchIndexClass,
+        SearchIndexField, SearchIndexId, SearchIndexType, ValueClass, key::DeserializeBigEndian,
+    },
 };
-
-pub const TERM_INDEX_VERSION: u8 = 1;
+use ahash::AHashMap;
+use trc::AddContext;
+use utils::cheeky_hash::CheekyHash;
 
 impl Store {
-    pub(crate) async fn index_insert(&self, document: IndexDocument) -> trc::Result<()> {
-        /*let mut detect = LanguageDetector::new();
-        let mut tokens: AHashMap<BitmapHash, Postings> = AHashMap::new();
-        let mut parts = Vec::new();
-        let mut position = 0;
-
-        for text in document.parts {
-            match text.typ {
-                Type::Text(language) => {
-                    let language = if language == Language::Unknown {
-                        detect.detect(&text.text, MIN_LANGUAGE_SCORE)
-                    } else {
-                        language
-                    };
-                    parts.push((text.field, language, text.text));
-                }
-                Type::Tokenize => {
-                    let field = u8::from(text.field);
-                    for token in WordTokenizer::new(text.text.as_ref(), MAX_TOKEN_LENGTH) {
-                        tokens
-                            .entry(BitmapHash::new(token.word.as_ref()))
-                            .or_default()
-                            .insert(TokenType::word(field), position);
-                        position += 1;
-                    }
-                    position += 10;
-                }
-                Type::Keyword => {
-                    let value = text.text.as_ref();
-                    if !value.is_empty() {
-                        let field = u8::from(text.field);
-                        tokens
-                            .entry(BitmapHash::new(value))
-                            .or_default()
-                            .insert_keyword(TokenType::word(field));
-                    }
-                }
-            }
-        }
-
-        let default_language = detect
-            .most_frequent_language()
-            .unwrap_or(document.default_language);
-
-        for (field, language, text) in parts.into_iter() {
-            let language = if language != Language::Unknown {
-                language
-            } else {
-                default_language
-            };
-            let field: u8 = field.into();
-
-            for token in Stemmer::new(&text, language, MAX_TOKEN_LENGTH) {
-                tokens
-                    .entry(BitmapHash::new(token.word.as_ref()))
-                    .or_default()
-                    .insert(TokenType::word(field), position);
-
-                if let Some(stemmed_word) = token.stemmed_word {
-                    tokens
-                        .entry(BitmapHash::new(stemmed_word.as_ref()))
-                        .or_default()
-                        .insert_keyword(TokenType::stemmed(field));
-                }
-
-                position += 1;
-            }
-
-            position += 10;
-        }
-
-        if tokens.is_empty() {
-            return Ok(());
-        }
-
-        // Serialize keys
-        let mut keys = Vec::with_capacity(tokens.len());
-        for (hash, postings) in tokens.into_iter() {
-            keys.push(Operation::Value {
-                class: ValueClass::FtsIndex(hash),
-                op: ValueOp::Set {
-                    value: postings.serialize(),
-                    version_offset: None,
-                },
-            });
-        }
-
-        // Commit index
-        let mut batch = BatchBuilder::new();
-        batch
-            .with_account_id(document.account_id)
-            .with_collection(document.collection)
-            .with_document(document.document_id);
-
-        for key in keys.into_iter() {
-            if batch.is_large_batch() {
-                self.write(batch.build_all()).await?;
-                batch = BatchBuilder::new();
-                batch
-                    .with_account_id(document.account_id)
-                    .with_collection(document.collection)
-                    .with_document(document.document_id);
-            }
-            batch.any_op(key);
-        }
-
-        if !batch.is_empty() {
-            self.write(batch.build_all()).await?;
-        }*/
-
-        Ok(())
-    }
-
-    pub(crate) async fn index_remove(
-        &self,
-        account_id: u32,
-        collection: Collection,
-        document_ids: &impl DocumentSet,
-    ) -> trc::Result<()> {
-        // Find keys to delete
-        /*let mut delete_keys: AHashMap<u32, Vec<ValueClass>> = AHashMap::new();
-        self.iterate(
-            IterateParams::new(
-                ValueKey {
-                    account_id,
-                    collection: collection as u8,
-                    document_id: 0,
-                    class: ValueClass::FtsIndex(BitmapHash {
-                        hash: [0; 8],
-                        len: 1,
-                    }),
-                },
-                ValueKey {
-                    account_id: account_id + 1,
-                    collection: collection as u8,
-                    document_id: 0,
-                    class: ValueClass::FtsIndex(BitmapHash {
-                        hash: [0; 8],
-                        len: 1,
-                    }),
-                },
-            )
-            .no_values(),
-            |key, _| {
-                let document_id = key.deserialize_be_u32(key.len() - U32_LEN)?;
-                if document_ids.contains(document_id) {
-                    let mut hash = [0u8; 8];
-                    let (hash, len) = match key.len() - (U32_LEN * 2) - 1 {
-                        9 => {
-                            hash[..8].copy_from_slice(&key[U32_LEN..U32_LEN + 8]);
-                            (hash, key[key.len() - U32_LEN - 2])
-                        }
-                        len @ (1..=7) => {
-                            hash[..len].copy_from_slice(&key[U32_LEN..U32_LEN + len]);
-                            (hash, len as u8)
-                        }
-                        0 => {
-                            // Temporary fix for empty keywords
-                            (hash, 0)
-                        }
-                        invalid => {
-                            return Err(trc::Error::corrupted_key(key, None, trc::location!())
-                                .ctx(trc::Key::Reason, "Invalid bitmap key length")
-                                .ctx(trc::Key::Size, invalid));
-                        }
-                    };
-
-                    delete_keys
-                        .entry(document_id)
-                        .or_default()
-                        .push(ValueClass::FtsIndex(BitmapHash { hash, len }));
-                }
-
-                Ok(true)
-            },
-        )
-        .await
-        .caused_by(trc::location!())?;
-
-        // Remove keys
-        let mut batch = BatchBuilder::new();
-        batch
-            .with_account_id(account_id)
-            .with_collection(collection);
-
-        for (document_id, keys) in delete_keys {
-            batch.with_document(document_id);
-
-            for key in keys {
-                if batch.is_large_batch() {
-                    self.write(batch.build_all())
-                        .await
-                        .caused_by(trc::location!())?;
-                    batch = BatchBuilder::new();
-                    batch
-                        .with_account_id(account_id)
-                        .with_collection(collection)
-                        .with_document(document_id);
-                }
-                batch.any_op(Operation::Value {
-                    class: key,
-                    op: ValueOp::Clear,
-                });
-            }
-        }
-
-        if !batch.is_empty() {
+    pub(crate) async fn index(&self, documents: Vec<IndexDocument>) -> trc::Result<()> {
+        for document in documents {
+            let mut batch = BatchBuilder::new();
+            let index = document.index;
+            let term_index_builder = TermIndexBuilder::build(document);
+            term_index_builder
+                .index
+                .write_index(&mut batch, index, term_index_builder.id)
+                .caused_by(trc::location!())?;
             self.write(batch.build_all())
                 .await
                 .caused_by(trc::location!())?;
-        }*/
-
+        }
         Ok(())
     }
 
-    pub(crate) async fn index_remove_all(&self, _: u32) -> trc::Result<()> {
-        // No-op
-        // Term indexes are stored in the same key range as the document
+    pub(crate) async fn unindex(&self, query: SearchQuery) -> trc::Result<()> {
+        let index = query.index;
+        let mut account_documents: AHashMap<u32, Vec<u32>> = AHashMap::new();
+        let mut ids = vec![];
+        let mut to_id = None;
+        let mut last_account_id = None;
+
+        for filter in query.filters {
+            match filter {
+                SearchFilter::Operator { field, op, value } => match (field, value) {
+                    (SearchField::AccountId, SearchValue::Uint(id))
+                        if op == SearchOperator::Equal =>
+                    {
+                        last_account_id = Some(id as u32);
+                        account_documents.entry(id as u32).or_default();
+                    }
+                    (SearchField::DocumentId, SearchValue::Uint(id))
+                        if op == SearchOperator::Equal && last_account_id.is_some() =>
+                    {
+                        account_documents
+                            .get_mut(&last_account_id.unwrap())
+                            .unwrap()
+                            .push(id as u32);
+                    }
+                    (SearchField::Id, SearchValue::Uint(id)) => match op {
+                        SearchOperator::LowerThan | SearchOperator::LowerEqualThan => {
+                            to_id = Some(id);
+                        }
+                        SearchOperator::Equal => {
+                            ids.push(id);
+                        }
+                        _ => {
+                            return Err(trc::StoreEvent::UnexpectedError
+                                .into_err()
+                                .reason("Unsupported operator for Id field"));
+                        }
+                    },
+                    _ => {
+                        return Err(trc::StoreEvent::UnexpectedError
+                            .into_err()
+                            .reason("Unsupported filter"));
+                    }
+                },
+                SearchFilter::And | SearchFilter::Or | SearchFilter::End => {}
+                SearchFilter::Not | SearchFilter::DocumentSet(_) => {
+                    return Err(trc::StoreEvent::UnexpectedError
+                        .into_err()
+                        .reason("Unsupported filter"));
+                }
+            }
+        }
+
+        // Delete by account and document ids
+        for (account_id, document_ids) in account_documents {
+            if !document_ids.is_empty() {
+                for document_id in document_ids {
+                    let Some(archive) = self
+                        .get_value::<Archive<AlignedBytes>>(ValueKey::from(
+                            ValueClass::SearchIndex(SearchIndexClass {
+                                index,
+                                typ: SearchIndexType::Document {
+                                    id: SearchIndexId::Account {
+                                        account_id,
+                                        document_id,
+                                    },
+                                },
+                            }),
+                        ))
+                        .await
+                        .caused_by(trc::location!())?
+                    else {
+                        continue;
+                    };
+                    let term_index = archive
+                        .unarchive::<TermIndex>()
+                        .caused_by(trc::location!())?;
+                    let mut batch = BatchBuilder::new();
+                    term_index.delete_index(
+                        &mut batch,
+                        index,
+                        SearchIndexId::Account {
+                            account_id,
+                            document_id,
+                        },
+                    );
+                    self.write(batch.build_all())
+                        .await
+                        .caused_by(trc::location!())?;
+                }
+            } else {
+                // Delete all documents for the account
+                self.delete_range(
+                    ValueKey::from(ValueClass::SearchIndex(SearchIndexClass {
+                        index,
+                        typ: SearchIndexType::Document {
+                            id: SearchIndexId::Account {
+                                account_id,
+                                document_id: 0,
+                            },
+                        },
+                    })),
+                    ValueKey::from(ValueClass::SearchIndex(SearchIndexClass {
+                        index,
+                        typ: SearchIndexType::Document {
+                            id: SearchIndexId::Account {
+                                account_id,
+                                document_id: u32::MAX,
+                            },
+                        },
+                    })),
+                )
+                .await
+                .caused_by(trc::location!())?;
+
+                self.delete_range(
+                    ValueKey::from(ValueClass::SearchIndex(SearchIndexClass {
+                        index,
+                        typ: SearchIndexType::Index {
+                            id: SearchIndexId::Account {
+                                account_id,
+                                document_id: 0,
+                            },
+                            field: SearchIndexField {
+                                field_id: 0,
+                                len: 1,
+                                data: [0; SEARCH_INDEX_MAX_FIELD_LEN],
+                            },
+                        },
+                    })),
+                    ValueKey::from(ValueClass::SearchIndex(SearchIndexClass {
+                        index,
+                        typ: SearchIndexType::Index {
+                            id: SearchIndexId::Account {
+                                account_id,
+                                document_id: u32::MAX,
+                            },
+                            field: SearchIndexField {
+                                field_id: u8::MAX,
+                                len: 1,
+                                data: [u8::MAX; SEARCH_INDEX_MAX_FIELD_LEN],
+                            },
+                        },
+                    })),
+                )
+                .await
+                .caused_by(trc::location!())?;
+
+                self.delete_range(
+                    ValueKey::from(ValueClass::SearchIndex(SearchIndexClass {
+                        index,
+                        typ: SearchIndexType::Term {
+                            account_id: Some(account_id),
+                            hash: CheekyHash::NULL,
+                        },
+                    })),
+                    ValueKey::from(ValueClass::SearchIndex(SearchIndexClass {
+                        index,
+                        typ: SearchIndexType::Term {
+                            account_id: Some(account_id),
+                            hash: CheekyHash::FULL,
+                        },
+                    })),
+                )
+                .await
+                .caused_by(trc::location!())?;
+            }
+        }
+
+        // Delete by global ids
+        for id in ids {
+            let Some(archive) = self
+                .get_value::<Archive<AlignedBytes>>(ValueKey::from(ValueClass::SearchIndex(
+                    SearchIndexClass {
+                        index,
+                        typ: SearchIndexType::Document {
+                            id: SearchIndexId::Global { id },
+                        },
+                    },
+                )))
+                .await
+                .caused_by(trc::location!())?
+            else {
+                continue;
+            };
+            let term_index = archive
+                .unarchive::<TermIndex>()
+                .caused_by(trc::location!())?;
+            let mut batch = BatchBuilder::new();
+            term_index.delete_index(&mut batch, index, SearchIndexId::Global { id });
+            self.write(batch.build_all())
+                .await
+                .caused_by(trc::location!())?;
+        }
+
+        // Delete ranges
+        if let Some(to_id) = to_id {
+            let mut batches = Vec::new();
+            self.iterate(
+                IterateParams::new(
+                    ValueKey::from(ValueClass::SearchIndex(SearchIndexClass {
+                        index,
+                        typ: SearchIndexType::Document {
+                            id: SearchIndexId::Global { id: 0 },
+                        },
+                    })),
+                    ValueKey::from(ValueClass::SearchIndex(SearchIndexClass {
+                        index,
+                        typ: SearchIndexType::Document {
+                            id: SearchIndexId::Global { id: to_id },
+                        },
+                    })),
+                ),
+                |key, value| {
+                    let archive = <Archive<AlignedBytes> as Deserialize>::deserialize(value)?;
+                    let term_index = archive.unarchive::<TermIndex>()?;
+                    let mut batch = BatchBuilder::new();
+                    term_index.delete_index(
+                        &mut batch,
+                        index,
+                        SearchIndexId::Global {
+                            id: key.deserialize_be_u64(key.len() - U64_LEN)?,
+                        },
+                    );
+                    batches.push(batch);
+
+                    Ok(true)
+                },
+            )
+            .await
+            .caused_by(trc::location!())?;
+
+            for mut batch in batches {
+                self.write(batch.build_all())
+                    .await
+                    .caused_by(trc::location!())?;
+            }
+        }
 
         Ok(())
     }
