@@ -45,7 +45,7 @@ pub async fn test(params: &mut JMAPTest, insert: bool) {
             .with_collection(Collection::Mailbox);
         for mailbox_id in 1545..3010 {
             batch
-                .create_document(mailbox_id)
+                .with_document(mailbox_id)
                 .custom(ObjectIndexBuilder::<(), _>::new().with_changes(Mailbox {
                     name: format!("Mailbox {mailbox_id}"),
                     role: SpecialUse::None,

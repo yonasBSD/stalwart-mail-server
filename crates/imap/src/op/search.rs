@@ -587,7 +587,7 @@ impl<T: SessionStream> SessionData<T> {
         // Run query
         self.server
             .search_store()
-            .query(
+            .query_account(
                 SearchQuery::new(SearchIndex::Email)
                     .with_filters(filters)
                     .with_comparators(comparators)

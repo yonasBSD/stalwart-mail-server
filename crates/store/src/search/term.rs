@@ -13,9 +13,15 @@ use crate::{
         SearchIndexField, SearchIndexId, SearchIndexType, ValueClass,
     },
 };
-use nlp::{language::stemmer::Stemmer, tokenizers::word::WordTokenizer};
+use nlp::{
+    language::stemmer::Stemmer,
+    tokenizers::{space::SpaceTokenizer, word::WordTokenizer},
+};
 use roaring::RoaringTreemap;
-use utils::cheeky_hash::{CheekyBTreeMap, CheekyHash};
+use utils::{
+    cheeky_hash::{CheekyBTreeMap, CheekyHash},
+    map::bitmap::BitPop,
+};
 
 #[derive(Debug, PartialEq, Eq, rkyv::Serialize, rkyv::Deserialize, rkyv::Archive)]
 pub(crate) struct TermIndex {
@@ -46,8 +52,16 @@ impl TermIndexBuilder {
             match field {
                 SearchField::Id => {
                     if let SearchValue::Uint(v) = value {
+                        let mut data = [0u8; SEARCH_INDEX_MAX_FIELD_LEN];
+                        data[..U64_LEN].copy_from_slice(&v.to_be_bytes());
+                        fields.push(SearchIndexField {
+                            field_id: field.u8_id(),
+                            len: U64_LEN as u8,
+                            data,
+                        });
                         id = Some(v);
                     }
+
                     continue;
                 }
                 SearchField::AccountId => {
@@ -65,30 +79,42 @@ impl TermIndexBuilder {
                 _ => {}
             }
 
-            let field_id = 1 << (field.u8_id() as u32);
-
             let field = match value {
                 SearchValue::Text { value, language } => {
                     if field.is_text() {
-                        if !matches!(language, Language::Unknown | Language::None) {
-                            for token in Stemmer::new(&value, language, MAX_TOKEN_LENGTH) {
-                                *terms
-                                    .entry(CheekyHash::new(token.word.as_bytes()))
-                                    .or_default() |= field_id;
-
-                                if let Some(stemmed_word) = token.stemmed_word {
-                                    *terms
-                                        .entry(CheekyHash::new(
-                                            format!("{}*", stemmed_word).as_bytes(),
-                                        ))
-                                        .or_default() |= field_id;
+                        match language {
+                            Language::Unknown => {
+                                for token in WordTokenizer::new(value.as_str(), MAX_TOKEN_LENGTH) {
+                                    terms
+                                        .entry(CheekyHash::new(token.word.as_bytes()))
+                                        .or_default()
+                                        .bit_push(field.u8_id());
                                 }
                             }
-                        } else {
-                            for token in WordTokenizer::new(value.as_str(), MAX_TOKEN_LENGTH) {
-                                *terms
-                                    .entry(CheekyHash::new(token.word.as_bytes()))
-                                    .or_default() |= field_id;
+                            Language::None => {
+                                for token in SpaceTokenizer::new(value.as_str(), MAX_TOKEN_LENGTH) {
+                                    terms
+                                        .entry(CheekyHash::new(token.as_bytes()))
+                                        .or_default()
+                                        .bit_push(field.u8_id());
+                                }
+                            }
+                            _ => {
+                                for token in Stemmer::new(&value, language, MAX_TOKEN_LENGTH) {
+                                    terms
+                                        .entry(CheekyHash::new(token.word.as_bytes()))
+                                        .or_default()
+                                        .bit_push(field.u8_id());
+
+                                    if let Some(stemmed_word) = token.stemmed_word {
+                                        terms
+                                            .entry(CheekyHash::new(
+                                                format!("{}*", stemmed_word).as_bytes(),
+                                            ))
+                                            .or_default()
+                                            .bit_push(field.u8_id());
+                                    }
+                                }
                             }
                         }
                     }
@@ -111,11 +137,15 @@ impl TermIndexBuilder {
                 }
                 SearchValue::KeyValues(map) => {
                     for (key, value) in map {
-                        *terms.entry(CheekyHash::new(key.as_bytes())).or_default() |= field_id;
-                        for token in value.split_ascii_whitespace() {
-                            *terms
+                        terms
+                            .entry(CheekyHash::new(key.as_bytes()))
+                            .or_default()
+                            .bit_push(field.u8_id());
+                        for token in SpaceTokenizer::new(value.as_str(), MAX_TOKEN_LENGTH) {
+                            terms
                                 .entry(CheekyHash::new(format!("{key} {token}").as_bytes()))
-                                .or_default() |= field_id;
+                                .or_default()
+                                .bit_push(field.u8_id());
                         }
                     }
 
@@ -141,12 +171,11 @@ impl TermIndexBuilder {
                         data,
                     }
                 }
-                SearchValue::Boolean(v) if v => SearchIndexField {
+                SearchValue::Boolean(v) => SearchIndexField {
                     field_id: field.u8_id(),
                     len: 1,
-                    data: [1u8; SEARCH_INDEX_MAX_FIELD_LEN],
+                    data: [v as u8; SEARCH_INDEX_MAX_FIELD_LEN],
                 },
-                _ => continue,
             };
 
             fields.push(field);
@@ -200,62 +229,70 @@ impl TermIndex {
                 document_id,
             } => {
                 for term in archive.inner.terms {
-                    batch.merge_fnc(
-                        ValueClass::SearchIndex(SearchIndexClass {
-                            index,
-                            typ: SearchIndexType::Term {
-                                account_id: Some(account_id),
-                                hash: term.hash,
-                            },
-                        }),
-                        Params::with_capacity(1).with_u64(document_id as u64),
-                        |params, _, bytes| {
-                            let document_id = params.u64(0) as u32;
+                    let mut fields = term.fields;
+                    while let Some(field) = fields.bit_pop() {
+                        batch.merge_fnc(
+                            ValueClass::SearchIndex(SearchIndexClass {
+                                index,
+                                typ: SearchIndexType::Term {
+                                    account_id: Some(account_id),
+                                    hash: term.hash,
+                                    field,
+                                },
+                            }),
+                            Params::with_capacity(1).with_u64(document_id as u64),
+                            |params, _, bytes| {
+                                let document_id = params.u64(0) as u32;
 
-                            if let Some(bytes) = bytes {
-                                let mut bitmap = RoaringBitmap::deserialize(bytes)?;
-                                if bitmap.insert(document_id) {
-                                    Ok(MergeResult::Update(bitmap.serialize()?))
+                                if let Some(bytes) = bytes {
+                                    let mut bitmap = RoaringBitmap::deserialize(bytes)?;
+                                    if bitmap.insert(document_id) {
+                                        Ok(MergeResult::Update(bitmap.serialize()?))
+                                    } else {
+                                        Ok(MergeResult::Skip)
+                                    }
                                 } else {
-                                    Ok(MergeResult::Skip)
+                                    Ok(MergeResult::Update(
+                                        RoaringBitmap::from_iter([document_id]).serialize()?,
+                                    ))
                                 }
-                            } else {
-                                Ok(MergeResult::Update(
-                                    RoaringBitmap::from_iter([document_id]).serialize()?,
-                                ))
-                            }
-                        },
-                    );
+                            },
+                        );
+                    }
                 }
             }
             SearchIndexId::Global { id } => {
                 for term in archive.inner.terms {
-                    batch.merge_fnc(
-                        ValueClass::SearchIndex(SearchIndexClass {
-                            index,
-                            typ: SearchIndexType::Term {
-                                account_id: None,
-                                hash: term.hash,
-                            },
-                        }),
-                        Params::with_capacity(1).with_u64(id),
-                        |params, _, bytes| {
-                            let id = params.u64(0);
+                    let mut fields = term.fields;
+                    while let Some(field) = fields.bit_pop() {
+                        batch.merge_fnc(
+                            ValueClass::SearchIndex(SearchIndexClass {
+                                index,
+                                typ: SearchIndexType::Term {
+                                    account_id: None,
+                                    hash: term.hash,
+                                    field,
+                                },
+                            }),
+                            Params::with_capacity(1).with_u64(id),
+                            |params, _, bytes| {
+                                let id = params.u64(0);
 
-                            if let Some(bytes) = bytes {
-                                let mut bitmap = RoaringTreemap::deserialize(bytes)?;
-                                if bitmap.insert(id) {
-                                    Ok(MergeResult::Update(bitmap.serialize()?))
+                                if let Some(bytes) = bytes {
+                                    let mut bitmap = RoaringTreemap::deserialize(bytes)?;
+                                    if bitmap.insert(id) {
+                                        Ok(MergeResult::Update(bitmap.serialize()?))
+                                    } else {
+                                        Ok(MergeResult::Skip)
+                                    }
                                 } else {
-                                    Ok(MergeResult::Skip)
+                                    Ok(MergeResult::Update(
+                                        RoaringTreemap::from_iter([id]).serialize()?,
+                                    ))
                                 }
-                            } else {
-                                Ok(MergeResult::Update(
-                                    RoaringTreemap::from_iter([id]).serialize()?,
-                                ))
-                            }
-                        },
-                    );
+                            },
+                        );
+                    }
                 }
             }
         }
@@ -275,14 +312,14 @@ impl TermIndex {
 }
 
 impl ArchivedTermIndex {
-    pub fn has_term(&self, hash: &CheekyHash, field: &SearchField) -> bool {
+    /*pub fn has_term(&self, hash: &CheekyHash, field: &SearchField) -> bool {
         let hash = hash.as_raw_bytes();
         self.terms
             .binary_search_by(|term| term.hash.as_raw_bytes().cmp(hash))
             .is_ok_and(|idx| {
                 (self.terms[idx].fields.to_native() & (1 << (field.u8_id() as u32))) != 0
             })
-    }
+    }*/
 
     pub fn delete_index(&self, batch: &mut BatchBuilder, index: SearchIndex, id: SearchIndexId) {
         batch.clear(ValueClass::SearchIndex(SearchIndexClass {
@@ -296,66 +333,74 @@ impl ArchivedTermIndex {
                 document_id,
             } => {
                 for term in self.terms.iter() {
-                    batch.merge_fnc(
-                        ValueClass::SearchIndex(SearchIndexClass {
-                            index,
-                            typ: SearchIndexType::Term {
-                                account_id: Some(account_id),
-                                hash: term.hash.to_native(),
-                            },
-                        }),
-                        Params::with_capacity(1).with_u64(document_id as u64),
-                        |params, _, bytes| {
-                            let document_id = params.u64(0) as u32;
+                    let mut fields = term.fields.to_native();
+                    while let Some(field) = fields.bit_pop() {
+                        batch.merge_fnc(
+                            ValueClass::SearchIndex(SearchIndexClass {
+                                index,
+                                typ: SearchIndexType::Term {
+                                    account_id: Some(account_id),
+                                    hash: term.hash.to_native(),
+                                    field,
+                                },
+                            }),
+                            Params::with_capacity(1).with_u64(document_id as u64),
+                            |params, _, bytes| {
+                                let document_id = params.u64(0) as u32;
 
-                            if let Some(bytes) = bytes {
-                                let mut bitmap = RoaringBitmap::deserialize(bytes)?;
-                                if bitmap.remove(document_id) {
-                                    if !bitmap.is_empty() {
-                                        Ok(MergeResult::Update(bitmap.serialize()?))
+                                if let Some(bytes) = bytes {
+                                    let mut bitmap = RoaringBitmap::deserialize(bytes)?;
+                                    if bitmap.remove(document_id) {
+                                        if !bitmap.is_empty() {
+                                            Ok(MergeResult::Update(bitmap.serialize()?))
+                                        } else {
+                                            Ok(MergeResult::Delete)
+                                        }
                                     } else {
-                                        Ok(MergeResult::Delete)
+                                        Ok(MergeResult::Skip)
                                     }
                                 } else {
                                     Ok(MergeResult::Skip)
                                 }
-                            } else {
-                                Ok(MergeResult::Skip)
-                            }
-                        },
-                    );
+                            },
+                        );
+                    }
                 }
             }
             SearchIndexId::Global { id } => {
                 for term in self.terms.iter() {
-                    batch.merge_fnc(
-                        ValueClass::SearchIndex(SearchIndexClass {
-                            index,
-                            typ: SearchIndexType::Term {
-                                account_id: None,
-                                hash: term.hash.to_native(),
-                            },
-                        }),
-                        Params::with_capacity(1).with_u64(id),
-                        |params, _, bytes| {
-                            let id = params.u64(0);
+                    let mut fields = term.fields.to_native();
+                    while let Some(field) = fields.bit_pop() {
+                        batch.merge_fnc(
+                            ValueClass::SearchIndex(SearchIndexClass {
+                                index,
+                                typ: SearchIndexType::Term {
+                                    account_id: None,
+                                    hash: term.hash.to_native(),
+                                    field,
+                                },
+                            }),
+                            Params::with_capacity(1).with_u64(id),
+                            |params, _, bytes| {
+                                let id = params.u64(0);
 
-                            if let Some(bytes) = bytes {
-                                let mut bitmap = RoaringTreemap::deserialize(bytes)?;
-                                if bitmap.remove(id) {
-                                    if !bitmap.is_empty() {
-                                        Ok(MergeResult::Update(bitmap.serialize()?))
+                                if let Some(bytes) = bytes {
+                                    let mut bitmap = RoaringTreemap::deserialize(bytes)?;
+                                    if bitmap.remove(id) {
+                                        if !bitmap.is_empty() {
+                                            Ok(MergeResult::Update(bitmap.serialize()?))
+                                        } else {
+                                            Ok(MergeResult::Delete)
+                                        }
                                     } else {
-                                        Ok(MergeResult::Delete)
+                                        Ok(MergeResult::Skip)
                                     }
                                 } else {
                                     Ok(MergeResult::Skip)
                                 }
-                            } else {
-                                Ok(MergeResult::Skip)
-                            }
-                        },
-                    );
+                            },
+                        );
+                    }
                 }
             }
         }

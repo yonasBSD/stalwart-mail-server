@@ -22,7 +22,7 @@ use tokio_postgres::{IsolationLevel, error::SqlState};
 enum CommitError {
     Postgres(tokio_postgres::Error),
     Internal(trc::Error),
-    Retry,
+    //Retry,
 }
 
 impl PostgresStore {
@@ -52,7 +52,7 @@ impl PostgresStore {
                             _ => return Err(into_error(err)),
                         },
                         CommitError::Internal(err) => return Err(err),
-                        CommitError::Retry => {
+                        /*CommitError::Retry => {
                             if retry_count > MAX_COMMIT_ATTEMPTS
                                 || start.elapsed() > MAX_COMMIT_TIME
                             {
@@ -60,7 +60,7 @@ impl PostgresStore {
                                     .into_err()
                                     .caused_by(trc::location!()));
                             }
-                        }
+                        }*/
                     }
 
                     let backoff = rand::rng().random_range(50..=300);

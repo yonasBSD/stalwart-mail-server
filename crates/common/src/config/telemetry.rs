@@ -98,7 +98,6 @@ pub struct WebhookTracer {
 #[cfg(feature = "enterprise")]
 pub struct StoreTracer {
     pub store: store::Store,
-    pub indexed: bool,
 }
 // SPDX-SnippetEnd
 
@@ -538,9 +537,6 @@ impl Tracers {
                         lossy: false,
                         typ: TelemetrySubscriberType::StoreTracer(StoreTracer {
                             store: store.clone(),
-                            indexed: config
-                                .property_or_default("tracing.history.indexed", "false")
-                                .unwrap_or(false),
                         }),
                     };
 

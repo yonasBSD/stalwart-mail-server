@@ -9,6 +9,7 @@ use crate::{
     store::deflate_test_resource,
 };
 use ::email::{
+    cache::MessageCacheFetch,
     mailbox::INBOX_ID,
     message::ingest::{EmailIngest, IngestEmail, IngestSource},
 };
@@ -20,7 +21,7 @@ use store::{
     ahash::{AHashMap, AHashSet},
     rand::{self, Rng},
 };
-use types::{collection::Collection, id::Id};
+use types::id::Id;
 
 pub async fn test(params: &mut JMAPTest) {
     test_single_thread(params).await;
@@ -263,14 +264,15 @@ async fn test_multi_thread(params: &mut JMAPTest) {
         handle.await.expect("Task panicked");
     }
     assert_eq!(
-        messages as u64,
+        messages,
         params
             .server
-            .get_document_ids(account_id, Collection::Email)
+            .get_cached_messages(account_id)
             .await
             .unwrap()
-            .unwrap()
-            .len()
+            .emails
+            .items
+            .len(),
     );
     println!("Deleting all messages...");
     params.destroy_all_mailboxes(account).await;

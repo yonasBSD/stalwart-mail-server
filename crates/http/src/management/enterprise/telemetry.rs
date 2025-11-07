@@ -34,7 +34,7 @@ use std::future::Future;
 use store::{
     ahash::{AHashMap, AHashSet},
     search::{SearchField, SearchFilter, SearchQuery, TracingSearchField},
-    write::SearchIndex,
+    write::{SearchIndex, now},
 };
 use trc::{
     Collector, DeliveryEvent, EventType, Key, MetricType, QueueEvent, Value,
@@ -122,23 +122,39 @@ impl TelemetryApi for Server {
                         ));
                     }
                 }
-                let before = params
+                let values = params.get("values").is_some();
+                if let Some(before) = params
                     .parse::<Timestamp>("before")
                     .map(|t| t.into_inner())
                     .and_then(SnowflakeIdGenerator::from_timestamp)
-                    .unwrap_or(0);
-                let after = params
+                {
+                    tracing_query.push(SearchFilter::lt(SearchField::Id, before));
+                }
+                if let Some(after) = params
                     .parse::<Timestamp>("after")
                     .map(|t| t.into_inner())
                     .and_then(SnowflakeIdGenerator::from_timestamp)
-                    .unwrap_or(0);
-                let values = params.get("values").is_some();
+                {
+                    tracing_query.push(SearchFilter::gt(SearchField::Id, after));
+                }
+                if !tracing_query.iter().any(|f| {
+                    matches!(
+                        f,
+                        SearchFilter::Operator {
+                            field: SearchField::Tracing(
+                                TracingSearchField::Keywords | TracingSearchField::QueueId
+                            ) | SearchField::Id,
+                            ..
+                        }
+                    )
+                }) {
+                    tracing_query.push(SearchFilter::gt(
+                        SearchField::Id,
+                        SnowflakeIdGenerator::from_timestamp(now() - 86400).unwrap_or_default(),
+                    ));
+                }
 
-                tracing_query.push(SearchFilter::lt(SearchField::Id, after));
-                tracing_query.push(SearchFilter::gt(SearchField::Id, before));
                 tracing_query.push(SearchFilter::End);
-
-                let todo = "if there is no search index, do full scan";
 
                 let store = &self
                     .core
@@ -150,7 +166,9 @@ impl TelemetryApi for Server {
 
                 let span_ids = self
                     .search_store()
-                    .query(SearchQuery::new(SearchIndex::Tracing).with_filters(tracing_query))
+                    .query_global(
+                        SearchQuery::new(SearchIndex::Tracing).with_filters(tracing_query),
+                    )
                     .await?;
 
                 let (total, span_ids) = if limit > 0 {

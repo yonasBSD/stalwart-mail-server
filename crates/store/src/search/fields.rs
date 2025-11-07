@@ -33,15 +33,33 @@ impl SearchableField for EmailSearchField {
     }
 
     fn is_indexed(&self) -> bool {
-        matches!(
-            self,
-            EmailSearchField::From
-                | EmailSearchField::To
-                | EmailSearchField::Subject
-                | EmailSearchField::ReceivedAt
-                | EmailSearchField::Size
-                | EmailSearchField::HasAttachment,
-        )
+        #[cfg(not(feature = "test_mode"))]
+        {
+            matches!(
+                self,
+                EmailSearchField::From
+                    | EmailSearchField::To
+                    | EmailSearchField::Subject
+                    | EmailSearchField::ReceivedAt
+                    | EmailSearchField::Size
+                    | EmailSearchField::HasAttachment,
+            )
+        }
+
+        #[cfg(feature = "test_mode")]
+        {
+            matches!(
+                self,
+                EmailSearchField::From
+                    | EmailSearchField::To
+                    | EmailSearchField::Subject
+                    | EmailSearchField::ReceivedAt
+                    | EmailSearchField::SentAt
+                    | EmailSearchField::Size
+                    | EmailSearchField::HasAttachment
+                    | EmailSearchField::Bcc,
+            )
+        }
     }
 
     fn is_text(&self) -> bool {

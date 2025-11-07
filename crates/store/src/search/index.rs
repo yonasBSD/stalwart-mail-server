@@ -189,6 +189,7 @@ impl Store {
                         typ: SearchIndexType::Term {
                             account_id: Some(account_id),
                             hash: CheekyHash::NULL,
+                            field: 0,
                         },
                     })),
                     ValueKey::from(ValueClass::SearchIndex(SearchIndexClass {
@@ -196,6 +197,7 @@ impl Store {
                         typ: SearchIndexType::Term {
                             account_id: Some(account_id),
                             hash: CheekyHash::FULL,
+                            field: u8::MAX,
                         },
                     })),
                 )

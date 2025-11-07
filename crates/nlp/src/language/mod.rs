@@ -9,15 +9,13 @@ pub mod search_snippet;
 pub mod stemmer;
 pub mod stopwords;
 
-use std::borrow::Cow;
-
-use utils::config::utils::ParseValue;
-
-use crate::tokenizers::{
-    Token, chinese::ChineseTokenizer, japanese::JapaneseTokenizer, word::WordTokenizer,
-};
-
 use self::detect::LanguageDetector;
+use crate::tokenizers::{
+    Token, chinese::ChineseTokenizer, japanese::JapaneseTokenizer, space::SpaceTokenizer,
+    word::WordTokenizer,
+};
+use std::borrow::Cow;
+use utils::config::utils::ParseValue;
 
 pub type LanguageTokenizer<'x> = Box<dyn Iterator<Item = Token<Cow<'x, str>>> + 'x + Sync + Send>;
 
@@ -36,6 +34,15 @@ impl Language {
                 ChineseTokenizer::new(WordTokenizer::new(text, usize::MAX))
                     .filter(move |t| t.word.len() <= max_token_length),
             ),
+            Language::None => {
+                Box::new(
+                    SpaceTokenizer::new(text, max_token_length).map(|word| Token {
+                        word: word.into(),
+                        from: 0,
+                        to: 0,
+                    }),
+                )
+            }
             _ => Box::new(WordTokenizer::new(text, max_token_length)),
         }
     }

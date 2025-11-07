@@ -24,6 +24,11 @@ pub(crate) enum ChunkedValue {
     None,
 }
 
+struct ChunkedValueCollector {
+    key: Vec<u8>,
+    bytes: Vec<u8>,
+}
+
 impl FdbStore {
     pub(crate) async fn get_value<U>(&self, key: impl Key) -> trc::Result<Option<U>>
     where
@@ -47,10 +52,9 @@ impl FdbStore {
         let begin = params.begin.serialize(WITH_SUBSPACE);
         let end = params.end.serialize(WITH_SUBSPACE);
 
-        let todo = "fix fdb range scan to support chunked reads";
-
         if !params.first {
             let mut last_key = vec![];
+            let mut chunked_key: Option<ChunkedValueCollector> = None;
 
             'outer: loop {
                 let begin_selector = if last_key.is_empty() {
@@ -78,8 +82,39 @@ impl FdbStore {
                             let mut key = &[] as &[u8];
                             for value in values.iter() {
                                 key = value.key();
-                                if !cb(key.get(1..).unwrap_or_default(), value.value())? {
-                                    return Ok(());
+
+                                // Check whether we are collecting a chunked value
+                                let cb_key = key.get(1..).unwrap_or_default();
+                                let cb_value = value.value();
+
+                                if let Some(chunk) = &mut chunked_key {
+                                    if chunk.key.len() + 1 == cb_key.len()
+                                        && cb_key[..chunk.key.len()] == chunk.key[..]
+                                    {
+                                        // This is a chunk of the current value
+                                        chunk.bytes.extend_from_slice(cb_value);
+                                        continue;
+                                    } else {
+                                        // Return collected chunked value
+                                        if !cb(&chunk.key, &chunk.bytes)? {
+                                            return Ok(());
+                                        }
+
+                                        // Reset collector
+                                        chunked_key = None;
+                                    }
+                                }
+
+                                if cb_value.len() < MAX_VALUE_SIZE {
+                                    if !cb(cb_key, cb_value)? {
+                                        return Ok(());
+                                    }
+                                } else {
+                                    // Start collecting chunked value
+                                    chunked_key = Some(ChunkedValueCollector {
+                                        key: cb_key.to_vec(),
+                                        bytes: cb_value.to_vec(),
+                                    });
                                 }
                             }
                             if values.more() {
@@ -87,6 +122,11 @@ impl FdbStore {
                             }
                         }
                         Ok(None) => {
+                            // Return any chunked value collected
+                            if let Some(chunked_key) = chunked_key.take() {
+                                cb(&chunked_key.key, &chunked_key.bytes)?;
+                            }
+
                             break 'outer;
                         }
                         Err(e) => {

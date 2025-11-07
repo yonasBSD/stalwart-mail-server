@@ -163,6 +163,22 @@ impl SearchQuery {
 }
 
 impl QueryResults {
+    pub fn new(results: RoaringBitmap, comparators: Vec<SearchComparator>) -> Self {
+        Self {
+            results,
+            comparators,
+        }
+    }
+
+    pub fn with_comparators(mut self, comparators: Vec<SearchComparator>) -> Self {
+        if self.comparators.is_empty() {
+            self.comparators = comparators;
+        } else {
+            self.comparators.extend(comparators);
+        }
+        self
+    }
+
     pub fn results(&self) -> &RoaringBitmap {
         &self.results
     }

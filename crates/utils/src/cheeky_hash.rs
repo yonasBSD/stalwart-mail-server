@@ -84,6 +84,19 @@ impl CheekyHash {
     pub fn into_inner(self) -> [u8; HASH_SIZE] {
         self.0
     }
+
+    pub fn payload(&self) -> &[u8] {
+        let len = self.0[0] as usize;
+        if len <= HASH_PAYLOAD {
+            &self.0[1..1 + len]
+        } else {
+            &self.0[1..]
+        }
+    }
+
+    pub fn payload_len(&self) -> u8 {
+        self.0[0]
+    }
 }
 
 impl AsRef<[u8]> for CheekyHash {

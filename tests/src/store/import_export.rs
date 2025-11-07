@@ -10,8 +10,8 @@ use common::{Core, manager::backup::BackupParams};
 use store::{
     rand,
     write::{
-        AnyKey, BatchBuilder, BitmapClass, BitmapHash, BlobOp, DirectoryClass, InMemoryClass,
-        Operation, QueueClass, QueueEvent, TagValue, ValueClass,
+        AnyKey, BatchBuilder, BlobOp, DirectoryClass, InMemoryClass, Operation, QueueClass,
+        QueueEvent, ValueClass,
     },
     *,
 };
@@ -64,7 +64,7 @@ pub async fn test(db: Store) {
             batch.with_collection(collection);
 
             for document_id in [0, 10, 20, 30, 40] {
-                batch.create_document(document_id);
+                batch.with_document(document_id);
 
                 if collection == Collection::Mailbox {
                     batch
@@ -196,7 +196,7 @@ pub async fn test(db: Store) {
 
     for account_id in [1, 2, 3, 4, 5] {
         batch
-            .create_document(account_id)
+            .with_document(account_id)
             .add(
                 ValueClass::Directory(DirectoryClass::UsedQuota(account_id)),
                 rand::random(),
@@ -283,9 +283,6 @@ impl Snapshot {
 
         for (subspace, with_values) in [
             (SUBSPACE_ACL, true),
-            (SUBSPACE_BITMAP_ID, false),
-            (SUBSPACE_BITMAP_TAG, false),
-            (SUBSPACE_BITMAP_TEXT, false),
             (SUBSPACE_DIRECTORY, true),
             (SUBSPACE_TASK_QUEUE, true),
             (SUBSPACE_INDEXES, false),
@@ -303,7 +300,6 @@ impl Snapshot {
             (SUBSPACE_QUOTA, !is_sql),
             (SUBSPACE_REPORT_OUT, true),
             (SUBSPACE_REPORT_IN, true),
-            (SUBSPACE_FTS_INDEX, true),
         ] {
             let from_key = AnyKey {
                 subspace,

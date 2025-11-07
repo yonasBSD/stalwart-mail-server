@@ -201,6 +201,7 @@ pub struct SearchIndexClass {
 pub enum SearchIndexType {
     Term {
         account_id: Option<u32>,
+        field: u8,
         hash: CheekyHash,
     },
     Index {

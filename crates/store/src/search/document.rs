@@ -219,6 +219,11 @@ impl SearchFilter {
         Self::has_text(field, text, Language::Unknown)
     }
 
+    #[inline(always)]
+    pub fn has_keyword(field: impl Into<SearchField>, text: impl Into<String>) -> Self {
+        Self::has_text(field, text, Language::None)
+    }
+
     pub fn is_in_set(set: RoaringBitmap) -> Self {
         SearchFilter::DocumentSet(set)
     }

@@ -21,7 +21,7 @@ use std::time::{Duration, Instant};
 enum CommitError {
     Mysql(mysql_async::Error),
     Internal(trc::Error),
-    Retry,
+    //Retry,
 }
 
 impl MysqlStore {
@@ -45,13 +45,13 @@ impl MysqlStore {
                     if [1062, 1213].contains(&err.code)
                         && retry_count < MAX_COMMIT_ATTEMPTS
                         && start.elapsed() < MAX_COMMIT_TIME => {}
-                CommitError::Retry => {
+                /*CommitError::Retry => {
                     if retry_count > MAX_COMMIT_ATTEMPTS || start.elapsed() > MAX_COMMIT_TIME {
                         return Err(trc::StoreEvent::AssertValueFailed
                             .into_err()
                             .caused_by(trc::location!()));
                     }
-                }
+                }*/
                 CommitError::Mysql(err) => {
                     return Err(into_error(err));
                 }

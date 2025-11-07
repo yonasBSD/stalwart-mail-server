@@ -9,7 +9,10 @@ use std::collections::HashSet;
 use store::{
     Store, ValueKey,
     rand::{self, Rng},
-    write::{AlignedBytes, Archive, Archiver, BatchBuilder, DirectoryClass, ValueClass},
+    write::{
+        AlignedBytes, Archive, Archiver, BatchBuilder, DirectoryClass, MergeResult, Params,
+        ValueClass,
+    },
 };
 use types::collection::{Collection, SyncCollection};
 
@@ -111,15 +114,21 @@ pub async fn test(db: Store) {
                     .with_account_id(0)
                     .with_collection(Collection::Email)
                     .with_document(0)
-                    .merge(ValueClass::Property(3), |bytes| {
-                        if let Some(bytes) = bytes {
-                            Ok((u64::from_be_bytes(bytes.try_into().unwrap()) + 1)
-                                .to_be_bytes()
-                                .to_vec())
-                        } else {
-                            Ok(0u64.to_be_bytes().to_vec())
-                        }
-                    });
+                    .merge_fnc(
+                        ValueClass::Property(3),
+                        Params::with_capacity(0),
+                        |_, _, bytes| {
+                            if let Some(bytes) = bytes {
+                                Ok(MergeResult::Update(
+                                    (u64::from_be_bytes(bytes.try_into().unwrap()) + 1)
+                                        .to_be_bytes()
+                                        .to_vec(),
+                                ))
+                            } else {
+                                Ok(MergeResult::Update(0u64.to_be_bytes().to_vec()))
+                            }
+                        },
+                    );
                 db.write(builder.build_all()).await.unwrap()
             })
         });
@@ -209,7 +218,23 @@ pub async fn test(db: Store) {
                     .with_account_id(0)
                     .with_collection(Collection::Email)
                     .with_document(document_id)
-                    .set_versioned(ValueClass::Property(5), archived_value, offset)
+                    .set_fnc(
+                        ValueClass::Property(5),
+                        Params::with_capacity(2)
+                            .with_bytes(archived_value)
+                            .with_u64(offset),
+                        |params, ids| {
+                            let change_id = ids.current_change_id()?;
+                            let archive = params.bytes(0);
+                            let offset = params.u64(1);
+
+                            let mut bytes = Vec::with_capacity(archive.len());
+                            bytes.extend_from_slice(&archive[..offset as usize]);
+                            bytes.extend_from_slice(&change_id.to_be_bytes()[..]);
+                            bytes.push(archive.last().copied().unwrap()); // Marker
+                            Ok(bytes)
+                        },
+                    )
                     .log_container_insert(SyncCollection::Email);
                 db.write(builder.build_all())
                     .await

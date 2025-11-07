@@ -20,7 +20,6 @@ use base64::{
 };
 use common::{
     Caches, Core, Data, Inner, KV_BAYES_MODEL_GLOBAL, Server,
-    auth::AccessToken,
     config::{
         server::{Listeners, ServerProtocol},
         telemetry::Telemetry,
@@ -31,7 +30,6 @@ use common::{
         config::{ConfigManager, Patterns},
     },
 };
-use email::message::delete::EmailDeletion;
 use http::HttpSessionManager;
 use hyper::{Method, header::AUTHORIZATION};
 use imap::core::ImapSessionManager;
@@ -50,13 +48,9 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use store::{
-    IterateParams, SUBSPACE_PROPERTY, Stores, ValueKey,
-    roaring::RoaringBitmap,
-    write::{AnyKey, TaskQueueClass, ValueClass, key::DeserializeBigEndian},
-};
+use store::{IterateParams, SUBSPACE_TASK_QUEUE, Stores, write::AnyKey};
 use tokio::sync::watch;
-use types::{blob_hash::BlobHash, id::Id};
+use types::id::Id;
 use utils::config::Config;
 
 pub mod auth;
@@ -220,17 +214,13 @@ pub async fn wait_for_index(server: &Server) {
             .data
             .iterate(
                 IterateParams::new(
-                    ValueKey::<ValueClass> {
-                        account_id: 0,
-                        collection: 0,
-                        document_id: 0,
-                        class: ValueClass::TaskQueue(TaskQueueClass::IndexEmail { due: 0 }),
+                    AnyKey {
+                        subspace: SUBSPACE_TASK_QUEUE,
+                        key: vec![0u8],
                     },
-                    ValueKey::<ValueClass> {
-                        account_id: u32::MAX,
-                        collection: u8::MAX,
-                        document_id: u32::MAX,
-                        class: ValueClass::TaskQueue(TaskQueueClass::IndexEmail { due: u64::MAX }),
+                    AnyKey {
+                        subspace: SUBSPACE_TASK_QUEUE,
+                        key: vec![u8::MAX, u8::MAX, u8::MAX, u8::MAX],
                     },
                 )
                 .ascending(),
@@ -252,7 +242,7 @@ pub async fn wait_for_index(server: &Server) {
 }
 
 pub async fn assert_is_empty(server: &Server) {
-    // Wait for pending FTS index tasks
+    // Wait for pending index tasks
     wait_for_index(server).await;
 
     // Delete bayes model
@@ -261,9 +251,6 @@ pub async fn assert_is_empty(server: &Server) {
         .key_delete_prefix(&[KV_BAYES_MODEL_GLOBAL])
         .await
         .unwrap();
-
-    // Purge accounts
-    emails_purge_tombstoned(server).await;
 
     // Assert is empty
     server
@@ -281,51 +268,6 @@ pub async fn assert_is_empty(server: &Server) {
         cache.clear();
     }
     server.inner.cache.messages.clear();
-}
-
-pub async fn emails_purge_tombstoned(server: &Server) {
-    let todo = "remove";
-    let mut account_ids = RoaringBitmap::new();
-    server
-        .core
-        .storage
-        .data
-        .iterate(
-            IterateParams::new(
-                AnyKey {
-                    subspace: SUBSPACE_PROPERTY,
-                    key: vec![0u8],
-                },
-                AnyKey {
-                    subspace: SUBSPACE_PROPERTY,
-                    key: vec![u8::MAX, u8::MAX, u8::MAX, u8::MAX],
-                },
-            )
-            .no_values(),
-            |key, _| {
-                account_ids.insert(key.deserialize_be_u32(0).unwrap());
-
-                Ok(true)
-            },
-        )
-        .await
-        .unwrap();
-
-    for account_id in account_ids {
-        let do_add = server.inner.cache.access_tokens.get(&account_id).is_none();
-
-        if do_add {
-            server
-                .inner
-                .cache
-                .access_tokens
-                .insert(account_id, Arc::new(AccessToken::from_id(account_id)));
-        }
-        //server.emails_purge_tombstoned(account_id).await.unwrap();
-        if do_add {
-            server.inner.cache.access_tokens.remove(&account_id);
-        }
-    }
 }
 
 async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {

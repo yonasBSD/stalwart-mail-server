@@ -28,15 +28,19 @@ use common::{
     },
     telemetry::{
         metrics::store::{Metric, MetricsStore, SharedMetricHistory},
-        tracers::store::{TracingQuery, TracingStore},
+        tracers::store::TracingStore,
     },
 };
 use http::management::enterprise::undelete::{UndeleteRequest, UndeleteResponse};
 use imap_proto::ResponseType;
+use nlp::language::Language;
 use std::{sync::Arc, time::Duration};
 use store::{
     rand::{self, Rng},
-    write::now,
+    search::{
+        SearchField, SearchFilter, SearchOperator, SearchQuery, SearchValue, TracingSearchField,
+    },
+    write::{SearchIndex, now},
 };
 use trc::{
     ipc::{bitset::Bitset, subscriber::SubscriberBuilder},
@@ -234,6 +238,7 @@ async fn alerts(server: &Server) {
 async fn tracing(params: &mut JMAPTest) {
     // Enable tracing
     let store = params.server.core.storage.data.clone();
+    let query = params.server.core.storage.fts.clone();
     TelemetrySubscriberType::StoreTracer(StoreTracer {
         store: store.clone(),
     })
@@ -243,16 +248,21 @@ async fn tracing(params: &mut JMAPTest) {
     );
 
     // Make sure there are no span entries in the db
-    store.purge_spans(Duration::from_secs(0)).await.unwrap();
+    store
+        .purge_spans(Duration::from_secs(0), Some(&query))
+        .await
+        .unwrap();
     assert_eq!(
-        store
-            .query_spans(
-                &[TracingQuery::EventType(EventType::Smtp(
-                    SmtpEvent::ConnectionStart
-                ))],
-                0,
-                0
-            )
+        query
+            .query_global(SearchQuery::new(SearchIndex::Tracing).with_filters(vec![
+                SearchFilter::Operator {
+                    field: SearchField::Tracing(TracingSearchField::EventType),
+                    op: SearchOperator::Equal,
+                    value: SearchValue::Uint(
+                        EventType::Smtp(SmtpEvent::ConnectionStart).id() as u64
+                    )
+                }
+            ]))
             .await
             .unwrap(),
         Vec::<u64>::new()
@@ -278,15 +288,24 @@ async fn tracing(params: &mut JMAPTest) {
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     // Purge should not delete anything at this point
-    store.purge_spans(Duration::from_secs(1)).await.unwrap();
+    store
+        .purge_spans(Duration::from_secs(1), Some(&query))
+        .await
+        .unwrap();
 
     // There should be a span entry in the db
     for span_type in [
         EventType::Delivery(DeliveryEvent::AttemptStart),
         EventType::Smtp(SmtpEvent::ConnectionStart),
     ] {
-        let spans = store
-            .query_spans(&[TracingQuery::EventType(span_type)], 0, 0)
+        let spans = query
+            .query_global(SearchQuery::new(SearchIndex::Tracing).with_filters(vec![
+                SearchFilter::Operator {
+                    field: SearchField::Tracing(TracingSearchField::EventType),
+                    op: SearchOperator::Equal,
+                    value: SearchValue::Uint(span_type.id() as u64),
+                },
+            ]))
             .await
             .unwrap();
         assert_eq!(spans.len(), 1, "{span_type:?}");
@@ -298,30 +317,44 @@ async fn tracing(params: &mut JMAPTest) {
 
     // Try searching
     for keyword in ["bill@example.com", "jdoe@example.com", "example.com"] {
-        let spans = store
-            .query_spans(&[TracingQuery::Keywords(keyword.to_string())], 0, 0)
+        let spans = query
+            .query_global(SearchQuery::new(SearchIndex::Tracing).with_filters(vec![
+                SearchFilter::Operator {
+                    field: SearchField::Tracing(TracingSearchField::Keywords),
+                    op: SearchOperator::Equal,
+                    value: SearchValue::Text {
+                        value: keyword.to_string(),
+                        language: Language::None,
+                    },
+                },
+            ]))
             .await
             .unwrap();
+
         assert_eq!(spans.len(), 2, "keyword: {keyword}");
         assert!(spans[0] > spans[1], "keyword: {keyword}");
     }
 
     // Purge should delete the span entries
     tokio::time::sleep(Duration::from_millis(800)).await;
-    store.purge_spans(Duration::from_secs(1)).await.unwrap();
+    store
+        .purge_spans(Duration::from_secs(1), Some(&query))
+        .await
+        .unwrap();
 
-    for query in [
-        TracingQuery::EventType(EventType::Smtp(SmtpEvent::ConnectionStart)),
-        TracingQuery::EventType(EventType::Delivery(DeliveryEvent::AttemptStart)),
-        TracingQuery::Keywords("bill@example.com".to_string()),
-        TracingQuery::Keywords("jdoe@example.com".to_string()),
-        TracingQuery::Keywords("example.com".to_string()),
-    ] {
-        assert_eq!(
-            store.query_spans(&[query], 0, 0).await.unwrap(),
-            Vec::<u64>::new()
-        );
-    }
+    assert_eq!(
+        query
+            .query_global(SearchQuery::new(SearchIndex::Tracing).with_filters(vec![
+                SearchFilter::Operator {
+                    field: SearchField::Id,
+                    op: SearchOperator::GreaterThan,
+                    value: SearchValue::Uint(0),
+                },
+            ]))
+            .await
+            .unwrap(),
+        Vec::<u64>::new()
+    );
 }
 
 async fn metrics(params: &mut JMAPTest) {

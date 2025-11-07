@@ -53,30 +53,27 @@ pub(crate) fn spawn_store_tracer(builder: SubscriberBuilder, settings: StoreTrac
                             .any(|(k, v)| matches!((k, v), (Key::QueueId, Value::UInt(_))))
                     {
                         // Serialize events
-                        batch.set(
-                            ValueClass::Telemetry(TelemetryClass::Span { span_id }),
-                            serialize_events(
-                                [span.as_ref()]
-                                    .into_iter()
-                                    .chain(events.iter().map(|event| event.as_ref()))
-                                    .chain([event.as_ref()].into_iter()),
-                                events.len() + 2,
-                            ),
-                        );
-
-                        if settings.indexed {
-                            batch
-                                .with_account_id((span_id >> 32) as u32) // TODO: This is hacky, improve
-                                .with_document(span_id as u32)
-                                .set(
-                                    ValueClass::TaskQueue(TaskQueueClass::UpdateIndex {
-                                        due: now,
-                                        index: SearchIndex::Tracing,
-                                        is_insert: true,
-                                    }),
-                                    vec![],
-                                );
-                        }
+                        batch
+                            .set(
+                                ValueClass::Telemetry(TelemetryClass::Span { span_id }),
+                                serialize_events(
+                                    [span.as_ref()]
+                                        .into_iter()
+                                        .chain(events.iter().map(|event| event.as_ref()))
+                                        .chain([event.as_ref()].into_iter()),
+                                    events.len() + 2,
+                                ),
+                            )
+                            .with_account_id((span_id >> 32) as u32) // TODO: This is hacky, improve
+                            .with_document(span_id as u32)
+                            .set(
+                                ValueClass::TaskQueue(TaskQueueClass::UpdateIndex {
+                                    due: now,
+                                    index: SearchIndex::Tracing,
+                                    is_insert: true,
+                                }),
+                                vec![],
+                            );
                     }
                 }
             }

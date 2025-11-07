@@ -442,15 +442,25 @@ impl ValueClass {
                 .write(u8::from(SyncCollection::ShareNotification))
                 .write(*notification_id),
             ValueClass::SearchIndex(index) => match &index.typ {
-                SearchIndexType::Term { account_id, hash } => {
+                SearchIndexType::Term {
+                    account_id,
+                    field,
+                    hash,
+                } => {
                     let class = index.index.as_u8();
                     if let Some(account_id) = account_id {
                         serializer
                             .write(class)
                             .write(*account_id)
-                            .write(hash.as_bytes())
+                            .write(hash.payload())
+                            .write(hash.payload_len())
+                            .write(*field)
                     } else {
-                        serializer.write(class).write(hash.as_bytes())
+                        serializer
+                            .write(class)
+                            .write(hash.payload())
+                            .write(hash.payload_len())
+                            .write(*field)
                     }
                 }
                 SearchIndexType::Index { id, field } => {
@@ -590,11 +600,13 @@ impl ValueClass {
             ValueClass::ChangeId => U32_LEN,
             ValueClass::ShareNotification { .. } => U32_LEN + U64_LEN + 1,
             ValueClass::SearchIndex(v) => match &v.typ {
-                SearchIndexType::Term { account_id, hash } => {
+                SearchIndexType::Term {
+                    account_id, hash, ..
+                } => {
                     if account_id.is_some() {
-                        1 + U32_LEN + hash.len()
+                        2 + U32_LEN + hash.len()
                     } else {
-                        1 + hash.len()
+                        2 + hash.len()
                     }
                 }
                 SearchIndexType::Index { field, .. } => 1 + field.len as usize + U64_LEN,

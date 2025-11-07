@@ -13,18 +13,18 @@ use std::{
     time::Instant,
 };
 use store::{
-    FtsStore, SerializeInfallible,
+    SearchStore, SerializeInfallible,
     ahash::AHashMap,
-    fts::{Field, FtsFilter, index::FtsDocument},
-    query::sort::Pagination,
-    write::{BitmapClass, Operation, TagValue, ValueClass},
+    roaring::RoaringBitmap,
+    search::{
+        EmailSearchField, IndexDocument, SearchComparator, SearchField, SearchFilter,
+        SearchOperator, SearchQuery, SearchValue,
+    },
+    write::{Operation, SearchIndex, ValueClass},
 };
-use store::{
-    Store, ValueKey,
-    query::{Comparator, Filter},
-    write::BatchBuilder,
-};
+use store::{Store, ValueKey, write::BatchBuilder};
 use types::collection::Collection;
+use utils::map::vec_map::VecMap;
 
 pub const FIELDS: [&str; 20] = [
     "id",
@@ -49,64 +49,44 @@ pub const FIELDS: [&str; 20] = [
     "url",
 ];
 
-const COLLECTION_ID: Collection = Collection::Email;
+/*
+ "title", // Subject
+ "year".   // ReceivedAt
+ "width",  // Size
+ "height", // SentAt
+ "artist" // Headers
+ "artistRole" // Cc
+ "medium",  // From
+ "creditLine" // Body
+ "acquisitionYear" // Bcc
+ "accession_number" // To
+*/
 
-enum FieldType {
-    Keyword,
-    Text,
-    FullText,
-    Integer,
-}
-
-const FIELDS_OPTIONS: [FieldType; 20] = [
-    FieldType::Integer,  // "id",
-    FieldType::Keyword,  // "accession_number",
-    FieldType::Text,     // "artist",
-    FieldType::Keyword,  // "artistRole",
-    FieldType::Integer,  // "artistId",
-    FieldType::FullText, // "title",
-    FieldType::FullText, // "dateText",
-    FieldType::FullText, // "medium",
-    FieldType::FullText, // "creditLine",
-    FieldType::Integer,  // "year",
-    FieldType::Integer,  // "acquisitionYear",
-    FieldType::FullText, // "dimensions",
-    FieldType::Integer,  // "width",
-    FieldType::Integer,  // "height",
-    FieldType::Integer,  // "depth",
-    FieldType::Text,     // "units",
-    FieldType::FullText, // "inscription",
-    FieldType::Text,     // "thumbnailCopyright",
-    FieldType::Text,     // "thumbnailUrl",
-    FieldType::Text,     // "url",
+const FIELD_MAPPINGS: [EmailSearchField; 20] = [
+    EmailSearchField::HasAttachment, // "id",
+    EmailSearchField::To,            // "accession_number",
+    EmailSearchField::Headers,       // "artist",
+    EmailSearchField::Cc,            // "artistRole",
+    EmailSearchField::HasAttachment, // "artistId",
+    EmailSearchField::Subject,       // "title",
+    EmailSearchField::HasAttachment, // "dateText",
+    EmailSearchField::From,          // "medium",
+    EmailSearchField::Body,          // "creditLine",
+    EmailSearchField::ReceivedAt,    // "year",
+    EmailSearchField::Bcc,           // "acquisitionYear",
+    EmailSearchField::HasAttachment, // "dimensions",
+    EmailSearchField::Size,          // "width",
+    EmailSearchField::SentAt,        // "height",
+    EmailSearchField::HasAttachment, // "depth",
+    EmailSearchField::HasAttachment, // "units",
+    EmailSearchField::HasAttachment, // "inscription",
+    EmailSearchField::HasAttachment, // "thumbnailCopyright",
+    EmailSearchField::HasAttachment, // "thumbnailUrl",
+    EmailSearchField::HasAttachment, // "url",
 ];
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct FieldId(u8);
-
-impl From<FieldId> for u8 {
-    fn from(field_id: FieldId) -> Self {
-        field_id.0
-    }
-}
-impl Display for FieldId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", FIELDS[self.0 as usize])
-    }
-}
-
-impl FieldId {
-    pub fn new(field_id: u8) -> Field<FieldId> {
-        Field::Header(Self(field_id))
-    }
-
-    pub fn inner(&self) -> u8 {
-        self.0
-    }
-}
-
 #[allow(clippy::mutex_atomic)]
-pub async fn test(db: Store, fts_store: FtsStore, do_insert: bool) {
+pub async fn test(store: SearchStore, do_insert: bool) {
     println!("Running Store query tests...");
 
     let pool = rayon::ThreadPoolBuilder::new()
@@ -128,85 +108,52 @@ pub async fn test(db: Store, fts_store: FtsStore, do_insert: bool) {
                 let documents = documents.clone();
 
                 s.spawn_fifo(move |_| {
-                    let mut fts_builder = FtsDocument::with_default_language(Language::English)
+                    let mut document = IndexDocument::new(SearchIndex::Email)
                         .with_account_id(0)
-                        .with_collection(COLLECTION_ID)
                         .with_document_id(document_id as u32);
-                    let mut builder = BatchBuilder::new();
-                    builder
-                        .with_account_id(0)
-                        .with_collection(COLLECTION_ID)
-                        .create_document(document_id as u32);
                     for (pos, field) in record.iter().enumerate() {
                         let field_id = pos as u8;
-                        match FIELDS_OPTIONS[pos] {
-                            FieldType::Text => {
-                                if !field.is_empty() {
-                                    builder
-                                        .any_op(Operation::Index {
-                                            field: field_id,
-                                            key: field.to_lowercase().into_bytes(),
-                                            set: true,
-                                        })
-                                        .set(
-                                            ValueClass::Property(field_id),
-                                            field.to_lowercase().into_bytes(),
-                                        );
-                                }
+                        match FIELD_MAPPINGS[pos] {
+                            EmailSearchField::From
+                            | EmailSearchField::To
+                            | EmailSearchField::Cc => {
+                                document.index_text(
+                                    FIELD_MAPPINGS[pos],
+                                    &field.to_lowercase(),
+                                    Language::None,
+                                );
                             }
-                            FieldType::FullText => {
-                                if !field.is_empty() {
-                                    fts_builder.index(
-                                        FieldId::new(field_id),
-                                        field.to_lowercase(),
-                                        Language::English,
-                                    );
-                                    if field_id == 7 {
-                                        builder.any_op(Operation::Index {
-                                            field: field_id,
-                                            key: field.to_lowercase().into_bytes(),
-                                            set: true,
-                                        });
-                                    }
-                                }
+                            EmailSearchField::Subject
+                            | EmailSearchField::Body
+                            | EmailSearchField::Attachment => {
+                                document.index_text(
+                                    FIELD_MAPPINGS[pos],
+                                    &field.to_lowercase(),
+                                    Language::English,
+                                );
                             }
-                            FieldType::Integer => {
-                                let field = field.parse::<u32>().unwrap_or(0);
-                                builder
-                                    .any_op(Operation::Index {
-                                        field: field_id,
-                                        key: field.serialize(),
-                                        set: true,
-                                    })
-                                    .set(ValueClass::Property(field_id), field.serialize());
+                            EmailSearchField::Headers => {
+                                document.insert_key_value(
+                                    EmailSearchField::Headers,
+                                    "artist",
+                                    field.to_lowercase(),
+                                );
                             }
-                            FieldType::Keyword => {
-                                if !field.is_empty() {
-                                    builder
-                                        .set(
-                                            ValueClass::Property(field_id),
-                                            field.to_lowercase().into_bytes(),
-                                        )
-                                        .any_op(Operation::Bitmap {
-                                            class: BitmapClass::Tag {
-                                                field: field_id,
-                                                value: TagValue::Text(
-                                                    field.to_lowercase().into_bytes(),
-                                                ),
-                                            },
-                                            set: true,
-                                        })
-                                        .any_op(Operation::Index {
-                                            field: field_id,
-                                            key: field.to_lowercase().into_bytes(),
-                                            set: true,
-                                        });
-                                }
+                            EmailSearchField::ReceivedAt
+                            | EmailSearchField::SentAt
+                            | EmailSearchField::Size => {
+                                document.index_unsigned(
+                                    FIELD_MAPPINGS[pos],
+                                    field.parse::<u64>().unwrap_or(0),
+                                );
                             }
-                        }
+                            _ => {
+                                continue;
+                            }
+                        };
                     }
 
-                    documents.lock().unwrap().push((builder, fts_builder));
+                    documents.lock().unwrap().push(document);
                 });
             }
         });
@@ -223,7 +170,7 @@ pub async fn test(db: Store, fts_store: FtsStore, do_insert: bool) {
         let mut fts_chunk = Vec::new();
 
         print!("Inserting... ",);
-        for (mut batch, fts_batch) in batches {
+        for document in batches {
             let chunk_instance = Instant::now();
             chunk.push({
                 let db = db.clone();
@@ -267,120 +214,76 @@ pub async fn test(db: Store, fts_store: FtsStore, do_insert: bool) {
     println!("Sorting took {} ms.", now.elapsed().as_millis());
 }
 
-pub async fn test_filter(db: Store, fts: FtsStore) {
-    let mut fields = AHashMap::default();
-    let mut fields_u8 = AHashMap::default();
-    for (field_num, field) in FIELDS.iter().enumerate() {
-        fields.insert(field.to_string(), FieldId::new(field_num as u8));
-        fields_u8.insert(field.to_string(), field_num as u8);
-    }
-
+pub async fn test_filter(
+    store: SearchStore,
+    fields: &AHashMap<u32, &'static str>,
+    mask: &RoaringBitmap,
+) {
     let tests = [
         (
             vec![
-                Filter::is_in_set(
-                    fts.query(
-                        0,
-                        COLLECTION_ID,
-                        vec![FtsFilter::has_english_text(
-                            fields["title"].clone(),
-                            "water",
-                        )],
-                    )
-                    .await
-                    .unwrap(),
-                ),
-                Filter::eq(fields_u8["year"], 1979u32.serialize()),
+                SearchFilter::has_english_text(EmailSearchField::Subject, "water"),
+                SearchFilter::eq(EmailSearchField::ReceivedAt, 1979u32),
             ],
             vec!["p11293"],
         ),
         (
             vec![
-                Filter::is_in_set(
-                    fts.query(
-                        0,
-                        COLLECTION_ID,
-                        vec![FtsFilter::has_english_text(
-                            fields["medium"].clone(),
-                            "gelatin",
-                        )],
-                    )
-                    .await
-                    .unwrap(),
-                ),
-                Filter::gt(fields_u8["year"], 2000u32.serialize()),
-                Filter::lt(fields_u8["width"], 180u32.serialize()),
-                Filter::gt(fields_u8["width"], 0u32.serialize()),
+                SearchFilter::has_keyword(EmailSearchField::From, "gelatin"),
+                SearchFilter::gt(EmailSearchField::ReceivedAt, 2000u32),
+                SearchFilter::lt(EmailSearchField::Size, 180u32),
+                SearchFilter::gt(EmailSearchField::Size, 0u32),
             ],
             vec!["p79426", "p79427", "p79428", "p79429", "p79430"],
         ),
         (
-            vec![Filter::is_in_set(
-                fts.query(
-                    0,
-                    COLLECTION_ID,
-                    vec![FtsFilter::has_english_text(
-                        fields["title"].clone(),
-                        "'rustic bridge'",
-                    )],
-                )
-                .await
-                .unwrap(),
+            vec![SearchFilter::has_english_text(
+                EmailSearchField::Subject,
+                "'rustic bridge'",
             )],
             vec!["d05503"],
         ),
         (
-            vec![Filter::is_in_set(
-                fts.query(
-                    0,
-                    COLLECTION_ID,
-                    vec![
-                        FtsFilter::has_english_text(fields["title"].clone(), "'rustic'"),
-                        FtsFilter::has_english_text(fields["title"].clone(), "study"),
-                    ],
-                )
-                .await
-                .unwrap(),
-            )],
+            vec![
+                SearchFilter::has_english_text(EmailSearchField::Subject, "'rustic'"),
+                SearchFilter::has_english_text(EmailSearchField::Subject, "study"),
+            ],
             vec!["d00399", "d05352"],
         ),
         (
             vec![
-                Filter::contains(fields_u8["artist"], "kunst, mauro"),
-                Filter::is_in_bitmap(fields_u8["artistRole"], TagValue::Text("artist".into())),
-                Filter::Or,
-                Filter::eq(fields_u8["year"], 1969u32.serialize()),
-                Filter::eq(fields_u8["year"], 1971u32.serialize()),
-                Filter::End,
+                SearchFilter::cond(
+                    EmailSearchField::Headers,
+                    SearchOperator::Contains,
+                    SearchValue::KeyValues(VecMap::from_iter([(
+                        "artist".to_string(),
+                        "kunst mauro".to_string(),
+                    )])),
+                ),
+                SearchFilter::has_keyword(EmailSearchField::Cc, "artist"),
+                SearchFilter::Or,
+                SearchFilter::eq(EmailSearchField::ReceivedAt, 1969u32),
+                SearchFilter::eq(EmailSearchField::ReceivedAt, 1971u32),
+                SearchFilter::End,
             ],
             vec!["p01764", "t05843"],
         ),
         (
             vec![
-                Filter::is_in_set(
-                    fts.query(
-                        0,
-                        COLLECTION_ID,
-                        vec![
-                            FtsFilter::Not,
-                            FtsFilter::has_english_text(fields["medium"].clone(), "oil"),
-                            FtsFilter::End,
-                            FtsFilter::has_english_text(fields["creditLine"].clone(), "bequeath"),
-                        ],
-                    )
-                    .await
-                    .unwrap(),
-                ),
-                Filter::Or,
-                Filter::And,
-                Filter::ge(fields_u8["year"], 1900u32.serialize()),
-                Filter::lt(fields_u8["year"], 1910u32.serialize()),
-                Filter::End,
-                Filter::And,
-                Filter::ge(fields_u8["year"], 2000u32.serialize()),
-                Filter::lt(fields_u8["year"], 2010u32.serialize()),
-                Filter::End,
-                Filter::End,
+                SearchFilter::Not,
+                SearchFilter::has_keyword(EmailSearchField::From, "oil"),
+                SearchFilter::End,
+                SearchFilter::has_english_text(EmailSearchField::Body, "bequeath"),
+                SearchFilter::Or,
+                SearchFilter::And,
+                SearchFilter::ge(EmailSearchField::ReceivedAt, 1900u32),
+                SearchFilter::lt(EmailSearchField::ReceivedAt, 1910u32),
+                SearchFilter::End,
+                SearchFilter::And,
+                SearchFilter::ge(EmailSearchField::ReceivedAt, 2000u32),
+                SearchFilter::lt(EmailSearchField::ReceivedAt, 2010u32),
+                SearchFilter::End,
+                SearchFilter::End,
             ],
             vec![
                 "n02478", "n02479", "n03568", "n03658", "n04327", "n04328", "n04721", "n04739",
@@ -390,60 +293,43 @@ pub async fn test_filter(db: Store, fts: FtsStore) {
         ),
         (
             vec![
-                Filter::And,
-                Filter::contains(fields_u8["artist"], "warhol"),
-                Filter::Not,
-                Filter::is_in_set(
-                    fts.query(
-                        0,
-                        COLLECTION_ID,
-                        vec![FtsFilter::has_english_text(
-                            fields["title"].clone(),
-                            "'campbell'",
-                        )],
-                    )
-                    .await
-                    .unwrap(),
+                SearchFilter::And,
+                SearchFilter::cond(
+                    EmailSearchField::Headers,
+                    SearchOperator::Contains,
+                    SearchValue::KeyValues(VecMap::from_iter([(
+                        "artist".to_string(),
+                        "warhol".to_string(),
+                    )])),
                 ),
-                Filter::End,
-                Filter::Not,
-                Filter::Or,
-                Filter::gt(fields_u8["year"], 1980u32.serialize()),
-                Filter::And,
-                Filter::gt(fields_u8["width"], 500u32.serialize()),
-                Filter::gt(fields_u8["height"], 500u32.serialize()),
-                Filter::End,
-                Filter::End,
-                Filter::End,
-                Filter::eq(fields_u8["acquisitionYear"], 2008u32.serialize()),
-                Filter::End,
+                SearchFilter::Not,
+                SearchFilter::has_english_text(EmailSearchField::Subject, "'campbell'"),
+                SearchFilter::End,
+                SearchFilter::Not,
+                SearchFilter::Or,
+                SearchFilter::gt(EmailSearchField::ReceivedAt, 1980u32),
+                SearchFilter::And,
+                SearchFilter::gt(EmailSearchField::Size, 500u32),
+                SearchFilter::gt(EmailSearchField::SentAt, 500u32),
+                SearchFilter::End,
+                SearchFilter::End,
+                SearchFilter::End,
+                SearchFilter::eq(EmailSearchField::Bcc, "2008".to_string()),
+                SearchFilter::End,
             ],
             vec!["ar00039", "t12600"],
         ),
         (
             vec![
-                Filter::is_in_set(
-                    fts.query(
-                        0,
-                        COLLECTION_ID,
-                        vec![
-                            FtsFilter::has_english_text(fields["title"].clone(), "study"),
-                            FtsFilter::has_english_text(fields["medium"].clone(), "paper"),
-                            FtsFilter::has_english_text(
-                                fields["creditLine"].clone(),
-                                "'purchased'",
-                            ),
-                            FtsFilter::Not,
-                            FtsFilter::has_english_text(fields["title"].clone(), "'anatomical'"),
-                            FtsFilter::has_english_text(fields["title"].clone(), "'for'"),
-                            FtsFilter::End,
-                        ],
-                    )
-                    .await
-                    .unwrap(),
-                ),
-                Filter::gt(fields_u8["year"], 1900u32.serialize()),
-                Filter::gt(fields_u8["acquisitionYear"], 2000u32.serialize()),
+                SearchFilter::has_english_text(EmailSearchField::Subject, "study"),
+                SearchFilter::has_keyword(EmailSearchField::From, "paper"),
+                SearchFilter::has_english_text(EmailSearchField::Body, "'purchased'"),
+                SearchFilter::Not,
+                SearchFilter::has_english_text(EmailSearchField::Subject, "'anatomical'"),
+                SearchFilter::has_english_text(EmailSearchField::Subject, "'for'"),
+                SearchFilter::End,
+                SearchFilter::gt(EmailSearchField::ReceivedAt, 1900u32),
+                SearchFilter::gt(EmailSearchField::Bcc, "2008".to_string()),
             ],
             vec![
                 "p80042", "p80043", "p80044", "p80045", "p80203", "t11937", "t12172",
@@ -451,54 +337,44 @@ pub async fn test_filter(db: Store, fts: FtsStore) {
         ),
     ];
 
-    for (filter, expected_results) in tests {
+    for (filters, expected_results) in tests {
         //println!("Running test: {:?}", filter);
-        let docset = db.filter(0, COLLECTION_ID, filter).await.unwrap();
-        let sorted_docset = db
-            .sort(
-                docset,
-                vec![Comparator::ascending(fields_u8["accession_number"])],
-                Pagination::new(0, 0, None, 0),
+        let ids = store
+            .query_account(
+                SearchQuery::new(SearchIndex::Email)
+                    .with_filters(filters)
+                    .with_comparator(SearchComparator::ascending(EmailSearchField::To))
+                    .with_mask(mask.clone()),
             )
             .await
             .unwrap();
 
         let mut results = Vec::new();
-        for document_id in sorted_docset.ids {
-            results.push(
-                db.get_value::<String>(ValueKey {
-                    account_id: 0,
-                    collection: COLLECTION_ID.into(),
-                    document_id: document_id.document_id(),
-                    class: ValueClass::Property(fields_u8["accession_number"]),
-                })
-                .await
-                .unwrap()
-                .unwrap(),
-            );
+        for document_id in ids {
+            results.push(*fields.get(&document_id).unwrap());
         }
         assert_eq!(results, expected_results);
     }
 }
 
-pub async fn test_sort(db: Store) {
-    let mut fields = AHashMap::default();
-    for (field_num, field) in FIELDS.iter().enumerate() {
-        fields.insert(field.to_string(), field_num as u8);
-    }
-
+pub async fn test_sort(
+    store: SearchStore,
+    fields: &AHashMap<u32, &'static str>,
+    mask: &RoaringBitmap,
+) {
     let tests = [
         (
             vec![
-                Filter::gt(fields["year"], 0u32.serialize()),
-                Filter::gt(fields["acquisitionYear"], 0u32.serialize()),
-                Filter::gt(fields["width"], 0u32.serialize()),
+                SearchFilter::eq(SearchField::AccountId, 0u32),
+                SearchFilter::gt(EmailSearchField::ReceivedAt, 0u32),
+                SearchFilter::gt(EmailSearchField::Bcc, "0000".to_string()),
+                SearchFilter::gt(EmailSearchField::Size, 0u32),
             ],
             vec![
-                Comparator::descending(fields["year"]),
-                Comparator::ascending(fields["acquisitionYear"]),
-                Comparator::ascending(fields["width"]),
-                Comparator::descending(fields["accession_number"]),
+                SearchComparator::descending(EmailSearchField::ReceivedAt),
+                SearchComparator::ascending(EmailSearchField::Bcc),
+                SearchComparator::ascending(EmailSearchField::Size),
+                SearchComparator::descending(EmailSearchField::To),
             ],
             vec![
                 "t13655", "t13811", "p13352", "p13351", "p13350", "p13349", "p13348", "p13347",
@@ -512,12 +388,13 @@ pub async fn test_sort(db: Store) {
         ),
         (
             vec![
-                Filter::gt(fields["width"], 0u32.serialize()),
-                Filter::gt(fields["height"], 0u32.serialize()),
+                SearchFilter::eq(SearchField::AccountId, 0u32),
+                SearchFilter::gt(EmailSearchField::Size, 0u32),
+                SearchFilter::gt(EmailSearchField::SentAt, 0u32),
             ],
             vec![
-                Comparator::descending(fields["width"]),
-                Comparator::ascending(fields["height"]),
+                SearchComparator::descending(EmailSearchField::Size),
+                SearchComparator::ascending(EmailSearchField::SentAt),
             ],
             vec![
                 "t03681", "t12601", "ar00166", "t12625", "t12915", "p04182", "t06483", "ar00703",
@@ -526,11 +403,11 @@ pub async fn test_sort(db: Store) {
             ],
         ),
         (
-            vec![],
+            vec![SearchFilter::eq(SearchField::AccountId, 0u32)],
             vec![
-                Comparator::descending(fields["medium"]),
-                Comparator::descending(fields["artistRole"]),
-                Comparator::ascending(fields["accession_number"]),
+                SearchComparator::descending(EmailSearchField::From),
+                SearchComparator::descending(EmailSearchField::Cc),
+                SearchComparator::ascending(EmailSearchField::To),
             ],
             vec![
                 "ar00627", "ar00052", "t00352", "t07275", "t12318", "t04931", "t13683", "t13686",
@@ -540,32 +417,21 @@ pub async fn test_sort(db: Store) {
         ),
     ];
 
-    for (filter, sort, expected_results) in tests {
+    for (filters, comparators, expected_results) in tests {
         //println!("Running test: {:?}", sort);
-        let docset = db.filter(0, COLLECTION_ID, filter).await.unwrap();
-
-        let sorted_docset = db
-            .sort(
-                docset,
-                sort,
-                Pagination::new(expected_results.len(), 0, None, 0),
+        let ids = store
+            .query_account(
+                SearchQuery::new(SearchIndex::Email)
+                    .with_filters(filters)
+                    .with_comparators(comparators)
+                    .with_mask(mask.clone()),
             )
             .await
             .unwrap();
 
         let mut results = Vec::new();
-        for document_id in sorted_docset.ids {
-            results.push(
-                db.get_value::<String>(ValueKey {
-                    account_id: 0,
-                    collection: COLLECTION_ID.into(),
-                    document_id: document_id.document_id(),
-                    class: ValueClass::Property(fields["accession_number"]),
-                })
-                .await
-                .unwrap()
-                .unwrap(),
-            );
+        for document_id in ids {
+            results.push(*fields.get(&document_id).unwrap());
         }
         assert_eq!(results, expected_results);
     }

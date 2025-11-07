@@ -10,7 +10,8 @@
 
 use crate::{
     Deserialize, IterateParams, Key, Store, Stores, ValueKey,
-    write::{AssignedIds, Batch, ValueClass},
+    search::{IndexDocument, SearchComparator, SearchDocumentId, SearchFilter, SearchQuery},
+    write::{AssignedIds, Batch, SearchIndex, ValueClass},
 };
 use std::{
     future::Future,
@@ -282,6 +283,41 @@ impl SQLReadReplica {
             Store::PostgreSQL(store) => store.purge_store().await,
             #[cfg(feature = "mysql")]
             Store::MySQL(store) => store.purge_store().await,
+            _ => panic!("Invalid store type"),
+        }
+    }
+
+    pub async fn index(&self, documents: Vec<IndexDocument>) -> trc::Result<()> {
+        match &self.primary {
+            #[cfg(feature = "postgres")]
+            Store::PostgreSQL(store) => store.index(documents).await,
+            #[cfg(feature = "mysql")]
+            Store::MySQL(store) => store.index(documents).await,
+            _ => panic!("Invalid store type"),
+        }
+    }
+
+    pub async fn unindex(&self, query: SearchQuery) -> trc::Result<u64> {
+        match &self.primary {
+            #[cfg(feature = "postgres")]
+            Store::PostgreSQL(store) => store.unindex(query).await,
+            #[cfg(feature = "mysql")]
+            Store::MySQL(store) => store.unindex(query).await,
+            _ => panic!("Invalid store type"),
+        }
+    }
+
+    pub async fn query<R: SearchDocumentId>(
+        &self,
+        index: SearchIndex,
+        filters: &[SearchFilter],
+        sort: &[SearchComparator],
+    ) -> trc::Result<Vec<R>> {
+        match &self.primary {
+            #[cfg(feature = "postgres")]
+            Store::PostgreSQL(store) => store.query(index, filters, sort).await,
+            #[cfg(feature = "mysql")]
+            Store::MySQL(store) => store.query(index, filters, sort).await,
             _ => panic!("Invalid store type"),
         }
     }

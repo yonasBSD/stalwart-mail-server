@@ -328,7 +328,7 @@ impl EmailQuery for Server {
 
         let results = self
             .search_store()
-            .query(
+            .query_account(
                 SearchQuery::new(SearchIndex::Email)
                     .with_filters(filters)
                     .with_comparators(comparators)

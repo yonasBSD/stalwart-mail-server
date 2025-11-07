@@ -6,7 +6,7 @@
 
 use crate::{
     imap::{AssertResult, ImapConnection, Type},
-    jmap::{JMAPTest},
+    jmap::JMAPTest,
 };
 use ahash::AHashSet;
 use common::Server;
@@ -18,7 +18,7 @@ use email::{
 };
 use imap_proto::ResponseType;
 use store::{IterateParams, LogKey, U32_LEN, U64_LEN, write::key::DeserializeBigEndian};
-use types::{collection::Collection, id::Id};
+use types::id::Id;
 
 pub async fn test(params: &mut JMAPTest) {
     println!("Running purge tests...");
@@ -93,10 +93,11 @@ pub async fn test(params: &mut JMAPTest) {
     // Make sure both messages and changes are present
     assert_eq!(
         server
-            .get_document_ids(account.id().document_id(), Collection::Email)
+            .get_cached_messages(account.id().document_id())
             .await
             .unwrap()
-            .unwrap()
+            .emails
+            .items
             .len(),
         6
     );
@@ -111,10 +112,11 @@ pub async fn test(params: &mut JMAPTest) {
     // Only 4 messages should remain
     assert_eq!(
         server
-            .get_document_ids(account.id().document_id(), Collection::Email)
+            .get_cached_messages(account.id().document_id())
             .await
             .unwrap()
-            .unwrap()
+            .emails
+            .items
             .len(),
         4
     );

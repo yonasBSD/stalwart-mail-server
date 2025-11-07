@@ -5,17 +5,15 @@
  */
 
 pub mod blob;
-pub mod import_export;
+//pub mod import_export;
 pub mod lookup;
 pub mod ops;
 pub mod query;
 
-use std::io::Read;
-
-use store::{FtsStore, Stores};
-use utils::config::Config;
-
 use crate::AssertConfig;
+use std::io::Read;
+use store::{SearchStore, Stores};
+use utils::config::Config;
 
 pub struct TempDir {
     pub path: std::path::PathBuf,
@@ -97,7 +95,7 @@ pub async fn store_tests() {
 
     //import_export::test(store.clone()).await;
     ops::test(store.clone()).await;
-    query::test(store.clone(), FtsStore::Store(store.clone()), insert).await;
+    query::test(SearchStore::Store(store.clone()), insert).await;
 
     if insert {
         temp_dir.delete();

@@ -367,28 +367,29 @@ impl JmapConfig {
             SearchIndex::Email,
             SearchIndex::Contacts,
             SearchIndex::Calendar,
+            SearchIndex::Tracing,
         ] {
             let mut fields = AHashSet::new();
-            let todo = "implement";
-            /*for field_str in config.values(&format!(
-                "jmap.index.{}.fields",
-                index.as_config_case()
-            )) {
-                match SearchField::try_from(field_str.1.as_str()) {
-                    Ok(field) => {
-                        fields.insert(field);
-                    }
-                    Err(_) => {
-                        config.new_parse_error(
-                            &format!(
-                                "jmap.index.{}.fields",
-                                index.as_config_case()
-                            ),
-                            format!("Invalid search field: {}", field_str.1),
-                        );
-                    }
-                }
-            }*/
+            let index_name = match index {
+                SearchIndex::Email => "email",
+                SearchIndex::Contacts => "contacts",
+                SearchIndex::Calendar => "calendar",
+                SearchIndex::Tracing => "tracing",
+                _ => unreachable!(),
+            };
+
+            if !config
+                .property_or_default::<bool>(&format!("jmap.index.{index_name}.enabled"), "true")
+                .unwrap_or(true)
+            {
+                continue;
+            }
+
+            for (_, field) in
+                config.properties::<SearchField>(&format!("jmap.index.{index_name}.fields"))
+            {
+                fields.insert(field);
+            }
             jmap.index_fields.insert(index, fields);
         }
 

@@ -5,9 +5,7 @@
  */
 
 use crate::{
-    directory::internal::TestInternalDirectory,
-    jmap::{JMAPTest},
-    webdav::DummyWebDavClient,
+    directory::internal::TestInternalDirectory, jmap::JMAPTest, webdav::DummyWebDavClient,
 };
 use email::{
     cache::{MessageCacheFetch, email::MessageCacheAccess},
@@ -19,7 +17,6 @@ use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines, ReadHalf, WriteHalf},
     net::TcpStream,
 };
-use types::collection::Collection;
 
 pub async fn test(params: &mut JMAPTest) {
     println!("Running message delivery tests...");
@@ -68,15 +65,7 @@ pub async fn test(params: &mut JMAPTest) {
         .await
         .unwrap();
 
-    assert_eq!(
-        server
-            .get_document_ids(john.id().document_id(), Collection::Email)
-            .await
-            .unwrap()
-            .unwrap()
-            .len(),
-        1
-    );
+    assert_eq!(john_cache.emails.items.len(), 1);
     assert_eq!(john_cache.in_mailbox(INBOX_ID).count(), 1);
     assert_eq!(john_cache.in_mailbox(JUNK_ID).count(), 0);
 
@@ -101,15 +90,7 @@ pub async fn test(params: &mut JMAPTest) {
         .await
         .unwrap();
 
-    assert_eq!(
-        server
-            .get_document_ids(john.id().document_id(), Collection::Email)
-            .await
-            .unwrap()
-            .unwrap()
-            .len(),
-        2
-    );
+    assert_eq!(john_cache.emails.items.len(), 2);
     assert_eq!(john_cache.in_mailbox(INBOX_ID).count(), 1);
     assert_eq!(john_cache.in_mailbox(JUNK_ID).count(), 1);
 
@@ -152,15 +133,7 @@ END:VCARD
         .await
         .unwrap();
 
-    assert_eq!(
-        server
-            .get_document_ids(john.id().document_id(), Collection::Email)
-            .await
-            .unwrap()
-            .unwrap()
-            .len(),
-        3
-    );
+    assert_eq!(john_cache.emails.items.len(), 3);
     assert_eq!(john_cache.in_mailbox(INBOX_ID).count(), 2);
     assert_eq!(john_cache.in_mailbox(JUNK_ID).count(), 1);
     dav_client.delete_default_containers().await;
@@ -195,10 +168,11 @@ END:VCARD
     for (account, num_messages) in [(john, 4), (jane, 1), (bill, 1)] {
         assert_eq!(
             server
-                .get_document_ids(account.id().document_id(), Collection::Email)
+                .get_cached_messages(account.id().document_id())
                 .await
                 .unwrap()
-                .unwrap()
+                .emails
+                .items
                 .len(),
             num_messages,
             "for {}",
@@ -232,10 +206,11 @@ END:VCARD
     for (account, num_messages) in [(john, 4), (jane, 2), (bill, 2)] {
         assert_eq!(
             server
-                .get_document_ids(account.id().document_id(), Collection::Email)
+                .get_cached_messages(account.id().document_id())
                 .await
                 .unwrap()
-                .unwrap()
+                .emails
+                .items
                 .len(),
             num_messages,
             "for {}",
@@ -267,10 +242,11 @@ END:VCARD
     for (account, num_messages) in [(john, 5), (jane, 3), (bill, 3)] {
         assert_eq!(
             server
-                .get_document_ids(account.id().document_id(), Collection::Email)
+                .get_cached_messages(account.id().document_id())
                 .await
                 .unwrap()
-                .unwrap()
+                .emails
+                .items
                 .len(),
             num_messages,
             "for {}",
