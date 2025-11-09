@@ -304,14 +304,12 @@ impl CalendarEventQuery for Server {
                 if !expanded_results.is_empty() {
                     expanded_results.sort_by(|a, b| {
                         for comparator in comparators {
-                            let ordering = a
-                                .get_property(&comparator.property)
-                                .cmp(b.get_property(&comparator.property));
-
                             let ordering = if comparator.is_ascending {
-                                ordering.reverse()
+                                a.get_property(&comparator.property)
+                                    .cmp(b.get_property(&comparator.property))
                             } else {
-                                ordering
+                                b.get_property(&comparator.property)
+                                    .cmp(a.get_property(&comparator.property))
                             };
 
                             if ordering != Ordering::Equal {

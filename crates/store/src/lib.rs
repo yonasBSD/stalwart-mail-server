@@ -691,8 +691,8 @@ impl Store {
 
     pub fn is_pg_or_mysql(&self) -> bool {
         match self {
-            #[cfg(feature = "sqlite")]
-            Store::SQLite(_) => true,
+            #[cfg(feature = "mysql")]
+            Store::MySQL(_) => true,
             #[cfg(feature = "postgres")]
             Store::PostgreSQL(_) => true,
             _ => false,

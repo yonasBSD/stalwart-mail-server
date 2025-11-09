@@ -41,6 +41,7 @@ impl SearchableField for EmailSearchField {
                     | EmailSearchField::To
                     | EmailSearchField::Subject
                     | EmailSearchField::ReceivedAt
+                    | EmailSearchField::SentAt
                     | EmailSearchField::Size
                     | EmailSearchField::HasAttachment,
             )
@@ -57,7 +58,8 @@ impl SearchableField for EmailSearchField {
                     | EmailSearchField::SentAt
                     | EmailSearchField::Size
                     | EmailSearchField::HasAttachment
-                    | EmailSearchField::Bcc,
+                    | EmailSearchField::Bcc
+                    | EmailSearchField::Cc
             )
         }
     }

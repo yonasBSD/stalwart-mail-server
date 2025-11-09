@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use trc::AddContext;
+
 use crate::{
     SearchStore, Store,
     search::{
@@ -65,7 +67,8 @@ impl SearchStore {
                         .into_iter()
                         .filter(|id| query.mask.contains(*id))
                         .collect()
-                });
+                })
+                .caused_by(trc::location!());
         }
 
         // Decompose filters into external and local filters

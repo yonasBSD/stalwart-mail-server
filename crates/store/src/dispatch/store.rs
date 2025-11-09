@@ -20,16 +20,6 @@ use std::{ops::Range, time::Instant};
 use trc::{AddContext, StoreEvent};
 use types::collection::Collection;
 
-#[cfg(feature = "test_mode")]
-#[allow(clippy::type_complexity)]
-static BITMAPS: std::sync::LazyLock<
-    std::sync::Arc<
-        parking_lot::Mutex<std::collections::HashMap<Vec<u8>, std::collections::HashSet<u32>>>,
-    >,
-> = std::sync::LazyLock::new(|| {
-    std::sync::Arc::new(parking_lot::Mutex::new(std::collections::HashMap::new()))
-});
-
 impl Store {
     pub async fn get_value<U>(&self, key: impl Key) -> trc::Result<Option<U>>
     where
@@ -467,6 +457,21 @@ impl Store {
     pub async fn destroy(&self) {
         use crate::*;
 
+        if self.is_pg_or_mysql() {
+            use crate::write::SearchIndex;
+
+            for index in [
+                SearchIndex::Email,
+                SearchIndex::Calendar,
+                SearchIndex::Contacts,
+                SearchIndex::Tracing,
+            ] {
+                self.sql_query::<usize>(&format!("TRUNCATE TABLE {}", index.psql_table()), vec![])
+                    .await
+                    .unwrap();
+            }
+        }
+
         for subspace in [
             SUBSPACE_ACL,
             SUBSPACE_DIRECTORY,
@@ -488,7 +493,12 @@ impl Store {
             SUBSPACE_REPORT_IN,
             SUBSPACE_TELEMETRY_SPAN,
             SUBSPACE_TELEMETRY_METRIC,
+            SUBSPACE_SEARCH_INDEX,
         ] {
+            if subspace == SUBSPACE_SEARCH_INDEX && self.is_pg_or_mysql() {
+                continue;
+            }
+
             self.delete_range(
                 AnyKey {
                     subspace,
@@ -510,8 +520,6 @@ impl Store {
             .await
             .unwrap();
         }
-
-        BITMAPS.lock().clear();
     }
 
     #[cfg(feature = "test_mode")]
@@ -668,6 +676,10 @@ impl Store {
             (SUBSPACE_TELEMETRY_METRIC, true),
             (SUBSPACE_SEARCH_INDEX, true),
         ] {
+            if subspace == SUBSPACE_SEARCH_INDEX && store.is_pg_or_mysql() {
+                continue;
+            }
+
             let from_key = crate::write::AnyKey {
                 subspace,
                 key: vec![0u8],

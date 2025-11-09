@@ -16,7 +16,7 @@ use nlp::language::Language;
 use std::fmt::Write;
 use tokio_postgres::{
     IsolationLevel,
-    types::{ToSql, Type},
+    types::{FromSql, ToSql, Type, WrongType},
 };
 
 impl PostgresStore {
@@ -128,7 +128,7 @@ impl PostgresStore {
             .await
             .and_then(|rows| {
                 rows.into_iter()
-                    .map(|row| row.try_get::<_, i64>(0).map(|v| R::from_u64(v as u64)))
+                    .map(|row| row.try_get::<_, DocId>(0).map(|v| R::from_u64(v.0)))
                     .collect::<Result<Vec<R>, _>>()
             })
             .map_err(into_error)
@@ -172,11 +172,13 @@ impl PostgresStore {
                     } else {
                         is_first = false;
                     }
-                    query.push_str(field.column());
-                    query.push(' ');
-
                     let value_pos = values.len() + 1;
-                    if field.is_text() {
+                    if field.is_text()
+                        && matches!(op, SearchOperator::Equal | SearchOperator::Contains)
+                    {
+                        query.push_str(field.column());
+                        query.push(' ');
+
                         let language = match &value {
                             SearchValue::Text { language, .. }
                                 if self.languages.contains(language) =>
@@ -192,29 +194,57 @@ impl PostgresStore {
                         let _ = write!(query, "@@ {method}('{language}', ${value_pos})");
                         values.push(value as &(dyn ToSql + Sync));
                     } else if let SearchValue::KeyValues(kv) = value {
+                        query.push_str(field.column());
+                        query.push(' ');
+
                         let (key, value) = kv.iter().next().unwrap();
                         values.push(key as &(dyn ToSql + Sync));
 
                         if !value.is_empty() {
-                            query.push_str("->>?");
+                            let _ = write!(query, "->> ${value_pos} ");
                             op.write_pqsql(query, values.len() + 1);
                             values.push(value as &(dyn ToSql + Sync));
                         } else {
                             let _ = write!(query, " ? ${value_pos}");
                         }
                     } else {
+                        query.push_str(field.sort_column().unwrap_or(field.column()));
+                        query.push(' ');
+
                         op.write_pqsql(query, value_pos);
                         values.push(value as &(dyn ToSql + Sync));
                     }
                 }
                 SearchFilter::And | SearchFilter::Or => {
+                    if !is_first {
+                        match operator {
+                            SearchFilter::And => query.push_str(" AND "),
+                            SearchFilter::Or => query.push_str(" OR "),
+                            _ => (),
+                        }
+                    } else {
+                        is_first = false;
+                    }
+
                     operator_stack.push((operator, is_first));
                     operator = filter;
+                    is_first = true;
                     query.push('(');
                 }
                 SearchFilter::Not => {
+                    if !is_first {
+                        match operator {
+                            SearchFilter::And => query.push_str(" AND "),
+                            SearchFilter::Or => query.push_str(" OR "),
+                            _ => (),
+                        }
+                    } else {
+                        is_first = false;
+                    }
+
                     operator_stack.push((operator, is_first));
                     operator = &SearchFilter::And;
+                    is_first = true;
                     query.push_str("NOT (");
                 }
                 SearchFilter::End => {
@@ -281,9 +311,9 @@ impl ToSql for SearchValue {
                 _ => (*v as i64).to_sql(ty, out),
             },
             SearchValue::Boolean(v) => v.to_sql(ty, out),
-            SearchValue::KeyValues(kv) => serde_json::to_string(kv)
-                .unwrap_or_default()
-                .to_sql(ty, out),
+            SearchValue::KeyValues(kv) => {
+                serde_json::to_value(kv).unwrap_or_default().to_sql(ty, out)
+            }
         }
     }
 
@@ -310,10 +340,29 @@ impl ToSql for SearchValue {
                 _ => (*v as i64).to_sql_checked(ty, out),
             },
             SearchValue::Boolean(v) => v.to_sql_checked(ty, out),
-            SearchValue::KeyValues(kv) => serde_json::to_string(kv)
+            SearchValue::KeyValues(kv) => serde_json::to_value(kv)
                 .unwrap_or_default()
                 .to_sql_checked(ty, out),
         }
+    }
+}
+
+struct DocId(u64);
+
+impl FromSql<'_> for DocId {
+    fn from_sql(
+        ty: &tokio_postgres::types::Type,
+        raw: &'_ [u8],
+    ) -> Result<Self, Box<dyn std::error::Error + Sync + Send>> {
+        match ty {
+            &Type::INT4 => i32::from_sql(ty, raw).map(|v| DocId(v as u64)),
+            &Type::INT8 | &Type::OID => i64::from_sql(ty, raw).map(|v| DocId(v as u64)),
+            _ => Err(Box::new(WrongType::new::<DocId>(ty.clone()))),
+        }
+    }
+
+    fn accepts(typ: &Type) -> bool {
+        matches!(typ, &Type::INT4 | &Type::INT8 | &Type::OID)
     }
 }
 
@@ -321,22 +370,22 @@ impl SearchOperator {
     fn write_pqsql(&self, query: &mut String, value_pos: usize) {
         match self {
             SearchOperator::LowerThan => {
-                let _ = write!(query, " < ${value_pos}");
+                let _ = write!(query, "< ${value_pos}");
             }
             SearchOperator::LowerEqualThan => {
-                let _ = write!(query, " <= ${value_pos}");
+                let _ = write!(query, "<= ${value_pos}");
             }
             SearchOperator::GreaterThan => {
-                let _ = write!(query, " > ${value_pos}");
+                let _ = write!(query, "> ${value_pos}");
             }
             SearchOperator::GreaterEqualThan => {
-                let _ = write!(query, " >= ${value_pos}");
+                let _ = write!(query, ">= ${value_pos}");
             }
             SearchOperator::Equal => {
-                let _ = write!(query, " = ${value_pos}");
+                let _ = write!(query, "= ${value_pos}");
             }
             SearchOperator::Contains => {
-                let _ = write!(query, " LIKE '%' || ${value_pos} || '%'");
+                let _ = write!(query, "LIKE '%' || ${value_pos} || '%'");
             }
         }
     }

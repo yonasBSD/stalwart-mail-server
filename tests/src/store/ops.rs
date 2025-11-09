@@ -19,39 +19,50 @@ use types::collection::{Collection, SyncCollection};
 // FDB max value
 const MAX_VALUE_SIZE: usize = 100000;
 
+fn value_gen(chunks: impl IntoIterator<Item = (u8, usize)>) -> Vec<u8> {
+    let mut value = Vec::new();
+    for (byte, size) in chunks {
+        value.extend(std::iter::repeat_n(byte, size));
+    }
+    value
+}
+
 pub async fn test(db: Store) {
     #[cfg(feature = "foundationdb")]
-    if matches!(db, Store::FoundationDb(_)) && std::env::var("SLOW_FDB_TRX").is_ok() {
+    if matches!(db, Store::FoundationDb(_)) {
         use types::collection::Collection;
 
-        println!("Running slow FoundationDB transaction tests...");
-
-        // Create 900000 keys
+        println!("Running FoundationDB chunked iterator test...");
+        let kvs = [
+            ("a", value_gen([(b'a', 1)])),
+            ("b", value_gen([(b'b', MAX_VALUE_SIZE), (b'0', 1)])),
+            (
+                "c",
+                value_gen([
+                    (b'c', MAX_VALUE_SIZE),
+                    (b'1', MAX_VALUE_SIZE),
+                    (b'2', MAX_VALUE_SIZE),
+                ]),
+            ),
+            (
+                "d",
+                value_gen([(b'd', MAX_VALUE_SIZE), (b'3', MAX_VALUE_SIZE)]),
+            ),
+            ("e", value_gen([(b'e', 1)])),
+        ];
         let mut batch = BatchBuilder::new();
         batch
             .with_account_id(0)
             .with_collection(Collection::Email)
             .with_document(0);
-        for n in 0..900000 {
-            batch.set(
-                ValueClass::Config(format!("key{n:10}").into_bytes()),
-                format!("value{n:10}").into_bytes(),
-            );
 
-            if n % 10000 == 0 {
-                db.write(batch.build_all()).await.unwrap();
-                batch = BatchBuilder::new();
-                batch
-                    .with_account_id(0)
-                    .with_collection(Collection::Email)
-                    .with_document(0);
-            }
+        for (key, value) in &kvs {
+            batch.set(ValueClass::Config(key.as_bytes().to_vec()), value.clone());
         }
         db.write(batch.build_all()).await.unwrap();
-        println!("Created 900.000 keys...");
 
         // Iterate over all keys
-        let mut n = 0;
+        let mut results = Vec::new();
         db.iterate(
             store::IterateParams::new(
                 ValueKey {
@@ -68,38 +79,110 @@ pub async fn test(db: Store) {
                 },
             ),
             |key, value| {
-                assert_eq!(std::str::from_utf8(key).unwrap(), format!("key{n:10}"));
-                assert_eq!(std::str::from_utf8(value).unwrap(), format!("value{n:10}"));
-                n += 1;
-                if n % 10000 == 0 {
-                    println!("Iterated over {n} keys");
-                    std::thread::sleep(std::time::Duration::from_millis(1000));
-                }
+                results.push((String::from_utf8(key.to_vec()).unwrap(), value.to_vec()));
                 Ok(true)
             },
         )
         .await
         .unwrap();
 
-        // Delete 100 keys
-        let mut batch = BatchBuilder::new();
-        batch
-            .with_account_id(0)
-            .with_collection(Collection::Email)
-            .with_document(0);
-        for n in 0..900000 {
-            batch.clear(ValueClass::Config(format!("key{n:10}").into_bytes()));
+        assert_eq!(results.len(), kvs.len());
 
-            if n % 10000 == 0 {
-                db.write(batch.build_all()).await.unwrap();
-                batch = BatchBuilder::new();
-                batch
-                    .with_account_id(0)
-                    .with_collection(Collection::Email)
-                    .with_document(0);
+        db.delete_range(
+            ValueKey {
+                account_id: 0,
+                collection: 0,
+                document_id: 0,
+                class: ValueClass::Config(b"".to_vec()),
+            },
+            ValueKey {
+                account_id: 0,
+                collection: 0,
+                document_id: 0,
+                class: ValueClass::Config(b"\xFF".to_vec()),
+            },
+        )
+        .await
+        .unwrap();
+
+        if std::env::var("SLOW_FDB_TRX").is_ok() {
+            println!("Running FoundationDB slow transaction tests...");
+            // Create 900000 keys
+            let mut batch = BatchBuilder::new();
+            batch
+                .with_account_id(0)
+                .with_collection(Collection::Email)
+                .with_document(0);
+            for n in 0..900000 {
+                batch.set(
+                    ValueClass::Config(format!("key{n:10}").into_bytes()),
+                    format!("value{n:10}").into_bytes(),
+                );
+
+                if n % 10000 == 0 {
+                    db.write(batch.build_all()).await.unwrap();
+                    batch = BatchBuilder::new();
+                    batch
+                        .with_account_id(0)
+                        .with_collection(Collection::Email)
+                        .with_document(0);
+                }
             }
+            db.write(batch.build_all()).await.unwrap();
+
+            println!("Created 900.000 keys...");
+
+            // Iterate over all keys
+            let mut n = 0;
+            db.iterate(
+                store::IterateParams::new(
+                    ValueKey {
+                        account_id: 0,
+                        collection: 0,
+                        document_id: 0,
+                        class: ValueClass::Config(b"".to_vec()),
+                    },
+                    ValueKey {
+                        account_id: 0,
+                        collection: 0,
+                        document_id: 0,
+                        class: ValueClass::Config(b"\xFF".to_vec()),
+                    },
+                ),
+                |key, value| {
+                    assert_eq!(std::str::from_utf8(key).unwrap(), format!("key{n:10}"));
+                    assert_eq!(std::str::from_utf8(value).unwrap(), format!("value{n:10}"));
+                    n += 1;
+                    if n % 10000 == 0 {
+                        println!("Iterated over {n} keys");
+                        std::thread::sleep(std::time::Duration::from_millis(1000));
+                    }
+                    Ok(true)
+                },
+            )
+            .await
+            .unwrap();
+
+            // Delete 100 keys
+            let mut batch = BatchBuilder::new();
+            batch
+                .with_account_id(0)
+                .with_collection(Collection::Email)
+                .with_document(0);
+            for n in 0..900000 {
+                batch.clear(ValueClass::Config(format!("key{n:10}").into_bytes()));
+
+                if n % 10000 == 0 {
+                    db.write(batch.build_all()).await.unwrap();
+                    batch = BatchBuilder::new();
+                    batch
+                        .with_account_id(0)
+                        .with_collection(Collection::Email)
+                        .with_document(0);
+                }
+            }
+            db.write(batch.build_all()).await.unwrap();
         }
-        db.write(batch.build_all()).await.unwrap();
     }
 
     // Merge values 1000 times concurrently

@@ -204,20 +204,14 @@ async fn create_search_tables<T: SearchableField + MysqlSearchField + 'static>(
     }
 
     // Add primary key constraint
-    query.push_str("PRIMARY KEY ");
-    if pkeys.len() > 1 {
-        query.push('(');
-    }
+    query.push_str("PRIMARY KEY (");
     for (i, pkey) in pkeys.iter().enumerate() {
         if i > 0 {
             query.push_str(", ");
         }
         query.push_str(pkey.column());
     }
-    if pkeys.len() > 1 {
-        query.push(')');
-    }
-    query.push_str(") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    query.push_str(")) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
     conn.query_drop(&query).await.map_err(into_error)?;
 
@@ -226,22 +220,18 @@ async fn create_search_tables<T: SearchableField + MysqlSearchField + 'static>(
         if field.is_text() {
             let column_name = field.column();
             let create_index_query = format!(
-                "CREATE FULLTEXT INDEX IF NOT EXISTS fts_{table_name}_{column_name} ON {table_name}({column_name})",
+                "CREATE FULLTEXT INDEX fts_{table_name}_{column_name} ON {table_name}({column_name})",
             );
 
-            conn.query_drop(&create_index_query)
-                .await
-                .map_err(into_error)?;
+            let _ = conn.query_drop(&create_index_query).await;
         }
 
         if field.is_indexed() {
             let column_name = field.column();
             let create_index_query = format!(
-                "CREATE INDEX IF NOT EXISTS idx_{table_name}_{column_name} ON {table_name}({column_name})",
+                "CREATE INDEX idx_{table_name}_{column_name} ON {table_name}({column_name})",
             );
-            conn.query_drop(&create_index_query)
-                .await
-                .map_err(into_error)?;
+            let _ = conn.query_drop(&create_index_query).await;
         }
     }
 

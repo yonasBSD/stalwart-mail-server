@@ -47,7 +47,7 @@ impl MysqlStore {
                 }
 
                 if let Some(value) = fields.remove(field) {
-                    let _ = write!(&mut query, "${}", values.len() + 1);
+                    query.push('?');
                     values.push(value);
                 } else {
                     query.push_str("NULL");
@@ -86,6 +86,7 @@ impl MysqlStore {
         if !sort.is_empty() {
             build_sort(&mut query, sort);
         }
+
         let mut conn = self.conn_pool.get_conn().await.map_err(into_error)?;
         let s = conn.prep(query).await.map_err(into_error)?;
 
@@ -132,13 +133,10 @@ fn build_filter(query: &mut String, filters: &[SearchFilter]) -> Vec<Value> {
                     is_first = false;
                 }
 
-                let value_pos = values.len() + 1;
-                if field.is_text() {
+                if field.is_text() && matches!(op, SearchOperator::Equal | SearchOperator::Contains)
+                {
                     let value = match (value, op) {
                         (SearchValue::Text { value, .. }, SearchOperator::Equal) => {
-                            Value::Bytes(format!("{value:?}").into_bytes())
-                        }
-                        (SearchValue::Text { value, .. }, ..) => {
                             let mut text_query = String::with_capacity(value.len() + 1);
 
                             for item in value.split_whitespace() {
@@ -150,6 +148,9 @@ fn build_filter(query: &mut String, filters: &[SearchFilter]) -> Vec<Value> {
 
                             Value::Bytes(text_query.into_bytes())
                         }
+                        (SearchValue::Text { value, .. }, ..) => {
+                            Value::Bytes(format!("{value:?}").into_bytes())
+                        }
                         _ => {
                             debug_assert!(false, "Invalid search value for text field");
                             continue;
@@ -157,7 +158,7 @@ fn build_filter(query: &mut String, filters: &[SearchFilter]) -> Vec<Value> {
                     };
                     let _ = write!(
                         query,
-                        "MATCH({}) AGAINST(${value_pos} IN BOOLEAN MODE)",
+                        "MATCH({}) AGAINST(? IN BOOLEAN MODE)",
                         field.column()
                     );
                     values.push(value);
@@ -168,47 +169,52 @@ fn build_filter(query: &mut String, filters: &[SearchFilter]) -> Vec<Value> {
 
                     if !value.is_empty() {
                         if op == &SearchOperator::Equal {
-                            let _ = write!(
-                                query,
-                                "JSON_EXTRACT({}, ${}) = ${}",
-                                field.column(),
-                                value_pos,
-                                values.len() + 1
-                            );
+                            let _ = write!(query, "JSON_EXTRACT({}, ?) = ?", field.column());
                             values.push(Value::Bytes(format!("{value:?}").into_bytes()));
                         } else {
-                            let _ = write!(
-                                query,
-                                "JSON_EXTRACT({}, ${}) LIKE ${}",
-                                field.column(),
-                                value_pos,
-                                values.len() + 1
-                            );
+                            let _ = write!(query, "JSON_EXTRACT({}, ?) LIKE ?", field.column(),);
                             values.push(Value::Bytes(format!("%{value}%").into_bytes()));
                         }
                     } else {
-                        let _ = write!(
-                            query,
-                            "JSON_CONTAINS_PATH({}, 'one', ${})",
-                            field.column(),
-                            value_pos
-                        );
+                        let _ = write!(query, "JSON_CONTAINS_PATH({}, 'one', ?)", field.column(),);
                     }
                 } else {
                     query.push_str(field.column());
                     query.push(' ');
-                    op.write_mysql(query, value_pos);
+                    op.write_mysql(query);
                     values.push(to_mysql(value));
                 }
             }
             SearchFilter::And | SearchFilter::Or => {
+                if !is_first {
+                    match operator {
+                        SearchFilter::And => query.push_str(" AND "),
+                        SearchFilter::Or => query.push_str(" OR "),
+                        _ => (),
+                    }
+                } else {
+                    is_first = false;
+                }
+
                 operator_stack.push((operator, is_first));
                 operator = filter;
+                is_first = true;
                 query.push('(');
             }
             SearchFilter::Not => {
+                if !is_first {
+                    match operator {
+                        SearchFilter::And => query.push_str(" AND "),
+                        SearchFilter::Or => query.push_str(" OR "),
+                        _ => (),
+                    }
+                } else {
+                    is_first = false;
+                }
+
                 operator_stack.push((operator, is_first));
                 operator = &SearchFilter::And;
+                is_first = true;
                 query.push_str("NOT (");
             }
             SearchFilter::End => {
@@ -255,25 +261,25 @@ fn build_sort(query: &mut String, sort: &[SearchComparator]) {
 }
 
 impl SearchOperator {
-    fn write_mysql(&self, query: &mut String, value_pos: usize) {
+    fn write_mysql(&self, query: &mut String) {
         match self {
             SearchOperator::LowerThan => {
-                let _ = write!(query, " < ${value_pos}");
+                let _ = write!(query, "< ?");
             }
             SearchOperator::LowerEqualThan => {
-                let _ = write!(query, " <= ${value_pos}");
+                let _ = write!(query, "<= ?");
             }
             SearchOperator::GreaterThan => {
-                let _ = write!(query, " > ${value_pos}");
+                let _ = write!(query, "> ?");
             }
             SearchOperator::GreaterEqualThan => {
-                let _ = write!(query, " >= ${value_pos}");
+                let _ = write!(query, ">= ?");
             }
             SearchOperator::Equal => {
-                let _ = write!(query, " = ${value_pos}");
+                let _ = write!(query, "= ?");
             }
             SearchOperator::Contains => {
-                let _ = write!(query, " LIKE '%' CONCAT('%', ${value_pos}, '%')");
+                let _ = write!(query, "LIKE '%' CONCAT('%', ?, '%')");
             }
         }
     }

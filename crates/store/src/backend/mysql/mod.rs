@@ -31,7 +31,7 @@ fn into_error(err: impl Display) -> trc::Error {
 }
 
 impl SearchIndex {
-    fn mysql_table(&self) -> &'static str {
+    pub(crate) fn mysql_table(&self) -> &'static str {
         match self {
             SearchIndex::Email => "s_email",
             SearchIndex::Calendar => "s_cal",
@@ -68,9 +68,9 @@ impl MysqlSearchField for EmailSearchField {
 
     fn column_type(&self) -> &'static str {
         match self {
-            EmailSearchField::ReceivedAt | EmailSearchField::SentAt => "BIGINT NOT NULL",
-            EmailSearchField::Size => "INT NOT NULL",
-            EmailSearchField::HasAttachment => "BOOLEAN NOT NULL",
+            EmailSearchField::ReceivedAt | EmailSearchField::SentAt => "BIGINT",
+            EmailSearchField::Size => "INT",
+            EmailSearchField::HasAttachment => "BOOLEAN",
             EmailSearchField::Headers => "JSON",
             _ => "TEXT",
         }
@@ -146,7 +146,7 @@ impl MysqlSearchField for TracingSearchField {
 
     fn column_type(&self) -> &'static str {
         match self {
-            TracingSearchField::EventType => "BIGINT NOT NULL",
+            TracingSearchField::EventType => "BIGINT",
             TracingSearchField::QueueId => "BIGINT",
             TracingSearchField::Keywords => "TEXT",
         }

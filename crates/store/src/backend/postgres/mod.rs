@@ -35,7 +35,7 @@ fn into_error(err: impl Display) -> trc::Error {
 }
 
 impl SearchIndex {
-    fn psql_table(&self) -> &'static str {
+    pub(crate) fn psql_table(&self) -> &'static str {
         match self {
             SearchIndex::Email => "s_email",
             SearchIndex::Calendar => "s_cal",
@@ -87,6 +87,8 @@ impl PsqlSearchField for EmailSearchField {
             EmailSearchField::From | EmailSearchField::To | EmailSearchField::Subject => {
                 Some("TEXT")
             }
+            #[cfg(feature = "test_mode")]
+            EmailSearchField::Cc | EmailSearchField::Bcc => Some("TEXT"),
             _ => None,
         }
     }
@@ -96,6 +98,10 @@ impl PsqlSearchField for EmailSearchField {
             EmailSearchField::From => Some("s_fr"),
             EmailSearchField::To => Some("s_to"),
             EmailSearchField::Subject => Some("s_sj"),
+            #[cfg(feature = "test_mode")]
+            EmailSearchField::Bcc => Some("s_bc"),
+            #[cfg(feature = "test_mode")]
+            EmailSearchField::Cc => Some("s_cc"),
             _ => None,
         }
     }

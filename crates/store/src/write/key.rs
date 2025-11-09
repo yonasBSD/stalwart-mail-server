@@ -442,30 +442,30 @@ impl ValueClass {
                 .write(u8::from(SyncCollection::ShareNotification))
                 .write(*notification_id),
             ValueClass::SearchIndex(index) => match &index.typ {
-                SearchIndexType::Term {
-                    account_id,
-                    field,
-                    hash,
-                } => {
+                SearchIndexType::Term { field, hash } => {
                     let class = index.index.as_u8();
-                    if let Some(account_id) = account_id {
-                        serializer
+                    match &index.id {
+                        SearchIndexId::Account {
+                            account_id,
+                            document_id,
+                        } => serializer
                             .write(class)
                             .write(*account_id)
                             .write(hash.payload())
                             .write(hash.payload_len())
                             .write(*field)
-                    } else {
-                        serializer
+                            .write(*document_id),
+                        SearchIndexId::Global { id } => serializer
                             .write(class)
                             .write(hash.payload())
                             .write(hash.payload_len())
                             .write(*field)
+                            .write(*id),
                     }
                 }
-                SearchIndexType::Index { id, field } => {
+                SearchIndexType::Index { field } => {
                     let class = index.index.as_u8() | 1 << 6;
-                    match id {
+                    match &index.id {
                         SearchIndexId::Account {
                             account_id,
                             document_id,
@@ -482,9 +482,9 @@ impl ValueClass {
                             .write(*id),
                     }
                 }
-                SearchIndexType::Document { id } => {
+                SearchIndexType::Document => {
                     let class = index.index.as_u8() | 2 << 6;
-                    match id {
+                    match &index.id {
                         SearchIndexId::Account {
                             account_id,
                             document_id,
@@ -600,17 +600,9 @@ impl ValueClass {
             ValueClass::ChangeId => U32_LEN,
             ValueClass::ShareNotification { .. } => U32_LEN + U64_LEN + 1,
             ValueClass::SearchIndex(v) => match &v.typ {
-                SearchIndexType::Term {
-                    account_id, hash, ..
-                } => {
-                    if account_id.is_some() {
-                        2 + U32_LEN + hash.len()
-                    } else {
-                        2 + hash.len()
-                    }
-                }
+                SearchIndexType::Term { hash, .. } => U64_LEN + hash.len() + 2,
                 SearchIndexType::Index { field, .. } => 1 + field.len as usize + U64_LEN,
-                SearchIndexType::Document { id } => match id {
+                SearchIndexType::Document => match &v.id {
                     SearchIndexId::Account { .. } => 1 + U32_LEN * 2,
                     SearchIndexId::Global { .. } => 1 + U64_LEN,
                 },

@@ -103,6 +103,12 @@ impl ElasticSearchStore {
         });
         let body = serde_json::to_string(&body).unwrap_or_default();
 
+        let c = println!(
+            "Creating Elasticsearch index {} with body: {}",
+            T::index().es_index_name(),
+            body
+        );
+
         assert_success(
             self.client
                 .put(format!("{}/{}", self.url, T::index().es_index_name()))

@@ -56,32 +56,45 @@ impl TreemapCache {
                     }
                 }
                 Entry::Vacant(entry) => {
-                    let value = store
-                        .get_value::<RoaringTreemap>(ValueKey::from(ValueClass::SearchIndex(
-                            SearchIndexClass {
-                                index,
-                                typ: SearchIndexType::Term {
-                                    account_id: None,
-                                    hash,
-                                    field,
-                                },
+                    let from_key = ValueKey::from(ValueClass::SearchIndex(SearchIndexClass {
+                        index,
+                        id: SearchIndexId::Global { id: 0 },
+                        typ: SearchIndexType::Term { hash, field },
+                    }));
+                    let to_key = ValueKey::from(ValueClass::SearchIndex(SearchIndexClass {
+                        index,
+                        id: SearchIndexId::Global { id: u64::MAX },
+                        typ: SearchIndexType::Term { hash, field },
+                    }));
+                    let key_len = U64_LEN + hash.len() + 2;
+                    let mut documents = RoaringTreemap::new();
+                    store
+                        .iterate(
+                            IterateParams::new(from_key, to_key).no_values().ascending(),
+                            |key, _| {
+                                if key.len() == key_len {
+                                    documents.insert(key.deserialize_be_u64(key.len() - U64_LEN)?);
+                                }
+
+                                Ok(true)
                             },
-                        )))
+                        )
                         .await
                         .caused_by(trc::location!())?;
-                    if let Some(bm) = &value {
+
+                    if !documents.is_empty() {
                         if is_union {
-                            result.bitor_assign(bm);
+                            result.bitor_assign(&documents);
                         } else if idx == 0 {
-                            result = bm.clone();
+                            result = documents.clone();
                         } else {
-                            result.bitand_assign(bm);
+                            result.bitand_assign(&documents);
                             if result.is_empty() {
-                                entry.insert(value);
+                                entry.insert(Some(documents));
                                 return Ok(None);
                             }
                         }
-                        entry.insert(value);
+                        entry.insert(Some(documents));
                     } else if !is_union {
                         entry.insert(None);
                         return Ok(None);
@@ -131,8 +144,8 @@ pub(crate) async fn range_to_treemap(
     }
     let begin = ValueKey::from(ValueClass::SearchIndex(SearchIndexClass {
         index,
+        id: SearchIndexId::Global { id: from_id },
         typ: SearchIndexType::Index {
-            id: SearchIndexId::Global { id: from_id },
             field: SearchIndexField {
                 field_id: from_field,
                 len: len as u8,
@@ -148,8 +161,8 @@ pub(crate) async fn range_to_treemap(
     }
     let end = ValueKey::from(ValueClass::SearchIndex(SearchIndexClass {
         index,
+        id: SearchIndexId::Global { id: end_id },
         typ: SearchIndexType::Index {
-            id: SearchIndexId::Global { id: end_id },
             field: SearchIndexField {
                 field_id: end_field,
                 len: len as u8,

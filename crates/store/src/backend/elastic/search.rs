@@ -90,13 +90,15 @@ impl ElasticSearchStore {
             [
                 Some(("query".to_string(), build_query(filters))),
                 Some(("size".to_string(), Value::from(10_000))),
-                Some(("source".to_string(), Value::from(false))),
+                Some(("_source".to_string(), Value::from(false))),
                 (!sort.is_empty()).then(|| ("sort".to_string(), build_sort(sort))),
             ]
             .into_iter()
             .flatten(),
         );
         let request = serde_json::to_string(&query).unwrap_or_default();
+
+        let c = println!("Elasticsearch query: {}", request);
 
         let response = assert_success(
             self.client
@@ -134,10 +136,28 @@ impl ElasticSearchStore {
                 .reason("Unindex operation requires at least one filter"));
         }
 
+        #[cfg(feature = "test_mode")]
+        {
+            assert_success(
+                self.client
+                    .get(format!(
+                        "{}/{}/_refresh",
+                        self.url,
+                        filter.index.es_index_name()
+                    ))
+                    .send()
+                    .await,
+            )
+            .await?;
+        }
+
         let query = json!({
             "query": build_query(&filter.filters),
         });
+
         let request = serde_json::to_string(&query).unwrap_or_default();
+
+        let c = println!("Elasticsearch unindex query: {}", request);
 
         let response = assert_success(
             self.client

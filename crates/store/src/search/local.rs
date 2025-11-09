@@ -210,11 +210,7 @@ impl QueryResults {
                         SearchComparator::Field { .. } => continue,
                     };
 
-                    let ordering = if is_ascending {
-                        a.cmp(&b).reverse()
-                    } else {
-                        a.cmp(&b)
-                    };
+                    let ordering = if is_ascending { a.cmp(&b) } else { b.cmp(&a) };
 
                     if ordering != Ordering::Equal {
                         return ordering;

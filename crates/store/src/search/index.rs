@@ -61,7 +61,10 @@ impl Store {
                             .push(id as u32);
                     }
                     (SearchField::Id, SearchValue::Uint(id)) => match op {
-                        SearchOperator::LowerThan | SearchOperator::LowerEqualThan => {
+                        SearchOperator::LowerThan => {
+                            to_id = Some(id.saturating_sub(1));
+                        }
+                        SearchOperator::LowerEqualThan => {
                             to_id = Some(id);
                         }
                         SearchOperator::Equal => {
@@ -73,17 +76,17 @@ impl Store {
                                 .reason("Unsupported operator for Id field"));
                         }
                     },
-                    _ => {
+                    filter => {
                         return Err(trc::StoreEvent::UnexpectedError
                             .into_err()
-                            .reason("Unsupported filter"));
+                            .details(format!("Unsupported unindex filter {filter:?}")));
                     }
                 },
                 SearchFilter::And | SearchFilter::Or | SearchFilter::End => {}
                 SearchFilter::Not | SearchFilter::DocumentSet(_) => {
                     return Err(trc::StoreEvent::UnexpectedError
                         .into_err()
-                        .reason("Unsupported filter"));
+                        .details(format!("Unsupported unindex filter {filter:?}")));
                 }
             }
         }
@@ -96,12 +99,11 @@ impl Store {
                         .get_value::<Archive<AlignedBytes>>(ValueKey::from(
                             ValueClass::SearchIndex(SearchIndexClass {
                                 index,
-                                typ: SearchIndexType::Document {
-                                    id: SearchIndexId::Account {
-                                        account_id,
-                                        document_id,
-                                    },
+                                id: SearchIndexId::Account {
+                                    account_id,
+                                    document_id,
                                 },
+                                typ: SearchIndexType::Document,
                             }),
                         ))
                         .await
@@ -130,21 +132,19 @@ impl Store {
                 self.delete_range(
                     ValueKey::from(ValueClass::SearchIndex(SearchIndexClass {
                         index,
-                        typ: SearchIndexType::Document {
-                            id: SearchIndexId::Account {
-                                account_id,
-                                document_id: 0,
-                            },
+                        id: SearchIndexId::Account {
+                            account_id,
+                            document_id: 0,
                         },
+                        typ: SearchIndexType::Document,
                     })),
                     ValueKey::from(ValueClass::SearchIndex(SearchIndexClass {
                         index,
-                        typ: SearchIndexType::Document {
-                            id: SearchIndexId::Account {
-                                account_id,
-                                document_id: u32::MAX,
-                            },
+                        id: SearchIndexId::Account {
+                            account_id,
+                            document_id: u32::MAX,
                         },
+                        typ: SearchIndexType::Document,
                     })),
                 )
                 .await
@@ -153,11 +153,11 @@ impl Store {
                 self.delete_range(
                     ValueKey::from(ValueClass::SearchIndex(SearchIndexClass {
                         index,
+                        id: SearchIndexId::Account {
+                            account_id,
+                            document_id: 0,
+                        },
                         typ: SearchIndexType::Index {
-                            id: SearchIndexId::Account {
-                                account_id,
-                                document_id: 0,
-                            },
                             field: SearchIndexField {
                                 field_id: 0,
                                 len: 1,
@@ -167,11 +167,11 @@ impl Store {
                     })),
                     ValueKey::from(ValueClass::SearchIndex(SearchIndexClass {
                         index,
+                        id: SearchIndexId::Account {
+                            account_id,
+                            document_id: u32::MAX,
+                        },
                         typ: SearchIndexType::Index {
-                            id: SearchIndexId::Account {
-                                account_id,
-                                document_id: u32::MAX,
-                            },
                             field: SearchIndexField {
                                 field_id: u8::MAX,
                                 len: 1,
@@ -186,16 +186,22 @@ impl Store {
                 self.delete_range(
                     ValueKey::from(ValueClass::SearchIndex(SearchIndexClass {
                         index,
+                        id: SearchIndexId::Account {
+                            account_id,
+                            document_id: 0,
+                        },
                         typ: SearchIndexType::Term {
-                            account_id: Some(account_id),
                             hash: CheekyHash::NULL,
                             field: 0,
                         },
                     })),
                     ValueKey::from(ValueClass::SearchIndex(SearchIndexClass {
                         index,
+                        id: SearchIndexId::Account {
+                            account_id,
+                            document_id: u32::MAX,
+                        },
                         typ: SearchIndexType::Term {
-                            account_id: Some(account_id),
                             hash: CheekyHash::FULL,
                             field: u8::MAX,
                         },
@@ -212,9 +218,8 @@ impl Store {
                 .get_value::<Archive<AlignedBytes>>(ValueKey::from(ValueClass::SearchIndex(
                     SearchIndexClass {
                         index,
-                        typ: SearchIndexType::Document {
-                            id: SearchIndexId::Global { id },
-                        },
+                        id: SearchIndexId::Global { id },
+                        typ: SearchIndexType::Document,
                     },
                 )))
                 .await
@@ -239,15 +244,13 @@ impl Store {
                 IterateParams::new(
                     ValueKey::from(ValueClass::SearchIndex(SearchIndexClass {
                         index,
-                        typ: SearchIndexType::Document {
-                            id: SearchIndexId::Global { id: 0 },
-                        },
+                        id: SearchIndexId::Global { id: 0 },
+                        typ: SearchIndexType::Document,
                     })),
                     ValueKey::from(ValueClass::SearchIndex(SearchIndexClass {
                         index,
-                        typ: SearchIndexType::Document {
-                            id: SearchIndexId::Global { id: to_id },
-                        },
+                        id: SearchIndexId::Global { id: to_id },
+                        typ: SearchIndexType::Document,
                     })),
                 ),
                 |key, value| {

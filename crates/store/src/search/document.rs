@@ -99,6 +99,10 @@ impl IndexDocument {
         self.fields.contains_key(field)
     }
 
+    pub fn fields(&self) -> impl Iterator<Item = (&SearchField, &SearchValue)> {
+        self.fields.iter()
+    }
+
     pub fn set_unknown_language(&mut self, lang: Language) {
         for value in self.fields.values_mut() {
             if let SearchValue::Text { language, .. } = value

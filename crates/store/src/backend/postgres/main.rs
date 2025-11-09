@@ -197,20 +197,14 @@ async fn create_search_tables<T: SearchableField + PsqlSearchField + 'static>(
     }
 
     // Add primary key constraint
-    query.push_str("PRIMARY KEY ");
-    if pkeys.len() > 1 {
-        query.push('(');
-    }
+    query.push_str("PRIMARY KEY (");
     for (i, pkey) in pkeys.iter().enumerate() {
         if i > 0 {
             query.push_str(", ");
         }
         query.push_str(pkey.column());
     }
-    if pkeys.len() > 1 {
-        query.push(')');
-    }
-    query.push(')');
+    query.push_str("))");
 
     conn.execute(&query, &[]).await.map_err(into_error)?;
 

@@ -194,23 +194,15 @@ pub enum IndexPropertyClass {
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub struct SearchIndexClass {
     pub index: SearchIndex,
+    pub id: SearchIndexId,
     pub typ: SearchIndexType,
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub enum SearchIndexType {
-    Term {
-        account_id: Option<u32>,
-        field: u8,
-        hash: CheekyHash,
-    },
-    Index {
-        id: SearchIndexId,
-        field: SearchIndexField,
-    },
-    Document {
-        id: SearchIndexId,
-    },
+    Term { field: u8, hash: CheekyHash },
+    Index { field: SearchIndexField },
+    Document,
 }
 
 pub(crate) const SEARCH_INDEX_MAX_FIELD_LEN: usize = 16;

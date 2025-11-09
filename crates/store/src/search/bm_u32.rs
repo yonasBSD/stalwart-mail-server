@@ -57,32 +57,51 @@ impl BitmapCache {
                     }
                 }
                 Entry::Vacant(entry) => {
-                    let value = store
-                        .get_value::<RoaringBitmap>(ValueKey::from(ValueClass::SearchIndex(
-                            SearchIndexClass {
-                                index,
-                                typ: SearchIndexType::Term {
-                                    account_id: Some(account_id),
-                                    hash,
-                                    field,
-                                },
+                    let from_key = ValueKey::from(ValueClass::SearchIndex(SearchIndexClass {
+                        index,
+                        id: SearchIndexId::Account {
+                            account_id,
+                            document_id: 0,
+                        },
+                        typ: SearchIndexType::Term { hash, field },
+                    }));
+                    let to_key = ValueKey::from(ValueClass::SearchIndex(SearchIndexClass {
+                        index,
+                        id: SearchIndexId::Account {
+                            account_id,
+                            document_id: u32::MAX,
+                        },
+                        typ: SearchIndexType::Term { hash, field },
+                    }));
+                    let key_len = (U32_LEN * 2) + hash.len() + 2;
+                    let mut documents = RoaringBitmap::new();
+                    store
+                        .iterate(
+                            IterateParams::new(from_key, to_key).no_values().ascending(),
+                            |key, _| {
+                                if key.len() == key_len {
+                                    documents.insert(key.deserialize_be_u32(key.len() - U32_LEN)?);
+                                }
+
+                                Ok(true)
                             },
-                        )))
+                        )
                         .await
                         .caused_by(trc::location!())?;
-                    if let Some(bm) = &value {
+
+                    if !documents.is_empty() {
                         if is_union {
-                            result.bitor_assign(bm);
+                            result.bitor_assign(&documents);
                         } else if idx == 0 {
-                            result = bm.clone();
+                            result = documents.clone();
                         } else {
-                            result.bitand_assign(bm);
+                            result.bitand_assign(&documents);
                             if result.is_empty() {
-                                entry.insert(value);
+                                entry.insert(Some(documents));
                                 return Ok(None);
                             }
                         }
-                        entry.insert(value);
+                        entry.insert(Some(documents));
                     } else if !is_union {
                         entry.insert(None);
                         return Ok(None);
@@ -133,11 +152,11 @@ pub(crate) async fn range_to_bitmap(
     }
     let begin = ValueKey::from(ValueClass::SearchIndex(SearchIndexClass {
         index,
+        id: SearchIndexId::Account {
+            account_id,
+            document_id: from_doc_id,
+        },
         typ: SearchIndexType::Index {
-            id: SearchIndexId::Account {
-                account_id,
-                document_id: from_doc_id,
-            },
             field: SearchIndexField {
                 field_id: from_field,
                 len: len as u8,
@@ -153,11 +172,11 @@ pub(crate) async fn range_to_bitmap(
     }
     let end = ValueKey::from(ValueClass::SearchIndex(SearchIndexClass {
         index,
+        id: SearchIndexId::Account {
+            account_id,
+            document_id: end_doc_id,
+        },
         typ: SearchIndexType::Index {
-            id: SearchIndexId::Account {
-                account_id,
-                document_id: end_doc_id,
-            },
             field: SearchIndexField {
                 field_id: end_field,
                 len: len as u8,
@@ -220,11 +239,11 @@ pub(crate) async fn sort_order(
 ) -> trc::Result<AHashMap<u32, u32>> {
     let begin = ValueKey::from(ValueClass::SearchIndex(SearchIndexClass {
         index,
+        id: SearchIndexId::Account {
+            account_id,
+            document_id: 0,
+        },
         typ: SearchIndexType::Index {
-            id: SearchIndexId::Account {
-                account_id,
-                document_id: 0,
-            },
             field: SearchIndexField {
                 field_id,
                 len: SEARCH_INDEX_MAX_FIELD_LEN as u8,
@@ -234,11 +253,11 @@ pub(crate) async fn sort_order(
     }));
     let end = ValueKey::from(ValueClass::SearchIndex(SearchIndexClass {
         index,
+        id: SearchIndexId::Account {
+            account_id,
+            document_id: u32::MAX,
+        },
         typ: SearchIndexType::Index {
-            id: SearchIndexId::Account {
-                account_id,
-                document_id: u32::MAX,
-            },
             field: SearchIndexField {
                 field_id,
                 len: SEARCH_INDEX_MAX_FIELD_LEN as u8,
@@ -247,14 +266,22 @@ pub(crate) async fn sort_order(
         },
     }));
 
+    let mut last_value = Vec::new();
     let mut results = AHashMap::new();
     let mut pos = 0;
     store
         .iterate(
             IterateParams::new(begin, end).no_values().ascending(),
             |key, _| {
+                let value = key
+                    .get(U32_LEN + 2..key.len() - U32_LEN)
+                    .ok_or_else(|| trc::Error::corrupted_key(key, None, trc::location!()))?;
+                if value != last_value {
+                    pos += 1;
+                    last_value = value.to_vec();
+                }
+
                 results.insert(key.deserialize_be_u32(key.len() - U32_LEN)?, pos);
-                pos += 1;
                 Ok(true)
             },
         )

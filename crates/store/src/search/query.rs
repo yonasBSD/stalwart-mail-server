@@ -31,38 +31,45 @@ impl Store {
         };
         let mut stack = Vec::new();
         let mask = query.mask;
-        let mut filters = query.filters.into_iter().peekable();
         let mut bitmaps = BitmapCache::default();
         let mut account_id = u32::MAX;
 
+        for filter in &query.filters {
+            if let SearchFilter::Operator {
+                field: SearchField::AccountId,
+                value: SearchValue::Uint(id),
+                ..
+            } = filter
+            {
+                account_id = *id as u32;
+                break;
+            }
+        }
+
+        if account_id == u32::MAX {
+            return Err(trc::StoreEvent::UnexpectedError
+                .into_err()
+                .details("Account ID must be specified before other filters"));
+        }
+
+        #[cfg(feature = "test_mode")]
+        {
+            if query.filters.len() == 1 {
+                state.bm = Some(mask.clone());
+            }
+        }
+
+        let mut filters = query.filters.into_iter().peekable();
         while let Some(filter) = filters.next() {
             let mut result = match filter {
                 SearchFilter::Operator { field, op, value } => {
-                    match &field {
-                        SearchField::AccountId => {
-                            if let SearchValue::Uint(id) = value {
-                                account_id = id as u32;
-                            } else {
-                                return Err(trc::StoreEvent::UnexpectedError
-                                    .into_err()
-                                    .details("Account ID field requires uint value"));
-                            }
-                        }
-                        SearchField::DocumentId | SearchField::Id => {
-                            return Err(trc::StoreEvent::UnexpectedError
-                                .into_err()
-                                .details("Document ID field cannot be used in search queries"));
-                        }
-                        _ => {
-                            if account_id == u32::MAX {
-                                return Err(trc::StoreEvent::UnexpectedError
-                                    .into_err()
-                                    .details("Account ID must be specified before other filters"));
-                            }
-                        }
+                    if matches!(field, SearchField::AccountId) {
+                        continue;
                     }
 
-                    if field.is_text() {
+                    if field.is_text()
+                        && matches!(op, SearchOperator::Contains | SearchOperator::Equal)
+                    {
                         let (value, language) = match value {
                             SearchValue::Text { value, language } => (value, language),
                             _ => {
@@ -88,16 +95,20 @@ impl Store {
                         } else {
                             let mut result = RoaringBitmap::new();
                             for token in Stemmer::new(&value, language, MAX_TOKEN_LENGTH) {
-                                let hash = Some(CheekyHash::new(token.word.as_bytes()));
-                                let stemmed_hash = token
-                                    .stemmed_word
-                                    .map(|word| CheekyHash::new(format!("{word}*")));
+                                let mut tokens = Vec::with_capacity(3);
+                                tokens.push(CheekyHash::new(token.word.as_bytes()));
+                                tokens.push(CheekyHash::new(format!("{}*", token.word).as_bytes()));
+                                if let Some(stemmed_word) = token.stemmed_word {
+                                    tokens.push(CheekyHash::new(
+                                        format!("{stemmed_word}*").as_bytes(),
+                                    ));
+                                }
                                 let union = bitmaps
                                     .merge_bitmaps(
                                         self,
                                         query.index,
                                         account_id,
-                                        [hash, stemmed_hash].into_iter().flatten(),
+                                        tokens.into_iter(),
                                         field.u8_id(),
                                         true,
                                     )
@@ -138,10 +149,13 @@ impl Store {
                                     self,
                                     query.index,
                                     account_id,
-                                    [CheekyHash::new(format!("{key} {value}").as_bytes())]
-                                        .into_iter(),
+                                    SpaceTokenizer::new(value.as_str(), MAX_TOKEN_LENGTH).map(
+                                        |value| {
+                                            CheekyHash::new(format!("{key} {value}").as_bytes())
+                                        },
+                                    ),
                                     field.u8_id(),
-                                    false,
+                                    true,
                                 )
                                 .await?
                         } else {
