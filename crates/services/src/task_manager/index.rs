@@ -176,13 +176,13 @@ impl SearchIndexTask for Server {
         }
 
         // Commit deletion batch to data store
-        if !batch.is_empty() {
-            if let Err(err) = self.store().write(batch.build_all()).await {
-                trc::error!(
-                    err.caused_by(trc::location!())
-                        .details("Failed to commit index deletions to data store")
-                );
-            }
+        if !batch.is_empty()
+            && let Err(err) = self.store().write(batch.build_all()).await
+        {
+            trc::error!(
+                err.caused_by(trc::location!())
+                    .details("Failed to commit index deletions to data store")
+            );
             for r in results.iter_mut() {
                 if r.task_type == TaskType::Delete
                     && r.status == TaskStatus::Success
@@ -461,7 +461,13 @@ async fn build_email_document(
                         .details("Blob not found")
                 })?;
 
-            Ok(Some(metadata.index_document(&raw_message, index_fields)))
+            Ok(Some(metadata.index_document(
+                account_id,
+                document_id,
+                &raw_message,
+                index_fields,
+                server.core.jmap.default_language,
+            )))
         }
         None => Ok(None),
     }
@@ -484,7 +490,12 @@ async fn build_calendar_document(
             metadata_
                 .unarchive::<CalendarEvent>()
                 .caused_by(trc::location!())?
-                .index_document(index_fields),
+                .index_document(
+                    account_id,
+                    document_id,
+                    index_fields,
+                    server.core.jmap.default_language,
+                ),
         )),
         None => Ok(None),
     }
@@ -507,7 +518,12 @@ async fn build_contact_document(
             metadata_
                 .unarchive::<ContactCard>()
                 .caused_by(trc::location!())?
-                .index_document(index_fields),
+                .index_document(
+                    account_id,
+                    document_id,
+                    index_fields,
+                    server.core.jmap.default_language,
+                ),
         )),
         None => Ok(None),
     }

@@ -158,7 +158,9 @@ impl<T: SessionStream> SessionData<T> {
             &mut imap_ids,
             &mut saved_results,
         );
-        imap_ids.sort_unstable();
+        if !is_sort {
+            imap_ids.sort_unstable();
+        }
 
         // Save results
         if let (Some(results_tx), Some(saved_results)) = (results_tx, saved_results) {
@@ -564,7 +566,9 @@ impl<T: SessionStream> SessionData<T> {
                     SearchComparator::field(EmailSearchField::ReceivedAt, comparator.ascending)
                 }
                 search::Sort::Cc => {
-                    SearchComparator::field(EmailSearchField::Cc, comparator.ascending)
+                    return Err(trc::ImapEvent::Error
+                        .into_err()
+                        .details("Sorting by CC is not supported."));
                 }
                 search::Sort::Date => {
                     SearchComparator::field(EmailSearchField::SentAt, comparator.ascending)

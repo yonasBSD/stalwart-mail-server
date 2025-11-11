@@ -96,14 +96,11 @@ impl ElasticSearchStore {
             .into_iter()
             .flatten(),
         );
-        let request = serde_json::to_string(&query).unwrap_or_default();
-
-        let c = println!("Elasticsearch query: {}", request);
 
         let response = assert_success(
             self.client
                 .post(format!("{}/{}/_search", self.url, index.es_index_name()))
-                .body(request)
+                .body(serde_json::to_string(&query).unwrap_or_default())
                 .send()
                 .await,
         )
@@ -136,28 +133,9 @@ impl ElasticSearchStore {
                 .reason("Unindex operation requires at least one filter"));
         }
 
-        #[cfg(feature = "test_mode")]
-        {
-            assert_success(
-                self.client
-                    .get(format!(
-                        "{}/{}/_refresh",
-                        self.url,
-                        filter.index.es_index_name()
-                    ))
-                    .send()
-                    .await,
-            )
-            .await?;
-        }
-
         let query = json!({
             "query": build_query(&filter.filters),
         });
-
-        let request = serde_json::to_string(&query).unwrap_or_default();
-
-        let c = println!("Elasticsearch unindex query: {}", request);
 
         let response = assert_success(
             self.client
@@ -166,7 +144,7 @@ impl ElasticSearchStore {
                     self.url,
                     filter.index.es_index_name()
                 ))
-                .body(request)
+                .body(serde_json::to_string(&query).unwrap_or_default())
                 .send()
                 .await,
         )
@@ -180,6 +158,14 @@ impl ElasticSearchStore {
         serde_json::from_str::<DeleteByQueryResponse>(&response_body)
             .map(|delete_response| delete_response.deleted)
             .map_err(|err| trc::StoreEvent::ElasticsearchError.reason(err))
+    }
+
+    pub async fn refresh_index(&self, index: SearchIndex) -> trc::Result<()> {
+        let url = format!("{}/{}/_refresh", self.url, index.es_index_name());
+
+        assert_success(self.client.post(url).send().await)
+            .await
+            .map(|_| ())
     }
 }
 
@@ -195,7 +181,8 @@ fn build_query(filters: &[SearchFilter]) -> Value {
     for filter in filters {
         match filter {
             SearchFilter::Operator { field, op, value } => {
-                if field.is_text() {
+                if field.is_text() && matches!(op, SearchOperator::Equal | SearchOperator::Contains)
+                {
                     let SearchValue::Text { value, .. } = value else {
                         debug_assert!(false, "Invalid value type for text field");
                         continue;
@@ -321,9 +308,17 @@ fn build_sort(sort: &[SearchComparator]) -> Value {
     Value::Array(
         sort.iter()
             .filter_map(|comp| match comp {
-                SearchComparator::Field { field, ascending } => Some(json!({
-                    field.es_field(): if *ascending { "asc" } else { "desc" }
-                })),
+                SearchComparator::Field { field, ascending } => {
+                    let field = if field.is_text() {
+                        format!("{}.keyword", field.es_field())
+                    } else {
+                        field.es_field().to_string()
+                    };
+
+                    Some(json!({
+                        field: if *ascending { "asc" } else { "desc" }
+                    }))
+                }
                 _ => None,
             })
             .collect(),

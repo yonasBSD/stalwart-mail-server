@@ -5,7 +5,7 @@
  */
 
 use crate::{
-    jmap::{JMAPTest, mail::mailbox::destroy_all_mailboxes_no_wait},
+    jmap::{JMAPTest, mail::mailbox::destroy_all_mailboxes_no_wait, wait_for_index},
     store::deflate_test_resource,
 };
 use ::email::{
@@ -140,6 +140,8 @@ async fn test_single_thread(params: &mut JMAPTest) {
                     .unwrap();
             }
         }
+
+        wait_for_index(&params.server).await;
 
         for test_num in 0..=5 {
             let result = client

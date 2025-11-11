@@ -11,7 +11,7 @@ use crate::{
         enterprise::{EnterpriseCore, insert_test_metrics},
         webhooks::{MockWebhookEndpoint, spawn_mock_webhook_endpoint},
     },
-    store::TempDir,
+    store::{TempDir, build_store_config},
 };
 use ahash::AHashMap;
 use base64::{
@@ -64,13 +64,8 @@ pub mod server;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn jmap_tests() {
-    let delete = true;
-    let mut params = init_jmap_tests(
-        &std::env::var("STORE")
-            .expect("Missing store type. Try running `STORE=<store_type> cargo test`"),
-        delete,
-    )
-    .await;
+    let delete = std::env::var("NO_DELETE").is_err();
+    let mut params = init_jmap_tests(delete).await;
 
     server::webhooks::test(&mut params).await;
 
@@ -131,12 +126,7 @@ async fn jmap_tests() {
 #[ignore]
 #[tokio::test(flavor = "multi_thread")]
 pub async fn jmap_metric_tests() {
-    let params = init_jmap_tests(
-        &std::env::var("STORE")
-            .expect("Missing store type. Try running `STORE=<store_type> cargo test`"),
-        false,
-    )
-    .await;
+    let params = init_jmap_tests(false).await;
 
     insert_test_metrics(params.server.core.clone()).await;
 }
@@ -206,6 +196,7 @@ impl Account {
 }
 
 pub async fn wait_for_index(server: &Server) {
+    let mut count = 0;
     loop {
         let mut has_index_tasks = false;
         server
@@ -234,6 +225,10 @@ pub async fn wait_for_index(server: &Server) {
             .unwrap();
 
         if has_index_tasks {
+            count += 1;
+            if count % 10 == 0 {
+                println!("Waiting for pending index tasks...");
+            }
             tokio::time::sleep(Duration::from_millis(300)).await;
         } else {
             break;
@@ -270,12 +265,11 @@ pub async fn assert_is_empty(server: &Server) {
     server.inner.cache.messages.clear();
 }
 
-async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
+async fn init_jmap_tests(delete_if_exists: bool) -> JMAPTest {
     // Load and parse config
     let temp_dir = TempDir::new("jmap_tests", delete_if_exists);
     let mut config = Config::new(
-        add_test_certs(SERVER)
-            .replace("{STORE}", store_id)
+        add_test_certs(&(build_store_config(&temp_dir.path.to_string_lossy()) + SERVER))
             .replace("{TMP}", &temp_dir.path.display().to_string())
             .replace(
                 "{LEVEL}",
@@ -1414,7 +1408,6 @@ reject-non-fqdn = false
 [session.rcpt]
 relay = [ { if = "!is_empty(authenticated_as)", then = true }, 
           { else = false } ]
-directory = "'{STORE}'"
 
 [session.rcpt.errors]
 total = 5
@@ -1422,7 +1415,6 @@ wait = "1ms"
 
 [session.auth]
 mechanisms = "[plain, login, oauthbearer]"
-directory = "'{STORE}'"
 
 [session.data]
 spam-filter = "recipients[0] != 'robert@example.com'"
@@ -1460,51 +1452,9 @@ allow-invalid-certs = true
 future-release = [ { if = "!is_empty(authenticated_as)", then = "99999999d"},
                    { else = false } ]
 
-[store."sqlite"]
-type = "sqlite"
-path = "{TMP}/sqlite.db"
-
-[store."rocksdb"]
-type = "rocksdb"
-path = "{TMP}/rocks.db"
-
-[store."foundationdb"]
-type = "foundationdb"
-
-[store."postgresql"]
-type = "postgresql"
-host = "localhost"
-port = 5432
-database = "stalwart"
-user = "postgres"
-password = "mysecretpassword"
-
-[store."mysql"]
-type = "mysql"
-host = "localhost"
-port = 3307
-database = "stalwart"
-user = "root"
-password = "password"
-
-[store."elastic"]
-type = "elasticsearch"
-url = "https://localhost:9200"
-user = "elastic"
-password = "changeme"
-tls.allow-invalid-certs = true
-disable = true
-
 [certificate.default]
 cert = "%{file:{CERT}}%"
 private-key = "%{file:{PK}}%"
-
-[storage]
-data = "{STORE}"
-fts = "{STORE}"
-blob = "{STORE}"
-lookup = "{STORE}"
-directory = "{STORE}"
 
 [jmap.protocol.get]
 max-objects = 100000
@@ -1556,10 +1506,6 @@ emails = "SELECT address FROM emails WHERE name = ? AND type != 'list' ORDER BY 
 verify = "SELECT address FROM emails WHERE address LIKE '%' || ? || '%' AND type = 'primary' ORDER BY address LIMIT 5"
 expand = "SELECT p.address FROM emails AS p JOIN emails AS l ON p.name = l.name WHERE p.type = 'primary' AND l.address = ? AND l.type = 'list' ORDER BY p.address LIMIT 50"
 domains = "SELECT 1 FROM emails WHERE address LIKE '%@' || ? LIMIT 1"
-
-[directory."{STORE}"]
-type = "internal"
-store = "{STORE}"
 
 [imap.auth]
 allow-plain-text = true

@@ -7,21 +7,13 @@
 use nohash_hasher::IsEnabled;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
+    fmt::Debug,
     hash::Hash,
 };
 
 // A hash that can cheekily store small inputs directly without hashing them.
 #[derive(
-    Debug,
-    Copy,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-    rkyv::Archive,
+    Copy, Clone, PartialEq, Eq, PartialOrd, Ord, rkyv::Serialize, rkyv::Deserialize, rkyv::Archive,
 )]
 #[repr(transparent)]
 pub struct CheekyHash([u8; HASH_SIZE]);
@@ -34,6 +26,7 @@ pub type CheekyHashMap<V> = HashMap<CheekyHash, V, nohash_hasher::BuildNoHashHas
 pub type CheekyBTreeMap<V> = BTreeMap<CheekyHash, V>;
 
 impl CheekyHash {
+    pub const HASH_SIZE: usize = HASH_SIZE;
     pub const NULL: CheekyHash = CheekyHash([0u8; HASH_SIZE]);
     pub const FULL: CheekyHash = CheekyHash([u8::MAX; HASH_SIZE]);
 
@@ -58,9 +51,10 @@ impl CheekyHash {
 
     pub fn deserialize(bytes: &[u8]) -> Option<Self> {
         let len = *bytes.first()?;
-        let mut hash = [len; HASH_SIZE];
+        let mut hash = [0u8; HASH_SIZE];
         let hash_len = 1 + (len as usize).min(HASH_PAYLOAD);
 
+        hash[0] = len;
         hash[1..hash_len].copy_from_slice(bytes.get(1..hash_len)?);
         Some(CheekyHash(hash))
     }
@@ -137,6 +131,23 @@ impl ArchivedCheekyHash {
     #[inline(always)]
     pub fn to_native(&self) -> CheekyHash {
         CheekyHash(self.0)
+    }
+}
+
+impl Debug for CheekyHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let len = self.payload_len();
+        let payload = self.payload();
+        let payload_str = if len <= HASH_PAYLOAD as u8 {
+            std::str::from_utf8(payload).unwrap_or("<non-utf8>")
+        } else {
+            "<hashed data>"
+        };
+
+        f.debug_struct("CheekyHash")
+            .field("length", &len)
+            .field("bytes", &payload_str)
+            .finish()
     }
 }
 
@@ -271,6 +282,17 @@ mod tests {
         assert!(
             debug_str.contains("CheekyHash"),
             "Debug output should contain type name"
+        );
+
+        // Test 13: CheekyHashSet and CheekyHashMap
+        let mut cheeky_set: CheekyHashSet = CheekyHashSet::default();
+        cheeky_set.insert(CheekyHash::new(b"set_item"));
+        assert!(cheeky_set.contains(&CheekyHash::new(b"set_item")));
+        let mut cheeky_map: CheekyHashMap<&str> = CheekyHashMap::default();
+        cheeky_map.insert(CheekyHash::new(b"map_key"), "map_value");
+        assert_eq!(
+            cheeky_map.get(&CheekyHash::new(b"map_key")),
+            Some(&"map_value")
         );
 
         println!("All CheekyHash tests passed!");

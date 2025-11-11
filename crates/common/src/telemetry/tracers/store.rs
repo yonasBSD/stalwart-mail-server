@@ -243,9 +243,7 @@ pub fn build_span_document(
     events: Vec<Event<EventDetails>>,
     index_fields: &AHashSet<SearchField>,
 ) -> IndexDocument {
-    let mut document = IndexDocument::new(SearchIndex::Tracing);
-
-    document.index_unsigned(SearchField::Id, span_id);
+    let mut document = IndexDocument::new(SearchIndex::Tracing).with_id(span_id);
 
     for event in events {
         for (idx, (key, value)) in event.keys.into_iter().enumerate() {

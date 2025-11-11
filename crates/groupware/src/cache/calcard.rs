@@ -110,7 +110,7 @@ pub(super) async fn build_calcard_resources(
             .caused_by(trc::location!())?;
 
         if cache.paths.is_empty() {
-            if !is_first_check {
+            if is_first_check {
                 if is_calendar {
                     server
                         .create_default_calendar(access_token, account_id, &name)

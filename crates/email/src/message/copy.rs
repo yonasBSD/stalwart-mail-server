@@ -27,7 +27,7 @@ use types::{
     field::EmailField,
     keyword::Keyword,
 };
-use utils::cheeky_hash::{CheekyHash, CheekyHashMap};
+use utils::cheeky_hash::CheekyHash;
 
 pub enum CopyMessageError {
     NotFound,
@@ -102,21 +102,21 @@ impl EmailCopy for Server {
         }
 
         // Obtain threadId
-        let mut message_ids = CheekyHashMap::default();
+        let mut message_ids = Vec::new();
         let mut subject = "";
         for header in &metadata.contents[0].parts[0].headers {
             match &header.name {
                 HeaderName::MessageId => {
                     header.value.visit_text(|id| {
                         if !id.is_empty() {
-                            message_ids.insert(CheekyHash::new(id.as_bytes()), true);
+                            message_ids.push(CheekyHash::new(id.as_bytes()));
                         }
                     });
                 }
                 HeaderName::InReplyTo | HeaderName::References | HeaderName::ResentMessageId => {
                     header.value.visit_text(|id| {
                         if !id.is_empty() {
-                            message_ids.insert(CheekyHash::new(id.as_bytes()), false);
+                            message_ids.push(CheekyHash::new(id.as_bytes()));
                         }
                     });
                 }
@@ -232,7 +232,7 @@ impl EmailCopy for Server {
             .caused_by(trc::location!())?
             .last_change_id(account_id)?;
 
-        // Request FTS index
+        // Request indexing
         self.notify_task_queue();
 
         // Update response

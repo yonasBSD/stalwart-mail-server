@@ -44,10 +44,7 @@ use types::{
     field::{ContactField, EmailField, MailboxField, PrincipalField},
     keyword::Keyword,
 };
-use utils::{
-    cheeky_hash::{CheekyHash, CheekyHashMap},
-    sanitize_email,
-};
+use utils::{cheeky_hash::CheekyHash, sanitize_email};
 
 #[derive(Default)]
 pub struct IngestedEmail {
@@ -92,7 +89,7 @@ pub trait EmailIngest: Sync + Send {
         &self,
         account_id: u32,
         thread_name: &str,
-        message_ids: &CheekyHashMap<bool>,
+        message_ids: &[CheekyHash],
     ) -> impl Future<Output = trc::Result<ThreadResult>> + Send;
     fn assign_imap_uid(
         &self,
@@ -207,7 +204,7 @@ impl EmailIngest for Server {
                             .and_then(sanitize_email)
                         && sender != deliver_to
                         && is_sender_authenticated
-                        && !self
+                        && self
                             .document_exists(
                                 account_id,
                                 Collection::ContactCard,
@@ -395,7 +392,7 @@ impl EmailIngest for Server {
 
         // Obtain message references and thread name
         let mut message_id = None;
-        let mut message_ids = CheekyHashMap::default();
+        let mut message_ids = Vec::new();
         let thread_result = {
             let mut subject = "";
             for header in message.root_part().headers().iter().rev() {
@@ -405,7 +402,7 @@ impl EmailIngest for Server {
                             if message_id.is_none() {
                                 message_id = id.to_string().into();
                             }
-                            message_ids.insert(CheekyHash::new(id.as_bytes()), true);
+                            message_ids.push(CheekyHash::new(id.as_bytes()));
                         }
                     }),
                     HeaderName::InReplyTo
@@ -413,7 +410,7 @@ impl EmailIngest for Server {
                     | HeaderName::ResentMessageId => {
                         header.value.visit_text(|id| {
                             if !id.is_empty() {
-                                message_ids.insert(CheekyHash::new(id.as_bytes()), false);
+                                message_ids.push(CheekyHash::new(id.as_bytes()));
                             }
                         });
                     }
@@ -429,6 +426,9 @@ impl EmailIngest for Server {
                     _ => (),
                 }
             }
+
+            message_ids.sort_unstable();
+            message_ids.dedup();
 
             self.find_thread_id(account_id, subject, &message_ids)
                 .await?
@@ -623,7 +623,6 @@ impl EmailIngest for Server {
                 .log_container_insert(SyncCollection::Thread);
             document_id
         };
-
         let due = now();
 
         batch
@@ -736,7 +735,7 @@ impl EmailIngest for Server {
         &self,
         account_id: u32,
         thread_name: &str,
-        message_ids: &CheekyHashMap<bool>,
+        message_ids: &[CheekyHash],
     ) -> trc::Result<ThreadResult> {
         let mut result = ThreadResult {
             thread_id: None,
@@ -783,25 +782,23 @@ impl EmailIngest for Server {
                 |key, value| {
                     if key.len() == key_len {
                         // Find matching references
-                        let mut from_offset = U32_LEN;
+                        let references = value.get(U32_LEN..).unwrap_or_default();
 
-                        while let Some(ref_hash) =
-                            value.get(from_offset..).and_then(CheekyHash::deserialize)
-                        {
-                            if let Some(is_message_id) = message_ids.get(&ref_hash) {
-                                let document_id = key.deserialize_be_u32(document_id_pos)?;
-                                let thread_id = value.deserialize_be_u32(0)?;
+                        if has_message_id(message_ids, references) {
+                            let document_id = key.deserialize_be_u32(document_id_pos)?;
+                            let thread_id = value.deserialize_be_u32(0)?;
 
-                                if *is_message_id && from_offset == U32_LEN {
-                                    result.duplicate_ids.push(document_id);
-                                }
-
-                                thread_merge.add(thread_id, document_id);
-
-                                return Ok(true);
+                            if message_ids.len() == 1
+                                || (message_ids.len() == references.len() / CheekyHash::HASH_SIZE
+                                    && references
+                                        .chunks_exact(CheekyHash::HASH_SIZE)
+                                        .zip(message_ids.iter())
+                                        .all(|(a, b)| a == b.as_raw_bytes()))
+                            {
+                                result.duplicate_ids.push(document_id);
                             }
 
-                            from_offset += ref_hash.len();
+                            thread_merge.add(thread_id, document_id);
                         }
                     }
 
@@ -851,6 +848,28 @@ impl EmailIngest for Server {
     }
 }
 
+fn has_message_id(a: &[CheekyHash], b: &[u8]) -> bool {
+    let mut i = 0;
+    let mut j = 0;
+
+    let a_len = a.len();
+    let b_len = b.len() / CheekyHash::HASH_SIZE;
+
+    while i < a_len && j < b_len {
+        match a[i]
+            .as_raw_bytes()
+            .as_slice()
+            .cmp(&b[j * CheekyHash::HASH_SIZE..(j + 1) * CheekyHash::HASH_SIZE])
+        {
+            std::cmp::Ordering::Equal => return true,
+            std::cmp::Ordering::Less => i += 1,
+            std::cmp::Ordering::Greater => j += 1,
+        }
+    }
+
+    false
+}
+
 impl IngestSource<'_> {
     pub fn is_smtp(&self) -> bool {
         matches!(self, Self::Smtp { .. })
@@ -887,14 +906,12 @@ impl MergeThreadIds<Vec<u32>> {
 }
 
 impl MergeThreadIds<AHashSet<u32>> {
-    pub fn deserialize(document_id: u32, bytes: &[u8]) -> Option<Self> {
+    pub fn deserialize(bytes: &[u8]) -> Option<Self> {
         if !bytes.is_empty() {
             let thread_hash = CheekyHash::deserialize(bytes)?;
             let mut merge_ids =
                 AHashSet::with_capacity(((bytes.len() - thread_hash.len()) / U32_LEN) + 1);
             let mut start_offset = thread_hash.len();
-
-            merge_ids.insert(document_id);
 
             while let Some(id_bytes) = bytes.get(start_offset..start_offset + U32_LEN) {
                 merge_ids.insert(u32::from_be_bytes(id_bytes.try_into().ok()?));
@@ -921,20 +938,11 @@ impl std::hash::Hash for MergeThreadIds<AHashSet<u32>> {
 pub(crate) struct ThreadInfo;
 
 impl ThreadInfo {
-    pub fn serialize(thread_id: u32, ref_ids: &CheekyHashMap<bool>) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(U32_LEN + ref_ids.len() * (1 + 16));
+    pub fn serialize(thread_id: u32, ref_ids: &[CheekyHash]) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(U32_LEN + 1 + ref_ids.len() * CheekyHash::HASH_SIZE);
         buf.extend_from_slice(&thread_id.to_be_bytes());
-        for (ref_id, is_message_id) in ref_ids {
-            if *is_message_id && buf.len() > U32_LEN {
-                // Place Message-id reference first
-                let mut new_buf = Vec::with_capacity(U32_LEN + ref_ids.len() * (1 + 16));
-                new_buf.extend_from_slice(&thread_id.to_be_bytes());
-                new_buf.extend_from_slice(ref_id.as_bytes());
-                new_buf.extend_from_slice(&buf[U32_LEN..]);
-                buf = new_buf;
-            } else {
-                buf.extend_from_slice(ref_id.as_bytes());
-            }
+        for ref_id in ref_ids {
+            buf.extend_from_slice(ref_id.as_raw_bytes());
         }
         buf
     }
@@ -942,7 +950,6 @@ impl ThreadInfo {
 
 pub struct ThreadMerge {
     entries: AHashMap<u32, Vec<u32>>,
-    num_ids: usize,
 }
 
 pub struct ThreadMergeResult {
@@ -955,17 +962,11 @@ impl ThreadMerge {
     pub fn new() -> Self {
         Self {
             entries: AHashMap::with_capacity(8),
-            num_ids: 0,
         }
     }
 
     pub fn add(&mut self, thread_id: u32, document_id: u32) {
         self.entries.entry(thread_id).or_default().push(document_id);
-        self.num_ids += 1;
-    }
-
-    pub fn num_document_ids(&self) -> usize {
-        self.num_ids
     }
 
     pub fn num_thread_ids(&self) -> usize {
@@ -1005,7 +1006,7 @@ impl ThreadMerge {
     pub fn merge(self) -> ThreadMergeResult {
         let mut max_thread_id = u32::MAX;
         let mut max_count = 0;
-        let mut merge_ids = Vec::with_capacity(self.num_ids);
+        let mut merge_ids = Vec::with_capacity(self.entries.len());
 
         for (thread_id, ids) in self.entries {
             match ids.len().cmp(&max_count) {
@@ -1020,7 +1021,7 @@ impl ThreadMerge {
                 }
                 Ordering::Less => (),
             }
-            merge_ids.extend(ids);
+            merge_ids.push(thread_id);
         }
 
         ThreadMergeResult {

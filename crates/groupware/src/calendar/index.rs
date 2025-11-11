@@ -27,7 +27,11 @@ use store::{
     write::{IndexPropertyClass, SearchIndex, ValueClass},
     xxhash_rust::xxh3,
 };
-use types::{acl::AclGrant, collection::SyncCollection, field::CalendarNotificationField};
+use types::{
+    acl::AclGrant,
+    collection::SyncCollection,
+    field::{CalendarEventField, CalendarNotificationField},
+};
 
 impl IndexableObject for Calendar {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
@@ -88,6 +92,10 @@ impl IndexableObject for CalendarEvent {
                     .chain([self.data.event_range_start() as u64])
                     .fold(0, |acc, hash| acc ^ hash),
             },
+            IndexValue::Index {
+                field: CalendarEventField::Uid.into(),
+                value: self.data.event.uids().next().into(),
+            },
             IndexValue::Quota {
                 used: self.dead_properties.size() as u32
                     + self.display_name.as_ref().map_or(0, |n| n.len() as u32)
@@ -113,6 +121,10 @@ impl IndexableObject for &ArchivedCalendarEvent {
                     .hashes()
                     .chain([self.data.event_range_start() as u64])
                     .fold(0, |acc, hash| acc ^ hash),
+            },
+            IndexValue::Index {
+                field: CalendarEventField::Uid.into(),
+                value: self.data.event.uids().next().into(),
             },
             IndexValue::Quota {
                 used: self.dead_properties.size() as u32
@@ -340,8 +352,16 @@ impl ArchivedCalendarEvent {
 }
 
 impl ArchivedCalendarEvent {
-    pub fn index_document(&self, index_fields: &AHashSet<SearchField>) -> IndexDocument {
-        let mut document = IndexDocument::new(SearchIndex::Calendar);
+    pub fn index_document(
+        &self,
+        account_id: u32,
+        document_id: u32,
+        index_fields: &AHashSet<SearchField>,
+        default_language: Language,
+    ) -> IndexDocument {
+        let mut document = IndexDocument::new(SearchIndex::Calendar)
+            .with_account_id(account_id)
+            .with_document_id(document_id);
 
         if index_fields.is_empty()
             || index_fields.contains(&SearchField::Calendar(CalendarSearchField::Start))
@@ -400,9 +420,11 @@ impl ArchivedCalendarEvent {
             }
         }
 
-        if let Some(detected_language) = detector.most_frequent_language() {
-            document.set_unknown_language(detected_language);
-        }
+        document.set_unknown_language(
+            detector
+                .most_frequent_language()
+                .unwrap_or(default_language),
+        );
 
         document
     }

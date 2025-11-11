@@ -92,7 +92,7 @@ struct Locked {
 }
 
 pub fn spawn_task_manager(inner: Arc<Inner>) {
-    // Create three mpsc channels for the different task types
+    // Create mpsc channels for the different task types
     let (tx_index_1, mut rx_index_1) = mpsc::channel::<Task<IndexAction>>(IPC_CHANNEL_BUFFER);
     let (tx_index_2, mut rx_index_2) = mpsc::channel::<Task<bool>>(IPC_CHANNEL_BUFFER);
     let (tx_index_3, mut rx_index_3) = mpsc::channel::<Task<CalendarAlarm>>(IPC_CHANNEL_BUFFER);
@@ -155,6 +155,12 @@ pub fn spawn_task_manager(inner: Arc<Inner>) {
                     if success.iter().all(|t| t.is_done()) {
                         delete_tasks(&server, &locked_batch).await;
                     } else {
+                        trc::event!(
+                            TaskQueue(TaskQueueEvent::TaskFailed),
+                            Total = locked_batch.len(),
+                            Details = "Indexing task failed",
+                        );
+
                         // Remove successful entries from queue
                         let mut to_delete = Vec::with_capacity(locked_batch.len());
                         for (task, result) in locked_batch.into_iter().zip(success.into_iter()) {
@@ -162,7 +168,9 @@ pub fn spawn_task_manager(inner: Arc<Inner>) {
                                 to_delete.push(task);
                             }
                         }
-                        delete_tasks(&server, &to_delete).await;
+                        if !to_delete.is_empty() {
+                            delete_tasks(&server, &to_delete).await;
+                        }
                     }
                 }
             }
@@ -193,6 +201,13 @@ pub fn spawn_task_manager(inner: Arc<Inner>) {
                     // Remove entry from queue
                     if success {
                         delete_tasks(&server, &[task]).await;
+                    } else {
+                        trc::event!(
+                            TaskQueue(TaskQueueEvent::TaskFailed),
+                            AccountId = task.account_id,
+                            DocumentId = task.document_id,
+                            Details = "Bayes training task failed",
+                        );
                     }
                 }
             }
@@ -230,6 +245,13 @@ pub fn spawn_task_manager(inner: Arc<Inner>) {
                     // Remove entry from queue
                     if success {
                         delete_tasks(&server, &[task]).await;
+                    } else {
+                        trc::event!(
+                            TaskQueue(TaskQueueEvent::TaskFailed),
+                            AccountId = task.account_id,
+                            DocumentId = task.document_id,
+                            Details = "Sending alarm task failed",
+                        );
                     }
                 }
             }
@@ -267,6 +289,13 @@ pub fn spawn_task_manager(inner: Arc<Inner>) {
                     // Remove entry from queue
                     if success {
                         delete_tasks(&server, &[task]).await;
+                    } else {
+                        trc::event!(
+                            TaskQueue(TaskQueueEvent::TaskFailed),
+                            AccountId = task.account_id,
+                            DocumentId = task.document_id,
+                            Details = "Sending iMIP task failed",
+                        );
                     }
                 }
             }
@@ -295,6 +324,13 @@ pub fn spawn_task_manager(inner: Arc<Inner>) {
                     // Remove entry from queue
                     if success {
                         delete_tasks(&server, &[task]).await;
+                    } else {
+                        trc::event!(
+                            TaskQueue(TaskQueueEvent::TaskFailed),
+                            AccountId = task.account_id,
+                            DocumentId = task.document_id,
+                            Details = "Merging threads task failed",
+                        );
                     }
                 }
             }

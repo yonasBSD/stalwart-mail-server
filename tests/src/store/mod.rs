@@ -179,11 +179,26 @@ type = "redis"
 urls = "redis://127.0.0.1"
 redis-type = "single"
 
+[store."psql-replica"]
+type = "sql-read-replica"
+primary = "postgresql"
+replicas = "postgresql"
+
 [storage]
 data = "{STORE}"
 fts = "{SEARCH_STORE}"
 blob = "{BLOB_STORE}"
 lookup = "{LOOKUP_STORE}"
 directory = "{STORE}"
+
+[directory."{STORE}"]
+type = "internal"
+store = "{STORE}"
+
+[session.rcpt]
+directory = "'{STORE}'"
+
+[session.auth]
+directory = "'{STORE}'"
 
 "#;

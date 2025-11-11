@@ -260,8 +260,16 @@ impl ArchivedContactCard {
 }
 
 impl ArchivedContactCard {
-    pub fn index_document(&self, index_fields: &AHashSet<SearchField>) -> IndexDocument {
-        let mut document = IndexDocument::new(SearchIndex::Contacts);
+    pub fn index_document(
+        &self,
+        account_id: u32,
+        document_id: u32,
+        index_fields: &AHashSet<SearchField>,
+        default_language: Language,
+    ) -> IndexDocument {
+        let mut document = IndexDocument::new(SearchIndex::Contacts)
+            .with_account_id(account_id)
+            .with_document_id(document_id);
         let mut detector = LanguageDetector::new();
 
         for entry in self.card.entries.iter() {
@@ -322,9 +330,11 @@ impl ArchivedContactCard {
             }
         }
 
-        if let Some(detected_language) = detector.most_frequent_language() {
-            document.set_unknown_language(detected_language);
-        }
+        document.set_unknown_language(
+            detector
+                .most_frequent_language()
+                .unwrap_or(default_language),
+        );
 
         document
     }

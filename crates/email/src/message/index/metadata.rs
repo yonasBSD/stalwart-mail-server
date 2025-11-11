@@ -12,13 +12,18 @@ use crate::message::{
     },
 };
 use common::storage::index::ObjectIndexBuilder;
-use mail_parser::{decoders::html::html_to_text, parsers::preview::preview_text};
+use mail_parser::{
+    ArchivedHeaderName,
+    decoders::html::html_to_text,
+    parsers::{fields::thread::thread_name, preview::preview_text},
+};
 use store::{
     Serialize, SerializeInfallible,
     write::{Archiver, BatchBuilder, BlobOp, DirectoryClass, IndexPropertyClass, ValueClass},
 };
 use trc::AddContext;
 use types::{blob_hash::BlobHash, field::EmailField};
+use utils::cheeky_hash::CheekyHash;
 
 impl MessageMetadata {
     #[inline(always)]
@@ -93,11 +98,34 @@ impl ArchivedMessageMetadata {
 
     pub fn unindex(&self, batch: &mut BatchBuilder, account_id: u32, tenant_id: Option<u32>) {
         // Delete metadata
+        let thread_name = self
+            .contents
+            .first()
+            .and_then(|c| c.parts.first())
+            .and_then(|p| {
+                p.headers.iter().rev().find_map(|h| {
+                    if let ArchivedHeaderName::Subject = &h.name {
+                        h.value.as_text()
+                    } else {
+                        None
+                    }
+                })
+            })
+            .map(thread_name)
+            .unwrap_or_default();
         batch
             .clear(EmailField::Metadata)
             .clear(ValueClass::IndexProperty(IndexPropertyClass::Integer {
                 property: EmailField::ReceivedToSize.into(),
                 value: self.received_at.to_native(),
+            }))
+            .clear(ValueClass::IndexProperty(IndexPropertyClass::Hash {
+                property: EmailField::Threading.into(),
+                hash: CheekyHash::new(if !thread_name.is_empty() {
+                    thread_name
+                } else {
+                    "!"
+                }),
             }));
 
         // Index properties

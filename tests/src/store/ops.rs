@@ -19,6 +19,7 @@ use types::collection::{Collection, SyncCollection};
 // FDB max value
 const MAX_VALUE_SIZE: usize = 100000;
 
+#[cfg(feature = "foundationdb")]
 fn value_gen(chunks: impl IntoIterator<Item = (u8, usize)>) -> Vec<u8> {
     let mut value = Vec::new();
     for (byte, size) in chunks {

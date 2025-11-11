@@ -22,7 +22,7 @@ use store::{
 use trc::AddContext;
 use types::{
     collection::{Collection, SyncCollection},
-    field::Field,
+    field::IdentityField,
 };
 use utils::sanitize_email;
 
@@ -145,7 +145,7 @@ impl IdentityGet for Server {
 
     async fn identity_get_or_create(&self, account_id: u32) -> trc::Result<RoaringBitmap> {
         let mut identity_ids = self
-            .document_ids(account_id, Collection::Identity, Field::DOCUMENT_ID)
+            .document_ids(account_id, Collection::Identity, IdentityField::DocumentId)
             .await?;
         if !identity_ids.is_empty() {
             return Ok(identity_ids);
@@ -206,7 +206,7 @@ impl IdentityGet for Server {
             next_document_id -= 1;
             batch
                 .with_document(document_id)
-                .tag(Field::DOCUMENT_ID)
+                .tag(IdentityField::DocumentId)
                 .custom(ObjectIndexBuilder::<(), _>::new().with_changes(Identity {
                     name,
                     email,

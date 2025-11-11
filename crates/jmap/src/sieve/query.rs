@@ -64,7 +64,7 @@ impl SieveScriptQuery for Server {
                     IndexKeyPrefix {
                         account_id,
                         collection: Collection::SieveScript.into(),
-                        field: u8::from(Collection::SieveScript) + 1,
+                        field: u8::from(SieveField::Name) + 1,
                     },
                 )
                 .no_values(),
@@ -101,15 +101,20 @@ impl SieveScriptQuery for Server {
                         )));
                     }
                     SieveFilter::IsActive(is_active) => {
-                        let active_script_id = active_script_id.unwrap();
-
                         if is_active {
-                            filters.push(SearchFilter::is_in_set(RoaringBitmap::from_iter([
-                                active_script_id,
-                            ])));
+                            if let Some(active_script_id) = active_script_id {
+                                filters.push(SearchFilter::is_in_set(RoaringBitmap::from_iter([
+                                    active_script_id,
+                                ])));
+                            } else {
+                                // No active script, so no results
+                                filters.push(SearchFilter::is_in_set(RoaringBitmap::new()));
+                            }
                         } else {
                             let mut inactive_set = document_ids.clone();
-                            inactive_set.remove(active_script_id);
+                            if let Some(active_script_id) = active_script_id {
+                                inactive_set.remove(active_script_id);
+                            }
                             filters.push(SearchFilter::is_in_set(inactive_set));
                         }
                     }

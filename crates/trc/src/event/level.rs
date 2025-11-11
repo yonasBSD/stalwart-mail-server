@@ -382,6 +382,7 @@ impl EventType {
                 | TaskQueueEvent::TaskLocked
                 | TaskQueueEvent::TaskIgnored
                 | TaskQueueEvent::MetadataNotFound => Level::Debug,
+                TaskQueueEvent::TaskFailed => Level::Warn,
             },
             EventType::Dmarc(_) => Level::Debug,
             EventType::Spf(_) => Level::Debug,

@@ -457,7 +457,8 @@ impl Store {
     pub async fn destroy(&self) {
         use crate::*;
 
-        if self.is_pg_or_mysql() {
+        #[cfg(any(feature = "postgres", feature = "mysql"))]
+        {
             use crate::write::SearchIndex;
 
             for index in [

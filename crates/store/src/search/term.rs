@@ -13,6 +13,7 @@ use crate::{
         SearchIndexId, SearchIndexType, ValueClass,
     },
 };
+use ahash::AHashSet;
 use nlp::{
     language::stemmer::Stemmer,
     tokenizers::{space::SpaceTokenizer, word::WordTokenizer},
@@ -197,7 +198,7 @@ impl TermIndexBuilder {
                 _ => {
                     debug_assert!(
                         false,
-                        "Invalid combination of AccountId, DocumentId and Id fields"
+                        "Invalid combination of AccountId {account_id:?}, DocumentId {document_id:?} and Id {id:?} fields"
                     );
                     SearchIndexId::Global { id: 0 }
                 }
@@ -249,6 +250,87 @@ impl TermIndex {
                 }),
                 vec![],
             );
+        }
+
+        Ok(())
+    }
+
+    pub fn merge_index(
+        self,
+        batch: &mut BatchBuilder,
+        index: SearchIndex,
+        id: SearchIndexId,
+        old_term: &ArchivedTermIndex,
+    ) -> trc::Result<()> {
+        let archive = Archiver::new(self);
+        batch.set(
+            ValueClass::SearchIndex(SearchIndexClass {
+                index,
+                id,
+                typ: SearchIndexType::Document,
+            }),
+            archive.serialize()?,
+        );
+
+        let mut old_terms = AHashSet::with_capacity(old_term.terms.len());
+        let mut old_fields = AHashSet::with_capacity(old_term.fields.len());
+        for term in old_term.terms.iter() {
+            let mut fields = term.fields.to_native();
+            while let Some(field) = fields.bit_pop() {
+                old_terms.insert(SearchIndexType::Term {
+                    hash: term.hash.to_native(),
+                    field,
+                });
+            }
+        }
+        for field in old_term.fields.iter() {
+            old_fields.insert(SearchIndexField {
+                field_id: field.field_id,
+                len: field.len,
+                data: field.data,
+            });
+        }
+
+        for term in archive.inner.terms {
+            let mut fields = term.fields;
+            while let Some(field) = fields.bit_pop() {
+                let typ = SearchIndexType::Term {
+                    hash: term.hash,
+                    field,
+                };
+
+                if !old_terms.remove(&typ) {
+                    batch.set(
+                        ValueClass::SearchIndex(SearchIndexClass { index, id, typ }),
+                        vec![],
+                    );
+                }
+            }
+        }
+
+        for field in archive.inner.fields {
+            if !old_fields.remove(&field) {
+                batch.set(
+                    ValueClass::SearchIndex(SearchIndexClass {
+                        index,
+                        id,
+                        typ: SearchIndexType::Index { field },
+                    }),
+                    vec![],
+                );
+            }
+        }
+
+        for typ in old_terms {
+            batch.clear(ValueClass::SearchIndex(SearchIndexClass { index, id, typ }));
+        }
+
+        for field in old_fields {
+            batch.clear(ValueClass::SearchIndex(SearchIndexClass {
+                index,
+                id,
+                typ: SearchIndexType::Index { field },
+            }));
         }
 
         Ok(())

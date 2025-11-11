@@ -7,6 +7,7 @@
 use super::metadata::MessageData;
 use crate::{cache::MessageCacheFetch, mailbox::*};
 use common::{KV_LOCK_PURGE_ACCOUNT, Server, storage::index::ObjectIndexBuilder};
+use directory::backend::internal::manage::ManageDirectory;
 use groupware::calendar::storage::ItipAutoExpunge;
 use std::future::Future;
 use store::rand::prelude::SliceRandom;
@@ -19,7 +20,7 @@ use store::{
 };
 use trc::AddContext;
 use types::collection::{Collection, VanishedCollection};
-use types::field::{EmailField, EmailSubmissionField, Field};
+use types::field::{EmailField, EmailSubmissionField};
 
 pub trait EmailDeletion: Sync + Send {
     fn emails_delete(
@@ -105,10 +106,7 @@ impl EmailDeletion for Server {
     }
 
     async fn purge_accounts(&self, use_roles: bool) {
-        if let Ok(account_ids) = self
-            .document_ids(u32::MAX, Collection::Principal, Field::DOCUMENT_ID)
-            .await
-        {
+        if let Ok(account_ids) = self.store().principal_ids(None, None).await {
             let mut account_ids: Vec<u32> = account_ids
                 .into_iter()
                 .filter(|id| {
@@ -285,6 +283,7 @@ impl EmailDeletion for Server {
         self.emails_delete(account_id, &mut batch, destroy_ids)
             .await?;
         self.commit_batch(batch).await?;
+        self.notify_task_queue();
 
         Ok(())
     }

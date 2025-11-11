@@ -158,6 +158,7 @@ pub struct IndexDocument {
     pub(crate) fields: AHashMap<SearchField, SearchValue>,
 }
 
+#[derive(Debug)]
 pub struct QueryResults {
     results: RoaringBitmap,
     comparators: Vec<SearchComparator>,

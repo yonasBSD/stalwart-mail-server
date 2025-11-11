@@ -96,7 +96,6 @@ impl JmapCalendarEventCopy for Server {
 
         // Obtain quota
         let mut batch = BatchBuilder::new();
-        let mut nudge_queue = false;
 
         'create: for (id, create) in request.create.into_valid() {
             let from_calendar_event_id = id.document_id();
@@ -158,9 +157,8 @@ impl JmapCalendarEventCopy for Server {
                 )
                 .await?
             {
-                Ok(result) => {
-                    response.created(id, result.document_id);
-                    nudge_queue |= result.nudge_queue;
+                Ok(document_id) => {
+                    response.created(id, document_id);
 
                     // Add to destroy list
                     if on_success_delete {
@@ -181,10 +179,7 @@ impl JmapCalendarEventCopy for Server {
                 .await
                 .and_then(|ids| ids.last_change_id(account_id))
                 .caused_by(trc::location!())?;
-
-            if nudge_queue {
-                self.notify_task_queue();
-            }
+            self.notify_task_queue();
 
             response.new_state = State::Exact(change_id);
         }

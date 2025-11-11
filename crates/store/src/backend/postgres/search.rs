@@ -124,6 +124,8 @@ impl PostgresStore {
         let conn = self.conn_pool.get().await.map_err(into_error)?;
         let s = conn.prepare_cached(&query).await.map_err(into_error)?;
 
+        let c = println!("Executing search query: {}", query);
+
         conn.query(&s, params.as_slice())
             .await
             .and_then(|rows| {

@@ -21,11 +21,15 @@ use groupware::{
 };
 use http_proto::HttpResponse;
 use hyper::StatusCode;
-use store::write::BatchBuilder;
+use store::{
+    ValueKey,
+    write::{BatchBuilder, ValueClass},
+};
 use trc::AddContext;
 use types::{
     acl::Acl,
     collection::{Collection, SyncCollection},
+    field::PrincipalField,
 };
 
 pub(crate) trait CardDeleteRequestHandler: Sync + Send {
@@ -121,6 +125,25 @@ impl CardDeleteRequestHandler for Server {
                 )
                 .await
                 .caused_by(trc::location!())?;
+
+            // Reset default address book id
+            let default_book_id = self
+                .store()
+                .get_value::<u32>(ValueKey {
+                    account_id,
+                    collection: Collection::Principal.into(),
+                    document_id: 0,
+                    class: ValueClass::Property(PrincipalField::DefaultAddressBookId.into()),
+                })
+                .await
+                .caused_by(trc::location!())?;
+            if default_book_id.is_some_and(|id| id == document_id) {
+                batch
+                    .with_account_id(account_id)
+                    .with_collection(Collection::Principal)
+                    .with_document(0)
+                    .clear(PrincipalField::DefaultAddressBookId);
+            }
         } else {
             // Validate ACL
             let addressbook_id = delete_resource.parent_id().unwrap();
@@ -175,6 +198,7 @@ impl CardDeleteRequestHandler for Server {
         }
 
         self.commit_batch(batch).await.caused_by(trc::location!())?;
+        self.notify_task_queue();
 
         Ok(HttpResponse::new(StatusCode::NO_CONTENT))
     }

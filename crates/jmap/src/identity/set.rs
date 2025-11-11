@@ -21,7 +21,7 @@ use store::write::BatchBuilder;
 use trc::AddContext;
 use types::{
     collection::{Collection, SyncCollection},
-    field::Field,
+    field::{Field, IdentityField},
 };
 use utils::sanitize_email;
 
@@ -41,7 +41,7 @@ impl IdentitySet for Server {
     ) -> trc::Result<SetResponse<identity::Identity>> {
         let account_id = request.account_id.document_id();
         let identity_ids = self
-            .document_ids(account_id, Collection::Identity, Field::DOCUMENT_ID)
+            .document_ids(account_id, Collection::Identity, IdentityField::DocumentId)
             .await?;
         let mut response = SetResponse::from_request(&request, self.core.jmap.set_max_objects)?;
         let will_destroy = request.unwrap_destroy().into_valid().collect::<Vec<_>>();
@@ -111,7 +111,7 @@ impl IdentitySet for Server {
                 .with_account_id(account_id)
                 .with_collection(Collection::Identity)
                 .with_document(document_id)
-                .tag(Field::DOCUMENT_ID)
+                .tag(IdentityField::DocumentId)
                 .custom(ObjectIndexBuilder::<(), _>::new().with_changes(identity))
                 .caused_by(trc::location!())?
                 .commit_point();
@@ -177,7 +177,7 @@ impl IdentitySet for Server {
                     .with_account_id(account_id)
                     .with_collection(Collection::Identity)
                     .with_document(document_id)
-                    .untag(Field::DOCUMENT_ID)
+                    .untag(IdentityField::DocumentId)
                     .clear(Field::ARCHIVE)
                     .log_item_delete(SyncCollection::Identity, None)
                     .commit_point();

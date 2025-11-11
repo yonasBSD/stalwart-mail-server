@@ -313,11 +313,11 @@ impl Task<TaskAction> {
                     })
                 }
                 Some(4) => TaskAction::SendImip,
-                Some(9) => TaskAction::MergeThreads(
-                    MergeThreadIds::deserialize(document_id, value).ok_or_else(|| {
-                        trc::Error::corrupted_key(key, value.into(), trc::location!())
-                    })?,
-                ),
+                Some(9) => {
+                    TaskAction::MergeThreads(MergeThreadIds::deserialize(value).ok_or_else(
+                        || trc::Error::corrupted_key(key, value.into(), trc::location!()),
+                    )?)
+                }
                 _ => return Err(trc::Error::corrupted_key(key, None, trc::location!())),
             },
         })

@@ -12,12 +12,16 @@ use mail_parser::{
     ArchivedHeaderName, ArchivedHeaderValue, DateTime, core::rkyv::ArchivedGetHeader,
     decoders::html::html_to_text, parsers::fields::thread::thread_name,
 };
-use nlp::language::{
-    Language,
-    detect::{LanguageDetector, MIN_LANGUAGE_SCORE},
+use nlp::{
+    language::{
+        Language,
+        detect::{LanguageDetector, MIN_LANGUAGE_SCORE},
+    },
+    tokenizers::word::WordTokenizer,
 };
 use store::{
     ahash::AHashSet,
+    backend::MAX_TOKEN_LENGTH,
     search::{EmailSearchField, IndexDocument, SearchField},
     write::SearchIndex,
 };
@@ -25,13 +29,18 @@ use store::{
 impl ArchivedMessageMetadata {
     pub fn index_document(
         &self,
+        account_id: u32,
+        document_id: u32,
         raw_message: &[u8],
         index_fields: &AHashSet<SearchField>,
+        default_language: Language,
     ) -> IndexDocument {
         let mut detector = LanguageDetector::new();
         let mut language = Language::Unknown;
         let message_contents = &self.contents[0];
-        let mut document = IndexDocument::new(SearchIndex::Email);
+        let mut document = IndexDocument::new(SearchIndex::Email)
+            .with_account_id(account_id)
+            .with_document_id(document_id);
 
         if index_fields.is_empty()
             || index_fields.contains(&SearchField::Email(EmailSearchField::ReceivedAt))
@@ -147,12 +156,54 @@ impl ArchivedMessageMetadata {
                             }
                         }
                         _ => {
-                            if index_fields.contains(&SearchField::Email(EmailSearchField::Headers))
-                            {
+                            #[cfg(not(feature = "test_mode"))]
+                            let index_headers = index_fields
+                                .contains(&SearchField::Email(EmailSearchField::Headers));
+
+                            #[cfg(feature = "test_mode")]
+                            let index_headers = true;
+
+                            if index_headers {
                                 let mut value = String::new();
-                                header.value.visit_text(|text| {
-                                    value.push_str(text);
-                                });
+                                match &header.value {
+                                    ArchivedHeaderValue::Address(_) => {
+                                        header.value.visit_addresses(|_, addr| {
+                                            if !value.is_empty() {
+                                                value.push(' ');
+                                            }
+                                            value.push_str(addr);
+                                        });
+                                    }
+                                    ArchivedHeaderValue::Text(_)
+                                    | ArchivedHeaderValue::TextList(_) => {
+                                        header.value.visit_text(|text| {
+                                            if !value.is_empty() {
+                                                value.push(' ');
+                                            }
+                                            value.push_str(text);
+                                        });
+                                    }
+                                    ArchivedHeaderValue::ContentType(_)
+                                    | ArchivedHeaderValue::Received(_) => {
+                                        if let Some(header) = raw_message
+                                            .get(
+                                                header.offset_start.to_native() as usize
+                                                    ..header.offset_end.to_native() as usize,
+                                            )
+                                            .and_then(|bytes| std::str::from_utf8(bytes).ok())
+                                        {
+                                            for word in WordTokenizer::new(header, MAX_TOKEN_LENGTH)
+                                            {
+                                                if !value.is_empty() {
+                                                    value.push(' ');
+                                                }
+                                                value.push_str(word.word.as_ref());
+                                            }
+                                        }
+                                    }
+                                    ArchivedHeaderValue::DateTime(_)
+                                    | ArchivedHeaderValue::Empty => (),
+                                }
 
                                 document.insert_key_value(
                                     EmailSearchField::Headers,
@@ -267,15 +318,20 @@ impl ArchivedMessageMetadata {
             }
         }
 
-        if let Some(detected_language) = detector.most_frequent_language() {
-            document.set_unknown_language(detected_language);
-        }
+        #[cfg(not(feature = "test_mode"))]
+        document.set_unknown_language(
+            detector
+                .most_frequent_language()
+                .unwrap_or(default_language),
+        );
+
+        #[cfg(feature = "test_mode")]
+        document.set_unknown_language(default_language);
 
         let has_attachment =
             document.has_field(&(SearchField::Email(EmailSearchField::Attachment)));
 
         document.index_bool(EmailSearchField::HasAttachment, has_attachment);
-
         document
     }
 }

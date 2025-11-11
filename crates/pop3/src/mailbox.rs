@@ -56,9 +56,7 @@ impl<T: SessionStream> Session<T> {
         // Obtain message sizes
         let mut message_sizes = AHashMap::new();
         self.server
-            .core
-            .storage
-            .data
+            .store()
             .iterate(
                 IterateParams::new(
                     ValueKey {

@@ -57,7 +57,7 @@ impl EmailSubmissionQuery for Server {
                 IterateParams::new(
                     ValueKey {
                         account_id,
-                        collection: Collection::CalendarEventNotification.into(),
+                        collection: Collection::EmailSubmission.into(),
                         document_id: 0,
                         class: ValueClass::IndexProperty(IndexPropertyClass::Integer {
                             property: EmailSubmissionField::Metadata.into(),
@@ -66,7 +66,7 @@ impl EmailSubmissionQuery for Server {
                     },
                     ValueKey {
                         account_id,
-                        collection: Collection::CalendarEventNotification.into(),
+                        collection: Collection::EmailSubmission.into(),
                         document_id: 0,
                         class: ValueClass::IndexProperty(IndexPropertyClass::Integer {
                             property: EmailSubmissionField::Metadata.into(),

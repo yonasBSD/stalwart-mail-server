@@ -5,7 +5,6 @@
  */
 
 const ARCHIVE_FIELD: u8 = 50;
-const DOCUMENT_ID_FIELD: u8 = 51;
 
 pub trait FieldType: Into<u8> + Copy + std::fmt::Debug + PartialEq + Eq {}
 
@@ -65,6 +64,13 @@ pub enum SieveField {
 pub enum EmailSubmissionField {
     Archive,
     Metadata,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum IdentityField {
+    Archive,
+    DocumentId,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -161,6 +167,15 @@ impl From<PrincipalField> for u8 {
     }
 }
 
+impl From<IdentityField> for u8 {
+    fn from(value: IdentityField) -> Self {
+        match value {
+            IdentityField::Archive => ARCHIVE_FIELD,
+            IdentityField::DocumentId => 51,
+        }
+    }
+}
+
 impl From<Field> for u8 {
     fn from(value: Field) -> Self {
         value.0
@@ -215,9 +230,14 @@ impl From<EmailSubmissionField> for Field {
     }
 }
 
+impl From<IdentityField> for Field {
+    fn from(value: IdentityField) -> Self {
+        Field(u8::from(value))
+    }
+}
+
 impl Field {
     pub const ARCHIVE: Field = Field(ARCHIVE_FIELD);
-    pub const DOCUMENT_ID: Field = Field(DOCUMENT_ID_FIELD);
 
     pub fn new(value: u8) -> Self {
         Field(value)
@@ -237,3 +257,4 @@ impl FieldType for MailboxField {}
 impl FieldType for PrincipalField {}
 impl FieldType for SieveField {}
 impl FieldType for EmailSubmissionField {}
+impl FieldType for IdentityField {}

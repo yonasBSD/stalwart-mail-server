@@ -13,7 +13,7 @@ use std::{
     time::Instant,
 };
 use store::{
-    SearchStore, Store,
+    SearchStore,
     ahash::AHashMap,
     roaring::RoaringBitmap,
     search::{
@@ -275,6 +275,11 @@ pub async fn test(store: SearchStore, do_insert: bool) {
             }
         }
 
+        // Refresh
+        if let SearchStore::ElasticSearch(store) = &store {
+            store.refresh_index(SearchIndex::Email).await.unwrap();
+        }
+
         println!("\nInsert took {} ms.", now.elapsed().as_millis());
     }
 
@@ -295,7 +300,11 @@ pub async fn test(store: SearchStore, do_insert: bool) {
 }
 
 async fn test_filter(store: SearchStore, fields: &AHashMap<u32, String>, mask: &RoaringBitmap) {
-    let can_stem = !matches!(store, SearchStore::Store(Store::MySQL(_)));
+    #[cfg(feature = "mysql")]
+    let can_stem = !matches!(store, SearchStore::Store(store::Store::MySQL(_)));
+
+    #[cfg(not(feature = "mysql"))]
+    let can_stem = true;
 
     let tests = [
         (
@@ -473,8 +482,11 @@ async fn test_filter(store: SearchStore, fields: &AHashMap<u32, String>, mask: &
 }
 
 async fn test_sort(store: SearchStore, fields: &AHashMap<u32, String>, mask: &RoaringBitmap) {
-    let is_reversed =
-        matches!(store, SearchStore::Store(Store::MySQL(_))) || store.internal_fts().is_some();
+    #[cfg(feature = "postgres")]
+    let is_reversed = matches!(store, SearchStore::Store(store::Store::PostgreSQL(_)));
+
+    #[cfg(not(feature = "postgres"))]
+    let is_reversed = false;
 
     let tests = [
         (
@@ -523,7 +535,7 @@ async fn test_sort(store: SearchStore, fields: &AHashMap<u32, String>, mask: &Ro
                 SearchComparator::descending(EmailSearchField::Cc),
                 SearchComparator::ascending(EmailSearchField::To),
             ],
-            if !is_reversed {
+            if is_reversed {
                 vec![
                     "ar00052", "ar00627", "t00352", "t07275", "t12318", "t04931", "t13683",
                     "t13686", "t13687", "t13688", "t13689", "t13690", "t13691", "t13769", "t13773",
@@ -564,8 +576,13 @@ async fn test_unindex(store: SearchStore, fields: &AHashMap<u32, String>) {
         .query_account(
             SearchQuery::new(SearchIndex::Email)
                 .with_mask(RoaringBitmap::from_iter(fields.keys().copied()))
-                .with_account_id(0)
-                .with_filter(SearchFilter::has_keyword(EmailSearchField::From, "paper")),
+                .with_filters(vec![
+                    SearchFilter::has_keyword(EmailSearchField::From, "gelatin"),
+                    SearchFilter::gt(EmailSearchField::ReceivedAt, 2000u32),
+                    SearchFilter::lt(EmailSearchField::Size, 180u32),
+                    SearchFilter::gt(EmailSearchField::Size, 0u32),
+                ])
+                .with_account_id(0),
         )
         .await
         .unwrap();
@@ -582,12 +599,22 @@ async fn test_unindex(store: SearchStore, fields: &AHashMap<u32, String>) {
 
     store.unindex(query).await.unwrap();
 
+    // Refresh
+    if let SearchStore::ElasticSearch(store) = &store {
+        store.refresh_index(SearchIndex::Email).await.unwrap();
+    }
+
     assert_eq!(
         store
             .query_account(
                 SearchQuery::new(SearchIndex::Email)
+                    .with_filters(vec![
+                        SearchFilter::has_keyword(EmailSearchField::From, "gelatin"),
+                        SearchFilter::gt(EmailSearchField::ReceivedAt, 2000u32),
+                        SearchFilter::lt(EmailSearchField::Size, 180u32),
+                        SearchFilter::gt(EmailSearchField::Size, 0u32),
+                    ])
                     .with_account_id(0)
-                    .with_filter(SearchFilter::has_keyword(EmailSearchField::From, "paper"))
                     .with_mask(RoaringBitmap::from_iter(fields.keys().copied())),
             )
             .await
@@ -612,6 +639,11 @@ async fn test_global(store: SearchStore) {
         document.index_unsigned(TracingSearchField::EventType, etyp);
         document.index_text(TracingSearchField::Keywords, keywords, Language::None);
         store.index(vec![document]).await.unwrap();
+    }
+
+    // Refresh
+    if let SearchStore::ElasticSearch(store) = &store {
+        store.refresh_index(SearchIndex::Tracing).await.unwrap();
     }
 
     // Query all
@@ -655,6 +687,12 @@ async fn test_global(store: SearchStore) {
         )
         .await
         .unwrap();
+
+    // Refresh
+    if let SearchStore::ElasticSearch(store) = &store {
+        store.refresh_index(SearchIndex::Tracing).await.unwrap();
+    }
+
     assert_eq!(
         store
             .query_global(

@@ -69,12 +69,7 @@ pub trait CalendarEventSet: Sync + Send {
         can_add_calendars: &Option<RoaringBitmap>,
         js_calendar_event: JSCalendar<'_, Id, BlobId>,
         updates: Value<'_, JSCalendarProperty<Id>, JSCalendarValue<Id, BlobId>>,
-    ) -> impl Future<Output = trc::Result<Result<CalendarCreateResult, SetError<JSCalendarProperty<Id>>>>>;
-}
-
-pub struct CalendarCreateResult {
-    pub document_id: u32,
-    pub nudge_queue: bool,
+    ) -> impl Future<Output = trc::Result<Result<u32, SetError<JSCalendarProperty<Id>>>>>;
 }
 
 impl CalendarEventSet for Server {
@@ -112,7 +107,6 @@ impl CalendarEventSet for Server {
         // Process creates
         let mut batch = BatchBuilder::new();
         let send_scheduling_messages = request.arguments.send_scheduling_messages.unwrap_or(false);
-        let mut nudge_queue = false;
         'create: for (id, object) in request.unwrap_create() {
             match self
                 .create_calendar_event(
@@ -127,9 +121,8 @@ impl CalendarEventSet for Server {
                 )
                 .await?
             {
-                Ok(result) => {
-                    response.created(id, result.document_id);
-                    nudge_queue |= result.nudge_queue;
+                Ok(document_id) => {
+                    response.created(id, document_id);
                 }
                 Err(err) => {
                     response.not_created.append(id, err);
@@ -377,7 +370,6 @@ impl CalendarEventSet for Server {
                     }
                 }
             }
-            nudge_queue |= next_email_alarm.is_some() || itip_messages.is_some();
 
             // Validate quota
             let extra_bytes = (new_calendar_event.size as u64)
@@ -484,8 +476,6 @@ impl CalendarEventSet for Server {
                 )
                 .caused_by(trc::location!())?;
 
-            nudge_queue |= send_scheduling_messages;
-
             response.destroyed.push(id);
         }
 
@@ -496,10 +486,7 @@ impl CalendarEventSet for Server {
                 .await
                 .and_then(|ids| ids.last_change_id(account_id))
                 .caused_by(trc::location!())?;
-
-            if nudge_queue {
-                self.notify_task_queue();
-            }
+            self.notify_task_queue();
 
             response.new_state = State::Exact(change_id).into();
         }
@@ -517,7 +504,7 @@ impl CalendarEventSet for Server {
         can_add_calendars: &Option<RoaringBitmap>,
         mut js_calendar_group: JSCalendar<'_, Id, BlobId>,
         updates: Value<'_, JSCalendarProperty<Id>, JSCalendarValue<Id, BlobId>>,
-    ) -> trc::Result<Result<CalendarCreateResult, SetError<JSCalendarProperty<Id>>>> {
+    ) -> trc::Result<Result<u32, SetError<JSCalendarProperty<Id>>>> {
         // Process changes
         let mut event = CalendarEvent::default();
         let use_default_alerts = match update_calendar_event(
@@ -643,7 +630,6 @@ impl CalendarEventSet for Server {
                 }
             }
         }
-        let nudge_queue = next_email_alarm.is_some() || itip_messages.is_some();
 
         // Validate quota
         match self
@@ -680,10 +666,7 @@ impl CalendarEventSet for Server {
             itip_messages.queue(batch).caused_by(trc::location!())?;
         }
 
-        Ok(Ok(CalendarCreateResult {
-            document_id,
-            nudge_queue,
-        }))
+        Ok(Ok(document_id))
     }
 }
 

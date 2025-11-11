@@ -11,8 +11,9 @@ use crate::{
         term::{TermIndex, TermIndexBuilder},
     },
     write::{
-        AlignedBytes, Archive, BatchBuilder, SEARCH_INDEX_MAX_FIELD_LEN, SearchIndexClass,
-        SearchIndexField, SearchIndexId, SearchIndexType, ValueClass, key::DeserializeBigEndian,
+        AlignedBytes, Archive, BatchBuilder, SEARCH_INDEX_MAX_FIELD_LEN, SearchIndex,
+        SearchIndexClass, SearchIndexField, SearchIndexId, SearchIndexType, ValueClass,
+        key::DeserializeBigEndian,
     },
 };
 use ahash::AHashMap;
@@ -24,11 +25,60 @@ impl Store {
         for document in documents {
             let mut batch = BatchBuilder::new();
             let index = document.index;
+            let mut old_term_index = None;
+
+            if matches!(index, SearchIndex::Calendar | SearchIndex::Contacts) {
+                let mut account_id = None;
+                let mut document_id = None;
+                for (field, value) in &document.fields {
+                    if let SearchValue::Uint(id) = value {
+                        match field {
+                            SearchField::AccountId => {
+                                account_id = Some(*id as u32);
+                            }
+                            SearchField::DocumentId => {
+                                document_id = Some(*id as u32);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+
+                if let (Some(account_id), Some(document_id)) = (account_id, document_id)
+                    && let Some(archive) = self
+                        .get_value::<Archive<AlignedBytes>>(ValueKey::from(
+                            ValueClass::SearchIndex(SearchIndexClass {
+                                index,
+                                id: SearchIndexId::Account {
+                                    account_id,
+                                    document_id,
+                                },
+                                typ: SearchIndexType::Document,
+                            }),
+                        ))
+                        .await
+                        .caused_by(trc::location!())?
+                {
+                    old_term_index = Some(archive);
+                }
+            }
+
             let term_index_builder = TermIndexBuilder::build(document);
-            term_index_builder
-                .index
-                .write_index(&mut batch, index, term_index_builder.id)
-                .caused_by(trc::location!())?;
+            if let Some(old_term_index) = old_term_index {
+                let old_term_index = old_term_index
+                    .unarchive::<TermIndex>()
+                    .caused_by(trc::location!())?;
+                term_index_builder
+                    .index
+                    .merge_index(&mut batch, index, term_index_builder.id, old_term_index)
+                    .caused_by(trc::location!())?;
+            } else {
+                term_index_builder
+                    .index
+                    .write_index(&mut batch, index, term_index_builder.id)
+                    .caused_by(trc::location!())?;
+            }
+
             self.write(batch.build_all())
                 .await
                 .caused_by(trc::location!())?;

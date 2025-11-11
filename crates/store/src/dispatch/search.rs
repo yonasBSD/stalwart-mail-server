@@ -46,10 +46,10 @@ impl SearchStore {
                 } => {
                     account_id = *id as u32;
                 }
-                SearchFilter::Operator { .. } => {}
-                _ => {
+                SearchFilter::DocumentSet(_) => {
                     has_local_filters = true;
                 }
+                _ => (),
             }
         }
         if account_id == u32::MAX {
@@ -190,7 +190,21 @@ impl SearchStore {
             Ordering::Less => Ok(vec![]),
             Ordering::Greater => {
                 if !query.comparators.is_empty() {
-                    if query.comparators[0].is_external() {
+                    let mut local = Vec::with_capacity(query.comparators.len());
+                    let mut external = Vec::with_capacity(query.comparators.len());
+                    let mut external_first = false;
+                    for (pos, comparator) in query.comparators.into_iter().enumerate() {
+                        if comparator.is_external() {
+                            external.push(comparator);
+                            if pos == 0 {
+                                external_first = true;
+                            }
+                        } else {
+                            local.push(comparator);
+                        }
+                    }
+
+                    if !external.is_empty() {
                         let results = results.results();
                         let filters = vec![
                             SearchFilter::Operator {
@@ -209,23 +223,34 @@ impl SearchStore {
                                 value: SearchValue::Uint(results.max().unwrap() as u64),
                             },
                         ];
-                        let comparators = query
-                            .comparators
-                            .into_iter()
-                            .filter(|c| c.is_external())
-                            .collect::<Vec<_>>();
 
-                        self.sub_query(query.index, &filters, &comparators)
-                            .await
-                            .map(|items| {
-                                items
-                                    .into_iter()
-                                    .filter(|id| results.contains(*id))
-                                    .collect()
-                            })
-                    } else {
-                        Ok(results.with_comparators(query.comparators).into_sorted())
+                        let ordered_results =
+                            self.sub_query(query.index, &filters, &external).await?;
+
+                        if local.is_empty() {
+                            return Ok(ordered_results
+                                .into_iter()
+                                .filter(|id| results.contains(*id))
+                                .collect());
+                        }
+
+                        let comparator = SearchComparator::SortedSet {
+                            set: ordered_results
+                                .into_iter()
+                                .enumerate()
+                                .map(|(pos, id)| (id, pos as u32))
+                                .collect(),
+                            ascending: true,
+                        };
+
+                        if external_first {
+                            local.insert(0, comparator);
+                        } else {
+                            local.push(comparator);
+                        }
                     }
+
+                    Ok(results.with_comparators(local).into_sorted())
                 } else {
                     Ok(results.results().iter().collect())
                 }

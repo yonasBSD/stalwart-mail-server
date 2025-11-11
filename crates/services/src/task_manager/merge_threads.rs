@@ -90,16 +90,12 @@ async fn merge_threads(
                 .ascending(),
                 |key, value| {
                     if key.len() == key_len {
-                        let document_id = key.deserialize_be_u32(document_id_pos)?;
-                        if merge_threads.merge_ids.contains(&document_id) {
-                            let thread_id = value.deserialize_be_u32(0)?;
+                        let thread_id = value.deserialize_be_u32(0)?;
+                        if merge_threads.merge_ids.contains(&thread_id) {
+                            let document_id = key.deserialize_be_u32(document_id_pos)?;
 
                             thread_merge.add(thread_id, document_id);
                             thread_index.insert(document_id, value.to_vec());
-
-                            return Ok(
-                                thread_merge.num_document_ids() != merge_threads.merge_ids.len()
-                            );
                         }
                     }
 

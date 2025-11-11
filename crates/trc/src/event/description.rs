@@ -196,6 +196,7 @@ impl TaskQueueEvent {
             TaskQueueEvent::BlobNotFound => "Blob not found for task",
             TaskQueueEvent::MetadataNotFound => "Metadata not found for task",
             TaskQueueEvent::TaskIgnored => "Task ignored based on current server roles",
+            TaskQueueEvent::TaskFailed => "Task failed during processing",
         }
     }
 
@@ -206,6 +207,7 @@ impl TaskQueueEvent {
             TaskQueueEvent::BlobNotFound => "The requested blob was not found for task",
             TaskQueueEvent::MetadataNotFound => "The metadata was not found for task",
             TaskQueueEvent::TaskIgnored => "The task was ignored based on the current server roles",
+            TaskQueueEvent::TaskFailed => "The task failed during processing",
         }
     }
 }

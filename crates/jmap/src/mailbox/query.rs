@@ -11,10 +11,7 @@ use jmap_proto::{
     method::query::{Comparator, Filter, QueryRequest, QueryResponse},
     object::mailbox::{Mailbox, MailboxComparator, MailboxFilter},
 };
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    future::Future,
-};
+use std::{collections::BTreeMap, future::Future};
 use store::{
     ahash::AHashMap,
     roaring::RoaringBitmap,
@@ -166,7 +163,7 @@ impl MailboxQuery for Server {
                 sorted_set
                     .into_iter()
                     .enumerate()
-                    .map(|(i, (_, v))| (i as u32, v))
+                    .map(|(i, (_, v))| (v, i as u32))
                     .collect(),
                 true,
             ));
@@ -186,13 +183,13 @@ impl MailboxQuery for Server {
                         .items
                         .iter()
                         .map(|mailbox| (mailbox.name.as_str(), mailbox.document_id))
-                        .collect::<BTreeSet<_>>();
+                        .collect::<BTreeMap<_, _>>();
 
                     SearchComparator::sorted_set(
                         sorted_set
                             .into_iter()
                             .enumerate()
-                            .map(|(i, (_, v))| (i as u32, v))
+                            .map(|(i, (_, v))| (v, i as u32))
                             .collect(),
                         comparator.is_ascending,
                     )

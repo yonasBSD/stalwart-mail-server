@@ -40,6 +40,9 @@ impl ElasticSearchStore {
             .property_or_default((&prefix, "index.include-source"), "false")
             .unwrap_or(false);
 
+        #[cfg(feature = "test_mode")]
+        es.drop_indexes().await.unwrap();
+
         if let Err(err) = es
             .create_index::<EmailSearchField>(shards, replicas, with_source)
             .await
@@ -77,11 +80,17 @@ impl ElasticSearchStore {
         replicas: usize,
         with_source: bool,
     ) -> trc::Result<()> {
-        let mut mappings = T::primary_keys()
-            .iter()
-            .chain(T::all_fields())
-            .map(|field| (field.es_field().to_string(), field.es_schema()))
-            .collect::<serde_json::Map<String, Value>>();
+        let mut mappings = serde_json::Map::new();
+        mappings.insert(
+            "properties".to_string(),
+            Value::Object(
+                T::primary_keys()
+                    .iter()
+                    .chain(T::all_fields())
+                    .map(|field| (field.es_field().to_string(), field.es_schema()))
+                    .collect::<serde_json::Map<String, Value>>(),
+            ),
+        );
         if !with_source {
             mappings.insert("_source".to_string(), json!({ "enabled": false }));
         }
@@ -95,19 +104,13 @@ impl ElasticSearchStore {
                 "default": {
                   "type": "custom",
                   "tokenizer": "standard",
-                  "filter": ["lowercase"]
+                  "filter": ["lowercase", "stemmer"]
                 }
               }
             }
           }
         });
         let body = serde_json::to_string(&body).unwrap_or_default();
-
-        let c = println!(
-            "Creating Elasticsearch index {} with body: {}",
-            T::index().es_index_name(),
-            body
-        );
 
         assert_success(
             self.client
@@ -118,6 +121,27 @@ impl ElasticSearchStore {
         )
         .await
         .map(|_| ())
+    }
+
+    #[cfg(feature = "test_mode")]
+    pub async fn drop_indexes(&self) -> trc::Result<()> {
+        for index in &[
+            SearchIndex::Email,
+            SearchIndex::Calendar,
+            SearchIndex::Contacts,
+            SearchIndex::Tracing,
+        ] {
+            assert_success(
+                self.client
+                    .delete(format!("{}/{}", self.url, index.es_index_name()))
+                    .send()
+                    .await,
+            )
+            .await
+            .map(|_| ())?;
+        }
+
+        Ok(())
     }
 }
 
@@ -153,8 +177,8 @@ impl SearchIndex {
 impl SearchField {
     pub fn es_field(&self) -> &'static str {
         match self {
-            SearchField::AccountId => "doc_id",
-            SearchField::DocumentId => "acc_id",
+            SearchField::AccountId => "acc_id",
+            SearchField::DocumentId => "doc_id",
             SearchField::Id => "id",
             SearchField::Email(field) => match field {
                 EmailSearchField::From => "from",
@@ -164,7 +188,7 @@ impl SearchField {
                 EmailSearchField::Subject => "subj",
                 EmailSearchField::Body => "body",
                 EmailSearchField::Attachment => "attach",
-                EmailSearchField::ReceivedAt => "received",
+                EmailSearchField::ReceivedAt => "rcvd",
                 EmailSearchField::SentAt => "sent",
                 EmailSearchField::Size => "size",
                 EmailSearchField::HasAttachment => "has_att",
@@ -242,12 +266,24 @@ impl SearchField {
                   "enabled": true
                 })
             }
-            SearchField::Email(
-                EmailSearchField::Cc
-                | EmailSearchField::Bcc
-                | EmailSearchField::Body
-                | EmailSearchField::Attachment,
-            )
+            #[cfg(feature = "test_mode")]
+            SearchField::Email(EmailSearchField::Bcc | EmailSearchField::Cc) => {
+                json!({
+                  "type": "text",
+                  "fields": {
+                    "keyword": {
+                      "type": "keyword"
+                    }
+                  }
+                })
+            }
+            #[cfg(not(feature = "test_mode"))]
+            SearchField::Email(EmailSearchField::Bcc | EmailSearchField::Cc) => {
+                json!({
+                  "type": "text"
+                })
+            }
+            SearchField::Email(EmailSearchField::Body | EmailSearchField::Attachment)
             | SearchField::Calendar(
                 CalendarSearchField::Title
                 | CalendarSearchField::Description

@@ -240,6 +240,7 @@ pub enum TaskQueueEvent {
     TaskAcquired,
     TaskLocked,
     TaskIgnored,
+    TaskFailed,
     BlobNotFound,
     MetadataNotFound,
 }
