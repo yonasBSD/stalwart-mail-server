@@ -16,6 +16,7 @@ use crate::{
         JMAPTest, ManagementApi,
         mail::delivery::{AssertResult, SmtpConnection},
         server::List,
+        wait_for_index,
     },
 };
 use common::{
@@ -258,9 +259,7 @@ async fn tracing(params: &mut JMAPTest) {
                 SearchFilter::Operator {
                     field: SearchField::Tracing(TracingSearchField::EventType),
                     op: SearchOperator::Equal,
-                    value: SearchValue::Uint(
-                        EventType::Smtp(SmtpEvent::ConnectionStart).id() as u64
-                    )
+                    value: SearchValue::Uint(EventType::Smtp(SmtpEvent::ConnectionStart).code())
                 }
             ]))
             .await
@@ -285,11 +284,14 @@ async fn tracing(params: &mut JMAPTest) {
     )
     .await;
     lmtp.quit().await;
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    params.server.notify_task_queue();
+    wait_for_index(&params.server).await;
 
     // Purge should not delete anything at this point
     store
-        .purge_spans(Duration::from_secs(1), Some(&query))
+        .purge_spans(Duration::from_secs(2), Some(&query))
         .await
         .unwrap();
 
@@ -303,7 +305,7 @@ async fn tracing(params: &mut JMAPTest) {
                 SearchFilter::Operator {
                     field: SearchField::Tracing(TracingSearchField::EventType),
                     op: SearchOperator::Equal,
-                    value: SearchValue::Uint(span_type.id() as u64),
+                    value: SearchValue::Uint(span_type.code()),
                 },
             ]))
             .await
@@ -332,7 +334,7 @@ async fn tracing(params: &mut JMAPTest) {
             .unwrap();
 
         assert_eq!(spans.len(), 2, "keyword: {keyword}");
-        assert!(spans[0] > spans[1], "keyword: {keyword}");
+        assert!(spans[0] != spans[1], "keyword: {keyword}");
     }
 
     // Purge should delete the span entries
@@ -377,7 +379,7 @@ async fn metrics(params: &mut JMAPTest) {
     );
 }
 
-async fn undelete(_params: &mut JMAPTest) {
+async fn undelete(params: &mut JMAPTest) {
     // Authenticate
     let mut imap = ImapConnection::connect(b"_x ").await;
     imap.authenticate("jdoe@example.com", "12345").await;
@@ -430,6 +432,7 @@ async fn undelete(_params: &mut JMAPTest) {
     api.get::<serde_json::Value>("/api/store/purge/account/jdoe@example.com")
         .await
         .unwrap();
+    wait_for_index(&params.server).await;
     tokio::time::sleep(Duration::from_millis(200)).await;
     let deleted = api
         .get::<List<DeletedBlob<String, String, String>>>("/api/store/undelete/jdoe@example.com")

@@ -5,7 +5,7 @@
  */
 
 use crate::{
-    backend::postgres::{PostgresStore, PsqlSearchField, into_error},
+    backend::postgres::{PostgresStore, PsqlSearchField, into_error, into_pool_error},
     search::{
         IndexDocument, SearchComparator, SearchDocumentId, SearchFilter, SearchOperator,
         SearchQuery, SearchValue,
@@ -21,7 +21,7 @@ use tokio_postgres::{
 
 impl PostgresStore {
     pub async fn index(&self, documents: Vec<IndexDocument>) -> trc::Result<()> {
-        let mut conn = self.conn_pool.get().await.map_err(into_error)?;
+        let mut conn = self.conn_pool.get().await.map_err(into_pool_error)?;
         let trx = conn
             .build_transaction()
             .isolation_level(IsolationLevel::ReadCommitted)
@@ -121,10 +121,10 @@ impl PostgresStore {
         if !sort.is_empty() {
             build_sort(&mut query, sort);
         }
-        let conn = self.conn_pool.get().await.map_err(into_error)?;
+        let conn = self.conn_pool.get().await.map_err(into_pool_error)?;
         let s = conn.prepare_cached(&query).await.map_err(into_error)?;
 
-        let c = println!("Executing search query: {}", query);
+        let c = println!("Executing search query: {} and values {:?}", query, params);
 
         conn.query(&s, params.as_slice())
             .await
@@ -140,7 +140,7 @@ impl PostgresStore {
         debug_assert!(!filter.filters.is_empty());
         let mut query = format!("DELETE FROM {} ", filter.index.psql_table());
         let params = self.build_filter(&mut query, &filter.filters);
-        let conn = self.conn_pool.get().await.map_err(into_error)?;
+        let conn = self.conn_pool.get().await.map_err(into_pool_error)?;
         let s = conn.prepare_cached(&query).await.map_err(into_error)?;
 
         conn.execute(&s, params.as_slice())

@@ -25,7 +25,7 @@ use imap_proto::{
 use std::{sync::Arc, time::Instant};
 use store::{
     query::log::{Change, Query},
-    write::{BatchBuilder, TaskQueueClass, ValueClass, now},
+    write::{BatchBuilder, TaskEpoch, TaskQueueClass, ValueClass},
 };
 use trc::AddContext;
 use types::{
@@ -304,7 +304,7 @@ impl<T: SessionStream> SessionData<T> {
             if let Some(learn_spam) = train_spam {
                 batch.set(
                     ValueClass::TaskQueue(TaskQueueClass::BayesTrain {
-                        due: now(),
+                        due: TaskEpoch::now(),
                         learn_spam,
                     }),
                     vec![],

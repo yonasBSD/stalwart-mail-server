@@ -70,7 +70,7 @@ where
     Close,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Comparator<T>
 where
     T: for<'de> DeserializeArguments<'de> + Default,
@@ -355,6 +355,19 @@ where
             property,
             is_ascending: true,
             collation: None,
+        }
+    }
+}
+
+impl<T> Default for Comparator<T>
+where
+    T: for<'de> DeserializeArguments<'de> + Default,
+{
+    fn default() -> Self {
+        Self {
+            is_ascending: true,
+            collation: None,
+            property: T::default(),
         }
     }
 }

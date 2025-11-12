@@ -83,7 +83,6 @@ impl SearchStore {
                     ..
                 } => {}
                 SearchFilter::Operator { .. } => {
-                    let mut internal_item = None;
                     let mut depth = 0;
                     let mut external = Vec::with_capacity(5);
 
@@ -106,11 +105,61 @@ impl SearchStore {
                                 depth -= 1;
                                 external.push(item);
                             }
+                            SearchFilter::Operator {
+                                field: SearchField::AccountId,
+                                ..
+                            } => {}
                             SearchFilter::Operator { .. } => {
                                 external.push(item);
                             }
                             _ => {
-                                internal_item = Some(item);
+                                let mut new_filters = Vec::new();
+                                let mut pop_count = depth;
+                                while pop_count > 0 {
+                                    let prev_item = external.pop().unwrap();
+                                    if matches!(
+                                        prev_item,
+                                        SearchFilter::And | SearchFilter::Or | SearchFilter::Not
+                                    ) {
+                                        pop_count -= 1;
+                                    }
+                                    new_filters.push(prev_item);
+                                }
+                                let is_end = matches!(item, SearchFilter::End);
+                                new_filters.push(item);
+
+                                if !is_end {
+                                    if logical_op.is_some() {
+                                        depth += 1;
+                                    }
+                                    for item in iter {
+                                        match item {
+                                            SearchFilter::And
+                                            | SearchFilter::Or
+                                            | SearchFilter::Not => {
+                                                depth += 1;
+                                                new_filters.push(item);
+                                            }
+                                            SearchFilter::End => {
+                                                depth -= 1;
+                                                new_filters.push(item);
+                                            }
+                                            SearchFilter::Operator {
+                                                field: SearchField::AccountId,
+                                                ..
+                                            } => {}
+                                            SearchFilter::Operator { .. } if depth == 0 => {
+                                                external.push(item);
+                                            }
+                                            _ => {
+                                                new_filters.push(item);
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    new_filters.extend(iter);
+                                }
+                                iter = new_filters.into_iter();
                                 break;
                             }
                         }
@@ -118,20 +167,6 @@ impl SearchStore {
 
                     if in_logical_op {
                         external.push(SearchFilter::End);
-                    }
-
-                    let mut internal_items = Vec::with_capacity(depth * 2);
-                    if depth > 0 {
-                        while depth > 0 {
-                            let item = external.pop().unwrap();
-                            if matches!(
-                                item,
-                                SearchFilter::And | SearchFilter::Or | SearchFilter::Not
-                            ) {
-                                depth -= 1;
-                            }
-                            internal_items.push(item);
-                        }
                     }
 
                     // Add account id
@@ -158,11 +193,6 @@ impl SearchStore {
                             .into_iter()
                             .collect(),
                     ));
-                    filters.extend(internal_items);
-
-                    if let Some(item) = internal_item {
-                        filters.push(item);
-                    }
                 }
                 _ => {
                     match &item {

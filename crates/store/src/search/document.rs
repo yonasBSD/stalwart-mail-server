@@ -69,6 +69,16 @@ impl IndexDocument {
             .insert(field.into(), SearchValue::Uint(value.into()));
     }
 
+    pub fn index_keyword(&mut self, field: impl Into<SearchField>, value: impl Into<String>) {
+        self.fields.insert(
+            field.into(),
+            SearchValue::Text {
+                value: value.into(),
+                language: Language::None,
+            },
+        );
+    }
+
     pub fn insert_key_value(
         &mut self,
         field: impl Into<SearchField>,
@@ -216,11 +226,6 @@ impl SearchFilter {
     #[inline(always)]
     pub fn has_english_text(field: impl Into<SearchField>, text: impl Into<String>) -> Self {
         Self::has_text(field, text, Language::English)
-    }
-
-    #[inline(always)]
-    pub fn has_unknown_text(field: impl Into<SearchField>, text: impl Into<String>) -> Self {
-        Self::has_text(field, text, Language::Unknown)
     }
 
     #[inline(always)]

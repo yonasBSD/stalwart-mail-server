@@ -121,37 +121,31 @@ impl ContactCardQuery for Server {
                     | ContactCardFilter::NameGiven(value)
                     | ContactCardFilter::NameSurname(value)
                     | ContactCardFilter::NameSurname2(value) => {
-                        filters.push(SearchFilter::has_unknown_text(
-                            ContactSearchField::Name,
-                            value,
-                        ));
+                        filters.push(SearchFilter::has_keyword(ContactSearchField::Name, value));
                     }
                     ContactCardFilter::Nickname(value) => {
-                        filters.push(SearchFilter::has_unknown_text(
+                        filters.push(SearchFilter::has_keyword(
                             ContactSearchField::Nickname,
                             value,
                         ));
                     }
                     ContactCardFilter::Organization(value) => {
-                        filters.push(SearchFilter::has_unknown_text(
+                        filters.push(SearchFilter::has_keyword(
                             ContactSearchField::Organization,
                             value,
                         ));
                     }
                     ContactCardFilter::Phone(value) => {
-                        filters.push(SearchFilter::has_unknown_text(
-                            ContactSearchField::Phone,
-                            value,
-                        ));
+                        filters.push(SearchFilter::has_keyword(ContactSearchField::Phone, value));
                     }
                     ContactCardFilter::OnlineService(value) => {
-                        filters.push(SearchFilter::has_unknown_text(
+                        filters.push(SearchFilter::has_keyword(
                             ContactSearchField::OnlineService,
                             value,
                         ));
                     }
                     ContactCardFilter::Address(value) => {
-                        filters.push(SearchFilter::has_unknown_text(
+                        filters.push(SearchFilter::has_keyword(
                             ContactSearchField::Address,
                             value,
                         ));
@@ -164,10 +158,7 @@ impl ContactCardQuery for Server {
                         ));
                     }
                     ContactCardFilter::HasMember(value) => {
-                        filters.push(SearchFilter::has_unknown_text(
-                            ContactSearchField::Member,
-                            value,
-                        ));
+                        filters.push(SearchFilter::has_keyword(ContactSearchField::Member, value));
                     }
                     ContactCardFilter::Kind(value) => {
                         filters.push(SearchFilter::eq(ContactSearchField::Kind, value));
@@ -175,39 +166,37 @@ impl ContactCardQuery for Server {
                     ContactCardFilter::Uid(value) => {
                         filters.push(SearchFilter::eq(ContactSearchField::Uid, value))
                     }
-                    ContactCardFilter::Email(email) => {
-                        filters.push(SearchFilter::has_unknown_text(
-                            ContactSearchField::Email,
-                            sanitize_email(&email).unwrap_or(email),
-                        ))
-                    }
+                    ContactCardFilter::Email(email) => filters.push(SearchFilter::has_keyword(
+                        ContactSearchField::Email,
+                        sanitize_email(&email).unwrap_or(email),
+                    )),
                     ContactCardFilter::Text(value) => {
                         filters.push(SearchFilter::Or);
-                        filters.push(SearchFilter::has_unknown_text(
+                        filters.push(SearchFilter::has_keyword(
                             ContactSearchField::Name,
                             value.clone(),
                         ));
-                        filters.push(SearchFilter::has_unknown_text(
+                        filters.push(SearchFilter::has_keyword(
                             ContactSearchField::Nickname,
                             value.clone(),
                         ));
-                        filters.push(SearchFilter::has_unknown_text(
+                        filters.push(SearchFilter::has_keyword(
                             ContactSearchField::Organization,
                             value.clone(),
                         ));
-                        filters.push(SearchFilter::has_unknown_text(
+                        filters.push(SearchFilter::has_keyword(
                             ContactSearchField::Email,
                             value.clone(),
                         ));
-                        filters.push(SearchFilter::has_unknown_text(
+                        filters.push(SearchFilter::has_keyword(
                             ContactSearchField::Phone,
                             value.clone(),
                         ));
-                        filters.push(SearchFilter::has_unknown_text(
+                        filters.push(SearchFilter::has_keyword(
                             ContactSearchField::OnlineService,
                             value.clone(),
                         ));
-                        filters.push(SearchFilter::has_unknown_text(
+                        filters.push(SearchFilter::has_keyword(
                             ContactSearchField::Address,
                             value.clone(),
                         ));

@@ -503,19 +503,11 @@ impl Store {
             self.delete_range(
                 AnyKey {
                     subspace,
-                    key: &[0u8],
+                    key: vec![0u8],
                 },
                 AnyKey {
                     subspace,
-                    key: &[
-                        u8::MAX,
-                        u8::MAX,
-                        u8::MAX,
-                        u8::MAX,
-                        u8::MAX,
-                        u8::MAX,
-                        u8::MAX,
-                    ],
+                    key: vec![u8::MAX; 16],
                 },
             )
             .await

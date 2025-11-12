@@ -284,13 +284,13 @@ impl ValueClass {
                     is_insert,
                     due,
                 } => serializer
-                    .write(*due)
+                    .write(due.inner())
                     .write(account_id)
                     .write(if *is_insert { 7u8 } else { 8u8 })
                     .write(document_id)
                     .write(index.to_u8()),
                 TaskQueueClass::BayesTrain { due, learn_spam } => serializer
-                    .write(*due)
+                    .write(due.inner())
                     .write(account_id)
                     .write(if *learn_spam { 1u8 } else { 2u8 })
                     .write(document_id),
@@ -300,7 +300,7 @@ impl ValueClass {
                     alarm_id,
                     is_email_alert,
                 } => serializer
-                    .write(*due)
+                    .write(due.inner())
                     .write(account_id)
                     .write(if *is_email_alert { 3u8 } else { 6u8 })
                     .write(document_id)
@@ -309,7 +309,7 @@ impl ValueClass {
                 TaskQueueClass::SendImip { due, is_payload } => {
                     if !*is_payload {
                         serializer
-                            .write(*due)
+                            .write(due.inner())
                             .write(account_id)
                             .write(4u8)
                             .write(document_id)
@@ -319,11 +319,11 @@ impl ValueClass {
                             .write(account_id)
                             .write(5u8)
                             .write(document_id)
-                            .write(*due)
+                            .write(due.inner())
                     }
                 }
                 TaskQueueClass::MergeThreads { due } => serializer
-                    .write(*due)
+                    .write(due.inner())
                     .write(account_id)
                     .write(9u8)
                     .write(document_id),

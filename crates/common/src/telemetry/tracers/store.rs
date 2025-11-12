@@ -10,12 +10,11 @@
 
 use crate::config::telemetry::StoreTracer;
 use ahash::{AHashMap, AHashSet};
-use nlp::language::Language;
-use std::{future::Future, time::Duration};
+use std::{collections::HashSet, future::Future, time::Duration};
 use store::{
     Deserialize, SearchStore, Store, ValueKey,
     search::{IndexDocument, SearchField, SearchFilter, SearchQuery, TracingSearchField},
-    write::{BatchBuilder, SearchIndex, TaskQueueClass, TelemetryClass, ValueClass, now},
+    write::{BatchBuilder, SearchIndex, TaskEpoch, TaskQueueClass, TelemetryClass, ValueClass},
 };
 use trc::{
     AddContext, AuthEvent, Event, EventDetails, EventType, Key, MessageIngestEvent,
@@ -35,8 +34,6 @@ pub(crate) fn spawn_store_tracer(builder: SubscriberBuilder, settings: StoreTrac
         let mut batch = BatchBuilder::new();
 
         while let Some(events) = rx.recv().await {
-            let now = now();
-
             for event in events {
                 if let Some(span) = &event.inner.span {
                     let span_id = span.span_id().unwrap();
@@ -68,7 +65,7 @@ pub(crate) fn spawn_store_tracer(builder: SubscriberBuilder, settings: StoreTrac
                             .with_document(span_id as u32)
                             .set(
                                 ValueClass::TaskQueue(TaskQueueClass::UpdateIndex {
-                                    due: now,
+                                    due: TaskEpoch::now(),
                                     index: SearchIndex::Tracing,
                                     is_insert: true,
                                 }),
@@ -244,16 +241,17 @@ pub fn build_span_document(
     index_fields: &AHashSet<SearchField>,
 ) -> IndexDocument {
     let mut document = IndexDocument::new(SearchIndex::Tracing).with_id(span_id);
+    let mut keywords = HashSet::new();
 
-    for event in events {
-        for (idx, (key, value)) in event.keys.into_iter().enumerate() {
-            if idx == 0
-                && (index_fields.is_empty()
-                    || index_fields.contains(&TracingSearchField::EventType.into()))
-            {
-                document.index_unsigned(TracingSearchField::EventType, event.inner.typ.code());
-            }
+    for (idx, event) in events.into_iter().enumerate() {
+        if idx == 0
+            && (index_fields.is_empty()
+                || index_fields.contains(&TracingSearchField::EventType.into()))
+        {
+            document.index_unsigned(TracingSearchField::EventType, event.inner.typ.code());
+        }
 
+        for (key, value) in event.keys {
             match (key, value) {
                 (Key::QueueId, Value::UInt(queue_id)) => {
                     if index_fields.is_empty()
@@ -266,11 +264,7 @@ pub fn build_span_document(
                     if index_fields.is_empty()
                         || index_fields.contains(&TracingSearchField::Keywords.into())
                     {
-                        document.index_text(
-                            TracingSearchField::Keywords,
-                            &address,
-                            Language::Unknown,
-                        );
+                        keywords.insert(address.to_string());
                     }
                 }
                 (Key::To, Value::Array(value)) => {
@@ -279,11 +273,7 @@ pub fn build_span_document(
                     {
                         for value in value {
                             if let Value::String(address) = value {
-                                document.index_text(
-                                    TracingSearchField::Keywords,
-                                    &address,
-                                    Language::Unknown,
-                                );
+                                keywords.insert(address.to_string());
                             }
                         }
                     }
@@ -292,28 +282,32 @@ pub fn build_span_document(
                     if index_fields.is_empty()
                         || index_fields.contains(&TracingSearchField::Keywords.into())
                     {
-                        document.index_text(
-                            TracingSearchField::Keywords,
-                            &ip.to_string(),
-                            Language::Unknown,
-                        );
+                        keywords.insert(ip.to_string());
                     }
                 }
                 (Key::RemoteIp, Value::Ipv6(ip)) => {
                     if index_fields.is_empty()
                         || index_fields.contains(&TracingSearchField::Keywords.into())
                     {
-                        document.index_text(
-                            TracingSearchField::Keywords,
-                            &ip.to_string(),
-                            Language::Unknown,
-                        );
+                        keywords.insert(ip.to_string());
                     }
                 }
 
                 _ => {}
             }
         }
+    }
+
+    if !keywords.is_empty() {
+        let mut keyword_str = String::new();
+        for keyword in keywords {
+            if !keyword_str.is_empty() {
+                keyword_str.push(' ');
+            }
+            keyword_str.push_str(&keyword);
+        }
+
+        document.index_keyword(TracingSearchField::Keywords, keyword_str);
     }
 
     document

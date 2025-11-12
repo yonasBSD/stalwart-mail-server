@@ -21,7 +21,7 @@ use store::{
     IterateParams, U16_LEN, U32_LEN, U64_LEN, ValueKey,
     roaring::RoaringBitmap,
     write::{
-        Archive, BatchBuilder, IndexPropertyClass, TaskQueueClass, ValueClass,
+        Archive, BatchBuilder, IndexPropertyClass, TaskEpoch, TaskQueueClass, ValueClass,
         key::{DeserializeBigEndian, KeySerializer},
         now,
     },
@@ -520,7 +520,7 @@ impl CalendarAlarm {
             } => {
                 batch.set(
                     ValueClass::TaskQueue(TaskQueueClass::SendAlarm {
-                        due: self.alarm_time as u64,
+                        due: TaskEpoch::new(self.alarm_time as u64),
                         event_id: self.event_id,
                         alarm_id: self.alarm_id,
                         is_email_alert: true,
@@ -536,7 +536,7 @@ impl CalendarAlarm {
             CalendarAlarmType::Display { recurrence_id } => {
                 batch.set(
                     ValueClass::TaskQueue(TaskQueueClass::SendAlarm {
-                        due: self.alarm_time as u64,
+                        due: TaskEpoch::new(self.alarm_time as u64),
                         event_id: self.event_id,
                         alarm_id: self.alarm_id,
                         is_email_alert: false,
@@ -551,7 +551,7 @@ impl CalendarAlarm {
 
     pub fn delete_task(&self, batch: &mut BatchBuilder) {
         batch.clear(ValueClass::TaskQueue(TaskQueueClass::SendAlarm {
-            due: self.alarm_time as u64,
+            due: TaskEpoch::new(self.alarm_time as u64),
             event_id: self.event_id,
             alarm_id: self.alarm_id,
             is_email_alert: matches!(self.typ, CalendarAlarmType::Email { .. }),

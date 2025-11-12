@@ -22,7 +22,7 @@ use std::{sync::Arc, time::Instant};
 use store::{
     SerializeInfallible,
     roaring::RoaringBitmap,
-    write::{BatchBuilder, SearchIndex, TaskQueueClass, ValueClass, now},
+    write::{BatchBuilder, SearchIndex, TaskEpoch, TaskQueueClass, ValueClass},
 };
 use trc::AddContext;
 use types::{
@@ -154,6 +154,7 @@ impl<T: SessionStream> SessionData<T> {
                 .commit_batch(batch)
                 .await
                 .caused_by(trc::location!())?;
+            self.server.notify_task_queue();
         }
 
         Ok(())
@@ -169,7 +170,6 @@ impl<T: SessionStream> SessionData<T> {
         batch
             .with_account_id(account_id)
             .with_collection(Collection::Email);
-        let due = now();
 
         self.server
             .archives(
@@ -197,7 +197,7 @@ impl<T: SessionStream> SessionData<T> {
                                 .set(
                                     ValueClass::TaskQueue(TaskQueueClass::UpdateIndex {
                                         index: SearchIndex::Email,
-                                        due,
+                                        due: TaskEpoch::now(),
                                         is_insert: false,
                                     }),
                                     0u64.serialize(),

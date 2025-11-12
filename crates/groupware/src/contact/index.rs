@@ -273,20 +273,20 @@ impl ArchivedContactCard {
         let mut detector = LanguageDetector::new();
 
         for entry in self.card.entries.iter() {
-            let (is_text, field) = match entry.name {
-                ArchivedVCardProperty::N => (false, ContactSearchField::Name),
-                ArchivedVCardProperty::Nickname => (false, ContactSearchField::Nickname),
-                ArchivedVCardProperty::Org => (false, ContactSearchField::Organization),
-                ArchivedVCardProperty::Email => (false, ContactSearchField::Email),
-                ArchivedVCardProperty::Tel => (false, ContactSearchField::Phone),
+            let (is_text, is_keyword, field) = match entry.name {
+                ArchivedVCardProperty::N => (false, false, ContactSearchField::Name),
+                ArchivedVCardProperty::Nickname => (false, false, ContactSearchField::Nickname),
+                ArchivedVCardProperty::Org => (false, false, ContactSearchField::Organization),
+                ArchivedVCardProperty::Email => (false, false, ContactSearchField::Email),
+                ArchivedVCardProperty::Tel => (false, false, ContactSearchField::Phone),
                 ArchivedVCardProperty::Impp | ArchivedVCardProperty::Socialprofile => {
-                    (false, ContactSearchField::OnlineService)
+                    (false, false, ContactSearchField::OnlineService)
                 }
-                ArchivedVCardProperty::Adr => (false, ContactSearchField::Address),
-                ArchivedVCardProperty::Note => (true, ContactSearchField::Note),
-                ArchivedVCardProperty::Kind => (false, ContactSearchField::Kind),
-                ArchivedVCardProperty::Uid => (false, ContactSearchField::Uid),
-                ArchivedVCardProperty::Member => (false, ContactSearchField::Member),
+                ArchivedVCardProperty::Adr => (false, false, ContactSearchField::Address),
+                ArchivedVCardProperty::Note => (true, false, ContactSearchField::Note),
+                ArchivedVCardProperty::Kind => (false, true, ContactSearchField::Kind),
+                ArchivedVCardProperty::Uid => (false, true, ContactSearchField::Uid),
+                ArchivedVCardProperty::Member => (false, false, ContactSearchField::Member),
                 _ => continue,
             };
             let field = SearchField::Contact(field);
@@ -295,28 +295,32 @@ impl ArchivedContactCard {
                 for value in entry.values.iter() {
                     match value {
                         ArchivedVCardValue::Text(v) => {
-                            let lang = if is_text {
-                                detector.detect(v.as_str(), MIN_LANGUAGE_SCORE);
-                                Language::Unknown
-                            } else {
-                                Language::None
-                            };
+                            if !is_keyword {
+                                let lang = if is_text {
+                                    detector.detect(v.as_str().trim(), MIN_LANGUAGE_SCORE);
+                                    Language::Unknown
+                                } else {
+                                    Language::None
+                                };
 
-                            document.index_text(field.clone(), v, lang);
+                                document.index_text(field.clone(), v, lang);
+                            } else {
+                                document.index_keyword(field.clone(), v.as_str());
+                            }
                         }
                         ArchivedVCardValue::Kind(v) => {
-                            document.index_text(field.clone(), v.as_str(), Language::None);
+                            document.index_keyword(field.clone(), v.as_str());
                         }
                         ArchivedVCardValue::Component(v) => {
                             for item in v.iter() {
-                                document.index_text(field.clone(), item, Language::None);
+                                document.index_text(field.clone(), item.trim(), Language::None);
                             }
                         }
                         _ => (),
                     }
                 }
 
-                for param in entry.params.iter() {
+                /*for param in entry.params.iter() {
                     if let ArchivedVCardParameterValue::Text(value) = &param.value {
                         let lang = if is_text {
                             detector.detect(value.as_str(), MIN_LANGUAGE_SCORE);
@@ -326,7 +330,7 @@ impl ArchivedContactCard {
                         };
                         document.index_text(field.clone(), value, lang);
                     }
-                }
+                }*/
             }
         }
 

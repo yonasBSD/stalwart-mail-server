@@ -378,15 +378,21 @@ impl ArchivedCalendarEvent {
             .filter(|e| e.component_type.is_scheduling_object())
         {
             for entry in component.entries.iter() {
-                let (is_lang, field) = match entry.name {
-                    ArchivedICalendarProperty::Summary => (true, CalendarSearchField::Title),
+                let (is_lang, is_keyword, field) = match entry.name {
+                    ArchivedICalendarProperty::Summary => (true, false, CalendarSearchField::Title),
                     ArchivedICalendarProperty::Description => {
-                        (true, CalendarSearchField::Description)
+                        (true, false, CalendarSearchField::Description)
                     }
-                    ArchivedICalendarProperty::Location => (false, CalendarSearchField::Location),
-                    ArchivedICalendarProperty::Organizer => (false, CalendarSearchField::Owner),
-                    ArchivedICalendarProperty::Attendee => (false, CalendarSearchField::Attendee),
-                    ArchivedICalendarProperty::Uid => (false, CalendarSearchField::Uid),
+                    ArchivedICalendarProperty::Location => {
+                        (false, false, CalendarSearchField::Location)
+                    }
+                    ArchivedICalendarProperty::Organizer => {
+                        (false, false, CalendarSearchField::Owner)
+                    }
+                    ArchivedICalendarProperty::Attendee => {
+                        (false, false, CalendarSearchField::Attendee)
+                    }
+                    ArchivedICalendarProperty::Uid => (false, true, CalendarSearchField::Uid),
                     _ => continue,
                 };
                 let field = SearchField::Calendar(field);
@@ -406,7 +412,7 @@ impl ArchivedCalendarEvent {
                             _ => None,
                         }))
                     {
-                        let value = value.strip_prefix("mailto:").unwrap_or(value);
+                        let value = value.strip_prefix("mailto:").unwrap_or(value).trim();
                         let lang = if is_lang {
                             detector.detect(value, MIN_LANGUAGE_SCORE);
                             Language::Unknown
@@ -414,7 +420,11 @@ impl ArchivedCalendarEvent {
                             Language::None
                         };
 
-                        document.index_text(field.clone(), value, lang);
+                        if !is_keyword {
+                            document.index_text(field.clone(), value, lang);
+                        } else {
+                            document.index_keyword(field.clone(), value);
+                        }
                     }
                 }
             }

@@ -14,7 +14,7 @@ use store::{
     BlobStore, Key, LogKey, SUBSPACE_LOGS, SerializeInfallible, Store, U32_LEN,
     write::{
         AnyClass, BatchBuilder, BlobOp, DirectoryClass, InMemoryClass, Operation, SearchIndex,
-        TaskQueueClass, ValueClass, ValueOp, key::DeserializeBigEndian, now,
+        TaskEpoch, TaskQueueClass, ValueClass, ValueOp, key::DeserializeBigEndian, now,
     },
 };
 use store::{
@@ -147,7 +147,7 @@ async fn restore_file(store: Store, blob_store: BlobStore, path: &Path) {
                             if reader.version == 1 && collection == Collection::Email {
                                 batch.set(
                                     ValueClass::TaskQueue(TaskQueueClass::UpdateIndex {
-                                        due,
+                                        due: TaskEpoch::from_inner(due),
                                         index: SearchIndex::Email,
                                         is_insert: true,
                                     }),

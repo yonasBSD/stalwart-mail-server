@@ -72,7 +72,7 @@ pub async fn test(params: &mut JMAPTest) {
         .await;
     let john_event_id = response.created(0).id().to_string();
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    tokio::time::sleep(std::time::Duration::from_millis(600)).await;
 
     // Verify Jane and Bill received the share notification
     let mut jane_event_id = String::new();

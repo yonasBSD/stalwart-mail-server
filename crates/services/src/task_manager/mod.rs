@@ -24,7 +24,7 @@ use std::{sync::Arc, time::Instant};
 use store::ahash::AHashSet;
 use store::rand;
 use store::rand::seq::SliceRandom;
-use store::write::SearchIndex;
+use store::write::{SearchIndex, TaskEpoch};
 use store::{
     IterateParams, U16_LEN, U32_LEN, U64_LEN, ValueKey,
     ahash::AHashMap,
@@ -49,12 +49,12 @@ pub mod merge_threads;
 pub struct Task<T> {
     pub account_id: u32,
     pub document_id: u32,
-    pub due: u64,
+    pub due: TaskEpoch,
     pub action: T,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub(crate) enum TaskAction {
+pub enum TaskAction {
     UpdateIndex(IndexAction),
     BayesTrain(bool),
     SendAlarm(CalendarAlarm),
@@ -63,7 +63,7 @@ pub(crate) enum TaskAction {
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub(crate) struct IndexAction {
+pub struct IndexAction {
     pub index: SearchIndex,
     pub is_insert: bool,
 }
@@ -370,7 +370,7 @@ impl TaskQueueManager for Server {
             collection: 0,
             document_id: 0,
             class: ValueClass::TaskQueue(TaskQueueClass::UpdateIndex {
-                due: 0,
+                due: TaskEpoch::from_inner(0),
                 index: SearchIndex::Email,
                 is_insert: true,
             }),
@@ -380,7 +380,9 @@ impl TaskQueueManager for Server {
             collection: u8::MAX,
             document_id: u32::MAX,
             class: ValueClass::TaskQueue(TaskQueueClass::UpdateIndex {
-                due: now_timestamp + QUEUE_REFRESH_INTERVAL,
+                due: TaskEpoch::new(now_timestamp + QUEUE_REFRESH_INTERVAL)
+                    .with_attempt(u16::MAX)
+                    .with_sequence_id(u16::MAX),
                 index: SearchIndex::Email,
                 is_insert: true,
             }),
@@ -397,7 +399,9 @@ impl TaskQueueManager for Server {
                 IterateParams::new(from_key, to_key).ascending(),
                 |key, value| {
                     let task = Task::deserialize(key, value)?;
-                    if task.due <= now_timestamp {
+
+                    let task_due = task.due.due();
+                    if task_due <= now_timestamp {
                         match ipc.locked.entry(key.to_vec()) {
                             Entry::Occupied(mut entry) => {
                                 let locked = entry.get_mut();
@@ -420,7 +424,7 @@ impl TaskQueueManager for Server {
 
                         Ok(true)
                     } else {
-                        next_event = Some(task.due);
+                        next_event = Some(task_due);
                         Ok(false)
                     }
                 },

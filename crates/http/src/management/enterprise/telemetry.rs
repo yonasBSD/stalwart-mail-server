@@ -78,7 +78,7 @@ impl TelemetryApi for Server {
                 let mut tracing_query = Vec::new();
                 tracing_query.push(SearchFilter::And);
                 if let Some(typ) = params.parse::<EventType>("type") {
-                    tracing_query.push(SearchFilter::eq(TracingSearchField::EventType, typ.id()));
+                    tracing_query.push(SearchFilter::eq(TracingSearchField::EventType, typ.code()));
                 }
                 if let Some(queue_id) = params.parse::<u64>("queue_id") {
                     tracing_query.push(SearchFilter::eq(TracingSearchField::QueueId, queue_id));
@@ -91,7 +91,7 @@ impl TelemetryApi for Server {
                             if in_quote {
                                 buf.push(' ');
                             } else if !buf.is_empty() {
-                                tracing_query.push(SearchFilter::has_unknown_text(
+                                tracing_query.push(SearchFilter::has_keyword(
                                     TracingSearchField::Keywords,
                                     buf,
                                 ));
@@ -101,7 +101,7 @@ impl TelemetryApi for Server {
                             buf.push(ch);
                             if in_quote {
                                 if !buf.is_empty() {
-                                    tracing_query.push(SearchFilter::has_unknown_text(
+                                    tracing_query.push(SearchFilter::has_keyword(
                                         TracingSearchField::Keywords,
                                         buf,
                                     ));
@@ -116,10 +116,8 @@ impl TelemetryApi for Server {
                         }
                     }
                     if !buf.is_empty() {
-                        tracing_query.push(SearchFilter::has_unknown_text(
-                            TracingSearchField::Keywords,
-                            buf,
-                        ));
+                        tracing_query
+                            .push(SearchFilter::has_keyword(TracingSearchField::Keywords, buf));
                     }
                 }
                 let values = params.get("values").is_some();

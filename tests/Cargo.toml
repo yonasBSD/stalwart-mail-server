@@ -5,7 +5,7 @@ edition = "2024"
 
 [features]
 #default = ["sqlite", "postgres", "mysql", "rocks", "s3", "redis", "nats", "azure", "foundationdb", "enterprise"]
-default = ["rocks"]
+default = ["postgres"]
 sqlite = ["store/sqlite"]
 foundationdb = ["store/foundation", "common/foundation"]
 postgres = ["store/postgres"]

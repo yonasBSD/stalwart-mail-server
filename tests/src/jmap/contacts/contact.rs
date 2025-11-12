@@ -5,7 +5,7 @@
  */
 
 use crate::{
-    jmap::{ChangeType, IntoJmapSet, JMAPTest, JmapUtils},
+    jmap::{ChangeType, IntoJmapSet, JMAPTest, JmapUtils, wait_for_index},
     webdav::DummyWebDavClient,
 };
 use ahash::AHashSet;
@@ -336,6 +336,7 @@ pub async fn test(params: &mut JMAPTest) {
     }));
 
     // Query tests
+    wait_for_index(&params.server).await;
     assert_eq!(
         account
             .jmap_query(

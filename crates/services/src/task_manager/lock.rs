@@ -93,7 +93,7 @@ impl TaskLock for Task<IndexAction> {
     fn lock_key(&self) -> Vec<u8> {
         KeySerializer::new((U32_LEN * 2) + U64_LEN + 2)
             .write(0u8)
-            .write(self.due)
+            .write(self.due.inner())
             .write_leb128(self.account_id)
             .write_leb128(self.document_id)
             .write(self.action.index.to_u8())
@@ -162,7 +162,7 @@ impl TaskLock for Task<CalendarAlarm> {
     fn lock_key(&self) -> Vec<u8> {
         KeySerializer::new((U32_LEN * 2) + U64_LEN + 1)
             .write(2u8)
-            .write(self.due)
+            .write(self.due.inner())
             .write_leb128(self.account_id)
             .write_leb128(self.document_id)
             .finalize()
@@ -198,7 +198,7 @@ impl TaskLock for Task<ImipAction> {
     fn lock_key(&self) -> Vec<u8> {
         KeySerializer::new((U32_LEN * 2) + U64_LEN + 1)
             .write(3u8)
-            .write(self.due)
+            .write(self.due.inner())
             .write_leb128(self.account_id)
             .write_leb128(self.document_id)
             .finalize()
@@ -210,17 +210,16 @@ impl TaskLock for Task<ImipAction> {
 
     fn value_classes(&self) -> impl Iterator<Item = ValueClass> {
         [
-            Some(ValueClass::TaskQueue(TaskQueueClass::SendImip {
+            ValueClass::TaskQueue(TaskQueueClass::SendImip {
                 due: self.due,
                 is_payload: false,
-            })),
-            Some(ValueClass::TaskQueue(TaskQueueClass::SendImip {
+            }),
+            ValueClass::TaskQueue(TaskQueueClass::SendImip {
                 due: self.due,
                 is_payload: true,
-            })),
+            }),
         ]
         .into_iter()
-        .flatten()
     }
 }
 
@@ -240,7 +239,7 @@ impl TaskLock for Task<MergeThreadIds<AHashSet<u32>>> {
     fn lock_key(&self) -> Vec<u8> {
         KeySerializer::new((U32_LEN * 2) + U64_LEN + 1)
             .write(4u8)
-            .write(self.due)
+            .write(self.due.inner())
             .write_leb128(self.account_id)
             .write_leb128(self.document_id)
             .finalize()
@@ -267,11 +266,11 @@ impl Task<TaskAction> {
         }
     }
 
-    pub(crate) fn deserialize(key: &[u8], value: &[u8]) -> trc::Result<Self> {
+    pub fn deserialize(key: &[u8], value: &[u8]) -> trc::Result<Self> {
         let document_id = key.deserialize_be_u32(U64_LEN + U32_LEN + 1)?;
 
         Ok(Task {
-            due: key.deserialize_be_u64(0)?,
+            due: TaskEpoch::from_inner(key.deserialize_be_u64(0)?),
             account_id: key.deserialize_be_u32(U64_LEN)?,
             document_id,
             action: match key.get(U64_LEN + U32_LEN) {

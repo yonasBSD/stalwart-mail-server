@@ -14,7 +14,6 @@ use crate::{
 use ahash::AHashSet;
 use deadpool_postgres::Pool;
 use nlp::language::Language;
-use std::fmt::Display;
 
 pub mod blob;
 pub mod lookup;
@@ -30,7 +29,23 @@ pub struct PostgresStore {
 }
 
 #[inline(always)]
-fn into_error(err: impl Display) -> trc::Error {
+fn into_error(err: tokio_postgres::error::Error) -> trc::Error {
+    let mut local_err = trc::StoreEvent::PostgresqlError.reason(err.to_string());
+    if let Some(db_err) = err.as_db_error() {
+        local_err = local_err.code(db_err.code().code().to_string());
+        if let Some(detail) = db_err.detail() {
+            local_err = local_err.details(detail.to_string());
+        }
+
+        if let Some(hint) = db_err.hint() {
+            local_err = local_err.caused_by(hint.to_string());
+        }
+    }
+    local_err
+}
+
+#[inline(always)]
+fn into_pool_error(err: deadpool::managed::PoolError<tokio_postgres::Error>) -> trc::Error {
     trc::StoreEvent::PostgresqlError.reason(err)
 }
 

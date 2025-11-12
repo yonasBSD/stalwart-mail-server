@@ -27,7 +27,7 @@ use imap_proto::{
 use std::{sync::Arc, time::Instant};
 use store::{
     roaring::RoaringBitmap,
-    write::{AlignedBytes, Archive, BatchBuilder, TaskQueueClass, ValueClass, now},
+    write::{AlignedBytes, Archive, BatchBuilder, TaskEpoch, TaskQueueClass, ValueClass},
 };
 use types::{
     acl::Acl,
@@ -317,7 +317,7 @@ impl<T: SessionStream> SessionData<T> {
                     if dest_mailbox_id.mailbox_id == JUNK_ID {
                         batch.set(
                             ValueClass::TaskQueue(TaskQueueClass::BayesTrain {
-                                due: now(),
+                                due: TaskEpoch::now(),
                                 learn_spam: true,
                             }),
                             vec![],
@@ -328,7 +328,7 @@ impl<T: SessionStream> SessionData<T> {
                     {
                         batch.set(
                             ValueClass::TaskQueue(TaskQueueClass::BayesTrain {
-                                due: now(),
+                                due: TaskEpoch::now(),
                                 learn_spam: false,
                             }),
                             vec![],

@@ -19,8 +19,8 @@ use store::{
     roaring::RoaringBitmap,
     search::{IndexDocument, SearchField, SearchFilter, SearchQuery},
     write::{
-        BatchBuilder, BlobOp, SearchIndex, TaskQueueClass, ValueClass, key::DeserializeBigEndian,
-        now,
+        BatchBuilder, BlobOp, SearchIndex, TaskEpoch, TaskQueueClass, ValueClass,
+        key::DeserializeBigEndian,
     },
 };
 use trc::{AddContext, TaskQueueEvent};
@@ -203,7 +203,7 @@ impl SearchIndexTask for Server {
                     .details("Failed to index documents")
             );
             for r in results.iter_mut() {
-                if r.task_type == TaskType::Delete && r.status == TaskStatus::Success {
+                if r.task_type == TaskType::Insert && r.status == TaskStatus::Success {
                     r.status = TaskStatus::Failed;
                 }
             }
@@ -301,7 +301,7 @@ impl ReindexIndexTask for Server {
             }
             accounts
         };
-        let due = now();
+        let due = TaskEpoch::now();
 
         match index {
             SearchIndex::Email => {
@@ -563,7 +563,7 @@ async fn delete_email_metadata(
         )
         .await?
     {
-        Some(metadata) => {
+        Some(metadata_) => {
             let tenant_id = server
                 .core
                 .storage
@@ -577,10 +577,25 @@ async fn delete_email_metadata(
                 .with_account_id(account_id)
                 .with_collection(Collection::Email)
                 .with_document(document_id);
-            metadata
+            let metadata = metadata_
                 .unarchive::<MessageMetadata>()
-                .caused_by(trc::location!())?
-                .unindex(batch, account_id, tenant_id);
+                .caused_by(trc::location!())?;
+            metadata.unindex(batch, account_id, tenant_id);
+
+            // SPDX-SnippetBegin
+            // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
+            // SPDX-License-Identifier: LicenseRef-SEL
+
+            // Hold blob for undeletion
+            #[cfg(feature = "enterprise")]
+            server.core.hold_undelete(
+                batch,
+                Collection::Email.into(),
+                &BlobHash::from(&metadata.blob_hash),
+                u32::from(metadata.size) as usize,
+            );
+
+            // SPDX-SnippetEnd
         }
         None => {
             trc::event!(

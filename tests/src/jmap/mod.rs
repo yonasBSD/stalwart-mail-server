@@ -40,7 +40,10 @@ use pop3::Pop3SessionManager;
 use reqwest::header;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
-use services::SpawnServices;
+use services::{
+    SpawnServices,
+    task_manager::{Task, TaskAction},
+};
 use smtp::{SpawnQueueManager, core::SmtpSessionManager};
 use std::{
     fmt::{Debug, Display},
@@ -48,7 +51,10 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use store::{IterateParams, SUBSPACE_TASK_QUEUE, Stores, write::AnyKey};
+use store::{
+    IterateParams, SUBSPACE_TASK_QUEUE, Stores, U32_LEN, U64_LEN,
+    write::{AnyKey, TaskEpoch, key::DeserializeBigEndian},
+};
 use tokio::sync::watch;
 use types::id::Id;
 use utils::config::Config;
@@ -71,7 +77,7 @@ async fn jmap_tests() {
 
     /*mail::get::test(&mut params).await;
     mail::set::test(&mut params).await;
-    mail::parse::test(&mut params).await;
+    mail::parse::test(&mut params).await;*/
     mail::query::test(&mut params, delete).await;
     mail::search_snippet::test(&mut params).await;
     mail::changes::test(&mut params).await;
@@ -95,7 +101,7 @@ async fn jmap_tests() {
     auth::limits::test(&mut params).await;
     auth::oauth::test(&mut params).await;
     auth::quota::test(&mut params).await;
-    auth::permissions::test(&params).await;*/
+    auth::permissions::test(&params).await;
 
     contacts::addressbook::test(&mut params).await;
     contacts::contact::test(&mut params).await;
@@ -198,7 +204,7 @@ impl Account {
 pub async fn wait_for_index(server: &Server) {
     let mut count = 0;
     loop {
-        let mut has_index_tasks = false;
+        let mut has_index_tasks = None;
         server
             .core
             .storage
@@ -211,12 +217,21 @@ pub async fn wait_for_index(server: &Server) {
                     },
                     AnyKey {
                         subspace: SUBSPACE_TASK_QUEUE,
-                        key: vec![u8::MAX, u8::MAX, u8::MAX, u8::MAX],
+                        key: vec![u8::MAX; 16],
                     },
                 )
                 .ascending(),
-                |_, _| {
-                    has_index_tasks = true;
+                |key, value| {
+                    has_index_tasks = Some(
+                        Task::<TaskAction>::deserialize(key, value).unwrap_or_else(|_| Task {
+                            due: TaskEpoch::from_inner(
+                                key.deserialize_be_u64(key.len() - U64_LEN).unwrap(),
+                            ),
+                            account_id: key.deserialize_be_u32(U64_LEN).unwrap(),
+                            document_id: key.deserialize_be_u32(U64_LEN + U32_LEN + 1).unwrap(),
+                            action: TaskAction::SendImip,
+                        }),
+                    );
 
                     Ok(false)
                 },
@@ -224,10 +239,10 @@ pub async fn wait_for_index(server: &Server) {
             .await
             .unwrap();
 
-        if has_index_tasks {
+        if let Some(task) = has_index_tasks {
             count += 1;
             if count % 10 == 0 {
-                println!("Waiting for pending index tasks...");
+                println!("Waiting for pending task {:?}...", task);
             }
             tokio::time::sleep(Duration::from_millis(300)).await;
         } else {
@@ -314,6 +329,10 @@ async fn init_jmap_tests(delete_if_exists: bool) -> JMAPTest {
         cache,
     });
 
+    if delete_if_exists {
+        store.destroy().await;
+    }
+
     // Parse acceptors
     servers.parse_tcp_acceptors(&mut config, inner.clone());
 
@@ -360,10 +379,6 @@ async fn init_jmap_tests(delete_if_exists: bool) -> JMAPTest {
             ),
         };
     });
-
-    if delete_if_exists {
-        store.destroy().await;
-    }
 
     // Create tables
     let server = inner.build_server();

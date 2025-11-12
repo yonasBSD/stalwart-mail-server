@@ -33,7 +33,7 @@ use store::{
     IndexKeyPrefix, IterateParams, U32_LEN, ValueKey,
     ahash::{AHashMap, AHashSet},
     write::{
-        BatchBuilder, IndexPropertyClass, SearchIndex, TaskQueueClass, ValueClass,
+        BatchBuilder, IndexPropertyClass, SearchIndex, TaskEpoch, TaskQueueClass, ValueClass,
         key::DeserializeBigEndian, now,
     },
 };
@@ -623,7 +623,6 @@ impl EmailIngest for Server {
                 .log_container_insert(SyncCollection::Thread);
             document_id
         };
-        let due = now();
 
         batch
             .with_collection(Collection::Email)
@@ -651,7 +650,7 @@ impl EmailIngest for Server {
             .set(
                 ValueClass::TaskQueue(TaskQueueClass::UpdateIndex {
                     index: SearchIndex::Email,
-                    due,
+                    due: TaskEpoch::now(),
                     is_insert: true,
                 }),
                 vec![],
@@ -660,7 +659,9 @@ impl EmailIngest for Server {
         // Merge threads if necessary
         if let Some(merge_threads) = MergeThreadIds::new(thread_result).serialize() {
             batch.set(
-                ValueClass::TaskQueue(TaskQueueClass::MergeThreads { due }),
+                ValueClass::TaskQueue(TaskQueueClass::MergeThreads {
+                    due: TaskEpoch::now(),
+                }),
                 merge_threads,
             );
         }
@@ -668,7 +669,10 @@ impl EmailIngest for Server {
         // Request spam training
         if let Some(learn_spam) = train_spam {
             batch.set(
-                ValueClass::TaskQueue(TaskQueueClass::BayesTrain { due, learn_spam }),
+                ValueClass::TaskQueue(TaskQueueClass::BayesTrain {
+                    due: TaskEpoch::now(),
+                    learn_spam,
+                }),
                 vec![],
             );
         }

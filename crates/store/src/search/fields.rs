@@ -104,14 +104,7 @@ impl SearchableField for CalendarSearchField {
     }
 
     fn is_text(&self) -> bool {
-        matches!(
-            self,
-            CalendarSearchField::Title
-                | CalendarSearchField::Description
-                | CalendarSearchField::Location
-                | CalendarSearchField::Owner
-                | CalendarSearchField::Attendee
-        )
+        !self.is_indexed()
     }
 }
 
@@ -145,17 +138,7 @@ impl SearchableField for ContactSearchField {
     }
 
     fn is_text(&self) -> bool {
-        matches!(
-            self,
-            ContactSearchField::Name
-                | ContactSearchField::Nickname
-                | ContactSearchField::Organization
-                | ContactSearchField::Email
-                | ContactSearchField::Phone
-                | ContactSearchField::OnlineService
-                | ContactSearchField::Address
-                | ContactSearchField::Note
-        )
+        !self.is_indexed()
     }
 }
 

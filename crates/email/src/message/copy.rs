@@ -18,7 +18,7 @@ use crate::{
 use common::{Server, auth::ResourceToken, storage::index::ObjectIndexBuilder};
 use mail_parser::{HeaderName, HeaderValue, parsers::fields::thread::thread_name};
 use store::write::{
-    BatchBuilder, IndexPropertyClass, SearchIndex, TaskQueueClass, ValueClass, now,
+    BatchBuilder, IndexPropertyClass, SearchIndex, TaskEpoch, TaskQueueClass, ValueClass,
 };
 use trc::AddContext;
 use types::{
@@ -179,7 +179,6 @@ impl EmailCopy for Server {
                 .log_container_insert(SyncCollection::Thread);
             document_id
         };
-        let due = now();
         batch
             .with_collection(Collection::Email)
             .with_document(document_id)
@@ -201,7 +200,7 @@ impl EmailCopy for Server {
             .set(
                 ValueClass::TaskQueue(TaskQueueClass::UpdateIndex {
                     index: SearchIndex::Email,
-                    due,
+                    due: TaskEpoch::now(),
                     is_insert: true,
                 }),
                 vec![],
@@ -210,7 +209,9 @@ impl EmailCopy for Server {
         // Merge threads if necessary
         if let Some(merge_threads) = MergeThreadIds::new(thread_result).serialize() {
             batch.set(
-                ValueClass::TaskQueue(TaskQueueClass::MergeThreads { due }),
+                ValueClass::TaskQueue(TaskQueueClass::MergeThreads {
+                    due: TaskEpoch::now(),
+                }),
                 merge_threads,
             );
         }

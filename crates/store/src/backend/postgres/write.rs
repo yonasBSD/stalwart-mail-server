@@ -7,6 +7,7 @@
 use super::{PostgresStore, into_error};
 use crate::{
     IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_QUOTA,
+    backend::postgres::into_pool_error,
     write::{
         AssignedIds, Batch, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME, MergeResult, Operation,
         ValueClass, ValueOp,
@@ -27,7 +28,7 @@ enum CommitError {
 
 impl PostgresStore {
     pub(crate) async fn write(&self, mut batch: Batch<'_>) -> trc::Result<AssignedIds> {
-        let mut conn = self.conn_pool.get().await.map_err(into_error)?;
+        let mut conn = self.conn_pool.get().await.map_err(into_pool_error)?;
         let start = Instant::now();
         let mut retry_count = 0;
 
@@ -379,7 +380,7 @@ impl PostgresStore {
     }
 
     pub(crate) async fn purge_store(&self) -> trc::Result<()> {
-        let conn = self.conn_pool.get().await.map_err(into_error)?;
+        let conn = self.conn_pool.get().await.map_err(into_pool_error)?;
 
         for subspace in [SUBSPACE_QUOTA, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER] {
             let s = conn
@@ -396,7 +397,7 @@ impl PostgresStore {
     }
 
     pub(crate) async fn delete_range(&self, from: impl Key, to: impl Key) -> trc::Result<()> {
-        let conn = self.conn_pool.get().await.map_err(into_error)?;
+        let conn = self.conn_pool.get().await.map_err(into_pool_error)?;
 
         let s = conn
             .prepare_cached(&format!(

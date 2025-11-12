@@ -5,7 +5,10 @@
  */
 
 use super::{PostgresStore, into_error};
-use crate::{Deserialize, IterateParams, Key, ValueKey, write::ValueClass};
+use crate::{
+    Deserialize, IterateParams, Key, ValueKey, backend::postgres::into_pool_error,
+    write::ValueClass,
+};
 use futures::{TryStreamExt, pin_mut};
 
 impl PostgresStore {
@@ -13,7 +16,7 @@ impl PostgresStore {
     where
         U: Deserialize + 'static,
     {
-        let conn = self.conn_pool.get().await.map_err(into_error)?;
+        let conn = self.conn_pool.get().await.map_err(into_pool_error)?;
         let s = conn
             .prepare_cached(&format!(
                 "SELECT v FROM {} WHERE k = $1",
@@ -39,7 +42,7 @@ impl PostgresStore {
         params: IterateParams<T>,
         mut cb: impl for<'x> FnMut(&'x [u8], &'x [u8]) -> trc::Result<bool> + Sync + Send,
     ) -> trc::Result<()> {
-        let conn = self.conn_pool.get().await.map_err(into_error)?;
+        let conn = self.conn_pool.get().await.map_err(into_pool_error)?;
         let table = char::from(params.begin.subspace());
         let begin = params.begin.serialize(0);
         let end = params.end.serialize(0);
@@ -100,7 +103,7 @@ impl PostgresStore {
         let table = char::from(key.subspace());
         let key = key.serialize(0);
 
-        let conn = self.conn_pool.get().await.map_err(into_error)?;
+        let conn = self.conn_pool.get().await.map_err(into_pool_error)?;
         let s = conn
             .prepare_cached(&format!("SELECT v FROM {table} WHERE k = $1"))
             .await

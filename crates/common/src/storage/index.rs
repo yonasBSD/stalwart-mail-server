@@ -15,7 +15,7 @@ use store::{
     Serialize, SerializeInfallible,
     write::{
         Archive, Archiver, BatchBuilder, BlobOp, DirectoryClass, IntoOperations, Params,
-        SearchIndex, TaskQueueClass, ValueClass, now,
+        SearchIndex, TaskEpoch, TaskQueueClass, ValueClass,
     },
 };
 use types::{
@@ -407,7 +407,7 @@ fn build_index(
         IndexValue::SearchIndex { index, .. } => {
             batch.set(
                 ValueClass::TaskQueue(TaskQueueClass::UpdateIndex {
-                    due: now(),
+                    due: TaskEpoch::now().with_random_sequence_id(),
                     index,
                     is_insert: set,
                 }),
@@ -539,7 +539,7 @@ fn merge_index(
         (IndexValue::SearchIndex { index, .. }, IndexValue::SearchIndex { .. }) => {
             batch.set(
                 ValueClass::TaskQueue(TaskQueueClass::UpdateIndex {
-                    due: now(),
+                    due: TaskEpoch::now().with_random_sequence_id(),
                     index,
                     is_insert: true,
                 }),

@@ -49,7 +49,6 @@ impl CalendarEventQuery for Server {
             .await?;
         let default_tz = request.arguments.time_zone.unwrap_or(Tz::UTC);
         let mut filter: Option<TimeRange> = None;
-        let mut did_filter_by_time = false;
 
         // Extract from/to arguments
         for cond in &request.filter {
@@ -141,20 +140,34 @@ impl CalendarEventQuery for Server {
                             Language::None,
                         ));
                     }
-                    CalendarEventFilter::After(_) | CalendarEventFilter::Before(_) => {
-                        if let Some(filter) = &filter
-                            && !did_filter_by_time
-                        {
+                    CalendarEventFilter::After(after) => {
+                        /*
+                            The end of the event, or any recurrence of the event, in the time zone given
+                            as the "timeZone" argument, must be after this date to match the condition.
+                        */
+                        if let Some(after) = local_timestamp(&after, default_tz) {
                             filters.push(SearchFilter::is_in_set(RoaringBitmap::from_iter(
                                 cache.resources.iter().filter_map(|r| {
-                                    r.event_time_range().and_then(|(start, end)| {
-                                        filter
-                                            .is_in_range(false, start, end)
-                                            .then_some(r.document_id)
+                                    r.event_time_range()
+                                        .and_then(|(_, end)| (after < end).then_some(r.document_id))
+                                }),
+                            )));
+                        }
+                    }
+                    CalendarEventFilter::Before(before) => {
+                        /*
+                            The start of the event, or any recurrence of the event, in the time zone given
+                            as the "timeZone" argument, must be before this date to match the condition.
+                        */
+
+                        if let Some(before) = local_timestamp(&before, default_tz) {
+                            filters.push(SearchFilter::is_in_set(RoaringBitmap::from_iter(
+                                cache.resources.iter().filter_map(|r| {
+                                    r.event_time_range().and_then(|(start, _)| {
+                                        (before > start).then_some(r.document_id)
                                     })
                                 }),
                             )));
-                            did_filter_by_time = true;
                         }
                     }
                     unsupported => {
@@ -225,117 +238,120 @@ impl CalendarEventQuery for Server {
             )
             .await?;
 
-        let mut response = QueryResponseBuilder::new(
-            results.len(),
-            self.core.jmap.query_max_results,
-            cache.get_state(false),
-            &request,
-        );
+        // Extract comparators
+        let comparators = request
+            .sort
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_default();
 
-        if !results.is_empty() {
-            // Extract comparators
-            let comparators = request
-                .sort
-                .as_deref()
-                .filter(|s| !s.is_empty())
-                .unwrap_or_default();
+        if expand_recurrences && !results.is_empty() {
+            let Some(time_range) = filter.filter(|f| f.start != i64::MIN && f.end != i64::MAX)
+            else {
+                return Err(trc::JmapEvent::InvalidArguments.into_err().details(
+                    "Both 'after' and 'before' filters are required when expanding recurrences",
+                ));
+            };
+            let max_instances = self.core.groupware.max_ical_instances;
+            let mut expanded_results = Vec::with_capacity(results.len() as usize);
+            let has_uid_comparator = comparators
+                .iter()
+                .any(|c| matches!(c.property, CalendarEventComparator::Uid));
 
-            if expand_recurrences {
-                let Some(time_range) = filter.filter(|f| f.start != i64::MIN && f.end != i64::MAX)
+            for document_id in results {
+                let Some(_calendar_event) = self
+                    .archive(account_id, Collection::CalendarEvent, document_id)
+                    .await?
                 else {
-                    return Err(trc::JmapEvent::InvalidArguments.into_err().details(
-                        "Both 'after' and 'before' filters are required when expanding recurrences",
-                    ));
+                    continue;
                 };
-                let max_instances = self.core.groupware.max_ical_instances;
-                let mut expanded_results = Vec::with_capacity(results.len() as usize);
-                let has_uid_comparator = comparators
-                    .iter()
-                    .any(|c| matches!(c.property, CalendarEventComparator::Uid));
+                let calendar_event = _calendar_event
+                    .unarchive::<CalendarEvent>()
+                    .caused_by(trc::location!())?;
 
-                for document_id in results {
-                    let Some(_calendar_event) = self
-                        .archive(account_id, Collection::CalendarEvent, document_id)
-                        .await?
-                    else {
-                        continue;
-                    };
-                    let calendar_event = _calendar_event
-                        .unarchive::<CalendarEvent>()
-                        .caused_by(trc::location!())?;
-
-                    // Expand recurrences
-                    let uid = if has_uid_comparator {
-                        Arc::new(
-                            calendar_event
-                                .data
-                                .event
-                                .uids()
-                                .next()
-                                .unwrap_or_default()
-                                .to_string(),
-                        )
+                // Expand recurrences
+                let uid = if has_uid_comparator {
+                    Arc::new(
+                        calendar_event
+                            .data
+                            .event
+                            .uids()
+                            .next()
+                            .unwrap_or_default()
+                            .to_string(),
+                    )
+                } else {
+                    Arc::new(String::new())
+                };
+                for expansion in calendar_event
+                    .data
+                    .expand(default_tz, time_range)
+                    .unwrap_or_default()
+                {
+                    if expanded_results.len() < max_instances {
+                        expanded_results.push(SearchResult {
+                            created: calendar_event.created.to_native().to_be_bytes(),
+                            updated: calendar_event.modified.to_native().to_be_bytes(),
+                            start: expansion.start.to_be_bytes(),
+                            uid: uid.clone(),
+                            document_id,
+                            expansion_id: expansion.expansion_id.into(),
+                        });
                     } else {
-                        Arc::new(String::new())
-                    };
-                    for expansion in calendar_event
-                        .data
-                        .expand(default_tz, time_range)
-                        .unwrap_or_default()
-                    {
-                        if expanded_results.len() < max_instances {
-                            expanded_results.push(SearchResult {
-                                created: calendar_event.created.to_native().to_be_bytes(),
-                                updated: calendar_event.modified.to_native().to_be_bytes(),
-                                start: expansion.start.to_be_bytes(),
-                                uid: uid.clone(),
-                                document_id,
-                                expansion_id: expansion.expansion_id.into(),
-                            });
+                        return Err(trc::JmapEvent::InvalidArguments.into_err().details(
+                            "The number of expanded recurrences exceeds the server limit",
+                        ));
+                    }
+                }
+            }
+
+            let mut response = QueryResponseBuilder::new(
+                expanded_results.len(),
+                self.core.jmap.query_max_results,
+                cache.get_state(false),
+                &request,
+            );
+            // Sort results
+            if !expanded_results.is_empty() {
+                expanded_results.sort_by(|a, b| {
+                    for comparator in comparators {
+                        let ordering = if comparator.is_ascending {
+                            a.get_property(&comparator.property)
+                                .cmp(b.get_property(&comparator.property))
                         } else {
-                            return Err(trc::JmapEvent::InvalidArguments.into_err().details(
-                                "The number of expanded recurrences exceeds the server limit",
-                            ));
+                            b.get_property(&comparator.property)
+                                .cmp(a.get_property(&comparator.property))
+                        };
+
+                        if ordering != Ordering::Equal {
+                            return ordering;
                         }
                     }
-                }
+                    Ordering::Equal
+                });
 
-                // Sort results
-                if !expanded_results.is_empty() {
-                    expanded_results.sort_by(|a, b| {
-                        for comparator in comparators {
-                            let ordering = if comparator.is_ascending {
-                                a.get_property(&comparator.property)
-                                    .cmp(b.get_property(&comparator.property))
-                            } else {
-                                b.get_property(&comparator.property)
-                                    .cmp(a.get_property(&comparator.property))
-                            };
-
-                            if ordering != Ordering::Equal {
-                                return ordering;
-                            }
-                        }
-                        Ordering::Equal
-                    });
-
-                    // Add results
-                    for result in expanded_results {
-                        if !response.add(result.expansion_id.unwrap() + 1, result.document_id) {
-                            break;
-                        }
-                    }
-                }
-            } else {
-                for document_id in results {
-                    if !response.add(0, document_id) {
+                // Add results
+                for result in expanded_results {
+                    if !response.add(result.expansion_id.unwrap() + 1, result.document_id) {
                         break;
                     }
                 }
             }
+            response.build()
+        } else {
+            let mut response = QueryResponseBuilder::new(
+                results.len(),
+                self.core.jmap.query_max_results,
+                cache.get_state(false),
+                &request,
+            );
+            for document_id in results {
+                if !response.add(0, document_id) {
+                    break;
+                }
+            }
+            response.build()
         }
-
-        response.build()
     }
 }
 

@@ -6,7 +6,7 @@
 
 use super::{PostgresStore, into_error};
 use crate::{
-    backend::postgres::{PsqlSearchField, tls::MakeRustlsConnect},
+    backend::postgres::{PsqlSearchField, into_pool_error, tls::MakeRustlsConnect},
     search::{
         CalendarSearchField, ContactSearchField, EmailSearchField, SearchableField,
         TracingSearchField,
@@ -96,7 +96,7 @@ impl PostgresStore {
     }
 
     pub(crate) async fn create_storage_tables(&self) -> trc::Result<()> {
-        let conn = self.conn_pool.get().await.map_err(into_error)?;
+        let conn = self.conn_pool.get().await.map_err(into_pool_error)?;
 
         for table in [
             SUBSPACE_ACL,
@@ -163,7 +163,7 @@ impl PostgresStore {
     }
 
     pub(crate) async fn create_search_tables(&self) -> trc::Result<()> {
-        let conn = self.conn_pool.get().await.map_err(into_error)?;
+        let conn = self.conn_pool.get().await.map_err(into_pool_error)?;
 
         create_search_tables::<EmailSearchField>(&conn).await?;
         create_search_tables::<CalendarSearchField>(&conn).await?;
