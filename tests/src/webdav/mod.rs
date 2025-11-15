@@ -7,8 +7,11 @@
 use crate::{
     AssertConfig, TEST_USERS, add_test_certs,
     directory::internal::TestInternalDirectory,
-    jmap::assert_is_empty,
-    store::{TempDir, build_store_config},
+    jmap::{assert_is_empty, wait_for_index},
+    store::{
+        TempDir, build_store_config,
+        cleanup::{search_store_destroy, store_destroy},
+    },
 };
 use ::managesieve::core::ManageSieveSessionManager;
 use ::store::Stores;
@@ -150,6 +153,7 @@ async fn init_webdav_tests(assisted_discovery: bool, delete_if_exists: bool) -> 
     let cache = Caches::parse(&mut config);
 
     let store = core.storage.data.clone();
+    let search_store = core.storage.fts.clone();
     let (ipc, mut ipc_rxs) = build_ipc(false);
     let inner = Arc::new(Inner {
         shared_core: core.into_shared(),
@@ -206,7 +210,8 @@ async fn init_webdav_tests(assisted_discovery: bool, delete_if_exists: bool) -> 
     });
 
     if delete_if_exists {
-        store.destroy().await;
+        store_destroy(&store).await;
+        search_store_destroy(&search_store).await;
     }
 
     // Create test accounts
@@ -269,6 +274,10 @@ impl WebDavTest {
     pub async fn assert_is_empty(&self) {
         assert_is_empty(&self.server).await;
         self.clear_cache();
+    }
+
+    pub async fn wait_for_index(&self) {
+        wait_for_index(&self.server).await;
     }
 }
 

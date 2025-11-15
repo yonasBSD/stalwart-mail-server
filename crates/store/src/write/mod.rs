@@ -205,13 +205,12 @@ pub enum SearchIndexType {
     Document,
 }
 
-pub(crate) const SEARCH_INDEX_MAX_FIELD_LEN: usize = 16;
+pub(crate) const SEARCH_INDEX_MAX_FIELD_LEN: usize = 128;
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash, rkyv::Serialize, rkyv::Deserialize, rkyv::Archive)]
 pub struct SearchIndexField {
     pub(crate) field_id: u8,
-    pub(crate) len: u8,
-    pub(crate) data: [u8; SEARCH_INDEX_MAX_FIELD_LEN],
+    pub(crate) data: Vec<u8>,
 }
 
 #[derive(Debug, PartialEq, Clone, Copy, Eq, Hash)]

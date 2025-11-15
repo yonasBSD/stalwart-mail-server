@@ -46,7 +46,8 @@ impl MysqlStore {
                     .property::<Option<Duration>>((&prefix, "timeout"))
                     .unwrap_or_default()
                     .map(|t| t.as_secs() as usize),
-            );
+            )
+            .client_found_rows(true);
         if let Some(port) = config.property((&prefix, "port")) {
             opts = opts.tcp_port(port);
         }

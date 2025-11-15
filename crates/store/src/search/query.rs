@@ -13,6 +13,7 @@ use crate::{
         bm_u32::{BitmapCache, range_to_bitmap, sort_order},
         bm_u64::{TreemapCache, range_to_treemap},
     },
+    write::SEARCH_INDEX_MAX_FIELD_LEN,
 };
 use nlp::{language::stemmer::Stemmer, tokenizers::space::SpaceTokenizer};
 use roaring::{RoaringBitmap, RoaringTreemap};
@@ -172,7 +173,11 @@ impl Store {
                         }
                     } else if field.is_indexed() {
                         let value = match value {
-                            SearchValue::Text { value, .. } => value.into_bytes(),
+                            SearchValue::Text { value, .. } => {
+                                let mut value = value.into_bytes();
+                                value.truncate(SEARCH_INDEX_MAX_FIELD_LEN);
+                                value
+                            }
                             SearchValue::Int(v) => (v as u64).to_be_bytes().to_vec(),
                             SearchValue::Uint(v) => v.to_be_bytes().to_vec(),
                             SearchValue::Boolean(v) => vec![v as u8],

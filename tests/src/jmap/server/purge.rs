@@ -17,7 +17,11 @@ use email::{
     message::delete::EmailDeletion,
 };
 use imap_proto::ResponseType;
-use store::{IterateParams, LogKey, U32_LEN, U64_LEN, write::key::DeserializeBigEndian};
+use store::{
+    IterateParams, LogKey, U32_LEN, U64_LEN,
+    search::SearchQuery,
+    write::{SearchIndex, key::DeserializeBigEndian},
+};
 use types::id::Id;
 
 pub async fn test(params: &mut JMAPTest) {
@@ -155,6 +159,19 @@ pub async fn test(params: &mut JMAPTest) {
         .delete_principal(QueryBy::Id(account.id().document_id()))
         .await
         .unwrap();
+    for index in [
+        SearchIndex::Email,
+        SearchIndex::Contacts,
+        SearchIndex::Calendar,
+    ] {
+        server
+            .core
+            .storage
+            .fts
+            .unindex(SearchQuery::new(index).with_account_id(account.id().document_id()))
+            .await
+            .unwrap();
+    }
     params.assert_is_empty().await;
 }
 

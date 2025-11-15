@@ -11,6 +11,7 @@ use crate::{
     search::{
         IndexDocument, SearchComparator, SearchField, SearchFilter, SearchOperator, SearchQuery,
         SearchValue,
+        split::{SplitFilter, split_filters},
     },
     write::SearchIndex,
 };
@@ -37,6 +38,7 @@ impl SearchStore {
         // If all filters and comparators are external, delegate to the underlying store
         let mut account_id = u32::MAX;
         let mut has_local_filters = false;
+        let mut has_external_filters = false;
         for filter in &query.filters {
             match filter {
                 SearchFilter::Operator {
@@ -48,6 +50,9 @@ impl SearchStore {
                 }
                 SearchFilter::DocumentSet(_) => {
                     has_local_filters = true;
+                }
+                SearchFilter::Operator { .. } => {
+                    has_external_filters = true;
                 }
                 _ => (),
             }
@@ -71,143 +76,36 @@ impl SearchStore {
                 .caused_by(trc::location!());
         }
 
-        // Decompose filters into external and local filters
-        let mut filters = Vec::with_capacity(query.filters.len());
-        let mut iter = query.filters.into_iter();
-        let mut logical_op = None;
+        let filters = if has_external_filters {
+            // Split filters
+            let split_filters = split_filters(query.filters).ok_or_else(|| {
+                trc::StoreEvent::UnexpectedError
+                    .reason("Invalid filter query")
+                    .caused_by(trc::location!())
+            })?;
 
-        while let Some(item) = iter.next() {
-            match &item {
-                SearchFilter::Operator {
-                    field: SearchField::AccountId,
-                    ..
-                } => {}
-                SearchFilter::Operator { .. } => {
-                    let mut depth = 0;
-                    let mut external = Vec::with_capacity(5);
-
-                    // Add the logical operator if there is one
-                    let in_logical_op = if let Some(op) = logical_op.take() {
-                        external.push(op);
-                        true
-                    } else {
-                        false
-                    };
-                    external.push(item);
-
-                    for item in iter.by_ref() {
-                        match item {
-                            SearchFilter::And | SearchFilter::Or | SearchFilter::Not => {
-                                depth += 1;
-                                external.push(item);
-                            }
-                            SearchFilter::End if depth > 0 => {
-                                depth -= 1;
-                                external.push(item);
-                            }
-                            SearchFilter::Operator {
-                                field: SearchField::AccountId,
-                                ..
-                            } => {}
-                            SearchFilter::Operator { .. } => {
-                                external.push(item);
-                            }
-                            _ => {
-                                let mut new_filters = Vec::new();
-                                let mut pop_count = depth;
-                                while pop_count > 0 {
-                                    let prev_item = external.pop().unwrap();
-                                    if matches!(
-                                        prev_item,
-                                        SearchFilter::And | SearchFilter::Or | SearchFilter::Not
-                                    ) {
-                                        pop_count -= 1;
-                                    }
-                                    new_filters.push(prev_item);
-                                }
-                                let is_end = matches!(item, SearchFilter::End);
-                                new_filters.push(item);
-
-                                if !is_end {
-                                    if logical_op.is_some() {
-                                        depth += 1;
-                                    }
-                                    for item in iter {
-                                        match item {
-                                            SearchFilter::And
-                                            | SearchFilter::Or
-                                            | SearchFilter::Not => {
-                                                depth += 1;
-                                                new_filters.push(item);
-                                            }
-                                            SearchFilter::End => {
-                                                depth -= 1;
-                                                new_filters.push(item);
-                                            }
-                                            SearchFilter::Operator {
-                                                field: SearchField::AccountId,
-                                                ..
-                                            } => {}
-                                            SearchFilter::Operator { .. } if depth == 0 => {
-                                                external.push(item);
-                                            }
-                                            _ => {
-                                                new_filters.push(item);
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    new_filters.extend(iter);
-                                }
-                                iter = new_filters.into_iter();
-                                break;
-                            }
-                        }
+            let mut filters = Vec::with_capacity(split_filters.len());
+            for split_filter in split_filters {
+                match split_filter {
+                    SplitFilter::External(external) => {
+                        // Execute sub-query
+                        filters.push(SearchFilter::DocumentSet(
+                            self.sub_query(query.index, &external, &[])
+                                .await?
+                                .into_iter()
+                                .collect(),
+                        ));
                     }
-
-                    if in_logical_op {
-                        external.push(SearchFilter::End);
+                    SplitFilter::Internal(filter) => {
+                        filters.push(filter);
                     }
-
-                    // Add account id
-                    if external.len() == 1 {
-                        external.push(SearchFilter::Operator {
-                            field: SearchField::AccountId,
-                            op: SearchOperator::Equal,
-                            value: SearchValue::Uint(account_id as u64),
-                        });
-                    } else {
-                        external.insert(0, SearchFilter::And);
-                        external.push(SearchFilter::Operator {
-                            field: SearchField::AccountId,
-                            op: SearchOperator::Equal,
-                            value: SearchValue::Uint(account_id as u64),
-                        });
-                        external.push(SearchFilter::End);
-                    }
-
-                    // Execute sub-query
-                    filters.push(SearchFilter::DocumentSet(
-                        self.sub_query(query.index, &external, &[])
-                            .await?
-                            .into_iter()
-                            .collect(),
-                    ));
-                }
-                _ => {
-                    match &item {
-                        SearchFilter::Or => {
-                            logical_op = Some(SearchFilter::Or);
-                        }
-                        SearchFilter::And | SearchFilter::Not => {
-                            logical_op = Some(SearchFilter::And);
-                        }
-                        _ => {}
-                    }
-                    filters.push(item);
                 }
             }
-        }
+
+            filters
+        } else {
+            query.filters
+        };
 
         // Merge results locally
         let results = SearchQuery::new(query.index)
@@ -402,6 +300,26 @@ impl SearchStore {
             },
             _ => None,
         }
+    }
+
+    pub fn is_mysql(&self) -> bool {
+        match self {
+            #[cfg(feature = "mysql")]
+            SearchStore::Store(Store::MySQL(_)) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_postgres(&self) -> bool {
+        match self {
+            #[cfg(feature = "postgres")]
+            SearchStore::Store(Store::PostgreSQL(_)) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_elasticsearch(&self) -> bool {
+        matches!(self, SearchStore::ElasticSearch(_))
     }
 }
 

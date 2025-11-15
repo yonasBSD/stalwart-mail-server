@@ -4,7 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::directory::{DirectoryTest, IntoTestPrincipal, TestPrincipal};
+use crate::{
+    directory::{DirectoryTest, IntoTestPrincipal, TestPrincipal},
+    store::cleanup::store_destroy,
+};
 use ahash::AHashSet;
 use directory::{
     Permission, QueryBy, QueryParams, Type,
@@ -30,7 +33,7 @@ async fn internal_directory() {
 
     for (store_id, store) in config.stores.stores {
         println!("Testing internal directory with store {:?}", store_id);
-        store.destroy().await;
+        store_destroy(&store).await;
 
         // A principal without name should fail
         assert_eq!(

@@ -473,12 +473,12 @@ impl ValueClass {
                             .write(class)
                             .write(*account_id)
                             .write(field.field_id)
-                            .write(&field.data[..field.len as usize])
+                            .write(field.data.as_slice())
                             .write(*document_id),
                         SearchIndexId::Global { id } => serializer
                             .write(class)
                             .write(field.field_id)
-                            .write(&field.data[..field.len as usize])
+                            .write(field.data.as_slice())
                             .write(*id),
                     }
                 }
@@ -601,7 +601,7 @@ impl ValueClass {
             ValueClass::ShareNotification { .. } => U32_LEN + U64_LEN + 1,
             ValueClass::SearchIndex(v) => match &v.typ {
                 SearchIndexType::Term { hash, .. } => U64_LEN + hash.len() + 2,
-                SearchIndexType::Index { field, .. } => 1 + field.len as usize + U64_LEN,
+                SearchIndexType::Index { field, .. } => 1 + field.data.len() + U64_LEN,
                 SearchIndexType::Document => match &v.id {
                     SearchIndexId::Account { .. } => 1 + U32_LEN * 2,
                     SearchIndexId::Global { .. } => 1 + U64_LEN,

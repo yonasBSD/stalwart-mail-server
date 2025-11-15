@@ -92,8 +92,10 @@ pub async fn test(params: &mut JMAPTest, insert: bool) {
         wait_for_index(&server).await;
     }
 
+    let can_stem = !params.server.search_store().is_mysql();
+
     println!("Running JMAP Mail query tests...");
-    query(client).await;
+    query(client, can_stem).await;
 
     println!("Running JMAP Mail query options tests...");
     query_options(client).await;
@@ -114,7 +116,7 @@ pub async fn test(params: &mut JMAPTest, insert: bool) {
     params.assert_is_empty().await;
 }
 
-pub async fn query(client: &Client) {
+pub async fn query(client: &Client, can_stem: bool) {
     for (filter, sort, expected_results) in [
         (
             Filter::and(vec![
@@ -144,7 +146,7 @@ pub async fn query(client: &Client) {
         ),
         (
             Filter::and(vec![
-                (email::query::Filter::text("study")),
+                (email::query::Filter::text(if can_stem { "study" } else { "studies" })),
                 (email::query::Filter::in_mailbox_other_than(vec![
                     Id::new(1991).to_string(),
                     Id::new(1870).to_string(),

@@ -5,7 +5,7 @@
  */
 
 use crate::{
-    Serialize, U64_LEN,
+    Serialize,
     backend::MAX_TOKEN_LENGTH,
     search::*,
     write::{
@@ -52,12 +52,9 @@ impl TermIndexBuilder {
             match field {
                 SearchField::Id => {
                     if let SearchValue::Uint(v) = value {
-                        let mut data = [0u8; SEARCH_INDEX_MAX_FIELD_LEN];
-                        data[..U64_LEN].copy_from_slice(&v.to_be_bytes());
                         fields.push(SearchIndexField {
                             field_id: field.u8_id(),
-                            len: U64_LEN as u8,
-                            data,
+                            data: v.to_be_bytes().to_vec(),
                         });
                         id = Some(v);
                     }
@@ -120,15 +117,11 @@ impl TermIndexBuilder {
                     }
 
                     if field.is_indexed() {
-                        let bytes = value.as_bytes();
-                        let len = bytes.len().min(SEARCH_INDEX_MAX_FIELD_LEN);
-                        let mut data = [0u8; SEARCH_INDEX_MAX_FIELD_LEN];
-
-                        data[..len].copy_from_slice(&bytes[..len]);
+                        let mut data = value.into_bytes();
+                        data.truncate(SEARCH_INDEX_MAX_FIELD_LEN);
 
                         SearchIndexField {
                             field_id: field.u8_id(),
-                            len: len as u8,
                             data,
                         }
                     } else {
@@ -151,30 +144,17 @@ impl TermIndexBuilder {
 
                     continue;
                 }
-                SearchValue::Int(v) => {
-                    let mut data = [0u8; SEARCH_INDEX_MAX_FIELD_LEN];
-                    data[..U64_LEN].copy_from_slice(&(v as u64).to_be_bytes());
-
-                    SearchIndexField {
-                        field_id: field.u8_id(),
-                        len: U64_LEN as u8,
-                        data,
-                    }
-                }
-                SearchValue::Uint(v) => {
-                    let mut data = [0u8; SEARCH_INDEX_MAX_FIELD_LEN];
-                    data[..U64_LEN].copy_from_slice(&v.to_be_bytes());
-
-                    SearchIndexField {
-                        field_id: field.u8_id(),
-                        len: U64_LEN as u8,
-                        data,
-                    }
-                }
+                SearchValue::Int(v) => SearchIndexField {
+                    field_id: field.u8_id(),
+                    data: (v as u64).to_be_bytes().to_vec(),
+                },
+                SearchValue::Uint(v) => SearchIndexField {
+                    field_id: field.u8_id(),
+                    data: v.to_be_bytes().to_vec(),
+                },
                 SearchValue::Boolean(v) => SearchIndexField {
                     field_id: field.u8_id(),
-                    len: 1,
-                    data: [v as u8; SEARCH_INDEX_MAX_FIELD_LEN],
+                    data: vec![v as u8],
                 },
             };
 
@@ -286,8 +266,7 @@ impl TermIndex {
         for field in old_term.fields.iter() {
             old_fields.insert(SearchIndexField {
                 field_id: field.field_id,
-                len: field.len,
-                data: field.data,
+                data: field.data.to_vec(),
             });
         }
 
@@ -366,8 +345,7 @@ impl ArchivedTermIndex {
                 typ: SearchIndexType::Index {
                     field: SearchIndexField {
                         field_id: field.field_id,
-                        len: field.len,
-                        data: field.data,
+                        data: field.data.to_vec(),
                     },
                 },
             }));

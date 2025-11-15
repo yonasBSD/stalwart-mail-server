@@ -8,6 +8,7 @@ use crate::{
     directory::internal::TestInternalDirectory,
     jmap::{JMAPTest, mail::delivery::SmtpConnection, wait_for_index},
     smtp::queue::QueuedEvents,
+    store::cleanup::store_blob_expire_all,
 };
 use common::config::smtp::queue::QueueName;
 use email::{cache::MessageCacheFetch, mailbox::INBOX_ID};
@@ -42,7 +43,7 @@ pub async fn test(params: &mut JMAPTest) {
     server.inner.cache.access_tokens.clear();
 
     // Delete temporary blobs from previous tests
-    server.core.storage.data.blob_expire_all().await;
+    store_blob_expire_all(&server.core.storage.data).await;
 
     // Test temporary blob quota (3 files)
     DISABLE_UPLOAD_QUOTA.store(false, std::sync::atomic::Ordering::Relaxed);
@@ -65,7 +66,7 @@ pub async fn test(params: &mut JMAPTest) {
         jmap_client::Error::Problem(err) if err.detail().unwrap().contains("quota") => (),
         other => panic!("Unexpected error: {:?}", other),
     }
-    server.core.storage.data.blob_expire_all().await;
+    store_blob_expire_all(&server.core.storage.data).await;
 
     // Test temporary blob quota (50000 bytes)
     for i in 0..2 {
@@ -86,7 +87,7 @@ pub async fn test(params: &mut JMAPTest) {
         jmap_client::Error::Problem(err) if err.detail().unwrap().contains("quota") => (),
         other => panic!("Unexpected error: {:?}", other),
     }
-    server.core.storage.data.blob_expire_all().await;
+    store_blob_expire_all(&server.core.storage.data).await;
 
     // Test JMAP Quotas extension
     let response = account

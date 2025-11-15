@@ -12,7 +12,7 @@ use store::{
 use types::{blob::BlobClass, blob_hash::BlobHash, collection::Collection};
 use utils::config::Config;
 
-use crate::store::{CONFIG, TempDir};
+use crate::store::{CONFIG, TempDir, cleanup::store_destroy};
 
 #[tokio::test]
 pub async fn blob_tests() {
@@ -30,7 +30,7 @@ pub async fn blob_tests() {
         println!("Testing blob management on store {}...", store_id);
 
         // Init store
-        store.destroy().await;
+        store_destroy(&store).await;
 
         // Test internal blob store
         let blob_store: BlobStore = store.clone().into();

@@ -498,41 +498,44 @@ impl<T: SessionStream> SessionData<T> {
                     ));
                 }
                 Filter::Text(text) => {
+                    let (text, language) =
+                        Language::detect(text, self.server.core.jmap.default_language);
+
                     filters.push(SearchFilter::Or);
                     filters.push(SearchFilter::has_text(
                         EmailSearchField::From,
-                        text.as_str(),
+                        &text,
                         Language::None,
                     ));
                     filters.push(SearchFilter::has_text(
                         EmailSearchField::To,
-                        text.as_str(),
+                        &text,
                         Language::None,
                     ));
                     filters.push(SearchFilter::has_text(
                         EmailSearchField::Cc,
-                        text.as_str(),
+                        &text,
                         Language::None,
                     ));
                     filters.push(SearchFilter::has_text(
                         EmailSearchField::Bcc,
-                        text.as_str(),
+                        &text,
                         Language::None,
                     ));
-                    filters.push(SearchFilter::has_text_detect(
+                    filters.push(SearchFilter::has_text(
                         EmailSearchField::Subject,
-                        text.as_str(),
-                        self.server.core.jmap.default_language,
+                        &text,
+                        language,
                     ));
-                    filters.push(SearchFilter::has_text_detect(
+                    filters.push(SearchFilter::has_text(
                         EmailSearchField::Body,
-                        text.as_str(),
-                        self.server.core.jmap.default_language,
+                        &text,
+                        language,
                     ));
-                    filters.push(SearchFilter::has_text_detect(
+                    filters.push(SearchFilter::has_text(
                         EmailSearchField::Attachment,
                         text,
-                        self.server.core.jmap.default_language,
+                        language,
                     ));
                     filters.push(SearchFilter::End);
                 }

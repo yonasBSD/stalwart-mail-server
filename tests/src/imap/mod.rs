@@ -23,7 +23,10 @@ pub mod thread;
 use crate::{
     AssertConfig, add_test_certs,
     directory::internal::TestInternalDirectory,
-    store::{TempDir, build_store_config},
+    store::{
+        TempDir, build_store_config,
+        cleanup::{search_store_destroy, store_destroy},
+    },
 };
 use ::managesieve::core::ManageSieveSessionManager;
 use ::store::Stores;
@@ -88,11 +91,11 @@ pub async fn imap_tests() {
 
     mailbox::test(&mut imap, &mut imap_check).await;
     append::test(&mut imap, &mut imap_check, &handle).await;
-    search::test(&mut imap, &mut imap_check).await;
+    search::test(&mut imap, &mut imap_check, &handle).await;
     fetch::test(&mut imap, &mut imap_check).await;
     store::test(&mut imap, &mut imap_check, &handle).await;
     copy_move::test(&mut imap, &mut imap_check).await;
-    thread::test(&mut imap, &mut imap_check).await;
+    thread::test(&mut imap, &mut imap_check, &handle).await;
     idle::test(&mut imap, &mut imap_check, false).await;
     condstore::test(&mut imap, &mut imap_check).await;
     acl::test(&mut imap, &mut imap_check).await;
@@ -166,6 +169,7 @@ async fn init_imap_tests(delete_if_exists: bool) -> IMAPTest {
     let cache = Caches::parse(&mut config);
 
     let store = core.storage.data.clone();
+    let search_store = core.storage.fts.clone();
     let (ipc, mut ipc_rxs) = build_ipc(false);
     let inner = Arc::new(Inner {
         shared_core: core.into_shared(),
@@ -222,7 +226,8 @@ async fn init_imap_tests(delete_if_exists: bool) -> IMAPTest {
     });
 
     if delete_if_exists {
-        store.destroy().await;
+        store_destroy(&store).await;
+        search_store_destroy(&search_store).await;
     }
 
     // Create tables and test accounts

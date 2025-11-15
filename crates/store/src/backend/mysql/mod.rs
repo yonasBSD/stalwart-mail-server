@@ -31,7 +31,7 @@ fn into_error(err: impl Display) -> trc::Error {
 }
 
 impl SearchIndex {
-    pub(crate) fn mysql_table(&self) -> &'static str {
+    pub fn mysql_table(&self) -> &'static str {
         match self {
             SearchIndex::Email => "s_email",
             SearchIndex::Calendar => "s_cal",

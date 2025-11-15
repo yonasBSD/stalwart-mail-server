@@ -11,6 +11,7 @@ pub mod fields;
 pub mod index;
 pub mod local;
 pub mod query;
+pub mod split;
 pub mod term;
 
 use crate::write::SearchIndex;
@@ -122,7 +123,7 @@ pub struct SearchQuery {
     pub(crate) mask: RoaringBitmap,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone, Default)]
 pub enum SearchFilter {
     Operator {
         field: SearchField,
@@ -133,6 +134,7 @@ pub enum SearchFilter {
     And,
     Or,
     Not,
+    #[default]
     End,
 }
 
@@ -319,3 +321,5 @@ impl ParseValue for SearchField {
         })
     }
 }
+
+impl Eq for SearchFilter {}

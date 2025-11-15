@@ -300,11 +300,7 @@ pub async fn test(store: SearchStore, do_insert: bool) {
 }
 
 async fn test_filter(store: SearchStore, fields: &AHashMap<u32, String>, mask: &RoaringBitmap) {
-    #[cfg(feature = "mysql")]
-    let can_stem = !matches!(store, SearchStore::Store(store::Store::MySQL(_)));
-
-    #[cfg(not(feature = "mysql"))]
-    let can_stem = true;
+    let can_stem = !store.is_mysql();
 
     let tests = [
         (
@@ -482,11 +478,7 @@ async fn test_filter(store: SearchStore, fields: &AHashMap<u32, String>, mask: &
 }
 
 async fn test_sort(store: SearchStore, fields: &AHashMap<u32, String>, mask: &RoaringBitmap) {
-    #[cfg(feature = "postgres")]
-    let is_reversed = matches!(store, SearchStore::Store(store::Store::PostgreSQL(_)));
-
-    #[cfg(not(feature = "postgres"))]
-    let is_reversed = false;
+    let is_reversed = store.is_postgres();
 
     let tests = [
         (

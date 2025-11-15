@@ -50,7 +50,7 @@ fn into_pool_error(err: deadpool::managed::PoolError<tokio_postgres::Error>) -> 
 }
 
 impl SearchIndex {
-    pub(crate) fn psql_table(&self) -> &'static str {
+    pub fn psql_table(&self) -> &'static str {
         match self {
             SearchIndex::Email => "s_email",
             SearchIndex::Calendar => "s_cal",

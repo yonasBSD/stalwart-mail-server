@@ -11,7 +11,10 @@ use crate::{
         enterprise::{EnterpriseCore, insert_test_metrics},
         webhooks::{MockWebhookEndpoint, spawn_mock_webhook_endpoint},
     },
-    store::{TempDir, build_store_config},
+    store::{
+        TempDir, build_store_config,
+        cleanup::{search_store_destroy, store_assert_is_empty, store_destroy},
+    },
 };
 use ahash::AHashMap;
 use base64::{
@@ -75,9 +78,9 @@ async fn jmap_tests() {
 
     server::webhooks::test(&mut params).await;
 
-    /*mail::get::test(&mut params).await;
+    mail::get::test(&mut params).await;
     mail::set::test(&mut params).await;
-    mail::parse::test(&mut params).await;*/
+    mail::parse::test(&mut params).await;
     mail::query::test(&mut params, delete).await;
     mail::search_snippet::test(&mut params).await;
     mail::changes::test(&mut params).await;
@@ -263,10 +266,8 @@ pub async fn assert_is_empty(server: &Server) {
         .unwrap();
 
     // Assert is empty
-    server
-        .store()
-        .assert_is_empty(server.core.storage.blob.clone())
-        .await;
+    store_assert_is_empty(server.store(), server.core.storage.blob.clone()).await;
+    search_store_destroy(server.search_store()).await;
 
     // Clean caches
     for cache in [
@@ -321,6 +322,7 @@ async fn init_jmap_tests(delete_if_exists: bool) -> JMAPTest {
     let data = Data::parse(&mut config);
     let cache = Caches::parse(&mut config);
     let store = core.storage.data.clone();
+    let search_store = core.storage.fts.clone();
     let (ipc, mut ipc_rxs) = build_ipc(false);
     let inner = Arc::new(Inner {
         shared_core: core.into_shared(),
@@ -330,7 +332,8 @@ async fn init_jmap_tests(delete_if_exists: bool) -> JMAPTest {
     });
 
     if delete_if_exists {
-        store.destroy().await;
+        store_destroy(&store).await;
+        search_store_destroy(&search_store).await;
     }
 
     // Parse acceptors

@@ -145,11 +145,6 @@ pub(crate) async fn range_to_bitmap(
         ),
     };
 
-    let len = from_value.len().min(SEARCH_INDEX_MAX_FIELD_LEN);
-    let mut data = [0u8; SEARCH_INDEX_MAX_FIELD_LEN];
-    if len > 0 {
-        data[..len].copy_from_slice(&from_value[..len]);
-    }
     let begin = ValueKey::from(ValueClass::SearchIndex(SearchIndexClass {
         index,
         id: SearchIndexId::Account {
@@ -159,17 +154,11 @@ pub(crate) async fn range_to_bitmap(
         typ: SearchIndexType::Index {
             field: SearchIndexField {
                 field_id: from_field,
-                len: len as u8,
-                data,
+                data: from_value.to_vec(),
             },
         },
     }));
 
-    let len = end_value.len().min(SEARCH_INDEX_MAX_FIELD_LEN);
-    let mut data = [0u8; SEARCH_INDEX_MAX_FIELD_LEN];
-    if len > 0 {
-        data[..len].copy_from_slice(&end_value[..len]);
-    }
     let end = ValueKey::from(ValueClass::SearchIndex(SearchIndexClass {
         index,
         id: SearchIndexId::Account {
@@ -179,8 +168,7 @@ pub(crate) async fn range_to_bitmap(
         typ: SearchIndexType::Index {
             field: SearchIndexField {
                 field_id: end_field,
-                len: len as u8,
-                data,
+                data: end_value.to_vec(),
             },
         },
     }));
@@ -246,8 +234,7 @@ pub(crate) async fn sort_order(
         typ: SearchIndexType::Index {
             field: SearchIndexField {
                 field_id,
-                len: SEARCH_INDEX_MAX_FIELD_LEN as u8,
-                data: [0u8; SEARCH_INDEX_MAX_FIELD_LEN],
+                data: vec![0u8],
             },
         },
     }));
@@ -260,8 +247,7 @@ pub(crate) async fn sort_order(
         typ: SearchIndexType::Index {
             field: SearchIndexField {
                 field_id,
-                len: SEARCH_INDEX_MAX_FIELD_LEN as u8,
-                data: [u8::MAX; SEARCH_INDEX_MAX_FIELD_LEN],
+                data: vec![u8::MAX; SEARCH_INDEX_MAX_FIELD_LEN],
             },
         },
     }));

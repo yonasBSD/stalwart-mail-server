@@ -6,13 +6,17 @@
 
 pub mod blob;
 //pub mod import_export;
+pub mod cleanup;
 pub mod lookup;
 pub mod ops;
 pub mod query;
 
-use crate::AssertConfig;
+use crate::{
+    AssertConfig,
+    store::cleanup::{search_store_destroy, store_destroy},
+};
 use std::io::Read;
-use store::{SearchStore, Stores};
+use store::Stores;
 use utils::config::Config;
 
 pub struct TempDir {
@@ -38,7 +42,7 @@ pub async fn store_tests() {
 
     println!("Testing store {}...", store_id);
     if insert {
-        store.destroy().await;
+        store_destroy(&store).await;
     }
 
     //import_export::test(store.clone()).await;
@@ -68,10 +72,7 @@ pub async fn search_tests() {
 
     println!("Testing store {}...", store_id);
     if insert {
-        match &store {
-            SearchStore::Store(store) => store.destroy().await,
-            SearchStore::ElasticSearch(_) => (),
-        }
+        search_store_destroy(&store).await;
     }
 
     query::test(store, insert).await;
@@ -179,10 +180,10 @@ type = "redis"
 urls = "redis://127.0.0.1"
 redis-type = "single"
 
-[store."psql-replica"]
-type = "sql-read-replica"
-primary = "postgresql"
-replicas = "postgresql"
+#[store."psql-replica"]
+#type = "sql-read-replica"
+#primary = "postgresql"
+#replicas = "postgresql"
 
 [storage]
 data = "{STORE}"

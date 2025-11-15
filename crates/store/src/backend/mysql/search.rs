@@ -5,7 +5,10 @@
  */
 
 use crate::{
-    backend::mysql::{MysqlSearchField, MysqlStore, into_error},
+    backend::{
+        MAX_TOKEN_LENGTH,
+        mysql::{MysqlSearchField, MysqlStore, into_error},
+    },
     search::{
         IndexDocument, SearchComparator, SearchDocumentId, SearchFilter, SearchOperator,
         SearchQuery, SearchValue,
@@ -13,6 +16,7 @@ use crate::{
     write::SearchIndex,
 };
 use mysql_async::{IsolationLevel, TxOpts, Value, prelude::Queryable};
+use nlp::tokenizers::word::WordTokenizer;
 use std::fmt::Write;
 
 impl MysqlStore {
@@ -135,32 +139,30 @@ fn build_filter(query: &mut String, filters: &[SearchFilter]) -> Vec<Value> {
 
                 if field.is_text() && matches!(op, SearchOperator::Equal | SearchOperator::Contains)
                 {
-                    let value = match (value, op) {
-                        (SearchValue::Text { value, .. }, SearchOperator::Equal) => {
+                    let (value, mode) = match (value, op) {
+                        (SearchValue::Text { value, .. }, SearchOperator::Equal) => (
+                            Value::Bytes(format!("{value:?}").into_bytes()),
+                            "NATURAL LANGUAGE",
+                        ),
+                        (SearchValue::Text { value, .. }, ..) => {
                             let mut text_query = String::with_capacity(value.len() + 1);
 
-                            for item in value.split_whitespace() {
+                            for item in WordTokenizer::new(value, MAX_TOKEN_LENGTH) {
                                 if !text_query.is_empty() {
                                     text_query.push(' ');
                                 }
-                                let _ = write!(text_query, "+{item}");
+                                text_query.push('+');
+                                text_query.push_str(&item.word);
                             }
 
-                            Value::Bytes(text_query.into_bytes())
-                        }
-                        (SearchValue::Text { value, .. }, ..) => {
-                            Value::Bytes(format!("{value:?}").into_bytes())
+                            (Value::Bytes(text_query.into_bytes()), "BOOLEAN")
                         }
                         _ => {
                             debug_assert!(false, "Invalid search value for text field");
                             continue;
                         }
                     };
-                    let _ = write!(
-                        query,
-                        "MATCH({}) AGAINST(? IN BOOLEAN MODE)",
-                        field.column()
-                    );
+                    let _ = write!(query, "MATCH({}) AGAINST(? IN {mode} MODE)", field.column());
                     values.push(value);
                 } else if let SearchValue::KeyValues(kv) = value {
                     let (key, value) = kv.iter().next().unwrap();

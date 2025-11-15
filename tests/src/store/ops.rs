@@ -16,6 +16,8 @@ use store::{
 };
 use types::collection::{Collection, SyncCollection};
 
+use crate::store::cleanup::store_assert_is_empty;
+
 // FDB max value
 const MAX_VALUE_SIZE: usize = 100000;
 
@@ -471,6 +473,6 @@ pub async fn test(db: Store) {
         db.write(batch.build_all()).await.unwrap();
 
         // Make sure everything is deleted
-        db.assert_is_empty(db.clone().into()).await;
+        store_assert_is_empty(&db, db.clone().into()).await;
     }
 }

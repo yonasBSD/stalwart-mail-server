@@ -41,37 +41,30 @@ impl ElasticSearchStore {
             .unwrap_or(false);
 
         #[cfg(feature = "test_mode")]
-        es.drop_indexes().await.unwrap();
+        let _ = es.drop_indexes().await;
 
-        if let Err(err) = es
-            .create_index::<EmailSearchField>(shards, replicas, with_source)
-            .await
-        {
-            config.new_build_error(prefix.as_str(), err.to_string());
-        }
-
-        if let Err(err) = es
-            .create_index::<CalendarSearchField>(shards, replicas, with_source)
-            .await
-        {
-            config.new_build_error(prefix.as_str(), err.to_string());
-        }
-
-        if let Err(err) = es
-            .create_index::<ContactSearchField>(shards, replicas, with_source)
-            .await
-        {
-            config.new_build_error(prefix.as_str(), err.to_string());
-        }
-
-        if let Err(err) = es
-            .create_index::<TracingSearchField>(shards, replicas, with_source)
-            .await
-        {
+        if let Err(err) = es.create_indexes(shards, replicas, with_source).await {
             config.new_build_error(prefix.as_str(), err.to_string());
         }
 
         Some(es)
+    }
+
+    pub async fn create_indexes(
+        &self,
+        shards: usize,
+        replicas: usize,
+        with_source: bool,
+    ) -> trc::Result<()> {
+        self.create_index::<EmailSearchField>(shards, replicas, with_source)
+            .await?;
+        self.create_index::<CalendarSearchField>(shards, replicas, with_source)
+            .await?;
+        self.create_index::<ContactSearchField>(shards, replicas, with_source)
+            .await?;
+        self.create_index::<TracingSearchField>(shards, replicas, with_source)
+            .await?;
+        Ok(())
     }
 
     async fn create_index<T: SearchableField>(

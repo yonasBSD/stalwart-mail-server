@@ -155,7 +155,7 @@ impl MysqlStore {
                                 .await
                             {
                                 Ok(_) => {
-                                    if exists.is_some() && trx.affected_rows() == 0 {
+                                    if trx.affected_rows() == 0 {
                                         trx.rollback().await?;
                                         return Err(trc::StoreEvent::AssertValueFailed
                                             .into_err()
@@ -193,7 +193,7 @@ impl MysqlStore {
 
                             match trx.exec_drop(&s, params! {"k" => key, "v" => &value}).await {
                                 Ok(_) => {
-                                    if exists.is_some() && trx.affected_rows() == 0 {
+                                    if trx.affected_rows() == 0 {
                                         trx.rollback().await?;
                                         return Err(trc::StoreEvent::AssertValueFailed
                                             .into_err()

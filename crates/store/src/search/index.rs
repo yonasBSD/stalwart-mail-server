@@ -210,8 +210,7 @@ impl Store {
                         typ: SearchIndexType::Index {
                             field: SearchIndexField {
                                 field_id: 0,
-                                len: 1,
-                                data: [0; SEARCH_INDEX_MAX_FIELD_LEN],
+                                data: vec![0u8],
                             },
                         },
                     })),
@@ -224,8 +223,7 @@ impl Store {
                         typ: SearchIndexType::Index {
                             field: SearchIndexField {
                                 field_id: u8::MAX,
-                                len: 1,
-                                data: [u8::MAX; SEARCH_INDEX_MAX_FIELD_LEN],
+                                data: vec![u8::MAX; SEARCH_INDEX_MAX_FIELD_LEN],
                             },
                         },
                     })),
