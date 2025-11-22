@@ -192,7 +192,11 @@ impl<T: SessionStream> SessionData<T> {
                         if metadata.inner.mailboxes.len() == 1 {
                             // Delete message
                             batch
-                                .custom(ObjectIndexBuilder::<_, ()>::new().with_current(metadata))
+                                .custom(
+                                    ObjectIndexBuilder::<_, ()>::new()
+                                        .with_access_token(&self.access_token)
+                                        .with_current(metadata),
+                                )
                                 .caused_by(trc::location!())?
                                 .set(
                                     ValueClass::TaskQueue(TaskQueueClass::UpdateIndex {
@@ -205,9 +209,7 @@ impl<T: SessionStream> SessionData<T> {
                                 .commit_point();
                         } else {
                             // Untag message from this mailbox and remove Deleted flag
-                            let mut new_metadata = metadata
-                                .deserialize::<MessageData>()
-                                .caused_by(trc::location!())?;
+                            let mut new_metadata = metadata.inner.to_builder();
                             new_metadata.remove_mailbox(mailbox_id);
                             new_metadata.remove_keyword(&Keyword::Deleted);
 
@@ -216,7 +218,7 @@ impl<T: SessionStream> SessionData<T> {
                                 .custom(
                                     ObjectIndexBuilder::new()
                                         .with_current(metadata)
-                                        .with_changes(new_metadata),
+                                        .with_changes(new_metadata.seal()),
                                 )
                                 .caused_by(trc::location!())?
                                 .commit_point();

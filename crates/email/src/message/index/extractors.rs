@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::message::metadata::{ArchivedMessageMetadataContents, ArchivedMessageMetadataPart};
-use mail_parser::{
-    Addr, Address, ArchivedAddress, ArchivedHeaderName, ArchivedHeaderValue, Group, HeaderValue,
-    core::rkyv::ArchivedGetHeader,
+use crate::message::metadata::{
+    ArchivedMessageMetadataContents, ArchivedMessageMetadataPart, ArchivedMetadataHeaderValue,
+    MetadataHeaderName, MetadataHeaderValue,
 };
+use mail_parser::{Addr, Address, Group, HeaderValue};
 use nlp::language::Language;
 use rkyv::option::ArchivedOption;
 use std::borrow::Cow;
@@ -25,18 +25,11 @@ impl ArchivedMessageMetadataContents {
 
 impl ArchivedMessageMetadataPart {
     pub fn language(&self) -> Option<Language> {
-        self.headers
-            .header_value(&ArchivedHeaderName::ContentLanguage)
+        self.header_value(&MetadataHeaderName::ContentLanguage)
             .and_then(|v| {
-                Language::from_iso_639(match v {
-                    ArchivedHeaderValue::Text(v) => v.as_ref(),
-                    ArchivedHeaderValue::TextList(v) => v.first()?,
-                    _ => {
-                        return None;
-                    }
-                })
-                .unwrap_or(Language::Unknown)
-                .into()
+                Language::from_iso_639(v.as_text()?)
+                    .unwrap_or(Language::Unknown)
+                    .into()
             })
     }
 }
@@ -121,10 +114,58 @@ pub trait VisitTextArchived {
     fn visit_text(&self, visitor: impl FnMut(&str));
 }
 
-impl VisitTextArchived for ArchivedHeaderValue<'static> {
+impl VisitTextArchived for MetadataHeaderValue {
     fn visit_addresses(&self, mut visitor: impl FnMut(AddressElement, &str)) {
         match self {
-            ArchivedHeaderValue::Address(ArchivedAddress::List(addr_list)) => {
+            MetadataHeaderValue::AddressList(addr_list) => {
+                for addr in addr_list.iter() {
+                    if let Some(name) = &addr.name {
+                        visitor(AddressElement::Name, name);
+                    }
+                    if let Some(addr) = &addr.address {
+                        visitor(AddressElement::Address, addr);
+                    }
+                }
+            }
+            MetadataHeaderValue::AddressGroup(groups) => {
+                for group in groups.iter() {
+                    if let Some(name) = &group.name {
+                        visitor(AddressElement::GroupName, name);
+                    }
+
+                    for addr in group.addresses.iter() {
+                        if let Some(name) = &addr.name {
+                            visitor(AddressElement::Name, name);
+                        }
+                        if let Some(addr) = &addr.address {
+                            visitor(AddressElement::Address, addr);
+                        }
+                    }
+                }
+            }
+            _ => (),
+        }
+    }
+
+    fn visit_text(&self, mut visitor: impl FnMut(&str)) {
+        match &self {
+            MetadataHeaderValue::Text(text) => {
+                visitor(text.as_ref());
+            }
+            MetadataHeaderValue::TextList(texts) => {
+                for text in texts.iter() {
+                    visitor(text.as_ref());
+                }
+            }
+            _ => (),
+        }
+    }
+}
+
+impl VisitTextArchived for ArchivedMetadataHeaderValue {
+    fn visit_addresses(&self, mut visitor: impl FnMut(AddressElement, &str)) {
+        match self {
+            ArchivedMetadataHeaderValue::AddressList(addr_list) => {
                 for addr in addr_list.iter() {
                     if let ArchivedOption::Some(name) = &addr.name {
                         visitor(AddressElement::Name, name);
@@ -134,7 +175,7 @@ impl VisitTextArchived for ArchivedHeaderValue<'static> {
                     }
                 }
             }
-            ArchivedHeaderValue::Address(ArchivedAddress::Group(groups)) => {
+            ArchivedMetadataHeaderValue::AddressGroup(groups) => {
                 for group in groups.iter() {
                     if let ArchivedOption::Some(name) = &group.name {
                         visitor(AddressElement::GroupName, name);
@@ -156,10 +197,10 @@ impl VisitTextArchived for ArchivedHeaderValue<'static> {
 
     fn visit_text(&self, mut visitor: impl FnMut(&str)) {
         match &self {
-            ArchivedHeaderValue::Text(text) => {
+            ArchivedMetadataHeaderValue::Text(text) => {
                 visitor(text.as_ref());
             }
-            ArchivedHeaderValue::TextList(texts) => {
+            ArchivedMetadataHeaderValue::TextList(texts) => {
                 for text in texts.iter() {
                     visitor(text.as_ref());
                 }

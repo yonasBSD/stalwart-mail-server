@@ -196,16 +196,16 @@ pub struct MessageStoreCache {
 pub struct MailboxesCache {
     pub change_id: u64,
     pub index: AHashMap<u32, u32>,
-    pub items: Vec<MailboxCache>,
+    pub items: Box<[MailboxCache]>,
     pub size: u64,
 }
 
 #[derive(Debug, Clone)]
 pub struct MessagesCache {
     pub change_id: u64,
-    pub items: Vec<MessageCache>,
+    pub items: Box<[MessageCache]>,
     pub index: AHashMap<u32, u32>,
-    pub keywords: Vec<String>,
+    pub keywords: Box<[Box<str>]>,
     pub size: u64,
 }
 
@@ -216,6 +216,7 @@ pub struct MessageCache {
     pub keywords: u128,
     pub thread_id: u32,
     pub change_id: u64,
+    pub size: u32,
 }
 
 #[derive(Debug, Default, Clone, Copy)]

@@ -725,14 +725,16 @@ impl Default for EmailComparator {
 impl EmailComparator {
     fn take_keyword(&mut self) -> Keyword {
         match self {
-            EmailComparator::HasKeyword(k) => std::mem::replace(k, Keyword::Other(String::new())),
+            EmailComparator::HasKeyword(k) => {
+                std::mem::replace(k, Keyword::Other(Default::default()))
+            }
             EmailComparator::AllInThreadHaveKeyword(k) => {
-                std::mem::replace(k, Keyword::Other(String::new()))
+                std::mem::replace(k, Keyword::Other(Default::default()))
             }
             EmailComparator::SomeInThreadHaveKeyword(k) => {
-                std::mem::replace(k, Keyword::Other(String::new()))
+                std::mem::replace(k, Keyword::Other(Default::default()))
             }
-            _ => Keyword::Other(String::new()),
+            _ => Keyword::Other(Default::default()),
         }
     }
 }

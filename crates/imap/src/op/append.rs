@@ -106,6 +106,7 @@ impl<T: SessionStream> SessionData<T> {
                 .email_ingest(IngestEmail {
                     raw_message: &message.message,
                     message: MessageParser::new().parse(&message.message),
+                    blob_hash: None,
                     access_token: &access_token,
                     mailbox_ids: vec![mailbox_id],
                     keywords: message.flags.into_iter().map(Keyword::from).collect(),

@@ -12,6 +12,7 @@ use crate::{
 };
 use common::config::smtp::queue::QueueName;
 use email::{cache::MessageCacheFetch, mailbox::INBOX_ID};
+use http::management::stores::recalculate_quota;
 use jmap::blob::upload::DISABLE_UPLOAD_QUOTA;
 use jmap_client::{
     core::set::{SetErrorType, SetObject},
@@ -210,8 +211,7 @@ pub async fn test(params: &mut JMAPTest) {
         .get_used_quota(account.id().document_id())
         .await
         .unwrap();
-    server
-        .recalculate_quota(account.id().document_id())
+    recalculate_quota(&server, account.id().document_id())
         .await
         .unwrap();
     assert_eq!(

@@ -40,7 +40,6 @@ pub enum CalendarNotificationField {
 pub enum EmailField {
     Archive,
     Metadata,
-    ReceivedToSize,
     Threading,
 }
 
@@ -119,7 +118,6 @@ impl From<EmailField> for u8 {
         match value {
             EmailField::Metadata => 71,
             EmailField::Threading => 90,
-            EmailField::ReceivedToSize => 91,
             EmailField::Archive => ARCHIVE_FIELD,
         }
     }

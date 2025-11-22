@@ -6,12 +6,12 @@
 
 use crate::message::{
     index::{MAX_MESSAGE_PARTS, extractors::VisitTextArchived},
-    metadata::{ArchivedMessageMetadata, ArchivedMetadataPartType, DecodedPartContent},
+    metadata::{
+        ArchivedMessageMetadata, ArchivedMetadataHeaderName, ArchivedMetadataHeaderValue,
+        ArchivedMetadataPartType, DecodedPartContent, MESSAGE_RECEIVED_MASK, MetadataHeaderName,
+    },
 };
-use mail_parser::{
-    ArchivedHeaderName, ArchivedHeaderValue, DateTime, core::rkyv::ArchivedGetHeader,
-    decoders::html::html_to_text, parsers::fields::thread::thread_name,
-};
+use mail_parser::{DateTime, decoders::html::html_to_text, parsers::fields::thread::thread_name};
 use nlp::{
     language::{
         Language,
@@ -25,6 +25,7 @@ use store::{
     search::{EmailSearchField, IndexDocument, SearchField},
     write::SearchIndex,
 };
+use utils::chained_bytes::ChainedBytes;
 
 impl ArchivedMessageMetadata {
     pub fn index_document(
@@ -42,12 +43,18 @@ impl ArchivedMessageMetadata {
             .with_account_id(account_id)
             .with_document_id(document_id);
 
+        let raw_message = ChainedBytes::new(self.raw_headers.as_ref()).with_last(
+            raw_message
+                .get(self.blob_body_offset.to_native() as usize..)
+                .unwrap_or_default(),
+        );
+
         if index_fields.is_empty()
             || index_fields.contains(&SearchField::Email(EmailSearchField::ReceivedAt))
         {
             document.index_unsigned(
                 SearchField::Email(EmailSearchField::ReceivedAt),
-                self.received_at.to_native(),
+                self.rcvd_attach.to_native() & MESSAGE_RECEIVED_MASK,
             );
         }
         if index_fields.is_empty()
@@ -55,7 +62,7 @@ impl ArchivedMessageMetadata {
         {
             document.index_unsigned(
                 SearchField::Email(EmailSearchField::Size),
-                self.size.to_native(),
+                raw_message.len() as u32,
             );
         }
 
@@ -71,7 +78,7 @@ impl ArchivedMessageMetadata {
 
                 for header in part.headers.iter().rev() {
                     match &header.name {
-                        ArchivedHeaderName::From => {
+                        ArchivedMetadataHeaderName::From => {
                             if index_fields.is_empty()
                                 || index_fields
                                     .contains(&SearchField::Email(EmailSearchField::From))
@@ -85,7 +92,7 @@ impl ArchivedMessageMetadata {
                                 });
                             }
                         }
-                        ArchivedHeaderName::To => {
+                        ArchivedMetadataHeaderName::To => {
                             if index_fields.is_empty()
                                 || index_fields.contains(&SearchField::Email(EmailSearchField::To))
                             {
@@ -98,7 +105,7 @@ impl ArchivedMessageMetadata {
                                 });
                             }
                         }
-                        ArchivedHeaderName::Cc => {
+                        ArchivedMetadataHeaderName::Cc => {
                             if index_fields.is_empty()
                                 || index_fields.contains(&SearchField::Email(EmailSearchField::Cc))
                             {
@@ -111,7 +118,7 @@ impl ArchivedMessageMetadata {
                                 });
                             }
                         }
-                        ArchivedHeaderName::Bcc => {
+                        ArchivedMetadataHeaderName::Bcc => {
                             if index_fields.is_empty()
                                 || index_fields.contains(&SearchField::Email(EmailSearchField::Bcc))
                             {
@@ -124,7 +131,7 @@ impl ArchivedMessageMetadata {
                                 });
                             }
                         }
-                        ArchivedHeaderName::Subject => {
+                        ArchivedMetadataHeaderName::Subject => {
                             if (index_fields.is_empty()
                                 || index_fields
                                     .contains(&SearchField::Email(EmailSearchField::Subject)))
@@ -143,7 +150,7 @@ impl ArchivedMessageMetadata {
                                 );
                             }
                         }
-                        ArchivedHeaderName::Date => {
+                        ArchivedMetadataHeaderName::Date => {
                             if (index_fields.is_empty()
                                 || index_fields
                                     .contains(&SearchField::Email(EmailSearchField::SentAt)))
@@ -166,7 +173,8 @@ impl ArchivedMessageMetadata {
                             if index_headers {
                                 let mut value = String::new();
                                 match &header.value {
-                                    ArchivedHeaderValue::Address(_) => {
+                                    ArchivedMetadataHeaderValue::AddressList(_)
+                                    | ArchivedMetadataHeaderValue::AddressGroup(_) => {
                                         header.value.visit_addresses(|_, addr| {
                                             if !value.is_empty() {
                                                 value.push(' ');
@@ -174,8 +182,8 @@ impl ArchivedMessageMetadata {
                                             value.push_str(addr);
                                         });
                                     }
-                                    ArchivedHeaderValue::Text(_)
-                                    | ArchivedHeaderValue::TextList(_) => {
+                                    ArchivedMetadataHeaderValue::Text(_)
+                                    | ArchivedMetadataHeaderValue::TextList(_) => {
                                         header.value.visit_text(|text| {
                                             if !value.is_empty() {
                                                 value.push(' ');
@@ -183,15 +191,19 @@ impl ArchivedMessageMetadata {
                                             value.push_str(text);
                                         });
                                     }
-                                    ArchivedHeaderValue::ContentType(_)
-                                    | ArchivedHeaderValue::Received(_) => {
-                                        if let Some(header) = raw_message
-                                            .get(
-                                                header.offset_start.to_native() as usize
-                                                    ..header.offset_end.to_native() as usize,
-                                            )
-                                            .and_then(|bytes| std::str::from_utf8(bytes).ok())
+                                    _ => {
+                                        if (matches!(
+                                            header.value,
+                                            ArchivedMetadataHeaderValue::ContentType(_)
+                                        ) || matches!(
+                                            header.name,
+                                            ArchivedMetadataHeaderName::Received
+                                        )) && let Some(header) =
+                                            raw_message.get(header.value_range())
                                         {
+                                            let header = std::str::from_utf8(header.as_ref())
+                                                .unwrap_or_default();
+
                                             for word in WordTokenizer::new(header, MAX_TOKEN_LENGTH)
                                             {
                                                 if !value.is_empty() {
@@ -201,8 +213,6 @@ impl ArchivedMessageMetadata {
                                             }
                                         }
                                     }
-                                    ArchivedHeaderValue::DateTime(_)
-                                    | ArchivedHeaderValue::Empty => (),
                                 }
 
                                 document.insert_key_value(
@@ -219,7 +229,7 @@ impl ArchivedMessageMetadata {
             let part_id = part_id as u16;
             match &part.body {
                 ArchivedMetadataPartType::Text | ArchivedMetadataPartType::Html => {
-                    let text = match (part.decode_contents(raw_message), &part.body) {
+                    let text = match (part.decode_contents(&raw_message), &part.body) {
                         (DecodedPartContent::Text(text), ArchivedMetadataPartType::Text) => text,
                         (DecodedPartContent::Text(html), ArchivedMetadataPartType::Html) => {
                             html_to_text(html.as_ref()).into()
@@ -267,10 +277,9 @@ impl ArchivedMessageMetadata {
                         .root_part()
                         .language()
                         .unwrap_or(Language::Unknown);
-                    if let Some(ArchivedHeaderValue::Text(subject)) = nested_message
+                    if let Some(ArchivedMetadataHeaderValue::Text(subject)) = nested_message
                         .root_part()
-                        .headers
-                        .header_value(&ArchivedHeaderName::Subject)
+                        .header_value(&MetadataHeaderName::Subject)
                     {
                         if nested_message_language.is_unknown() {
                             detector.detect(subject.as_ref(), MIN_LANGUAGE_SCORE);
@@ -287,18 +296,20 @@ impl ArchivedMessageMetadata {
                         let language = sub_part.language().unwrap_or(nested_message_language);
                         match &sub_part.body {
                             ArchivedMetadataPartType::Text | ArchivedMetadataPartType::Html => {
-                                let text =
-                                    match (sub_part.decode_contents(raw_message), &sub_part.body) {
-                                        (
-                                            DecodedPartContent::Text(text),
-                                            ArchivedMetadataPartType::Text,
-                                        ) => text,
-                                        (
-                                            DecodedPartContent::Text(html),
-                                            ArchivedMetadataPartType::Html,
-                                        ) => html_to_text(html.as_ref()).into(),
-                                        _ => unreachable!(),
-                                    };
+                                let text = match (
+                                    sub_part.decode_contents(&raw_message),
+                                    &sub_part.body,
+                                ) {
+                                    (
+                                        DecodedPartContent::Text(text),
+                                        ArchivedMetadataPartType::Text,
+                                    ) => text,
+                                    (
+                                        DecodedPartContent::Text(html),
+                                        ArchivedMetadataPartType::Html,
+                                    ) => html_to_text(html.as_ref()).into(),
+                                    _ => unreachable!(),
+                                };
 
                                 if language.is_unknown() {
                                     detector.detect(text.as_ref(), MIN_LANGUAGE_SCORE);

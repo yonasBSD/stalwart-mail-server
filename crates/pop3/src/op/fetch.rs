@@ -11,6 +11,7 @@ use email::message::metadata::MessageMetadata;
 use std::time::Instant;
 use trc::AddContext;
 use types::{collection::Collection, field::EmailField};
+use utils::chained_bytes::ChainedBytes;
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_fetch(&mut self, msg: u32, lines: Option<u32>) -> trc::Result<()> {
@@ -49,6 +50,14 @@ impl<T: SessionStream> Session<T> {
                         DocumentId = message.id,
                         Elapsed = op_start.elapsed()
                     );
+
+                    let bytes = ChainedBytes::new(metadata.raw_headers.as_ref())
+                        .with_last(
+                            bytes
+                                .get(metadata.blob_body_offset.to_native() as usize..)
+                                .unwrap_or_default(),
+                        )
+                        .get_full_range();
 
                     self.write_bytes(
                         Response::Message::<u32> {

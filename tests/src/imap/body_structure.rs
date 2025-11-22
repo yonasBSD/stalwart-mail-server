@@ -6,7 +6,7 @@
 
 use std::fs;
 
-use email::message::metadata::MessageMetadata;
+use email::message::metadata::{MessageMetadata, build_metadata_contents};
 use imap::op::fetch::AsImapDataItem;
 use imap_proto::{
     ResponseCode, StatusResponse,
@@ -17,6 +17,7 @@ use store::{
     Deserialize, Serialize,
     write::{Archive, Archiver},
 };
+use utils::chained_bytes::ChainedBytes;
 
 use super::resources_dir;
 
@@ -35,7 +36,6 @@ fn imap_test_body_structure() {
         let message_ = MessageParser::new().parse(&raw_message).unwrap();
         let metadata = MessageMetadata {
             preview: Default::default(),
-            size: message_.raw_message.len() as u32,
             raw_headers: message_
                 .raw_message
                 .as_ref()
@@ -44,20 +44,21 @@ fn imap_test_body_structure() {
                         ..message_.root_part().offset_body as usize,
                 )
                 .unwrap_or_default()
-                .to_vec(),
-            contents: vec![],
-            received_at: 0,
-            has_attachments: false,
+                .into(),
             blob_hash: Default::default(),
-        }
-        .with_contents(message_);
-        //let c = println!("metadata {:#?}", metadata);
+            blob_body_offset: message_.root_part().offset_body as u32,
+            contents: build_metadata_contents(message_),
+            rcvd_attach: 0,
+        };
         let metadata_ =
             Archive::deserialize_owned(Archiver::new(metadata).serialize().unwrap()).unwrap();
         let metadata = metadata_.unarchive::<MessageMetadata>().unwrap();
-        let decoded = metadata.decode_contents(&raw_message);
-
-        //let c = println!("parts {:#?}", decoded);
+        let raw_message = ChainedBytes::new(metadata.raw_headers.as_ref()).with_last(
+            raw_message
+                .get(metadata.blob_body_offset.to_native() as usize..)
+                .unwrap_or_default(),
+        );
+        let decoded = metadata.decode_contents(raw_message);
 
         // Serialize body and bodystructure
         for is_extended in [false, true] {

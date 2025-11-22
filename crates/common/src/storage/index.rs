@@ -296,6 +296,11 @@ impl<C: IndexableObject, N: IndexableAndSerializableObject> ObjectIndexBuilder<C
         self.changed_by = access_token.primary_id();
         self
     }
+
+    pub fn with_tenant_id(mut self, tenant_id: Option<u32>) -> Self {
+        self.tenant_id = tenant_id;
+        self
+    }
 }
 
 impl<C: IndexableObject, N: IndexableAndSerializableObject> IntoOperations

@@ -16,7 +16,6 @@ use directory::{
 };
 use email::message::delivery::{IngestMessage, LocalDeliveryStatus, MailDelivery};
 use std::sync::Arc;
-use types::blob_hash::BlobHash;
 
 pub async fn test(params: &JMAPTest) {
     println!("Running permissions tests...");
@@ -611,12 +610,11 @@ pub async fn test(params: &JMAPTest) {
         );
 
     // John should not be allowed to receive email
-    let message_blob = BlobHash::generate(TEST_MESSAGE.as_bytes());
-    server
-        .blob_store()
-        .put_blob(message_blob.as_ref(), TEST_MESSAGE.as_bytes())
+    let message_blob = server
+        .put_blob(tenant_user_id, TEST_MESSAGE.as_bytes(), false)
         .await
-        .unwrap();
+        .unwrap()
+        .hash;
     assert_eq!(
         server
             .deliver_message(IngestMessage {

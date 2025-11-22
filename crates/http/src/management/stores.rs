@@ -20,6 +20,11 @@ use email::{
     cache::MessageCacheFetch,
     message::{ingest::EmailIngest, metadata::MessageData},
 };
+use groupware::{
+    calendar::{Calendar, CalendarEvent, CalendarEventNotification},
+    contact::{AddressBook, ContactCard},
+    file::FileNode,
+};
 use http_proto::{request::decode_path_element, *};
 use hyper::Method;
 use serde_json::json;
@@ -27,7 +32,7 @@ use services::task_manager::index::ReindexIndexTask;
 use std::future::Future;
 use store::{
     Serialize, rand,
-    write::{Archiver, BatchBuilder, SearchIndex, ValueClass},
+    write::{Archiver, BatchBuilder, DirectoryClass, SearchIndex, ValueClass},
 };
 use trc::AddContext;
 use types::{
@@ -304,7 +309,7 @@ impl ManageStore for Server {
                     .ok_or_else(|| trc::ManageEvent::NotFound.into_err())?;
 
                 if method == Method::DELETE {
-                    self.recalculate_quota(account_id).await?;
+                    recalculate_quota(self, account_id).await?;
                 }
 
                 let result = self.get_used_quota(account_id).await?;
@@ -335,6 +340,62 @@ impl ManageStore for Server {
         }))
         .into_http_response())
     }
+}
+
+pub async fn recalculate_quota(server: &Server, account_id: u32) -> trc::Result<()> {
+    let mut quota = 0;
+
+    for collection in [
+        Collection::Email,
+        Collection::Calendar,
+        Collection::CalendarEvent,
+        Collection::CalendarEventNotification,
+        Collection::AddressBook,
+        Collection::ContactCard,
+        Collection::FileNode,
+    ] {
+        server
+            .archives(account_id, collection, &(), |_, archive| {
+                match collection {
+                    Collection::Email => {
+                        quota += archive.unarchive::<MessageData>()?.size.to_native() as i64;
+                    }
+                    Collection::Calendar => {
+                        quota += archive.unarchive::<Calendar>()?.size() as i64;
+                    }
+                    Collection::CalendarEvent => {
+                        quota += archive.unarchive::<CalendarEvent>()?.size() as i64;
+                    }
+                    Collection::CalendarEventNotification => {
+                        quota += archive.unarchive::<CalendarEventNotification>()?.size() as i64;
+                    }
+                    Collection::AddressBook => {
+                        quota += archive.unarchive::<AddressBook>()?.size() as i64;
+                    }
+                    Collection::ContactCard => {
+                        quota += archive.unarchive::<ContactCard>()?.size() as i64;
+                    }
+                    Collection::FileNode => {
+                        quota += archive.unarchive::<FileNode>()?.size() as i64;
+                    }
+                    _ => {}
+                }
+                Ok(true)
+            })
+            .await
+            .caused_by(trc::location!())?;
+    }
+
+    let mut batch = BatchBuilder::new();
+    batch
+        .clear(DirectoryClass::UsedQuota(account_id))
+        .add(DirectoryClass::UsedQuota(account_id), quota);
+    server
+        .store()
+        .write(batch.build_all())
+        .await
+        .caused_by(trc::location!())
+        .map(|_| ())
 }
 
 pub async fn reset_imap_uids(server: &Server, account_id: u32) -> trc::Result<(u32, u32)> {

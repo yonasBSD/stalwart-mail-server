@@ -4,9 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{fmt::Display, str::FromStr};
-
 use jmap_tools::{Element, Property, Value};
+use std::{fmt::Display, str::FromStr};
 
 pub const SEEN: usize = 0;
 pub const DRAFT: usize = 1;
@@ -64,7 +63,7 @@ pub enum Keyword {
     Forwarded,
     #[serde(rename(serialize = "$mdnsent"))]
     MdnSent,
-    Other(String),
+    Other(Box<str>),
 }
 
 impl Keyword {
@@ -76,6 +75,14 @@ impl Keyword {
     }
 
     pub fn from_other(value: String) -> Self {
+        if value.len() <= Keyword::MAX_LENGTH {
+            Keyword::Other(value.into_boxed_str())
+        } else {
+            Keyword::Other(value.chars().take(Keyword::MAX_LENGTH).collect())
+        }
+    }
+
+    pub fn from_boxed_other(value: Box<str>) -> Self {
         if value.len() <= Keyword::MAX_LENGTH {
             Keyword::Other(value)
         } else {
@@ -119,11 +126,11 @@ impl Keyword {
             Keyword::Deleted => Ok(DELETED as u32),
             Keyword::Forwarded => Ok(FORWARDED as u32),
             Keyword::MdnSent => Ok(MDN_SENT as u32),
-            Keyword::Other(string) => Err(string.as_str()),
+            Keyword::Other(string) => Err(string.as_ref()),
         }
     }
 
-    pub fn into_id(self) -> Result<u32, String> {
+    pub fn into_id(self) -> Result<u32, Box<str>> {
         match self {
             Keyword::Seen => Ok(SEEN as u32),
             Keyword::Draft => Ok(DRAFT as u32),
@@ -249,7 +256,25 @@ impl ArchivedKeyword {
             ArchivedKeyword::Deleted => Ok(DELETED as u32),
             ArchivedKeyword::Forwarded => Ok(FORWARDED as u32),
             ArchivedKeyword::MdnSent => Ok(MDN_SENT as u32),
-            ArchivedKeyword::Other(string) => Err(string.as_str()),
+            ArchivedKeyword::Other(string) => Err(string.as_ref()),
+        }
+    }
+
+    pub fn to_native(&self) -> Keyword {
+        match self {
+            ArchivedKeyword::Seen => Keyword::Seen,
+            ArchivedKeyword::Draft => Keyword::Draft,
+            ArchivedKeyword::Flagged => Keyword::Flagged,
+            ArchivedKeyword::Answered => Keyword::Answered,
+            ArchivedKeyword::Recent => Keyword::Recent,
+            ArchivedKeyword::Important => Keyword::Important,
+            ArchivedKeyword::Phishing => Keyword::Phishing,
+            ArchivedKeyword::Junk => Keyword::Junk,
+            ArchivedKeyword::NotJunk => Keyword::NotJunk,
+            ArchivedKeyword::Deleted => Keyword::Deleted,
+            ArchivedKeyword::Forwarded => Keyword::Forwarded,
+            ArchivedKeyword::MdnSent => Keyword::MdnSent,
+            ArchivedKeyword::Other(other) => Keyword::Other(other.as_ref().into()),
         }
     }
 }
@@ -269,7 +294,7 @@ impl From<&ArchivedKeyword> for Keyword {
             ArchivedKeyword::Deleted => Keyword::Deleted,
             ArchivedKeyword::Forwarded => Keyword::Forwarded,
             ArchivedKeyword::MdnSent => Keyword::MdnSent,
-            ArchivedKeyword::Other(string) => Keyword::Other(string.as_str().into()),
+            ArchivedKeyword::Other(string) => Keyword::Other(string.as_ref().into()),
         }
     }
 }

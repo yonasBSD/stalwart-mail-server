@@ -215,9 +215,7 @@ impl<T: SessionStream> SessionData<T> {
             let data = data_
                 .to_unarchived::<MessageData>()
                 .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?;
-            let mut new_data = data
-                .deserialize()
-                .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?;
+            let mut new_data = data.inner.to_builder();
 
             // Apply changes
             let mut seen_changed = false;
@@ -296,7 +294,7 @@ impl<T: SessionStream> SessionData<T> {
                 .custom(
                     ObjectIndexBuilder::new()
                         .with_current(data)
-                        .with_changes(new_data),
+                        .with_changes(new_data.seal()),
                 )
                 .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?;
 

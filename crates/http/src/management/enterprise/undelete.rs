@@ -201,6 +201,7 @@ impl UndeleteApi for Server {
                                         .email_ingest(IngestEmail {
                                             raw_message: &bytes,
                                             message: MessageParser::new().parse(&bytes),
+                                            blob_hash: Some(&request.hash),
                                             access_token: access_token.as_ref(),
                                             mailbox_ids: vec![INBOX_ID],
                                             keywords: vec![],

@@ -753,6 +753,7 @@ impl EmailSet for Server {
                 .email_ingest(IngestEmail {
                     raw_message: &raw_message,
                     message: MessageParser::new().parse(&raw_message),
+                    blob_hash: None,
                     access_token: import_access_token.as_deref().unwrap_or(access_token),
                     mailbox_ids: mailboxes,
                     keywords,
@@ -807,9 +808,7 @@ impl EmailSet for Server {
             let data = data_
                 .to_unarchived::<MessageData>()
                 .caused_by(trc::location!())?;
-            let mut new_data = data
-                .deserialize::<MessageData>()
-                .caused_by(trc::location!())?;
+            let mut new_data = data.inner.to_builder();
 
             for (property, mut value) in object.into_expanded_object() {
                 if let Err(err) = response.resolve_self_references(&mut value) {
@@ -993,7 +992,7 @@ impl EmailSet for Server {
                 .custom(
                     ObjectIndexBuilder::new()
                         .with_current(data)
-                        .with_changes(new_data),
+                        .with_changes(new_data.seal()),
                 )
                 .caused_by(trc::location!())?
                 .commit_point();
@@ -1073,7 +1072,12 @@ impl EmailSet for Server {
                 // Batch delete messages
                 let mut batch = BatchBuilder::new();
                 let not_destroyed = self
-                    .emails_delete(account_id, &mut batch, destroy_ids)
+                    .emails_delete(
+                        account_id,
+                        access_token.tenant_id(),
+                        &mut batch,
+                        destroy_ids,
+                    )
                     .await?;
                 if !batch.is_empty() {
                     last_change_id = self

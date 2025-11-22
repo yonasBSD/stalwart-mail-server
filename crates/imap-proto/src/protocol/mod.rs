@@ -10,6 +10,7 @@ use chrono::{DateTime, Utc};
 use compact_str::CompactString;
 use std::{cmp::Ordering, fmt::Display};
 use types::keyword::{ArchivedKeyword, Keyword};
+use utils::chained_bytes::SliceRange;
 
 pub mod acl;
 pub mod append;
@@ -198,6 +199,13 @@ pub fn literal_string(buf: &mut Vec<u8>, text: &[u8]) {
     buf.extend_from_slice(text);
 }
 
+pub fn literal_string_slice(buf: &mut Vec<u8>, text: &SliceRange<'_>) {
+    buf.push(b'{');
+    buf.extend_from_slice(text.len().to_string().as_bytes());
+    buf.extend_from_slice(b"}\r\n");
+    buf.extend(*text);
+}
+
 pub fn quoted_timestamp(buf: &mut Vec<u8>, timestamp: i64) {
     buf.push(b'"');
     buf.extend_from_slice(
@@ -238,7 +246,7 @@ pub enum Flag {
     Deleted,
     Forwarded,
     MDNSent,
-    Keyword(String),
+    Keyword(Box<str>),
 }
 
 impl Flag {
@@ -296,7 +304,7 @@ impl From<&ArchivedKeyword> for Flag {
             ArchivedKeyword::Deleted => Flag::Deleted,
             ArchivedKeyword::Forwarded => Flag::Forwarded,
             ArchivedKeyword::MdnSent => Flag::MDNSent,
-            ArchivedKeyword::Other(value) => Flag::Keyword(value.as_str().into()),
+            ArchivedKeyword::Other(value) => Flag::Keyword(value.as_ref().into()),
         }
     }
 }
@@ -316,7 +324,7 @@ impl From<Flag> for Keyword {
             Flag::Deleted => Keyword::Deleted,
             Flag::Forwarded => Keyword::Forwarded,
             Flag::MDNSent => Keyword::MdnSent,
-            Flag::Keyword(value) => Keyword::from_other(value),
+            Flag::Keyword(value) => Keyword::from_boxed_other(value),
         }
     }
 }

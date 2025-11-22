@@ -158,6 +158,7 @@ impl MailDelivery for Server {
                             // Ingest message
                             self.email_ingest(IngestEmail {
                                 raw_message: &raw_message,
+                                blob_hash: Some(&message.message_blob),
                                 message: MessageParser::new().parse(&raw_message),
                                 access_token: &access_token,
                                 mailbox_ids: vec![INBOX_ID],
@@ -177,6 +178,7 @@ impl MailDelivery for Server {
                         Ok(Some(active_script)) => {
                             self.sieve_script_ingest(
                                 &access_token,
+                                &message.message_blob,
                                 &raw_message,
                                 &message.sender_address,
                                 message.sender_authenticated,

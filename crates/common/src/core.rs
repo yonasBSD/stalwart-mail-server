@@ -30,7 +30,7 @@ use store::{
     roaring::RoaringBitmap,
     write::{
         AlignedBytes, AnyClass, Archive, AssignedIds, BatchBuilder, BlobOp, DirectoryClass,
-        IndexPropertyClass, QueueClass, ValueClass, key::DeserializeBigEndian, now,
+        QueueClass, ValueClass, key::DeserializeBigEndian, now,
     },
 };
 use trc::AddContext;
@@ -38,7 +38,7 @@ use types::{
     blob::{BlobClass, BlobId},
     blob_hash::BlobHash,
     collection::{Collection, SyncCollection},
-    field::{EmailField, Field},
+    field::Field,
     type_state::{DataType, StateChange},
 };
 use utils::{map::bitmap::Bitmap, snowflake::SnowflakeIdGenerator};
@@ -341,52 +341,6 @@ impl Server {
             .get_counter(DirectoryClass::UsedQuota(account_id))
             .await
             .add_context(|err| err.caused_by(trc::location!()).account_id(account_id))
-    }
-
-    pub async fn recalculate_quota(&self, account_id: u32) -> trc::Result<()> {
-        let mut quota = 0i64;
-
-        self.store()
-            .iterate(
-                IterateParams::new(
-                    ValueKey {
-                        account_id,
-                        collection: Collection::Email.into(),
-                        document_id: 0,
-                        class: ValueClass::IndexProperty(IndexPropertyClass::Integer {
-                            property: EmailField::ReceivedToSize.into(),
-                            value: 0,
-                        }),
-                    },
-                    ValueKey {
-                        account_id,
-                        collection: Collection::Email.into(),
-                        document_id: u32::MAX,
-                        class: ValueClass::IndexProperty(IndexPropertyClass::Integer {
-                            property: EmailField::ReceivedToSize.into(),
-                            value: u64::MAX,
-                        }),
-                    },
-                )
-                .ascending(),
-                |_, value| {
-                    quota += value.deserialize_be_u32(0)? as i64;
-
-                    Ok(true)
-                },
-            )
-            .await
-            .caused_by(trc::location!())?;
-
-        let mut batch = BatchBuilder::new();
-        batch
-            .clear(DirectoryClass::UsedQuota(account_id))
-            .add(DirectoryClass::UsedQuota(account_id), quota);
-        self.store()
-            .write(batch.build_all())
-            .await
-            .caused_by(trc::location!())
-            .map(|_| ())
     }
 
     pub async fn has_available_quota(

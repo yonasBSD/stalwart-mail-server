@@ -27,6 +27,7 @@ use store::{
 };
 use trc::{AddContext, SieveEvent};
 use types::{
+    blob_hash::BlobHash,
     collection::Collection,
     field::{PrincipalField, SieveField},
     id::Id,
@@ -47,6 +48,7 @@ pub trait SieveScriptIngest: Sync + Send {
     fn sieve_script_ingest(
         &self,
         access_token: &AccessToken,
+        blob_hash: &BlobHash,
         raw_message: &[u8],
         envelope_from: &str,
         envelope_from_authenticated: bool,
@@ -84,6 +86,7 @@ impl SieveScriptIngest for Server {
     async fn sieve_script_ingest(
         &self,
         access_token: &AccessToken,
+        blob_hash: &BlobHash,
         raw_message: &[u8],
         envelope_from: &str,
         envelope_from_authenticated: bool,
@@ -498,12 +501,12 @@ impl SieveScriptIngest for Server {
         for (message_id, sieve_message) in messages.into_iter().enumerate() {
             if !sieve_message.file_into.is_empty() {
                 // Parse message if needed
-                let message = if message_id == 0 && !instance.has_message_changed() {
-                    instance.take_message()
+                let (blob_hash, message) = if message_id == 0 && !instance.has_message_changed() {
+                    (blob_hash.into(), instance.take_message())
                 } else if let Some(message) =
                     MessageParser::new().parse(sieve_message.raw_message.as_ref())
                 {
-                    message
+                    (None, message)
                 } else {
                     trc::event!(
                         Sieve(SieveEvent::UnexpectedError),
@@ -518,6 +521,7 @@ impl SieveScriptIngest for Server {
                 match self
                     .email_ingest(IngestEmail {
                         raw_message: &sieve_message.raw_message,
+                        blob_hash,
                         message: message.into(),
                         access_token,
                         mailbox_ids: sieve_message.file_into,

@@ -20,12 +20,13 @@ use store::{
 };
 use trc::AddContext;
 use types::collection::{Collection, VanishedCollection};
-use types::field::{EmailField, EmailSubmissionField};
+use types::field::EmailSubmissionField;
 
 pub trait EmailDeletion: Sync + Send {
     fn emails_delete(
         &self,
         account_id: u32,
+        tenant_id: Option<u32>,
         batch: &mut BatchBuilder,
         document_ids: RoaringBitmap,
     ) -> impl Future<Output = trc::Result<RoaringBitmap>> + Send;
@@ -51,6 +52,7 @@ impl EmailDeletion for Server {
     async fn emails_delete(
         &self,
         account_id: u32,
+        tenant_id: Option<u32>,
         batch: &mut BatchBuilder,
         document_ids: RoaringBitmap,
     ) -> trc::Result<RoaringBitmap> {
@@ -75,7 +77,11 @@ impl EmailDeletion for Server {
                 }
                 batch
                     .with_document(document_id)
-                    .custom(ObjectIndexBuilder::<_, ()>::new().with_current(metadata))
+                    .custom(
+                        ObjectIndexBuilder::<_, ()>::new()
+                            .with_tenant_id(tenant_id)
+                            .with_current(metadata),
+                    )
                     .caused_by(trc::location!())?
                     .set(
                         ValueClass::TaskQueue(TaskQueueClass::UpdateIndex {
@@ -226,7 +232,8 @@ impl EmailDeletion for Server {
         }
 
         // Filter messages by received date
-        let mut destroy_ids = RoaringBitmap::new();
+        let todo = "fix";
+        /*let mut destroy_ids = RoaringBitmap::new();
         self.store()
             .iterate(
                 IterateParams::new(
@@ -282,7 +289,7 @@ impl EmailDeletion for Server {
         self.emails_delete(account_id, &mut batch, destroy_ids)
             .await?;
         self.commit_batch(batch).await?;
-        self.notify_task_queue();
+        self.notify_task_queue();*/
 
         Ok(())
     }

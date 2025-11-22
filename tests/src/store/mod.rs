@@ -124,6 +124,14 @@ pub fn build_store_config(temp_dir: &str) -> String {
         .replace("{BLOB_STORE}", &blob_store)
         .replace("{LOOKUP_STORE}", &lookup_store)
         .replace("{TMP}", temp_dir)
+        .replace(
+            "{ELASTIC_ENABLED}",
+            if fts_store != "elastic" {
+                "true"
+            } else {
+                "false"
+            },
+        )
 }
 
 const CONFIG: &str = r#"
@@ -158,10 +166,10 @@ password = "password"
 type = "elasticsearch"
 url = "https://localhost:9200"
 tls.allow-invalid-certs = true
+disable = {ELASTIC_ENABLED}
 [store."elastic".auth]
 username = "elastic"
 secret = "changeme"
-
 
 [store."s3"]
 type = "s3"

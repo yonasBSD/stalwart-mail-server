@@ -40,6 +40,7 @@ use store::{
 use trc::{AddContext, MessageIngestEvent};
 use types::{
     blob::{BlobClass, BlobId},
+    blob_hash::BlobHash,
     collection::{Collection, SyncCollection},
     field::{ContactField, EmailField, MailboxField, PrincipalField},
     keyword::Keyword,
@@ -58,6 +59,7 @@ pub struct IngestedEmail {
 
 pub struct IngestEmail<'x> {
     pub raw_message: &'x [u8],
+    pub blob_hash: Option<&'x BlobHash>,
     pub message: Option<Message<'x>>,
     pub access_token: &'x AccessToken,
     pub mailbox_ids: Vec<u32>,
@@ -264,6 +266,7 @@ impl EmailIngest for Server {
                                         value: HeaderValue::Text(
                                             extra_headers
                                                 [offset_start + 1..extra_headers.len() - 2]
+                                                .to_string()
                                                 .into(),
                                         ),
                                         offset_field: offset_field as u32,
@@ -465,55 +468,6 @@ impl EmailIngest for Server {
             }
         }
 
-        // Add additional headers to message
-        if !extra_headers.is_empty() {
-            let offset_start = extra_headers.len();
-            raw_message_len += offset_start as u64;
-            let mut new_message = Vec::with_capacity(raw_message_len as usize);
-            new_message.extend_from_slice(extra_headers.as_bytes());
-            new_message.extend_from_slice(raw_message.as_ref());
-            raw_message = Cow::from(new_message);
-            message.raw_message = raw_message.as_ref().into();
-
-            // Adjust offsets
-            let mut part_iter_stack = Vec::new();
-            let mut part_iter = message.parts.iter_mut();
-
-            loop {
-                if let Some(part) = part_iter.next() {
-                    // Increment header offsets
-                    for header in part.headers.iter_mut() {
-                        header.offset_field += offset_start as u32;
-                        header.offset_start += offset_start as u32;
-                        header.offset_end += offset_start as u32;
-                    }
-
-                    // Adjust part offsets
-                    part.offset_body += offset_start as u32;
-                    part.offset_end += offset_start as u32;
-                    part.offset_header += offset_start as u32;
-
-                    if let PartType::Message(sub_message) = &mut part.body
-                        && sub_message.root_part().offset_header != 0
-                    {
-                        sub_message.raw_message = raw_message.as_ref().into();
-                        part_iter_stack.push(part_iter);
-                        part_iter = sub_message.parts.iter_mut();
-                    }
-                } else if let Some(iter) = part_iter_stack.pop() {
-                    part_iter = iter;
-                } else {
-                    break;
-                }
-            }
-
-            // Add extra headers to root part
-            let root_part = &mut message.parts[0];
-            root_part.offset_header = 0;
-            extra_headers_parsed.append(&mut root_part.headers);
-            root_part.headers = extra_headers_parsed;
-        }
-
         // Encrypt message
         let do_encrypt = match params.source {
             IngestSource::Jmap | IngestSource::Imap => {
@@ -551,6 +505,7 @@ impl EmailIngest for Server {
                                     "Failed to parse encrypted e-mail message.",
                                 )
                         })?;
+                    params.blob_hash = None;
 
                     // Remove contents from parsed message
                     for part in &mut message.parts {
@@ -581,10 +536,14 @@ impl EmailIngest for Server {
         }
 
         // Store blob
-        let blob_id = self
-            .put_blob(account_id, raw_message.as_ref(), false)
-            .await
-            .caused_by(trc::location!())?;
+        let blob_hash = if let Some(blob_hash) = params.blob_hash {
+            blob_hash.clone()
+        } else {
+            self.put_blob(account_id, raw_message.as_ref(), false)
+                .await
+                .caused_by(trc::location!())?
+                .hash
+        };
 
         // Assign IMAP UIDs
         let mut mailbox_ids = Vec::with_capacity(params.mailbox_ids.len());
@@ -624,19 +583,23 @@ impl EmailIngest for Server {
             document_id
         };
 
+        let data = MessageData {
+            mailboxes: mailbox_ids.into_boxed_slice(),
+            keywords: params.keywords.into_boxed_slice(),
+            thread_id,
+            size: (message.raw_message.len() + extra_headers.len()) as u32,
+        };
+
         batch
             .with_collection(Collection::Email)
             .with_document(document_id)
             .index_message(
-                account_id,
                 tenant_id,
                 message,
-                blob_id.hash.clone(),
-                MessageData {
-                    mailboxes: mailbox_ids,
-                    keywords: params.keywords,
-                    thread_id,
-                },
+                extra_headers.into_bytes(),
+                extra_headers_parsed,
+                blob_hash.clone(),
+                data,
                 params.received_at.unwrap_or_else(now),
             )
             .caused_by(trc::location!())?
@@ -710,7 +673,7 @@ impl EmailIngest for Server {
             AccountId = account_id,
             DocumentId = document_id,
             MailboxId = mailbox_ids_event,
-            BlobId = blob_id.hash.to_hex(),
+            BlobId = blob_hash.to_hex(),
             ChangeId = change_id,
             MessageId = message_id,
             Size = raw_message_len,
@@ -722,13 +685,13 @@ impl EmailIngest for Server {
             thread_id,
             change_id,
             blob_id: BlobId {
-                hash: blob_id.hash,
+                hash: blob_hash,
                 class: BlobClass::Linked {
                     account_id,
                     collection: Collection::Email.into(),
                     document_id,
                 },
-                section: blob_id.section,
+                section: None,
             },
             size: raw_message_len as usize,
             imap_uids,

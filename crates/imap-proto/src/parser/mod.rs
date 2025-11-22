@@ -113,7 +113,7 @@ impl Flag {
             } else {
                 String::from_utf8(value)
                     .map_err(|_| Cow::from("Invalid UTF-8."))
-                    .map(Flag::Keyword)
+                    .map(|v| Flag::Keyword(v.into_boxed_str()))
             }
         } else {
             Err(Cow::from("Null flags are not allowed."))
@@ -136,7 +136,7 @@ impl Flag {
                 "$forwarded" => Flag::Forwarded,
                 "$mdnsent" => Flag::MDNSent,
             )
-            .unwrap_or_else(|| Flag::Keyword(value))
+            .unwrap_or_else(|| Flag::Keyword(value.into_boxed_str()))
         } else {
             let mut keyword = String::with_capacity(value.len());
             for c in value.chars() {
@@ -146,7 +146,7 @@ impl Flag {
                     keyword.push('_');
                 }
             }
-            Flag::Keyword(keyword)
+            Flag::Keyword(keyword.into_boxed_str())
         }
     }
 }

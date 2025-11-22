@@ -11,12 +11,15 @@ use super::{
 use crate::{
     mailbox::UidMailbox,
     message::{
-        index::extractors::VisitText,
+        index::extractors::VisitTextArchived,
         ingest::{MergeThreadIds, ThreadInfo},
+        metadata::{
+            MESSAGE_HAS_ATTACHMENT, MESSAGE_RECEIVED_MASK, MetadataHeaderName, MetadataHeaderValue,
+        },
     },
 };
 use common::{Server, auth::ResourceToken, storage::index::ObjectIndexBuilder};
-use mail_parser::{HeaderName, HeaderValue, parsers::fields::thread::thread_name};
+use mail_parser::parsers::fields::thread::thread_name;
 use store::write::{
     BatchBuilder, IndexPropertyClass, SearchIndex, TaskEpoch, TaskQueueClass, ValueClass,
 };
@@ -79,10 +82,8 @@ impl EmailCopy for Server {
         };
 
         // Check quota
-        match self
-            .has_available_quota(resource_token, metadata.size as u64)
-            .await
-        {
+        let size = metadata.root_part().offset_end;
+        match self.has_available_quota(resource_token, size as u64).await {
             Ok(_) => (),
             Err(err) => {
                 if err.matches(trc::EventType::Limit(trc::LimitEvent::Quota))
@@ -98,7 +99,8 @@ impl EmailCopy for Server {
 
         // Set receivedAt
         if let Some(received_at) = received_at {
-            metadata.received_at = received_at;
+            metadata.rcvd_attach = (metadata.rcvd_attach & MESSAGE_HAS_ATTACHMENT)
+                | (received_at & MESSAGE_RECEIVED_MASK);
         }
 
         // Obtain threadId
@@ -106,24 +108,26 @@ impl EmailCopy for Server {
         let mut subject = "";
         for header in &metadata.contents[0].parts[0].headers {
             match &header.name {
-                HeaderName::MessageId => {
+                MetadataHeaderName::MessageId => {
                     header.value.visit_text(|id| {
                         if !id.is_empty() {
                             message_ids.push(CheekyHash::new(id.as_bytes()));
                         }
                     });
                 }
-                HeaderName::InReplyTo | HeaderName::References | HeaderName::ResentMessageId => {
+                MetadataHeaderName::InReplyTo
+                | MetadataHeaderName::References
+                | MetadataHeaderName::ResentMessageId => {
                     header.value.visit_text(|id| {
                         if !id.is_empty() {
                             message_ids.push(CheekyHash::new(id.as_bytes()));
                         }
                     });
                 }
-                HeaderName::Subject if subject.is_empty() => {
+                MetadataHeaderName::Subject if subject.is_empty() => {
                     subject = thread_name(match &header.value {
-                        HeaderValue::Text(text) => text.as_ref(),
-                        HeaderValue::TextList(list) if !list.is_empty() => {
+                        MetadataHeaderValue::Text(text) => text.as_ref(),
+                        MetadataHeaderValue::TextList(list) if !list.is_empty() => {
                             list.first().unwrap().as_ref()
                         }
                         _ => "",
@@ -141,7 +145,7 @@ impl EmailCopy for Server {
 
         // Assign id
         let mut email = IngestedEmail {
-            size: metadata.size as usize,
+            size: size as usize,
             ..Default::default()
         };
         let blob_hash = metadata.blob_hash.clone();
@@ -183,11 +187,14 @@ impl EmailCopy for Server {
             .with_collection(Collection::Email)
             .with_document(document_id)
             .custom(
-                ObjectIndexBuilder::<(), _>::new().with_changes(MessageData {
-                    mailboxes: mailbox_ids,
-                    keywords,
-                    thread_id,
-                }),
+                ObjectIndexBuilder::<(), _>::new()
+                    .with_tenant_id(resource_token.tenant.map(|t| t.id))
+                    .with_changes(MessageData {
+                        mailboxes: mailbox_ids.into_boxed_slice(),
+                        keywords: keywords.into_boxed_slice(),
+                        thread_id,
+                        size,
+                    }),
             )
             .caused_by(trc::location!())?
             .set(
@@ -217,12 +224,7 @@ impl EmailCopy for Server {
         }
 
         metadata
-            .index(
-                &mut batch,
-                account_id,
-                resource_token.tenant.map(|t| t.id),
-                true,
-            )
+            .index(&mut batch, true)
             .caused_by(trc::location!())?;
 
         // Insert and obtain ids

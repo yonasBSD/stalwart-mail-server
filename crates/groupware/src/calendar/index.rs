@@ -9,8 +9,8 @@ use super::{
     ArchivedTimezone, Calendar, CalendarEvent, CalendarPreferences, DefaultAlert, Timezone,
 };
 use crate::calendar::{
-    ArchivedCalendarEventNotification, ArchivedEventPreferences, CalendarEventNotification,
-    EventPreferences,
+    ArchivedCalendarEventNotification, ArchivedChangedBy, ArchivedEventPreferences,
+    CalendarEventNotification, ChangedBy, EventPreferences,
 };
 use ahash::AHashSet;
 use calcard::icalendar::{
@@ -23,6 +23,7 @@ use nlp::language::{
     detect::{LanguageDetector, MIN_LANGUAGE_SCORE},
 };
 use store::{
+    U32_LEN,
     search::{CalendarSearchField, IndexDocument, SearchField},
     write::{IndexPropertyClass, SearchIndex, ValueClass},
     xxhash_rust::xxh3,
@@ -40,9 +41,7 @@ impl IndexableObject for Calendar {
                 value: (&self.acls).into(),
             },
             IndexValue::Quota {
-                used: self.dead_properties.size() as u32
-                    + self.preferences.iter().map(|p| p.size()).sum::<usize>() as u32
-                    + self.name.len() as u32,
+                used: self.size() as u32,
             },
             IndexValue::LogContainer {
                 sync_collection: SyncCollection::Calendar,
@@ -64,9 +63,7 @@ impl IndexableObject for &ArchivedCalendar {
                     .into(),
             },
             IndexValue::Quota {
-                used: self.dead_properties.size() as u32
-                    + self.preferences.iter().map(|p| p.size()).sum::<usize>() as u32
-                    + self.name.len() as u32,
+                used: self.size() as u32,
             },
             IndexValue::LogContainer {
                 sync_collection: SyncCollection::Calendar,
@@ -97,11 +94,7 @@ impl IndexableObject for CalendarEvent {
                 value: self.data.event.uids().next().into(),
             },
             IndexValue::Quota {
-                used: self.dead_properties.size() as u32
-                    + self.display_name.as_ref().map_or(0, |n| n.len() as u32)
-                    + self.names.iter().map(|n| n.name.len() as u32).sum::<u32>()
-                    + self.preferences.iter().map(|p| p.size()).sum::<usize>() as u32
-                    + self.size,
+                used: self.size() as u32,
             },
             IndexValue::LogItem {
                 sync_collection: SyncCollection::Calendar,
@@ -127,11 +120,7 @@ impl IndexableObject for &ArchivedCalendarEvent {
                 value: self.data.event.uids().next().into(),
             },
             IndexValue::Quota {
-                used: self.dead_properties.size() as u32
-                    + self.display_name.as_ref().map_or(0, |n| n.len() as u32)
-                    + self.names.iter().map(|n| n.name.len() as u32).sum::<u32>()
-                    + self.preferences.iter().map(|p| p.size()).sum::<usize>() as u32
-                    + self.size,
+                used: self.size() as u32,
             },
             IndexValue::LogItem {
                 sync_collection: SyncCollection::Calendar,
@@ -151,7 +140,9 @@ impl IndexableAndSerializableObject for CalendarEvent {
 impl IndexableObject for CalendarEventNotification {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
         [
-            IndexValue::Quota { used: self.size },
+            IndexValue::Quota {
+                used: self.size() as u32,
+            },
             IndexValue::Property {
                 field: ValueClass::IndexProperty(IndexPropertyClass::Integer {
                     property: CalendarNotificationField::CreatedToId.into(),
@@ -172,7 +163,7 @@ impl IndexableObject for &ArchivedCalendarEventNotification {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
         [
             IndexValue::Quota {
-                used: self.size.to_native(),
+                used: self.size() as u32,
             },
             IndexValue::Property {
                 field: ValueClass::IndexProperty(IndexPropertyClass::Integer {
@@ -198,6 +189,66 @@ impl IndexableObject for &ArchivedCalendarEventNotification {
 impl IndexableAndSerializableObject for CalendarEventNotification {
     fn is_versioned() -> bool {
         false
+    }
+}
+
+impl Calendar {
+    pub fn size(&self) -> usize {
+        self.dead_properties.size()
+            + self.preferences.iter().map(|p| p.size()).sum::<usize>()
+            + self.name.len()
+            + std::mem::size_of::<Calendar>()
+    }
+}
+
+impl ArchivedCalendar {
+    pub fn size(&self) -> usize {
+        self.dead_properties.size()
+            + self.preferences.iter().map(|p| p.size()).sum::<usize>()
+            + self.name.len()
+            + std::mem::size_of::<Calendar>()
+    }
+}
+
+impl CalendarEvent {
+    pub fn size(&self) -> usize {
+        self.dead_properties.size()
+            + self.display_name.as_ref().map_or(0, |n| n.len())
+            + self.names.iter().map(|n| n.name.len()).sum::<usize>()
+            + self.preferences.iter().map(|p| p.size()).sum::<usize>()
+            + self.size as usize
+            + std::mem::size_of::<CalendarEvent>()
+    }
+}
+
+impl ArchivedCalendarEvent {
+    pub fn size(&self) -> usize {
+        self.dead_properties.size()
+            + self.display_name.as_ref().map_or(0, |n| n.len())
+            + self.names.iter().map(|n| n.name.len()).sum::<usize>()
+            + self.preferences.iter().map(|p| p.size()).sum::<usize>()
+            + self.size.to_native() as usize
+            + std::mem::size_of::<CalendarEvent>()
+    }
+}
+
+impl CalendarEventNotification {
+    pub fn size(&self) -> usize {
+        (match &self.changed_by {
+            ChangedBy::PrincipalId(_) => U32_LEN,
+            ChangedBy::CalendarAddress(v) => v.len(),
+        }) + std::mem::size_of::<CalendarEventNotification>()
+            + self.size as usize
+    }
+}
+
+impl ArchivedCalendarEventNotification {
+    pub fn size(&self) -> usize {
+        (match &self.changed_by {
+            ArchivedChangedBy::PrincipalId(_) => U32_LEN,
+            ArchivedChangedBy::CalendarAddress(v) => v.len(),
+        }) + std::mem::size_of::<CalendarEventNotification>()
+            + self.size.to_native() as usize
     }
 }
 

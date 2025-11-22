@@ -3445,6 +3445,7 @@ dependencies = [
  "tokio",
  "trc",
  "types",
+ "utils",
 ]
 
 [[package]]

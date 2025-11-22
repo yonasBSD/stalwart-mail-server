@@ -9,7 +9,7 @@ use common::{
     Server,
     telemetry::tracers::store::{TracingStore, build_span_document},
 };
-use directory::{QueryParams, Type, backend::internal::manage::ManageDirectory};
+use directory::{Type, backend::internal::manage::ManageDirectory};
 use email::message::metadata::MessageMetadata;
 use groupware::{cache::GroupwareCache, calendar::CalendarEvent, contact::ContactCard};
 use std::cmp::Ordering;
@@ -564,15 +564,6 @@ async fn delete_email_metadata(
         .await?
     {
         Some(metadata_) => {
-            let tenant_id = server
-                .core
-                .storage
-                .directory
-                .query(QueryParams::id(account_id).with_return_member_of(false))
-                .await
-                .unwrap_or_default()
-                .and_then(|p| p.tenant());
-
             batch
                 .with_account_id(account_id)
                 .with_collection(Collection::Email)
@@ -580,7 +571,7 @@ async fn delete_email_metadata(
             let metadata = metadata_
                 .unarchive::<MessageMetadata>()
                 .caused_by(trc::location!())?;
-            metadata.unindex(batch, account_id, tenant_id);
+            metadata.unindex(batch);
 
             // SPDX-SnippetBegin
             // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
@@ -592,7 +583,7 @@ async fn delete_email_metadata(
                 batch,
                 Collection::Email.into(),
                 &BlobHash::from(&metadata.blob_hash),
-                u32::from(metadata.size) as usize,
+                metadata.root_part().offset_end.to_native() as usize,
             );
 
             // SPDX-SnippetEnd

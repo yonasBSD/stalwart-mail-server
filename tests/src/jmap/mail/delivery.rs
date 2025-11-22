@@ -5,21 +5,33 @@
  */
 
 use crate::{
-    directory::internal::TestInternalDirectory, jmap::JMAPTest, webdav::DummyWebDavClient,
+    directory::internal::TestInternalDirectory, jmap::JMAPTest,
+    store::cleanup::store_blob_expire_all, webdav::DummyWebDavClient,
 };
 use email::{
     cache::{MessageCacheFetch, email::MessageCacheAccess},
     mailbox::{INBOX_ID, JUNK_ID},
+    message::metadata::MessageMetadata,
 };
 use groupware::DavResourceName;
+use jmap::blob::download::BlobDownload;
 use std::time::Duration;
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines, ReadHalf, WriteHalf},
     net::TcpStream,
 };
+use types::{
+    blob::{BlobClass, BlobId},
+    blob_hash::BlobHash,
+    collection::Collection,
+    field::EmailField,
+};
+use utils::chained_bytes::ChainedBytes;
 
 pub async fn test(params: &mut JMAPTest) {
     println!("Running message delivery tests...");
+
+    let todo = "enable delivered to for test";
 
     // Create a domain name and a test account
     let server = params.server.clone();
@@ -239,19 +251,64 @@ END:VCARD
     )
     .await;
 
+    // Make sure blobs are properly linked
+    store_blob_expire_all(params.server.store()).await;
+
     for (account, num_messages) in [(john, 5), (jane, 3), (bill, 3)] {
+        let account_id = account.id().document_id();
+        let cache = server.get_cached_messages(account_id).await.unwrap();
         assert_eq!(
-            server
-                .get_cached_messages(account.id().document_id())
-                .await
-                .unwrap()
-                .emails
-                .items
-                .len(),
+            cache.emails.items.len(),
             num_messages,
             "for {}",
             account.id_string()
         );
+        let access_token = server.get_access_token(account_id).await.unwrap();
+
+        for document_id in cache.emails.items.iter().map(|e| e.document_id) {
+            let archive = server
+                .archive_by_property(
+                    account_id,
+                    Collection::Email,
+                    document_id,
+                    EmailField::Metadata.into(),
+                )
+                .await
+                .unwrap()
+                .unwrap();
+            let metadata = archive.to_unarchived::<MessageMetadata>().unwrap();
+            let body = server
+                .blob_download(
+                    &BlobId {
+                        hash: BlobHash::from(&metadata.inner.blob_hash),
+                        class: BlobClass::Linked {
+                            account_id,
+                            collection: Collection::Email.into(),
+                            document_id,
+                        },
+                        section: None,
+                    },
+                    &access_token,
+                )
+                .await
+                .unwrap()
+                .unwrap();
+            assert_ne!(metadata.inner.blob_body_offset.to_native(), 0);
+            let raw_message = ChainedBytes::new(metadata.inner.raw_headers.as_ref()).with_last(
+                body.get(metadata.inner.blob_body_offset.to_native() as usize..)
+                    .unwrap_or_default(),
+            );
+            let full_message = String::from_utf8(raw_message.to_bytes()).unwrap();
+            assert!(
+                full_message.contains("Delivered-To:") && full_message.contains("Subject:"),
+                "for {account_id}: {full_message}"
+            );
+            println!(
+                "full message for {}:\n{}",
+                account.id_string(),
+                full_message
+            );
+        }
     }
 
     // Remove test data

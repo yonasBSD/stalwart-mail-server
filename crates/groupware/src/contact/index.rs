@@ -8,10 +8,7 @@ use super::{AddressBook, ArchivedAddressBook, ArchivedContactCard, ContactCard};
 use ahash::AHashSet;
 use calcard::{
     common::IanaString,
-    vcard::{
-        ArchivedVCardParameterValue, ArchivedVCardProperty, ArchivedVCardValue,
-        VCardParameterValue, VCardProperty,
-    },
+    vcard::{ArchivedVCardProperty, ArchivedVCardValue, VCardProperty},
 };
 use common::storage::index::{IndexValue, IndexableAndSerializableObject, IndexableObject};
 use nlp::language::{
@@ -33,16 +30,7 @@ impl IndexableObject for AddressBook {
                 value: (&self.acls).into(),
             },
             IndexValue::Quota {
-                used: self.dead_properties.size() as u32
-                    + self
-                        .preferences
-                        .iter()
-                        .map(|p| {
-                            p.name.len() as u32
-                                + p.description.as_ref().map_or(0, |n| n.len() as u32)
-                        })
-                        .sum::<u32>()
-                    + self.name.len() as u32,
+                used: self.size() as u32,
             },
             IndexValue::LogContainer {
                 sync_collection: SyncCollection::AddressBook,
@@ -64,16 +52,7 @@ impl IndexableObject for &ArchivedAddressBook {
                     .into(),
             },
             IndexValue::Quota {
-                used: self.dead_properties.size() as u32
-                    + self
-                        .preferences
-                        .iter()
-                        .map(|p| {
-                            p.name.len() as u32
-                                + p.description.as_ref().map_or(0, |n| n.len() as u32)
-                        })
-                        .sum::<u32>()
-                    + self.name.len() as u32,
+                used: self.size() as u32,
             },
             IndexValue::LogContainer {
                 sync_collection: SyncCollection::AddressBook,
@@ -112,10 +91,7 @@ impl IndexableObject for ContactCard {
                 hash: self.hashes().fold(0, |acc, hash| acc ^ hash),
             },
             IndexValue::Quota {
-                used: self.dead_properties.size() as u32
-                    + self.display_name.as_ref().map_or(0, |n| n.len() as u32)
-                    + self.names.iter().map(|n| n.name.len() as u32).sum::<u32>()
-                    + self.size,
+                used: self.size() as u32,
             },
             IndexValue::LogItem {
                 sync_collection: SyncCollection::AddressBook,
@@ -149,10 +125,7 @@ impl IndexableObject for &ArchivedContactCard {
                 hash: self.hashes().fold(0, |acc, hash| acc ^ hash),
             },
             IndexValue::Quota {
-                used: self.dead_properties.size() as u32
-                    + self.display_name.as_ref().map_or(0, |n| n.len() as u32)
-                    + self.names.iter().map(|n| n.name.len() as u32).sum::<u32>()
-                    + self.size,
+                used: self.size() as u32,
             },
             IndexValue::LogItem {
                 sync_collection: SyncCollection::AddressBook,
@@ -169,7 +142,41 @@ impl IndexableAndSerializableObject for ContactCard {
     }
 }
 
+impl AddressBook {
+    pub fn size(&self) -> usize {
+        self.dead_properties.size()
+            + self
+                .preferences
+                .iter()
+                .map(|p| p.name.len() + p.description.as_ref().map_or(0, |n| n.len()))
+                .sum::<usize>()
+            + self.name.len()
+            + std::mem::size_of::<AddressBook>()
+    }
+}
+
+impl ArchivedAddressBook {
+    pub fn size(&self) -> usize {
+        self.dead_properties.size()
+            + self
+                .preferences
+                .iter()
+                .map(|p| p.name.len() + p.description.as_ref().map_or(0, |n| n.len()))
+                .sum::<usize>()
+            + self.name.len()
+            + std::mem::size_of::<AddressBook>()
+    }
+}
+
 impl ContactCard {
+    pub fn size(&self) -> usize {
+        self.dead_properties.size()
+            + self.display_name.as_ref().map_or(0, |n| n.len())
+            + self.names.iter().map(|n| n.name.len()).sum::<usize>()
+            + self.size as usize
+            + std::mem::size_of::<ContactCard>()
+    }
+
     pub fn hashes(&self) -> impl Iterator<Item = u64> {
         self.card
             .entries
@@ -193,15 +200,7 @@ impl ContactCard {
                         | VCardProperty::Tel
                 )
             })
-            .flat_map(|e| {
-                e.values
-                    .iter()
-                    .filter_map(|v| v.as_text())
-                    .chain(e.params.iter().filter_map(|p| match &p.value {
-                        VCardParameterValue::Text(v) => Some(v.as_str()),
-                        _ => None,
-                    }))
-            })
+            .flat_map(|e| e.values.iter().filter_map(|v| v.as_text()))
             .map(|v| xxh3::xxh3_64(v.as_bytes()))
     }
 
@@ -215,6 +214,14 @@ impl ContactCard {
 }
 
 impl ArchivedContactCard {
+    pub fn size(&self) -> usize {
+        self.dead_properties.size()
+            + self.display_name.as_ref().map_or(0, |n| n.len())
+            + self.names.iter().map(|n| n.name.len()).sum::<usize>()
+            + self.size.to_native() as usize
+            + std::mem::size_of::<ContactCard>()
+    }
+
     pub fn hashes(&self) -> impl Iterator<Item = u64> {
         self.card
             .entries
@@ -238,15 +245,7 @@ impl ArchivedContactCard {
                         | ArchivedVCardProperty::Tel
                 )
             })
-            .flat_map(|e| {
-                e.values
-                    .iter()
-                    .filter_map(|v| v.as_text())
-                    .chain(e.params.iter().filter_map(|p| match &p.value {
-                        ArchivedVCardParameterValue::Text(v) => Some(v.as_str()),
-                        _ => None,
-                    }))
-            })
+            .flat_map(|e| e.values.iter().filter_map(|v| v.as_text()))
             .map(|v| xxh3::xxh3_64(v.as_bytes()))
     }
 
@@ -257,9 +256,7 @@ impl ArchivedContactCard {
                 .filter_map(|v| v.as_text().and_then(sanitize_email))
         })
     }
-}
 
-impl ArchivedContactCard {
     pub fn index_document(
         &self,
         account_id: u32,

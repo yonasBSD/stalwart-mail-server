@@ -244,9 +244,7 @@ impl<T: SessionStream> SessionData<T> {
                     copied_ids.push((imap_id.uid, mailbox.uid.to_native()));
 
                     if is_move {
-                        let mut new_data = data
-                            .deserialize()
-                            .imap_ctx(&arguments.tag, trc::location!())?;
+                        let mut new_data = data.inner.to_builder();
                         new_data.remove_mailbox(src_mailbox.id.mailbox_id);
                         batch
                             .with_account_id(account_id)
@@ -255,7 +253,7 @@ impl<T: SessionStream> SessionData<T> {
                             .custom(
                                 ObjectIndexBuilder::new()
                                     .with_current(data)
-                                    .with_changes(new_data),
+                                    .with_changes(new_data.seal()),
                             )
                             .imap_ctx(&arguments.tag, trc::location!())?
                             .log_vanished_item(
@@ -270,9 +268,7 @@ impl<T: SessionStream> SessionData<T> {
                 }
 
                 // Prepare changes
-                let mut new_data = data
-                    .deserialize()
-                    .imap_ctx(&arguments.tag, trc::location!())?;
+                let mut new_data = data.inner.to_builder();
 
                 // Add destination folder
                 new_data.add_mailbox(dest_mailbox_id);
@@ -302,7 +298,7 @@ impl<T: SessionStream> SessionData<T> {
                     .custom(
                         ObjectIndexBuilder::new()
                             .with_current(data)
-                            .with_changes(new_data),
+                            .with_changes(new_data.seal()),
                     )
                     .imap_ctx(&arguments.tag, trc::location!())?;
                 if is_move {

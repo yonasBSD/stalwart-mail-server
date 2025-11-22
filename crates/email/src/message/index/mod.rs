@@ -18,6 +18,7 @@ pub const PREVIEW_LENGTH: usize = 256;
 impl IndexableObject for MessageData {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
         [
+            IndexValue::Quota { used: self.size },
             IndexValue::LogItem {
                 sync_collection: SyncCollection::Email,
                 prefix: self.thread_id.into(),
@@ -38,6 +39,9 @@ impl IndexableObject for MessageData {
 impl IndexableObject for &ArchivedMessageData {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
         [
+            IndexValue::Quota {
+                used: self.size.to_native(),
+            },
             IndexValue::LogItem {
                 sync_collection: SyncCollection::Email,
                 prefix: self.thread_id.to_native().into(),
@@ -61,11 +65,12 @@ impl IndexableObject for &ArchivedMessageData {
 
 pub(super) trait IndexMessage {
     #[allow(clippy::too_many_arguments)]
-    fn index_message(
+    fn index_message<'x>(
         &mut self,
-        account_id: u32,
         tenant_id: Option<u32>,
-        message: mail_parser::Message<'_>,
+        message: mail_parser::Message<'x>,
+        extra_headers: Vec<u8>,
+        extra_headers_parsed: Vec<mail_parser::Header<'x>>,
         blob_hash: BlobHash,
         data: MessageData,
         received_at: u64,

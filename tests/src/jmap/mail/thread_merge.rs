@@ -230,6 +230,7 @@ async fn test_multi_thread(params: &mut JMAPTest) {
                     .email_ingest(IngestEmail {
                         raw_message: message.contents(),
                         message: MessageParser::new().parse(message.contents()),
+                        blob_hash: None,
                         access_token: &AccessToken::from_id(account_id),
                         mailbox_ids: vec![mailbox_id],
                         keywords: vec![],

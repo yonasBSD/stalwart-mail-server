@@ -237,7 +237,6 @@ pub async fn store_assert_is_empty(store: &Store, blob_store: BlobStore) {
         (SUBSPACE_BLOBS, true),
         (SUBSPACE_COUNTER, false),
         (SUBSPACE_QUOTA, false),
-        (SUBSPACE_BLOBS, true),
         (SUBSPACE_INDEXES, false),
         (SUBSPACE_TELEMETRY_SPAN, true),
         (SUBSPACE_TELEMETRY_METRIC, true),

@@ -12,7 +12,7 @@ use common::{
 };
 use email::{
     identity::Identity,
-    message::metadata::MessageMetadata,
+    message::metadata::{ArchivedMetadataHeaderName, ArchivedMetadataHeaderValue, MessageMetadata},
     submission::{Address, Delivered, DeliveryStatus, EmailSubmission, UndoStatus},
 };
 use jmap_proto::{
@@ -28,7 +28,6 @@ use jmap_proto::{
     types::state::State,
 };
 use jmap_tools::{Key, Value};
-use mail_parser::{ArchivedHeaderName, ArchivedHeaderValue};
 use smtp::{
     core::{Session, SessionData},
     queue::spool::SmtpSpool,
@@ -516,26 +515,57 @@ impl EmailSubmissionSet for Server {
             for header in metadata.contents[0].parts[0].headers.iter() {
                 if matches!(
                     header.name,
-                    ArchivedHeaderName::To | ArchivedHeaderName::Cc | ArchivedHeaderName::Bcc
+                    ArchivedMetadataHeaderName::To
+                        | ArchivedMetadataHeaderName::Cc
+                        | ArchivedMetadataHeaderName::Bcc
                 ) {
-                    if matches!(header.name, ArchivedHeaderName::Bcc) {
+                    if matches!(header.name, ArchivedMetadataHeaderName::Bcc) {
                         bcc_header = Some(header);
                     }
-                    if let ArchivedHeaderValue::Address(addr) = &header.value {
-                        for address in addr.iter() {
-                            if let Some(address) = address.address().and_then(sanitize_email)
-                                && !rcpt_to.iter().any(|rcpt| rcpt.address == address)
-                            {
-                                submission.envelope.rcpt_to.push(Address {
-                                    email: address.to_string(),
-                                    parameters: None,
-                                });
-                                rcpt_to.push(RcptTo {
-                                    address: Cow::Owned(address),
-                                    ..Default::default()
-                                });
+                    match &header.value {
+                        ArchivedMetadataHeaderValue::AddressList(addr) => {
+                            for address in addr.iter() {
+                                if let Some(address) = address
+                                    .address
+                                    .as_ref()
+                                    .map(|v| v.as_ref())
+                                    .and_then(sanitize_email)
+                                    && !rcpt_to.iter().any(|rcpt| rcpt.address == address)
+                                {
+                                    submission.envelope.rcpt_to.push(Address {
+                                        email: address.to_string(),
+                                        parameters: None,
+                                    });
+                                    rcpt_to.push(RcptTo {
+                                        address: Cow::Owned(address),
+                                        ..Default::default()
+                                    });
+                                }
                             }
                         }
+                        ArchivedMetadataHeaderValue::AddressGroup(groups) => {
+                            for group in groups.iter() {
+                                for address in group.addresses.iter() {
+                                    if let Some(address) = address
+                                        .address
+                                        .as_ref()
+                                        .map(|v| v.as_ref())
+                                        .and_then(sanitize_email)
+                                        && !rcpt_to.iter().any(|rcpt| rcpt.address == address)
+                                    {
+                                        submission.envelope.rcpt_to.push(Address {
+                                            email: address.to_string(),
+                                            parameters: None,
+                                        });
+                                        rcpt_to.push(RcptTo {
+                                            address: Cow::Owned(address),
+                                            ..Default::default()
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -548,7 +578,7 @@ impl EmailSubmissionSet for Server {
             bcc_header = metadata.contents[0].parts[0]
                 .headers
                 .iter()
-                .find(|header| matches!(header.name, ArchivedHeaderName::Bcc));
+                .find(|header| matches!(header.name, ArchivedMetadataHeaderName::Bcc));
         }
 
         // Update sendAt
@@ -584,8 +614,9 @@ impl EmailSubmissionSet for Server {
         // Remove BCC header if present
         if let Some(bcc_header) = bcc_header {
             let mut new_message = Vec::with_capacity(message.len());
-            new_message.extend_from_slice(&message[..u32::from(bcc_header.offset_field) as usize]);
-            new_message.extend_from_slice(&message[u32::from(bcc_header.offset_end) as usize..]);
+            let range = bcc_header.name_value_range();
+            new_message.extend_from_slice(&message[..range.start]);
+            new_message.extend_from_slice(&message[range.end..]);
             message = new_message;
         }
 

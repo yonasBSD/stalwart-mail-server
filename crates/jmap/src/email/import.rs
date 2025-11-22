@@ -148,6 +148,7 @@ impl EmailImport for Server {
                 .email_ingest(IngestEmail {
                     raw_message: &raw_message,
                     message: MessageParser::new().parse(&raw_message),
+                    blob_hash: Some(&blob_id.hash),
                     access_token: import_access_token.as_deref().unwrap_or(access_token),
                     mailbox_ids,
                     keywords: email.keywords,
