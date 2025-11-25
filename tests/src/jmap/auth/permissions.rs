@@ -610,11 +610,10 @@ pub async fn test(params: &JMAPTest) {
         );
 
     // John should not be allowed to receive email
-    let message_blob = server
-        .put_blob(tenant_user_id, TEST_MESSAGE.as_bytes(), false)
+    let (message_blob, _) = server
+        .put_temporary_blob(tenant_user_id, TEST_MESSAGE.as_bytes(), 60)
         .await
-        .unwrap()
-        .hash;
+        .unwrap();
     assert_eq!(
         server
             .deliver_message(IngestMessage {

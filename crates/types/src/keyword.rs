@@ -38,6 +38,7 @@ pub const OTHER: usize = 12;
 #[serde(untagged)]
 #[rkyv(derive(PartialEq), compare(PartialEq))]
 pub enum Keyword {
+    Other(Box<str>),
     #[serde(rename(serialize = "$seen"))]
     Seen,
     #[serde(rename(serialize = "$draft"))]
@@ -63,7 +64,6 @@ pub enum Keyword {
     Forwarded,
     #[serde(rename(serialize = "$mdnsent"))]
     MdnSent,
-    Other(Box<str>),
 }
 
 impl Keyword {

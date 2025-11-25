@@ -68,7 +68,7 @@ pub async fn lookup_tests() {
 
         store.purge_in_memory_store().await.unwrap();
         if let InMemoryStore::Store(store) = &store {
-            store_assert_is_empty(store, store.clone().into()).await;
+            store_assert_is_empty(store, store.clone().into(), false).await;
         }
 
         // Test counter
@@ -126,7 +126,7 @@ pub async fn lookup_tests() {
         tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         store.purge_in_memory_store().await.unwrap();
         if let InMemoryStore::Store(store) = &store {
-            store_assert_is_empty(store, store.clone().into()).await;
+            store_assert_is_empty(store, store.clone().into(), false).await;
         }
 
         // Test locking
@@ -152,7 +152,7 @@ pub async fn lookup_tests() {
         }
         store.purge_in_memory_store().await.unwrap();
         if let InMemoryStore::Store(store) = &store {
-            store_assert_is_empty(store, store.clone().into()).await;
+            store_assert_is_empty(store, store.clone().into(), false).await;
         }
 
         // Test prefix delete
@@ -284,7 +284,7 @@ pub async fn lookup_tests() {
         );
 
         if let InMemoryStore::Store(store) = &store {
-            store_assert_is_empty(store, store.clone().into()).await;
+            store_assert_is_empty(store, store.clone().into(), false).await;
         }
     }
 }

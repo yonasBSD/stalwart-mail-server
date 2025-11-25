@@ -127,6 +127,8 @@ async fn jmap_tests() {
     server::purge::test(&mut params).await;
     server::enterprise::test(&mut params).await;
 
+    assert_is_empty(&params.server).await;
+
     if delete {
         params.temp_dir.delete();
     }
@@ -266,7 +268,7 @@ pub async fn assert_is_empty(server: &Server) {
         .unwrap();
 
     // Assert is empty
-    store_assert_is_empty(server.store(), server.core.storage.blob.clone()).await;
+    store_assert_is_empty(server.store(), server.core.storage.blob.clone(), false).await;
     search_store_destroy(server.search_store()).await;
 
     // Clean caches

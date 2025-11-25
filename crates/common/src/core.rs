@@ -29,8 +29,8 @@ use store::{
     dispatch::DocumentSet,
     roaring::RoaringBitmap,
     write::{
-        AlignedBytes, AnyClass, Archive, AssignedIds, BatchBuilder, BlobOp, DirectoryClass,
-        QueueClass, ValueClass, key::DeserializeBigEndian, now,
+        AlignedBytes, AnyClass, Archive, AssignedIds, BatchBuilder, BlobLink, BlobOp,
+        DirectoryClass, QueueClass, ValueClass, key::DeserializeBigEndian, now,
     },
 };
 use trc::AddContext;
@@ -541,6 +541,52 @@ impl Server {
             })
     }
 
+    pub async fn all_archives<CB>(
+        &self,
+        account_id: u32,
+        collection: Collection,
+        field: u8,
+        mut cb: CB,
+    ) -> trc::Result<()>
+    where
+        CB: FnMut(u32, Archive<AlignedBytes>) -> trc::Result<()> + Send + Sync,
+    {
+        let collection: u8 = collection.into();
+
+        self.core
+            .storage
+            .data
+            .iterate(
+                IterateParams::new(
+                    ValueKey {
+                        account_id,
+                        collection,
+                        document_id: 0,
+                        class: ValueClass::Property(field),
+                    },
+                    ValueKey {
+                        account_id,
+                        collection,
+                        document_id: u32::MAX,
+                        class: ValueClass::Property(field),
+                    },
+                ),
+                |key, value| {
+                    let document_id = key.deserialize_be_u32(key.len() - U32_LEN)?;
+                    let archive = <Archive<AlignedBytes> as Deserialize>::deserialize(value)?;
+                    cb(document_id, archive)?;
+
+                    Ok(true)
+                },
+            )
+            .await
+            .add_context(|err| {
+                err.caused_by(trc::location!())
+                    .account_id(account_id)
+                    .collection(collection)
+            })
+    }
+
     pub async fn document_ids(
         &self,
         account_id: u32,
@@ -751,6 +797,7 @@ impl Server {
                 SyncCollection::FileNode,
                 SyncCollection::AddressBook,
                 SyncCollection::Calendar,
+                SyncCollection::CalendarEventNotification,
             ] {
                 let collection = sync_collection.into();
                 let from_key = LogKey {
@@ -901,24 +948,29 @@ impl Server {
     }
 
     #[allow(clippy::blocks_in_conditions)]
-    pub async fn put_blob(
-        &self,
-        account_id: u32,
-        data: &[u8],
-        set_quota: bool,
-    ) -> trc::Result<BlobId> {
+    pub async fn put_jmap_blob(&self, account_id: u32, data: &[u8]) -> trc::Result<BlobId> {
         // First reserve the hash
         let hash = BlobHash::generate(data);
         let mut batch = BatchBuilder::new();
         let until = now() + self.core.jmap.upload_tmp_ttl;
 
-        batch.with_account_id(account_id).set(
-            BlobOp::Reserve {
-                hash: hash.clone(),
-                until,
-            },
-            (if set_quota { data.len() as u32 } else { 0u32 }).serialize(),
-        );
+        batch
+            .with_account_id(account_id)
+            .set(
+                BlobOp::Link {
+                    hash: hash.clone(),
+                    to: BlobLink::Temporary { until },
+                },
+                vec![],
+            )
+            .set(
+                BlobOp::Quota {
+                    hash: hash.clone(),
+                    until,
+                },
+                (data.len() as u32).serialize(),
+            );
+
         self.core
             .storage
             .data
@@ -961,6 +1013,68 @@ impl Server {
             },
             section: None,
         })
+    }
+
+    pub async fn put_temporary_blob(
+        &self,
+        account_id: u32,
+        data: &[u8],
+        hold_for: u64,
+    ) -> trc::Result<(BlobHash, BlobOp)> {
+        // First reserve the hash
+        let hash = BlobHash::generate(data);
+        let mut batch = BatchBuilder::new();
+        let until = now() + hold_for;
+
+        batch.with_account_id(account_id).set(
+            BlobOp::Link {
+                hash: hash.clone(),
+                to: BlobLink::Temporary { until },
+            },
+            vec![],
+        );
+
+        self.core
+            .storage
+            .data
+            .write(batch.build_all())
+            .await
+            .caused_by(trc::location!())?;
+
+        if !self
+            .core
+            .storage
+            .data
+            .blob_exists(&hash)
+            .await
+            .caused_by(trc::location!())?
+        {
+            // Upload blob to store
+            self.core
+                .storage
+                .blob
+                .put_blob(hash.as_ref(), data)
+                .await
+                .caused_by(trc::location!())?;
+
+            // Commit blob
+            let mut batch = BatchBuilder::new();
+            batch.set(BlobOp::Commit { hash: hash.clone() }, Vec::new());
+            self.core
+                .storage
+                .data
+                .write(batch.build_all())
+                .await
+                .caused_by(trc::location!())?;
+        }
+
+        Ok((
+            hash.clone(),
+            BlobOp::Link {
+                hash,
+                to: BlobLink::Temporary { until },
+            },
+        ))
     }
 
     pub async fn total_accounts(&self) -> trc::Result<u64> {

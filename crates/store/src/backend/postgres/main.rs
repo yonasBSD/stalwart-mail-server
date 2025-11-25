@@ -102,7 +102,7 @@ impl PostgresStore {
             SUBSPACE_ACL,
             SUBSPACE_DIRECTORY,
             SUBSPACE_TASK_QUEUE,
-            SUBSPACE_BLOB_RESERVE,
+            SUBSPACE_BLOB_EXTRA,
             SUBSPACE_BLOB_LINK,
             SUBSPACE_IN_MEMORY_VALUE,
             SUBSPACE_PROPERTY,

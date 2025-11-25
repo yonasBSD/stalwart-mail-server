@@ -20,7 +20,7 @@ use mail_parser::{
 };
 use store::{
     Serialize,
-    write::{Archiver, BatchBuilder, BlobOp, IndexPropertyClass, ValueClass},
+    write::{Archiver, BatchBuilder, BlobLink, BlobOp, IndexPropertyClass, ValueClass},
 };
 use trc::AddContext;
 use types::{blob_hash::BlobHash, field::EmailField};
@@ -38,6 +38,7 @@ impl MessageMetadata {
                 .set(
                     BlobOp::Link {
                         hash: self.blob_hash.clone(),
+                        to: BlobLink::Document,
                     },
                     Vec::new(),
                 )
@@ -46,6 +47,7 @@ impl MessageMetadata {
             batch
                 .clear(BlobOp::Link {
                     hash: self.blob_hash.clone(),
+                    to: BlobLink::Document,
                 })
                 .clear(EmailField::Metadata);
         }
@@ -90,6 +92,7 @@ impl ArchivedMessageMetadata {
             }))
             .clear(BlobOp::Link {
                 hash: BlobHash::from(&self.blob_hash),
+                to: BlobLink::Document,
             });
     }
 }
@@ -226,6 +229,7 @@ impl IndexMessage for BatchBuilder {
         self.set(
             BlobOp::Link {
                 hash: metadata.blob_hash.clone(),
+                to: BlobLink::Document,
             },
             Vec::new(),
         )

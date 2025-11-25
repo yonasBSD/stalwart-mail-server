@@ -29,6 +29,7 @@ use store::{
     roaring::RoaringBitmap,
     write::{AlignedBytes, Archive, BatchBuilder, TaskEpoch, TaskQueueClass, ValueClass},
 };
+use trc::AddContext;
 use types::{
     acl::Acl,
     collection::{Collection, VanishedCollection},
@@ -277,17 +278,28 @@ impl<T: SessionStream> SessionData<T> {
                 }
 
                 // Assign IMAP UIDs
-                for uid_mailbox in &mut new_data.mailboxes {
-                    if uid_mailbox.uid == 0 {
-                        let assigned_uid = self
-                            .server
-                            .assign_imap_uid(account_id, uid_mailbox.mailbox_id)
-                            .await
-                            .imap_ctx(&arguments.tag, trc::location!())?;
-                        debug_assert!(assigned_uid > 0);
-                        copied_ids.push((imap_id.uid, assigned_uid));
-                        uid_mailbox.uid = assigned_uid;
-                    }
+                let ids = self
+                    .server
+                    .assign_email_ids(
+                        account_id,
+                        new_data
+                            .mailboxes
+                            .iter()
+                            .filter(|m| m.uid == 0)
+                            .map(|m| m.mailbox_id),
+                        false,
+                    )
+                    .await
+                    .caused_by(trc::location!())?;
+
+                for (uid_mailbox, uid) in new_data
+                    .mailboxes
+                    .iter_mut()
+                    .filter(|m| m.uid == 0)
+                    .zip(ids)
+                {
+                    copied_ids.push((imap_id.uid, uid));
+                    uid_mailbox.uid = uid;
                 }
 
                 // Prepare write batch

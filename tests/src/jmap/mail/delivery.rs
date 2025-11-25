@@ -15,7 +15,7 @@ use email::{
 };
 use groupware::DavResourceName;
 use jmap::blob::download::BlobDownload;
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines, ReadHalf, WriteHalf},
     net::TcpStream,
@@ -31,7 +31,11 @@ use utils::chained_bytes::ChainedBytes;
 pub async fn test(params: &mut JMAPTest) {
     println!("Running message delivery tests...");
 
-    let todo = "enable delivered to for test";
+    // Enable delivered to
+    let old_core = params.server.core.clone();
+    let mut new_core = old_core.as_ref().clone();
+    new_core.smtp.session.data.add_delivered_to = true;
+    params.server.inner.shared_core.store(Arc::new(new_core));
 
     // Create a domain name and a test account
     let server = params.server.clone();
@@ -277,37 +281,48 @@ END:VCARD
                 .unwrap()
                 .unwrap();
             let metadata = archive.to_unarchived::<MessageMetadata>().unwrap();
-            let body = server
-                .blob_download(
-                    &BlobId {
-                        hash: BlobHash::from(&metadata.inner.blob_hash),
-                        class: BlobClass::Linked {
-                            account_id,
-                            collection: Collection::Email.into(),
-                            document_id,
-                        },
-                        section: None,
-                    },
-                    &access_token,
-                )
+            let partial_message = server
+                .store()
+                .get_blob(metadata.inner.blob_hash.0.as_ref(), 0..usize::MAX)
                 .await
                 .unwrap()
                 .unwrap();
             assert_ne!(metadata.inner.blob_body_offset.to_native(), 0);
-            let raw_message = ChainedBytes::new(metadata.inner.raw_headers.as_ref()).with_last(
-                body.get(metadata.inner.blob_body_offset.to_native() as usize..)
-                    .unwrap_or_default(),
-            );
-            let full_message = String::from_utf8(raw_message.to_bytes()).unwrap();
+            let expected_full_message = String::from_utf8(
+                ChainedBytes::new(metadata.inner.raw_headers.as_ref())
+                    .with_last(
+                        partial_message
+                            .get(metadata.inner.blob_body_offset.to_native() as usize..)
+                            .unwrap_or_default(),
+                    )
+                    .to_bytes(),
+            )
+            .unwrap();
             assert!(
-                full_message.contains("Delivered-To:") && full_message.contains("Subject:"),
-                "for {account_id}: {full_message}"
+                expected_full_message.contains("Delivered-To:")
+                    && expected_full_message.contains("Subject:"),
+                "for {account_id}: {expected_full_message}"
             );
-            println!(
-                "full message for {}:\n{}",
-                account.id_string(),
-                full_message
-            );
+            let full_message = String::from_utf8(
+                server
+                    .blob_download(
+                        &BlobId {
+                            hash: BlobHash::from(&metadata.inner.blob_hash),
+                            class: BlobClass::Linked {
+                                account_id,
+                                collection: Collection::Email.into(),
+                                document_id,
+                            },
+                            section: None,
+                        },
+                        &access_token,
+                    )
+                    .await
+                    .unwrap()
+                    .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(full_message, expected_full_message, "for {account_id}");
         }
     }
 
@@ -316,6 +331,9 @@ END:VCARD
         params.destroy_all_mailboxes(account).await;
     }
     params.assert_is_empty().await;
+
+    // Restore core
+    params.server.inner.shared_core.store(old_core);
 
     // Check webhook events
     params.webhook.assert_contains(&[

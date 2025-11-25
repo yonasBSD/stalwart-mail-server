@@ -5,7 +5,6 @@
  */
 
 use super::metadata::MessageData;
-use crate::{cache::MessageCacheFetch, mailbox::*};
 use common::{KV_LOCK_PURGE_ACCOUNT, Server, storage::index::ObjectIndexBuilder};
 use directory::backend::internal::manage::ManageDirectory;
 use groupware::calendar::storage::ItipAutoExpunge;
@@ -20,7 +19,7 @@ use store::{
 };
 use trc::AddContext;
 use types::collection::{Collection, VanishedCollection};
-use types::field::EmailSubmissionField;
+use types::field::{EmailField, EmailSubmissionField};
 
 pub trait EmailDeletion: Sync + Send {
     fn emails_delete(
@@ -213,27 +212,9 @@ impl EmailDeletion for Server {
     }
 
     async fn emails_auto_expunge(&self, account_id: u32, hold_period: u64) -> trc::Result<()> {
-        let trashed_ids = RoaringBitmap::from_iter(
-            self.get_cached_messages(account_id)
-                .await
-                .caused_by(trc::location!())?
-                .emails
-                .items
-                .iter()
-                .filter(|item| {
-                    item.mailboxes
-                        .iter()
-                        .any(|id| id.mailbox_id == TRASH_ID || id.mailbox_id == JUNK_ID)
-                })
-                .map(|item| item.document_id),
-        );
-        if trashed_ids.is_empty() {
-            return Ok(());
-        }
-
         // Filter messages by received date
-        let todo = "fix";
-        /*let mut destroy_ids = RoaringBitmap::new();
+        let mut destroy_ids = RoaringBitmap::new();
+        let cutoff = now().saturating_sub(hold_period);
         self.store()
             .iterate(
                 IterateParams::new(
@@ -241,33 +222,23 @@ impl EmailDeletion for Server {
                         account_id,
                         collection: Collection::Email.into(),
                         document_id: 0,
-                        class: ValueClass::IndexProperty(IndexPropertyClass::Integer {
-                            property: EmailField::ReceivedToSize.into(),
-                            value: 0,
-                        }),
+                        class: ValueClass::Property(EmailField::DeletedAt.into()),
                     },
                     ValueKey {
                         account_id,
                         collection: Collection::Email.into(),
                         document_id: u32::MAX,
-                        class: ValueClass::IndexProperty(IndexPropertyClass::Integer {
-                            property: EmailField::ReceivedToSize.into(),
-                            value: now().saturating_sub(hold_period),
-                        }),
+                        class: ValueClass::Property(EmailField::DeletedAt.into()),
                     },
                 )
-                .ascending()
-                .no_values(),
-                |key, _| {
-                    let document_id = key
-                        .deserialize_be_u32(key.len() - U32_LEN)
-                        .caused_by(trc::location!())?;
-
-                    if trashed_ids.contains(document_id) {
-                        destroy_ids.insert(document_id);
+                .ascending(),
+                |key, value| {
+                    let deleted_at = value.deserialize_be_u64(0)?;
+                    if deleted_at <= cutoff {
+                        destroy_ids.insert(key.deserialize_be_u32(key.len() - U32_LEN)?);
                     }
 
-                    Ok(trashed_ids.len() != destroy_ids.len())
+                    Ok(true)
                 },
             )
             .await
@@ -286,10 +257,16 @@ impl EmailDeletion for Server {
 
         // Delete messages
         let mut batch = BatchBuilder::new();
-        self.emails_delete(account_id, &mut batch, destroy_ids)
+        let tenant_id = self
+            .store()
+            .get_principal(account_id)
+            .await
+            .caused_by(trc::location!())?
+            .and_then(|p| p.tenant());
+        self.emails_delete(account_id, tenant_id, &mut batch, destroy_ids)
             .await?;
         self.commit_batch(batch).await?;
-        self.notify_task_queue();*/
+        self.notify_task_queue();
 
         Ok(())
     }

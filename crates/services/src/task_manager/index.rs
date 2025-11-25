@@ -7,25 +7,25 @@
 use crate::task_manager::{IndexAction, Task};
 use common::{
     Server,
+    auth::AccessToken,
     telemetry::tracers::store::{TracingStore, build_span_document},
 };
 use directory::{Type, backend::internal::manage::ManageDirectory};
-use email::message::metadata::MessageMetadata;
+#[cfg(feature = "enterprise")]
+use email::message::metadata::MESSAGE_RECEIVED_MASK;
+use email::{cache::MessageCacheFetch, message::metadata::MessageMetadata};
 use groupware::{cache::GroupwareCache, calendar::CalendarEvent, contact::ContactCard};
 use std::cmp::Ordering;
 use store::{
-    IterateParams, SerializeInfallible, U32_LEN, ValueKey,
+    SerializeInfallible,
     ahash::AHashMap,
     roaring::RoaringBitmap,
     search::{IndexDocument, SearchField, SearchFilter, SearchQuery},
-    write::{
-        BatchBuilder, BlobOp, SearchIndex, TaskEpoch, TaskQueueClass, ValueClass,
-        key::DeserializeBigEndian,
-    },
+    write::{BatchBuilder, SearchIndex, TaskEpoch, TaskQueueClass, ValueClass},
 };
 use trc::{AddContext, TaskQueueEvent};
 use types::{
-    blob_hash::{BLOB_HASH_LEN, BlobHash},
+    blob_hash::BlobHash,
     collection::{Collection, SyncCollection},
     field::EmailField,
 };
@@ -305,58 +305,21 @@ impl ReindexIndexTask for Server {
 
         match index {
             SearchIndex::Email => {
-                // Validate linked blobs
-                let from_key = ValueKey {
-                    account_id: 0,
-                    collection: 0,
-                    document_id: 0,
-                    class: ValueClass::Blob(BlobOp::Link {
-                        hash: BlobHash::default(),
-                    }),
-                };
-                let to_key = ValueKey {
-                    account_id: u32::MAX,
-                    collection: u8::MAX,
-                    document_id: u32::MAX,
-                    class: ValueClass::Blob(BlobOp::Link {
-                        hash: BlobHash::new_max(),
-                    }),
-                };
-                let mut document_ids: AHashMap<u32, Vec<u32>> = AHashMap::new();
-                self.core
-                    .storage
-                    .data
-                    .iterate(
-                        IterateParams::new(from_key, to_key).ascending().no_values(),
-                        |key, _| {
-                            let account_id = key.deserialize_be_u32(BLOB_HASH_LEN)?;
-                            let collection =
-                                *key.get(BLOB_HASH_LEN + U32_LEN).ok_or_else(|| {
-                                    trc::Error::corrupted_key(key, None, trc::location!())
-                                })?;
-
-                            if accounts.contains(account_id)
-                                && collection == Collection::Email as u8
-                            {
-                                document_ids
-                                    .entry(account_id)
-                                    .or_default()
-                                    .push(key.deserialize_be_u32(key.len() - U32_LEN)?);
-                            }
-
-                            Ok(true)
-                        },
-                    )
-                    .await
-                    .caused_by(trc::location!())?;
-
-                for (account_id, document_ids) in document_ids {
+                for account_id in accounts {
                     let mut batch = BatchBuilder::new();
                     batch
                         .with_account_id(account_id)
                         .with_collection(Collection::Email);
 
-                    for document_id in document_ids {
+                    for document_id in self
+                        .get_cached_messages(account_id)
+                        .await
+                        .caused_by(trc::location!())?
+                        .emails
+                        .items
+                        .iter()
+                        .map(|v| v.document_id)
+                    {
                         batch.with_document(document_id).set(
                             ValueClass::TaskQueue(TaskQueueClass::UpdateIndex {
                                 due,
@@ -382,16 +345,18 @@ impl ReindexIndexTask for Server {
             }
             SearchIndex::Calendar | SearchIndex::Contacts => {
                 for account_id in accounts {
-                    let Some(cache) = self.cached_dav_resources(
-                        account_id,
-                        if index == SearchIndex::Calendar {
-                            SyncCollection::Calendar
-                        } else {
-                            SyncCollection::AddressBook
-                        },
-                    ) else {
-                        continue;
-                    };
+                    let cache = self
+                        .fetch_dav_resources(
+                            &AccessToken::from_id(account_id).with_tenant_id(tenant_id),
+                            account_id,
+                            if index == SearchIndex::Calendar {
+                                SyncCollection::Calendar
+                            } else {
+                                SyncCollection::AddressBook
+                            },
+                        )
+                        .await
+                        .caused_by(trc::location!())?;
                     let mut batch = BatchBuilder::new();
                     batch.with_account_id(account_id);
 
@@ -579,12 +544,77 @@ async fn delete_email_metadata(
 
             // Hold blob for undeletion
             #[cfg(feature = "enterprise")]
-            server.core.hold_undelete(
-                batch,
-                Collection::Email.into(),
-                &BlobHash::from(&metadata.blob_hash),
-                metadata.root_part().offset_end.to_native() as usize,
-            );
+            {
+                use common::enterprise::undelete::DeletedItemType;
+                use email::message::metadata::ArchivedMetadataHeaderName;
+
+                if let Some(undelete) = server
+                    .core
+                    .enterprise
+                    .as_ref()
+                    .and_then(|e| e.undelete.as_ref())
+                {
+                    use common::enterprise::undelete::DeletedItem;
+                    use store::{
+                        Serialize,
+                        write::{Archiver, BlobLink, BlobOp, now},
+                    };
+
+                    let root_part = metadata.root_part();
+                    let from: Option<Box<str>> = root_part.headers.iter().find_map(|h| {
+                        if let ArchivedMetadataHeaderName::From = &h.name {
+                            h.value.as_single_address().and_then(|addr| {
+                                match (addr.address.as_ref(), addr.name.as_ref()) {
+                                    (Some(address), Some(name)) => {
+                                        Some(format!("{} <{}>", name, address).into_boxed_str())
+                                    }
+                                    (Some(address), None) => Some(address.as_ref().into()),
+                                    (None, Some(name)) => Some(name.as_ref().into()),
+                                    (None, None) => None,
+                                }
+                            })
+                        } else {
+                            None
+                        }
+                    });
+                    let subject: Option<Box<str>> = root_part.headers.iter().rev().find_map(|h| {
+                        if let ArchivedMetadataHeaderName::Subject = &h.name {
+                            h.value.as_text().map(Into::into)
+                        } else {
+                            None
+                        }
+                    });
+                    let now = now();
+                    let until = now + undelete.retention.as_secs();
+                    let blob_hash = BlobHash::from(&metadata.blob_hash);
+                    batch
+                        .set(
+                            BlobOp::Link {
+                                hash: blob_hash.clone(),
+                                to: BlobLink::Temporary { until },
+                            },
+                            vec![],
+                        )
+                        .set(
+                            BlobOp::Undelete {
+                                hash: blob_hash,
+                                until,
+                            },
+                            Archiver::new(DeletedItem {
+                                typ: DeletedItemType::Email {
+                                    from: from.unwrap_or_default(),
+                                    subject: subject.unwrap_or_default(),
+                                    received_at: metadata.rcvd_attach.to_native()
+                                        & MESSAGE_RECEIVED_MASK,
+                                },
+                                size: root_part.offset_end.to_native(),
+                                deleted_at: now,
+                            })
+                            .serialize()
+                            .caused_by(trc::location!())?,
+                        );
+                }
+            }
 
             // SPDX-SnippetEnd
         }

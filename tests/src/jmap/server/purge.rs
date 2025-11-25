@@ -16,12 +16,9 @@ use email::{
     mailbox::{INBOX_ID, JUNK_ID, TRASH_ID},
     message::delete::EmailDeletion,
 };
+use http::management::stores::destroy_account_data;
 use imap_proto::ResponseType;
-use store::{
-    IterateParams, LogKey, U32_LEN, U64_LEN,
-    search::SearchQuery,
-    write::{SearchIndex, key::DeserializeBigEndian},
-};
+use store::{IterateParams, LogKey, U32_LEN, U64_LEN, write::key::DeserializeBigEndian};
 use types::id::Id;
 
 pub async fn test(params: &mut JMAPTest) {
@@ -153,25 +150,13 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Delete account
     server
-        .core
-        .storage
-        .data
+        .store()
         .delete_principal(QueryBy::Id(account.id().document_id()))
         .await
         .unwrap();
-    for index in [
-        SearchIndex::Email,
-        SearchIndex::Contacts,
-        SearchIndex::Calendar,
-    ] {
-        server
-            .core
-            .storage
-            .fts
-            .unindex(SearchQuery::new(index).with_account_id(account.id().document_id()))
-            .await
-            .unwrap();
-    }
+    destroy_account_data(&server, account.id().document_id(), true)
+        .await
+        .unwrap();
     params.assert_is_empty().await;
 }
 

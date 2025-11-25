@@ -829,11 +829,6 @@ impl ManageDirectory for Store {
         }
         // SPDX-SnippetEnd
 
-        // Unlink all principal's blobs
-        self.blob_hash_unlink_account(principal_id)
-            .await
-            .caused_by(trc::location!())?;
-
         // Revoke ACLs, obtain all changed principals
         let mut changed_principals = ChangedPrincipals::default();
 
@@ -848,11 +843,6 @@ impl ManageDirectory for Store {
                 PrincipalField::EnabledPermissions,
             );
         }
-
-        // Delete principal data
-        self.danger_destroy_account(principal_id)
-            .await
-            .caused_by(trc::location!())?;
 
         // Delete principal
         batch

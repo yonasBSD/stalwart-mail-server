@@ -9,14 +9,14 @@ use super::{
     TaskQueueClass, TelemetryClass, ValueClass,
 };
 use crate::{
-    Deserialize, IndexKey, IndexKeyPrefix, Key, LogKey, SUBSPACE_ACL, SUBSPACE_BLOB_LINK,
-    SUBSPACE_BLOB_RESERVE, SUBSPACE_COUNTER, SUBSPACE_DIRECTORY, SUBSPACE_IN_MEMORY_COUNTER,
+    Deserialize, IndexKey, IndexKeyPrefix, Key, LogKey, SUBSPACE_ACL, SUBSPACE_BLOB_EXTRA,
+    SUBSPACE_BLOB_LINK, SUBSPACE_COUNTER, SUBSPACE_DIRECTORY, SUBSPACE_IN_MEMORY_COUNTER,
     SUBSPACE_IN_MEMORY_VALUE, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_PROPERTY,
     SUBSPACE_QUEUE_EVENT, SUBSPACE_QUEUE_MESSAGE, SUBSPACE_QUOTA, SUBSPACE_REPORT_IN,
     SUBSPACE_REPORT_OUT, SUBSPACE_SEARCH_INDEX, SUBSPACE_SETTINGS, SUBSPACE_TASK_QUEUE,
     SUBSPACE_TELEMETRY_METRIC, SUBSPACE_TELEMETRY_SPAN, U16_LEN, U32_LEN, U64_LEN, ValueKey,
     WITH_SUBSPACE,
-    write::{IndexPropertyClass, SearchIndex, SearchIndexId, SearchIndexType},
+    write::{BlobLink, IndexPropertyClass, SearchIndex, SearchIndexId, SearchIndexType},
 };
 use std::convert::TryInto;
 use types::{blob_hash::BLOB_HASH_LEN, collection::SyncCollection};
@@ -329,25 +329,29 @@ impl ValueClass {
                     .write(document_id),
             },
             ValueClass::Blob(op) => match op {
-                BlobOp::Reserve { hash, until } => serializer
+                BlobOp::Commit { hash } => serializer.write::<&[u8]>(hash.as_ref()),
+                BlobOp::Link { hash, to } => match to {
+                    BlobLink::Id { id } => serializer.write::<&[u8]>(hash.as_ref()).write(*id),
+                    BlobLink::Document => serializer
+                        .write::<&[u8]>(hash.as_ref())
+                        .write(account_id)
+                        .write(collection)
+                        .write(document_id),
+                    BlobLink::Temporary { until } => serializer
+                        .write::<&[u8]>(hash.as_ref())
+                        .write(account_id)
+                        .write(*until),
+                },
+                BlobOp::Quota { hash, until } => serializer
                     .write(account_id)
+                    .write(0u8)
                     .write::<&[u8]>(hash.as_ref())
                     .write(*until),
-                BlobOp::Commit { hash } => serializer
-                    .write::<&[u8]>(hash.as_ref())
-                    .write(u32::MAX)
-                    .write(0u8)
-                    .write(u32::MAX),
-                BlobOp::Link { hash } => serializer
-                    .write::<&[u8]>(hash.as_ref())
+                BlobOp::Undelete { hash, until } => serializer
                     .write(account_id)
-                    .write(collection)
-                    .write(document_id),
-                BlobOp::LinkId { hash, id } => serializer
+                    .write(1u8)
                     .write::<&[u8]>(hash.as_ref())
-                    .write((*id >> 32) as u32)
-                    .write(u8::MAX)
-                    .write(*id as u32),
+                    .write(*until),
             },
             ValueClass::Config(key) => serializer.write(key.as_slice()),
             ValueClass::InMemory(lookup) => match lookup {
@@ -561,9 +565,17 @@ impl ValueClass {
                 DirectoryClass::Index { word, .. } => word.len() + U32_LEN,
             },
             ValueClass::Blob(op) => match op {
-                BlobOp::Reserve { .. } => BLOB_HASH_LEN + U64_LEN + U32_LEN + 1,
-                BlobOp::Commit { .. } | BlobOp::Link { .. } | BlobOp::LinkId { .. } => {
-                    BLOB_HASH_LEN + U32_LEN * 2 + 2
+                BlobOp::Commit { .. } => BLOB_HASH_LEN,
+                BlobOp::Link { to, .. } => {
+                    BLOB_HASH_LEN
+                        + match to {
+                            BlobLink::Id { .. } => U64_LEN,
+                            BlobLink::Document => U32_LEN * 2 + 1,
+                            BlobLink::Temporary { .. } => U32_LEN + U64_LEN,
+                        }
+                }
+                BlobOp::Quota { .. } | BlobOp::Undelete { .. } => {
+                    BLOB_HASH_LEN + U32_LEN + U64_LEN + 1
                 }
             },
             ValueClass::TaskQueue(e) => match e {
@@ -624,10 +636,8 @@ impl ValueClass {
             ValueClass::Acl(_) => SUBSPACE_ACL,
             ValueClass::TaskQueue { .. } => SUBSPACE_TASK_QUEUE,
             ValueClass::Blob(op) => match op {
-                BlobOp::Reserve { .. } => SUBSPACE_BLOB_RESERVE,
-                BlobOp::Commit { .. } | BlobOp::Link { .. } | BlobOp::LinkId { .. } => {
-                    SUBSPACE_BLOB_LINK
-                }
+                BlobOp::Commit { .. } | BlobOp::Link { .. } => SUBSPACE_BLOB_LINK,
+                BlobOp::Quota { .. } | BlobOp::Undelete { .. } => SUBSPACE_BLOB_EXTRA,
             },
             ValueClass::Config(_) => SUBSPACE_SETTINGS,
             ValueClass::InMemory(lookup) => match lookup {

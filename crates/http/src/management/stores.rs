@@ -18,7 +18,11 @@ use directory::{
 };
 use email::{
     cache::MessageCacheFetch,
-    message::{ingest::EmailIngest, metadata::MessageData},
+    message::{
+        ingest::EmailIngest,
+        metadata::{MessageData, MessageMetadata},
+    },
+    sieve::SieveScript,
 };
 use groupware::{
     calendar::{Calendar, CalendarEvent, CalendarEventNotification},
@@ -32,12 +36,14 @@ use services::task_manager::index::ReindexIndexTask;
 use std::future::Future;
 use store::{
     Serialize, rand,
-    write::{Archiver, BatchBuilder, DirectoryClass, SearchIndex, ValueClass},
+    search::SearchQuery,
+    write::{Archiver, BatchBuilder, BlobLink, BlobOp, DirectoryClass, SearchIndex, ValueClass},
 };
 use trc::AddContext;
 use types::{
+    blob_hash::BlobHash,
     collection::Collection,
-    field::{EmailField, MailboxField},
+    field::{EmailField, Field, MailboxField},
 };
 use utils::url_params::UrlParams;
 
@@ -398,6 +404,138 @@ pub async fn recalculate_quota(server: &Server, account_id: u32) -> trc::Result<
         .map(|_| ())
 }
 
+pub async fn destroy_account_blobs(server: &Server, account_id: u32) -> trc::Result<()> {
+    let mut delete_keys = Vec::new();
+    for (collection, field) in [
+        (Collection::Email, u8::from(EmailField::Metadata)),
+        (Collection::FileNode, u8::from(Field::ARCHIVE)),
+        (Collection::SieveScript, u8::from(Field::ARCHIVE)),
+    ] {
+        server
+            .all_archives(account_id, collection, field, |document_id, archive| {
+                match collection {
+                    Collection::Email => {
+                        let message = archive.unarchive::<MessageMetadata>()?;
+                        delete_keys.push((
+                            collection,
+                            document_id,
+                            BlobHash::from(&message.blob_hash),
+                        ));
+                    }
+                    Collection::FileNode => {
+                        if let Some(file) = archive.unarchive::<FileNode>()?.file.as_ref() {
+                            delete_keys.push((
+                                collection,
+                                document_id,
+                                BlobHash::from(&file.blob_hash),
+                            ));
+                        }
+                    }
+                    Collection::SieveScript => {
+                        let sieve = archive.unarchive::<SieveScript>()?;
+                        delete_keys.push((
+                            collection,
+                            document_id,
+                            BlobHash::from(&sieve.blob_hash),
+                        ));
+                    }
+                    _ => {}
+                }
+                Ok(())
+            })
+            .await
+            .caused_by(trc::location!())?;
+    }
+
+    let mut batch = BatchBuilder::new();
+    batch.with_account_id(account_id);
+
+    for (collection, document_id, hash) in delete_keys {
+        if batch.is_large_batch() {
+            server
+                .store()
+                .write(batch.build_all())
+                .await
+                .caused_by(trc::location!())?;
+            batch = BatchBuilder::new();
+            batch.with_account_id(account_id);
+        }
+        batch
+            .with_collection(collection)
+            .with_document(document_id)
+            .clear(ValueClass::Blob(BlobOp::Link {
+                hash,
+                to: BlobLink::Document,
+            }));
+    }
+
+    if !batch.is_empty() {
+        server
+            .store()
+            .write(batch.build_all())
+            .await
+            .caused_by(trc::location!())?;
+    }
+
+    Ok(())
+}
+
+pub async fn destroy_account_data(
+    server: &Server,
+    account_id: u32,
+    has_data: bool,
+) -> trc::Result<()> {
+    // Unlink all accounts's blobs
+    if has_data {
+        destroy_account_blobs(server, account_id).await?;
+    }
+
+    // Destroy account data
+    server
+        .store()
+        .danger_destroy_account(account_id)
+        .await
+        .caused_by(trc::location!())?;
+
+    if has_data {
+        // Remove search index
+        for index in [
+            SearchIndex::Email,
+            SearchIndex::Contacts,
+            SearchIndex::Calendar,
+        ] {
+            if let Err(err) = server
+                .core
+                .storage
+                .fts
+                .unindex(SearchQuery::new(index).with_account_id(account_id))
+                .await
+            {
+                trc::error!(err.details("Failed to delete FTS index"));
+            }
+        }
+
+        // Delete bayes model
+        if server
+            .core
+            .spam
+            .bayes
+            .as_ref()
+            .is_some_and(|c| c.account_classify)
+        {
+            let mut key = Vec::with_capacity(std::mem::size_of::<u32>() + 1);
+            key.push(KV_BAYES_MODEL_USER);
+            key.extend_from_slice(&account_id.to_be_bytes());
+
+            if let Err(err) = server.in_memory_store().key_delete_prefix(&key).await {
+                trc::error!(err.details("Failed to delete user bayes model"));
+            }
+        }
+    }
+
+    Ok(())
+}
+
 pub async fn reset_imap_uids(server: &Server, account_id: u32) -> trc::Result<(u32, u32)> {
     let mut mailbox_count = 0;
     let mut email_count = 0;
@@ -455,11 +593,17 @@ pub async fn reset_imap_uids(server: &Server, account_id: u32) -> trc::Result<(u
             .deserialize::<MessageData>()
             .caused_by(trc::location!())?;
 
-        for uid_mailbox in &mut new_data.mailboxes {
-            uid_mailbox.uid = server
-                .assign_imap_uid(account_id, uid_mailbox.mailbox_id)
-                .await
-                .caused_by(trc::location!())?;
+        let ids = server
+            .assign_email_ids(
+                account_id,
+                new_data.mailboxes.iter().map(|m| m.mailbox_id),
+                false,
+            )
+            .await
+            .caused_by(trc::location!())?;
+
+        for (uid_mailbox, uid) in new_data.mailboxes.iter_mut().zip(ids) {
+            uid_mailbox.uid = uid;
         }
 
         // Prepare write batch

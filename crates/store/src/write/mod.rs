@@ -375,10 +375,17 @@ pub struct SetOperation {
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub enum BlobOp {
-    Reserve { hash: BlobHash, until: u64 },
     Commit { hash: BlobHash },
-    Link { hash: BlobHash },
-    LinkId { hash: BlobHash, id: u64 },
+    Link { hash: BlobHash, to: BlobLink },
+    Quota { hash: BlobHash, until: u64 },
+    Undelete { hash: BlobHash, until: u64 },
+}
+
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
+pub enum BlobLink {
+    Id { id: u64 },
+    Document,
+    Temporary { until: u64 },
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]

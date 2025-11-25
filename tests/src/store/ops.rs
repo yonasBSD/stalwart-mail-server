@@ -473,6 +473,6 @@ pub async fn test(db: Store) {
         db.write(batch.build_all()).await.unwrap();
 
         // Make sure everything is deleted
-        store_assert_is_empty(&db, db.clone().into()).await;
+        store_assert_is_empty(&db, db.clone().into(), false).await;
     }
 }

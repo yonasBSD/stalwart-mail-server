@@ -24,10 +24,10 @@ use std::time::SystemTime;
 use store::write::key::DeserializeBigEndian;
 use store::write::serialize::rkyv_deserialize;
 use store::write::{
-    AlignedBytes, Archive, Archiver, BatchBuilder, BlobOp, MergeResult, Params, QueueClass,
-    ValueClass, now,
+    AlignedBytes, Archive, Archiver, BatchBuilder, BlobLink, BlobOp, MergeResult, Params,
+    QueueClass, ValueClass, now,
 };
-use store::{Deserialize, IterateParams, Serialize, SerializeInfallible, U64_LEN, ValueKey};
+use store::{Deserialize, IterateParams, Serialize, U64_LEN, ValueKey};
 use trc::{AddContext, ServerEvent};
 use types::blob_hash::BlobHash;
 use utils::DomainPart;
@@ -341,11 +341,13 @@ impl MessageWrapper {
         let mut batch = BatchBuilder::new();
         let reserve_until = now() + 120;
         batch.set(
-            BlobOp::Reserve {
+            BlobOp::Link {
                 hash: self.message.blob_hash.clone(),
-                until: reserve_until,
+                to: BlobLink::Temporary {
+                    until: reserve_until,
+                },
             },
-            0u32.serialize(),
+            vec![],
         );
         if let Err(err) = server.store().write(batch.build_all()).await {
             trc::error!(
@@ -424,14 +426,16 @@ impl MessageWrapper {
         }
 
         batch
-            .clear(BlobOp::Reserve {
+            .clear(BlobOp::Link {
                 hash: self.message.blob_hash.clone(),
-                until: reserve_until,
+                to: BlobLink::Temporary {
+                    until: reserve_until,
+                },
             })
             .set(
-                BlobOp::LinkId {
+                BlobOp::Link {
                     hash: self.message.blob_hash.clone(),
-                    id: self.queue_id,
+                    to: BlobLink::Id { id: self.queue_id },
                 },
                 vec![],
             )
@@ -658,9 +662,9 @@ impl MessageWrapper {
         }
 
         batch
-            .clear(BlobOp::LinkId {
+            .clear(BlobOp::Link {
                 hash: self.message.blob_hash.clone(),
-                id: self.queue_id,
+                to: BlobLink::Id { id: self.queue_id },
             })
             .clear(ValueClass::Queue(QueueClass::Message(self.queue_id)));
 

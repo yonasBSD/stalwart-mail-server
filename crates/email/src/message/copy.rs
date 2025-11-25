@@ -153,21 +153,15 @@ impl EmailCopy for Server {
         // Assign IMAP UIDs
         let mut mailbox_ids = Vec::with_capacity(mailboxes.len());
         email.imap_uids = Vec::with_capacity(mailboxes.len());
-        for mailbox_id in &mailboxes {
-            let uid = self
-                .assign_imap_uid(account_id, *mailbox_id)
-                .await
-                .caused_by(trc::location!())?;
-            mailbox_ids.push(UidMailbox::new(*mailbox_id, uid));
-            email.imap_uids.push(uid);
-        }
-
-        // Obtain documentId
-        let document_id = self
-            .store()
-            .assign_document_ids(account_id, Collection::Email, 1)
+        let mut ids = self
+            .assign_email_ids(account_id, mailboxes.iter().copied(), true)
             .await
             .caused_by(trc::location!())?;
+        let document_id = ids.next().unwrap();
+        for (uid, mailbox_id) in ids.zip(mailboxes.iter().copied()) {
+            mailbox_ids.push(UidMailbox::new(mailbox_id, uid));
+            email.imap_uids.push(uid);
+        }
 
         // Prepare batch
         let mut batch = BatchBuilder::new();

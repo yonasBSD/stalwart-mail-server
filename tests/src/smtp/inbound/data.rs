@@ -234,5 +234,5 @@ async fn data() {
 
     // Make sure store is empty
     qr.clear_queue(&test.server).await;
-    store_assert_is_empty(test.server.store(), test.server.blob_store().clone()).await;
+    store_assert_is_empty(test.server.store(), test.server.blob_store().clone(), false).await;
 }

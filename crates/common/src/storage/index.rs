@@ -14,7 +14,7 @@ use std::{borrow::Cow, fmt::Debug};
 use store::{
     Serialize, SerializeInfallible,
     write::{
-        Archive, Archiver, BatchBuilder, BlobOp, DirectoryClass, IntoOperations, Params,
+        Archive, Archiver, BatchBuilder, BlobLink, BlobOp, DirectoryClass, IntoOperations, Params,
         SearchIndex, TaskEpoch, TaskQueueClass, ValueClass,
     },
 };
@@ -102,6 +102,14 @@ impl IndexItem<'_> {
             IndexItem::None => true,
             _ => false,
         }
+    }
+
+    pub fn is_none(&self) -> bool {
+        matches!(self, IndexItem::None)
+    }
+
+    pub fn is_some(&self) -> bool {
+        !self.is_none()
     }
 }
 
@@ -420,17 +428,28 @@ fn build_index(
             );
         }
         IndexValue::Property { field, value } => {
-            if set {
-                batch.set(field, value.into_owned());
-            } else {
-                batch.clear(field);
+            if !value.is_none() {
+                if set {
+                    batch.set(field, value.into_owned());
+                } else {
+                    batch.clear(field);
+                }
             }
         }
         IndexValue::Blob { value } => {
             if set {
-                batch.set(BlobOp::Link { hash: value }, vec![]);
+                batch.set(
+                    BlobOp::Link {
+                        hash: value,
+                        to: BlobLink::Document,
+                    },
+                    vec![],
+                );
             } else {
-                batch.clear(BlobOp::Link { hash: value });
+                batch.clear(BlobOp::Link {
+                    hash: value,
+                    to: BlobLink::Document,
+                });
             }
         }
         IndexValue::Acl { value } => {
@@ -566,12 +585,25 @@ fn merge_index(
                 batch.clear(old_field);
                 batch.set(new_field, new_value.into_owned());
             } else if new_value != old_value {
-                batch.set(old_field, new_value.into_owned());
+                if new_value.is_some() {
+                    batch.set(old_field, new_value.into_owned());
+                } else {
+                    batch.clear(old_field);
+                }
             }
         }
         (IndexValue::Blob { value: old_hash }, IndexValue::Blob { value: new_hash }) => {
-            batch.clear(BlobOp::Link { hash: old_hash });
-            batch.set(BlobOp::Link { hash: new_hash }, vec![]);
+            batch.clear(BlobOp::Link {
+                hash: old_hash,
+                to: BlobLink::Document,
+            });
+            batch.set(
+                BlobOp::Link {
+                    hash: new_hash,
+                    to: BlobLink::Document,
+                },
+                vec![],
+            );
         }
         (IndexValue::Acl { value: old_acl }, IndexValue::Acl { value: new_acl }) => {
             let has_old_acl = !old_acl.is_empty();

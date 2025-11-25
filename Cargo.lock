@@ -1172,6 +1172,7 @@ dependencies = [
  "infer 0.19.0",
  "jmap_proto",
  "libc",
+ "lz4_flex 0.12.0",
  "mail-auth",
  "mail-builder",
  "mail-parser",
@@ -3718,7 +3719,7 @@ dependencies = [
  "hyper-util",
  "jmap-tools",
  "jmap_proto",
- "lz4_flex",
+ "lz4_flex 0.12.0",
  "mail-auth",
  "mail-builder",
  "mail-parser",
@@ -4184,6 +4185,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "lz4_flex"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab6473172471198271ff72e9379150e9dfd70d8e533e0752a27e515b48dd375e"
+dependencies = [
+ "twox-hash",
+]
+
+[[package]]
 name = "lzma-rust2"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4378,7 +4388,7 @@ dependencies = [
  "directory",
  "email",
  "groupware",
- "lz4_flex",
+ "lz4_flex 0.12.0",
  "mail-auth",
  "mail-parser",
  "nlp",
@@ -7595,7 +7605,7 @@ dependencies = [
  "foundationdb",
  "futures",
  "lru-cache",
- "lz4_flex",
+ "lz4_flex 0.12.0",
  "memchr",
  "mysql_async",
  "nlp",
@@ -9777,7 +9787,7 @@ dependencies = [
  "crossbeam-utils",
  "flume",
  "lazy_static",
- "lz4_flex",
+ "lz4_flex 0.11.5",
  "paste",
  "rand 0.8.5",
  "ringbuffer-spsc",

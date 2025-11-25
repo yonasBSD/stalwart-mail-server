@@ -161,11 +161,10 @@ impl FileUpdateRequestHandler for Server {
             }
 
             // Write blob
-            let blob_hash = self
-                .put_blob(account_id, &bytes, false)
+            let (blob_hash, blob_hold) = self
+                .put_temporary_blob(account_id, &bytes, 60)
                 .await
-                .caused_by(trc::location!())?
-                .hash;
+                .caused_by(trc::location!())?;
 
             // Build node
             let mut new_node = node.deserialize::<FileNode>().caused_by(trc::location!())?;
@@ -184,6 +183,7 @@ impl FileUpdateRequestHandler for Server {
                 .with_account_id(account_id)
                 .with_collection(Collection::FileNode)
                 .with_document(document_id)
+                .clear(blob_hold)
                 .custom(
                     ObjectIndexBuilder::new()
                         .with_current(node)
@@ -241,11 +241,10 @@ impl FileUpdateRequestHandler for Server {
             }
 
             // Write blob
-            let blob_hash = self
-                .put_blob(account_id, &bytes, false)
+            let (blob_hash, blob_hold) = self
+                .put_temporary_blob(account_id, &bytes, 60)
                 .await
-                .caused_by(trc::location!())?
-                .hash;
+                .caused_by(trc::location!())?;
 
             // Build node
             let now = now();
@@ -280,6 +279,7 @@ impl FileUpdateRequestHandler for Server {
                 .with_account_id(account_id)
                 .with_collection(Collection::FileNode)
                 .with_document(document_id)
+                .clear(blob_hold)
                 .custom(
                     ObjectIndexBuilder::<(), _>::new()
                         .with_changes(node)

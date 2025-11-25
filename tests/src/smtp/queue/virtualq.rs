@@ -208,5 +208,10 @@ async fn virtual_queue() {
     assert_eq!(remote_messages.len(), NUM_MESSAGES * 2);
 
     // Make sure local store is queue
-    store_assert_is_empty(&core.core.storage.data, core.core.storage.blob.clone()).await;
+    store_assert_is_empty(
+        &core.core.storage.data,
+        core.core.storage.blob.clone(),
+        false,
+    )
+    .await;
 }

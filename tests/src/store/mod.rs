@@ -5,8 +5,8 @@
  */
 
 pub mod blob;
-//pub mod import_export;
 pub mod cleanup;
+pub mod import_export;
 pub mod lookup;
 pub mod ops;
 pub mod query;
@@ -45,7 +45,7 @@ pub async fn store_tests() {
         store_destroy(&store).await;
     }
 
-    //import_export::test(store.clone()).await;
+    import_export::test(store.clone()).await;
     ops::test(store.clone()).await;
 
     if insert {

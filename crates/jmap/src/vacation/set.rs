@@ -274,14 +274,15 @@ impl VacationResponseSet for Server {
             // Create sieve script only if there are changes
             if build_script {
                 // Upload new blob
-                obj.changes_mut().unwrap().blob_hash = self
-                    .put_blob(
+                let (blob_hash, blob_hold) = self
+                    .put_temporary_blob(
                         account_id,
                         &self.build_script(obj.changes_mut().unwrap())?,
-                        false,
+                        60,
                     )
-                    .await?
-                    .hash;
+                    .await?;
+                obj.changes_mut().unwrap().blob_hash = blob_hash;
+                batch.clear(blob_hold);
             };
             batch.custom(obj).caused_by(trc::location!())?;
 

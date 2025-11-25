@@ -33,8 +33,8 @@ use store::{
     IndexKeyPrefix, IterateParams, U32_LEN, ValueKey,
     ahash::{AHashMap, AHashSet},
     write::{
-        BatchBuilder, IndexPropertyClass, SearchIndex, TaskEpoch, TaskQueueClass, ValueClass,
-        key::DeserializeBigEndian, now,
+        AssignedId, AssignedIds, BatchBuilder, IndexPropertyClass, SearchIndex, TaskEpoch,
+        TaskQueueClass, ValueClass, key::DeserializeBigEndian, now,
     },
 };
 use trc::{AddContext, MessageIngestEvent};
@@ -93,11 +93,12 @@ pub trait EmailIngest: Sync + Send {
         thread_name: &str,
         message_ids: &[CheekyHash],
     ) -> impl Future<Output = trc::Result<ThreadResult>> + Send;
-    fn assign_imap_uid(
+    fn assign_email_ids(
         &self,
         account_id: u32,
-        mailbox_id: u32,
-    ) -> impl Future<Output = trc::Result<u32>> + Send;
+        mailbox_ids: impl IntoIterator<Item = u32> + Sync + Send,
+        generate_email_id: bool,
+    ) -> impl Future<Output = trc::Result<impl Iterator<Item = u32> + 'static>> + Send;
     fn email_bayes_can_train(&self, access_token: &AccessToken) -> bool;
 }
 
@@ -536,24 +537,25 @@ impl EmailIngest for Server {
         }
 
         // Store blob
-        let blob_hash = if let Some(blob_hash) = params.blob_hash {
-            blob_hash.clone()
+        let (blob_hash, blob_hold) = if let Some(blob_hash) = params.blob_hash {
+            (blob_hash.clone(), None)
         } else {
-            self.put_blob(account_id, raw_message.as_ref(), false)
+            self.put_temporary_blob(account_id, raw_message.as_ref(), 60)
                 .await
+                .map(|(hash, op)| (hash, Some(op)))
                 .caused_by(trc::location!())?
-                .hash
         };
 
         // Assign IMAP UIDs
         let mut mailbox_ids = Vec::with_capacity(params.mailbox_ids.len());
         let mut imap_uids = Vec::with_capacity(params.mailbox_ids.len());
-        for mailbox_id in &params.mailbox_ids {
-            let uid = self
-                .assign_imap_uid(account_id, *mailbox_id)
-                .await
-                .caused_by(trc::location!())?;
-            mailbox_ids.push(UidMailbox::new(*mailbox_id, uid));
+        let mut ids = self
+            .assign_email_ids(account_id, params.mailbox_ids.iter().copied(), true)
+            .await
+            .caused_by(trc::location!())?;
+        let document_id = ids.next().unwrap();
+        for (uid, mailbox_id) in ids.zip(params.mailbox_ids.iter().copied()) {
+            mailbox_ids.push(UidMailbox::new(mailbox_id, uid));
             imap_uids.push(uid);
         }
 
@@ -564,13 +566,6 @@ impl EmailIngest for Server {
             .map(|m| trc::Value::from(m.mailbox_id))
             .collect::<Vec<_>>();
         batch.with_account_id(account_id);
-
-        // Obtain document ID
-        let document_id = self
-            .store()
-            .assign_document_ids(account_id, Collection::Email, 1)
-            .await
-            .caused_by(trc::location!())?;
 
         // Determine thread id
         let thread_id = if let Some(thread_id) = thread_result.thread_id {
@@ -618,6 +613,10 @@ impl EmailIngest for Server {
                 }),
                 vec![],
             );
+
+        if let Some(blob_hold) = blob_hold {
+            batch.clear(blob_hold);
+        }
 
         // Merge threads if necessary
         if let Some(merge_threads) = MergeThreadIds::new(thread_result).serialize() {
@@ -792,20 +791,48 @@ impl EmailIngest for Server {
         }
     }
 
-    async fn assign_imap_uid(&self, account_id: u32, mailbox_id: u32) -> trc::Result<u32> {
+    async fn assign_email_ids(
+        &self,
+        account_id: u32,
+        mailbox_ids: impl IntoIterator<Item = u32> + Sync + Send,
+        generate_email_id: bool,
+    ) -> trc::Result<impl Iterator<Item = u32> + 'static> {
         // Increment UID next
         let mut batch = BatchBuilder::new();
-        batch
-            .with_account_id(account_id)
-            .with_collection(Collection::Mailbox)
-            .with_document(mailbox_id)
-            .add_and_get(MailboxField::UidCounter, 1);
-        self.core
-            .storage
-            .data
-            .write(batch.build_all())
-            .await
-            .and_then(|v| v.last_counter_id().map(|id| id as u32))
+        batch.with_account_id(account_id);
+
+        let mut expected_ids = 0;
+        if generate_email_id {
+            batch
+                .with_collection(Collection::Email)
+                .add_and_get(ValueClass::DocumentId, 1);
+            expected_ids += 1;
+        }
+
+        batch.with_collection(Collection::Mailbox);
+
+        for mailbox_id in mailbox_ids {
+            batch
+                .with_document(mailbox_id)
+                .add_and_get(MailboxField::UidCounter, 1);
+            expected_ids += 1;
+        }
+
+        let ids = if expected_ids > 0 {
+            self.core.storage.data.write(batch.build_all()).await?
+        } else {
+            AssignedIds::default()
+        };
+        if ids.ids.len() == expected_ids {
+            Ok(ids.ids.into_iter().map(|id| match id {
+                AssignedId::Counter(id) => id as u32,
+                AssignedId::ChangeId(_) => unreachable!(),
+            }))
+        } else {
+            Err(trc::StoreEvent::UnexpectedError
+                .caused_by(trc::location!())
+                .ctx(trc::Key::Reason, "No all document ids were generated"))
+        }
     }
 
     fn email_bayes_can_train(&self, access_token: &AccessToken) -> bool {

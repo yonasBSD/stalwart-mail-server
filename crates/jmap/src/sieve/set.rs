@@ -117,7 +117,9 @@ impl SieveScriptSet for Server {
                     Ok((mut builder, Some(blob))) => {
                         // Store blob
                         let sieve = &mut builder.changes_mut().unwrap();
-                        sieve.blob_hash = self.put_blob(account_id, &blob, false).await?.hash;
+                        let (blob_hash, blob_hold) =
+                            self.put_temporary_blob(account_id, &blob, 60).await?;
+                        sieve.blob_hash = blob_hash;
                         let blob_size = sieve.size as usize;
                         let blob_hash = sieve.blob_hash.clone();
 
@@ -133,6 +135,7 @@ impl SieveScriptSet for Server {
                             .with_document(document_id)
                             .custom(builder.with_access_token(ctx.access_token))
                             .caused_by(trc::location!())?
+                            .clear(blob_hold)
                             .commit_point();
 
                         let mut result = Map::with_capacity(1)
@@ -222,7 +225,10 @@ impl SieveScriptSet for Server {
                         let blob_id = if let Some(blob) = blob {
                             // Store blob
                             let sieve = &mut builder.changes_mut().unwrap();
-                            sieve.blob_hash = self.put_blob(account_id, &blob, false).await?.hash;
+                            let (blob_hash, blob_hold) =
+                                self.put_temporary_blob(account_id, &blob, 60).await?;
+                            sieve.blob_hash = blob_hash;
+                            batch.clear(blob_hold);
 
                             BlobId {
                                 hash: sieve.blob_hash.clone(),

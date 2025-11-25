@@ -116,12 +116,10 @@ impl<T: SessionStream> Session<T> {
                 .caused_by(trc::location!())?;
 
             // Write script blob
-            let blob_hash = self
+            let (blob_hash, blob_hold) = self
                 .server
-                .put_blob(account_id, &script_bytes, false)
-                .await
-                .caused_by(trc::location!())?
-                .hash;
+                .put_temporary_blob(account_id, &script_bytes, 60)
+                .await?;
 
             // Write record
             let mut batch = BatchBuilder::new();
@@ -141,7 +139,8 @@ impl<T: SessionStream> Session<T> {
                         .with_current(script)
                         .with_access_token(access_token),
                 )
-                .caused_by(trc::location!())?;
+                .caused_by(trc::location!())?
+                .clear(blob_hold);
 
             self.server
                 .commit_batch(batch)
@@ -158,11 +157,10 @@ impl<T: SessionStream> Session<T> {
             );
         } else {
             // Write script blob
-            let blob_hash = self
+            let (blob_hash, blob_hold) = self
                 .server
-                .put_blob(account_id, &script_bytes, false)
-                .await?
-                .hash;
+                .put_temporary_blob(account_id, &script_bytes, 60)
+                .await?;
 
             // Write record
             let mut batch = BatchBuilder::new();
@@ -184,7 +182,8 @@ impl<T: SessionStream> Session<T> {
                         )
                         .with_access_token(access_token),
                 )
-                .caused_by(trc::location!())?;
+                .caused_by(trc::location!())?
+                .clear(blob_hold);
 
             self.server
                 .commit_batch(batch)

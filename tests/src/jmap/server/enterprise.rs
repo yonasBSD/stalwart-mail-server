@@ -25,14 +25,16 @@ use common::{
     core::BuildServer,
     enterprise::{
         Enterprise, MetricStore, TraceStore, Undelete, config::parse_metric_alerts,
-        license::LicenseKey, undelete::DeletedBlob,
+        license::LicenseKey,
     },
     telemetry::{
         metrics::store::{Metric, MetricsStore, SharedMetricHistory},
         tracers::store::TracingStore,
     },
 };
-use http::management::enterprise::undelete::{UndeleteRequest, UndeleteResponse};
+use http::management::enterprise::undelete::{
+    DeletedBlobResponse, DeletedItemResponse, UndeleteRequest, UndeleteResponse,
+};
 use imap_proto::ResponseType;
 use nlp::language::Language;
 use std::{sync::Arc, time::Duration};
@@ -435,13 +437,22 @@ async fn undelete(params: &mut JMAPTest) {
     wait_for_index(&params.server).await;
     tokio::time::sleep(Duration::from_millis(200)).await;
     let deleted = api
-        .get::<List<DeletedBlob<String, String, String>>>("/api/store/undelete/jdoe@example.com")
+        .get::<List<DeletedBlobResponse>>("/api/store/undelete/jdoe@example.com")
         .await
         .unwrap()
         .unwrap_data()
         .items;
     assert_eq!(deleted.len(), 1);
     let deleted = deleted.into_iter().next().unwrap();
+    match deleted.item {
+        DeletedItemResponse::Email { from, subject, .. } => {
+            assert_eq!(subject.as_ref(), "undelete test");
+            assert_eq!(from.as_ref(), "john@example.com");
+        }
+        other => {
+            panic!("Unexpected deleted item response: {:?}", other);
+        }
+    }
 
     // Undelete
     let result = api
@@ -449,7 +460,7 @@ async fn undelete(params: &mut JMAPTest) {
             "/api/store/undelete/jdoe@example.com",
             &vec![UndeleteRequest {
                 hash: deleted.hash,
-                collection: deleted.collection,
+                collection: "email".to_string(),
                 time: deleted.deleted_at,
                 cancel_deletion: deleted.expires_at.into(),
             }],

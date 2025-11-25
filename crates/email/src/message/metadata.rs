@@ -994,6 +994,16 @@ impl ArchivedMetadataHeaderValue {
             _ => None,
         }
     }
+
+    pub fn as_single_address(&self) -> Option<&ArchivedMetadataAddress> {
+        match self {
+            ArchivedMetadataHeaderValue::AddressList(list) => list.first(),
+            ArchivedMetadataHeaderValue::AddressGroup(groups) => {
+                groups.first().and_then(|g| g.addresses.first())
+            }
+            _ => None,
+        }
+    }
 }
 
 impl ArchivedUidMailbox {

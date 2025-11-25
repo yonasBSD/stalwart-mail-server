@@ -10,6 +10,7 @@ use store::{
     *,
 };
 use trc::AddContext;
+use types::blob_hash::{BLOB_HASH_LEN, BlobHash};
 
 pub async fn store_destroy(store: &Store) {
     store_destroy_sql_indexes(store).await;
@@ -19,7 +20,7 @@ pub async fn store_destroy(store: &Store) {
         SUBSPACE_DIRECTORY,
         SUBSPACE_TASK_QUEUE,
         SUBSPACE_INDEXES,
-        SUBSPACE_BLOB_RESERVE,
+        SUBSPACE_BLOB_EXTRA,
         SUBSPACE_BLOB_LINK,
         SUBSPACE_LOGS,
         SUBSPACE_IN_MEMORY_COUNTER,
@@ -102,18 +103,17 @@ pub async fn store_blob_expire_all(store: &Store) {
         account_id: 0,
         collection: 0,
         document_id: 0,
-        class: ValueClass::Blob(BlobOp::Reserve {
-            hash: types::blob_hash::BlobHash::default(),
-            until: 0,
+        class: ValueClass::Blob(BlobOp::Commit {
+            hash: BlobHash::default(),
         }),
     };
     let to_key = ValueKey {
         account_id: u32::MAX,
-        collection: 0,
-        document_id: 0,
-        class: ValueClass::Blob(BlobOp::Reserve {
-            hash: types::blob_hash::BlobHash::default(),
-            until: 0,
+        collection: u8::MAX,
+        document_id: u32::MAX,
+        class: ValueClass::Blob(BlobOp::Link {
+            hash: BlobHash::new_max(),
+            to: BlobLink::Document,
         }),
     };
     let mut batch = BatchBuilder::new();
@@ -122,25 +122,31 @@ pub async fn store_blob_expire_all(store: &Store) {
         .iterate(
             IterateParams::new(from_key, to_key).ascending().no_values(),
             |key, _| {
-                let account_id = key.deserialize_be_u32(0).caused_by(trc::location!())?;
-                if account_id != last_account_id {
-                    last_account_id = account_id;
-                    batch.with_account_id(account_id);
-                }
+                if key.len() == BLOB_HASH_LEN + U32_LEN + U64_LEN {
+                    let account_id = key
+                        .deserialize_be_u32(BLOB_HASH_LEN)
+                        .caused_by(trc::location!())?;
+                    if account_id != last_account_id {
+                        last_account_id = account_id;
+                        batch.with_account_id(account_id);
+                    }
+                    let hash =
+                        BlobHash::try_from_hash_slice(key.get(..BLOB_HASH_LEN).unwrap()).unwrap();
+                    let until = key
+                        .deserialize_be_u64(BLOB_HASH_LEN + U32_LEN)
+                        .caused_by(trc::location!())?;
 
-                batch.any_op(Operation::Value {
-                    class: ValueClass::Blob(BlobOp::Reserve {
-                        hash: types::blob_hash::BlobHash::try_from_hash_slice(
-                            key.get(U32_LEN..U32_LEN + types::blob_hash::BLOB_HASH_LEN)
-                                .unwrap(),
-                        )
-                        .unwrap(),
-                        until: key
-                            .deserialize_be_u64(key.len() - U64_LEN)
-                            .caused_by(trc::location!())?,
-                    }),
-                    op: ValueOp::Clear,
-                });
+                    batch
+                        .clear(ValueClass::Blob(BlobOp::Link {
+                            hash: hash.clone(),
+                            to: BlobLink::Temporary { until },
+                        }))
+                        .clear(ValueClass::Blob(BlobOp::Quota {
+                            hash: hash.clone(),
+                            until,
+                        }))
+                        .clear(ValueClass::Blob(BlobOp::Undelete { hash, until }));
+                }
 
                 Ok(true)
             },
@@ -211,7 +217,7 @@ pub async fn store_lookup_expire_all(store: &Store) {
 }
 
 #[allow(unused_variables)]
-pub async fn store_assert_is_empty(store: &Store, blob_store: BlobStore) {
+pub async fn store_assert_is_empty(store: &Store, blob_store: BlobStore, include_directory: bool) {
     store_blob_expire_all(store).await;
     store_lookup_expire_all(store).await;
     store.purge_blobs(blob_store).await.unwrap();
@@ -222,7 +228,7 @@ pub async fn store_assert_is_empty(store: &Store, blob_store: BlobStore) {
 
     for (subspace, with_values) in [
         (SUBSPACE_ACL, true),
-        //(SUBSPACE_DIRECTORY, true),
+        (SUBSPACE_DIRECTORY, true),
         (SUBSPACE_TASK_QUEUE, true),
         (SUBSPACE_IN_MEMORY_VALUE, true),
         (SUBSPACE_IN_MEMORY_COUNTER, false),
@@ -232,7 +238,7 @@ pub async fn store_assert_is_empty(store: &Store, blob_store: BlobStore) {
         (SUBSPACE_QUEUE_EVENT, true),
         (SUBSPACE_REPORT_OUT, true),
         (SUBSPACE_REPORT_IN, true),
-        (SUBSPACE_BLOB_RESERVE, true),
+        (SUBSPACE_BLOB_EXTRA, true),
         (SUBSPACE_BLOB_LINK, true),
         (SUBSPACE_BLOBS, true),
         (SUBSPACE_COUNTER, false),
@@ -242,7 +248,9 @@ pub async fn store_assert_is_empty(store: &Store, blob_store: BlobStore) {
         (SUBSPACE_TELEMETRY_METRIC, true),
         (SUBSPACE_SEARCH_INDEX, true),
     ] {
-        if subspace == SUBSPACE_SEARCH_INDEX && store.is_pg_or_mysql() {
+        if (subspace == SUBSPACE_SEARCH_INDEX && store.is_pg_or_mysql())
+            || (subspace == SUBSPACE_DIRECTORY && !include_directory)
+        {
             continue;
         }
 

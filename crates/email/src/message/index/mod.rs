@@ -4,9 +4,13 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::message::metadata::{ArchivedMessageData, MessageData};
-use common::storage::index::{IndexValue, IndexableObject};
-use types::{blob_hash::BlobHash, collection::SyncCollection};
+use crate::{
+    mailbox::{JUNK_ID, TRASH_ID},
+    message::metadata::{ArchivedMessageData, MessageData},
+};
+use common::storage::index::{IndexItem, IndexValue, IndexableObject};
+use store::write::now;
+use types::{blob_hash::BlobHash, collection::SyncCollection, field::EmailField};
 
 pub mod extractors;
 pub mod metadata;
@@ -17,7 +21,23 @@ pub const PREVIEW_LENGTH: usize = 256;
 
 impl IndexableObject for MessageData {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
+        let mut mailboxes = Vec::with_capacity(self.mailboxes.len());
+        let mut is_in_trash = false;
+
+        for mailbox in &self.mailboxes {
+            mailboxes.push(mailbox.mailbox_id);
+            is_in_trash |= mailbox.mailbox_id == TRASH_ID || mailbox.mailbox_id == JUNK_ID;
+        }
+
         [
+            IndexValue::Property {
+                field: EmailField::DeletedAt.into(),
+                value: if is_in_trash {
+                    IndexItem::from(now())
+                } else {
+                    IndexItem::None
+                },
+            },
             IndexValue::Quota { used: self.size },
             IndexValue::LogItem {
                 sync_collection: SyncCollection::Email,
@@ -29,7 +49,7 @@ impl IndexableObject for MessageData {
             },
             IndexValue::LogContainerProperty {
                 sync_collection: SyncCollection::Email,
-                ids: self.mailboxes.iter().map(|m| m.mailbox_id).collect(),
+                ids: mailboxes,
             },
         ]
         .into_iter()
@@ -38,7 +58,24 @@ impl IndexableObject for MessageData {
 
 impl IndexableObject for &ArchivedMessageData {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
+        let mut mailboxes = Vec::with_capacity(self.mailboxes.len());
+        let mut is_in_trash = false;
+
+        for mailbox in self.mailboxes.iter() {
+            let mailbox_id = mailbox.mailbox_id.to_native();
+            mailboxes.push(mailbox_id);
+            is_in_trash |= mailbox_id == TRASH_ID || mailbox_id == JUNK_ID;
+        }
+
         [
+            IndexValue::Property {
+                field: EmailField::DeletedAt.into(),
+                value: if is_in_trash {
+                    IndexItem::from(now())
+                } else {
+                    IndexItem::None
+                },
+            },
             IndexValue::Quota {
                 used: self.size.to_native(),
             },
@@ -52,11 +89,7 @@ impl IndexableObject for &ArchivedMessageData {
             },
             IndexValue::LogContainerProperty {
                 sync_collection: SyncCollection::Email,
-                ids: self
-                    .mailboxes
-                    .iter()
-                    .map(|m| m.mailbox_id.to_native())
-                    .collect(),
+                ids: mailboxes,
             },
         ]
         .into_iter()

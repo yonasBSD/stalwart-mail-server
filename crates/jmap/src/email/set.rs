@@ -974,13 +974,25 @@ impl EmailSet for Server {
                 }
 
                 // Obtain IMAP UIDs for added mailboxes
-                for uid_mailbox in &mut new_data.mailboxes {
-                    if uid_mailbox.uid == 0 {
-                        uid_mailbox.uid = self
-                            .assign_imap_uid(account_id, uid_mailbox.mailbox_id)
-                            .await
-                            .caused_by(trc::location!())?;
-                    }
+                let ids = self
+                    .assign_email_ids(
+                        account_id,
+                        new_data
+                            .mailboxes
+                            .iter()
+                            .filter(|m| m.uid == 0)
+                            .map(|m| m.mailbox_id),
+                        false,
+                    )
+                    .await
+                    .caused_by(trc::location!())?;
+                for (uid_mailbox, uid) in new_data
+                    .mailboxes
+                    .iter_mut()
+                    .filter(|m| m.uid == 0)
+                    .zip(ids)
+                {
+                    uid_mailbox.uid = uid;
                 }
             }
 

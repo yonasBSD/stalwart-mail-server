@@ -4,11 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::sync::Arc;
+
 use crate::{
     directory::{DirectoryTest, IntoTestPrincipal, TestPrincipal},
-    store::cleanup::store_destroy,
+    store::cleanup::{store_assert_is_empty, store_destroy},
 };
 use ahash::AHashSet;
+use common::{Core, Inner, Server, config::storage::Storage};
 use directory::{
     Permission, QueryBy, QueryParams, Type,
     backend::{
@@ -20,9 +23,10 @@ use directory::{
         },
     },
 };
+use http::management::stores::destroy_account_data;
 use mail_send::Credentials;
 use store::{
-    IndexKeyPrefix, IterateParams, Store, ValueKey,
+    IterateParams, Store, ValueKey,
     write::{BatchBuilder, ValueClass},
 };
 use types::collection::Collection;
@@ -678,7 +682,20 @@ async fn internal_directory() {
         }
 
         // Delete John's account and make sure his records are gone
+        let server = Server {
+            inner: Arc::new(Inner::default()),
+            core: Arc::new(Core {
+                storage: Storage {
+                    data: store.clone(),
+                    blob: store.clone().into(),
+                    fts: store.clone().into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }),
+        };
         store.delete_principal(QueryBy::Id(john_id)).await.unwrap();
+        destroy_account_data(&server, john_id, true).await.unwrap();
         assert_eq!(store.get_principal_id("john.doe").await.unwrap(), None);
         assert_eq!(
             store.email_to_id("john.doe@example.org").await.unwrap(),
@@ -746,6 +763,16 @@ async fn internal_directory() {
                 .unwrap(),
             Some("hello".into())
         );
+
+        // Clean up
+        destroy_account_data(&server, jane_id, true).await.unwrap();
+        for principal_name in ["jane", "list", "sales", "support", "example.org"] {
+            store
+                .delete_principal(QueryBy::Name(principal_name))
+                .await
+                .unwrap();
+        }
+        store_assert_is_empty(&store, store.clone().into(), true).await;
     }
 }
 
@@ -1011,15 +1038,17 @@ async fn account_has_emails(store: &Store, account_id: u32) -> bool {
     store
         .iterate(
             IterateParams::new(
-                IndexKeyPrefix {
+                ValueKey {
                     account_id,
                     collection: Collection::Email.into(),
-                    field: 0,
+                    document_id: 0,
+                    class: ValueClass::Property(0),
                 },
-                IndexKeyPrefix {
+                ValueKey {
                     account_id,
                     collection: Collection::Email.into(),
-                    field: u8::MAX,
+                    document_id: u32::MAX,
+                    class: ValueClass::Property(u8::MAX),
                 },
             )
             .no_values(),

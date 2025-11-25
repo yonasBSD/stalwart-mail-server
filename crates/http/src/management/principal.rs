@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{KV_BAYES_MODEL_USER, Server, auth::AccessToken};
+use crate::management::stores::destroy_account_data;
+use common::{Server, auth::AccessToken};
 use directory::{
     DirectoryInner, Permission, PrincipalData, QueryBy, QueryParams, Type,
     backend::internal::{
@@ -20,7 +21,6 @@ use hyper::{Method, header};
 use serde_json::json;
 use std::future::Future;
 use std::sync::Arc;
-use store::{search::SearchQuery, write::SearchIndex};
 use trc::AddContext;
 use utils::url_params::UrlParams;
 
@@ -376,12 +376,6 @@ impl PrincipalManager for Server {
                 if found {
                     let server = self.clone();
                     tokio::spawn(async move {
-                        let has_bayes = server
-                            .core
-                            .spam
-                            .bayes
-                            .as_ref()
-                            .is_some_and(|c| c.account_classify);
                         for principal in principals.items {
                             // Delete account
                             match server
@@ -399,41 +393,14 @@ impl PrincipalManager for Server {
                                 }
                             }
 
-                            if matches!(typ, Type::Individual | Type::Group) {
-                                // Remove search index
-                                for index in [
-                                    SearchIndex::Email,
-                                    SearchIndex::Contacts,
-                                    SearchIndex::Calendar,
-                                ] {
-                                    if let Err(err) = server
-                                        .core
-                                        .storage
-                                        .fts
-                                        .unindex(
-                                            SearchQuery::new(index).with_account_id(principal.id()),
-                                        )
-                                        .await
-                                    {
-                                        trc::error!(err.details("Failed to delete FTS index"));
-                                    }
-                                }
-
-                                // Delete bayes model
-                                if has_bayes {
-                                    let mut key =
-                                        Vec::with_capacity(std::mem::size_of::<u32>() + 1);
-                                    key.push(KV_BAYES_MODEL_USER);
-                                    key.extend_from_slice(&principal.id().to_be_bytes());
-
-                                    if let Err(err) =
-                                        server.in_memory_store().key_delete_prefix(&key).await
-                                    {
-                                        trc::error!(
-                                            err.details("Failed to delete user bayes model")
-                                        );
-                                    }
-                                }
+                            if let Err(err) = destroy_account_data(
+                                &server,
+                                principal.id(),
+                                matches!(typ, Type::Individual | Type::Group),
+                            )
+                            .await
+                            {
+                                trc::error!(err.details("Failed to delete principal"));
                             }
                         }
                     });
@@ -527,42 +494,14 @@ impl PrincipalManager for Server {
                             .delete_principal(QueryBy::Id(account_id))
                             .await?;
 
-                        if matches!(typ, Type::Individual | Type::Group) {
-                            // Remove FTS index
-                            for index in [
-                                SearchIndex::Email,
-                                SearchIndex::Contacts,
-                                SearchIndex::Calendar,
-                            ] {
-                                if let Err(err) = self
-                                    .core
-                                    .storage
-                                    .fts
-                                    .unindex(SearchQuery::new(index).with_account_id(account_id))
-                                    .await
-                                {
-                                    trc::error!(err.details("Failed to delete FTS index"));
-                                }
-                            }
-
-                            // Delete bayes model
-                            if self
-                                .core
-                                .spam
-                                .bayes
-                                .as_ref()
-                                .is_some_and(|c| c.account_classify)
-                            {
-                                let mut key = Vec::with_capacity(std::mem::size_of::<u32>() + 1);
-                                key.push(KV_BAYES_MODEL_USER);
-                                key.extend_from_slice(&account_id.to_be_bytes());
-
-                                if let Err(err) =
-                                    self.in_memory_store().key_delete_prefix(&key).await
-                                {
-                                    trc::error!(err.details("Failed to delete user bayes model"));
-                                }
-                            }
+                        if let Err(err) = destroy_account_data(
+                            self,
+                            account_id,
+                            matches!(typ, Type::Individual | Type::Group),
+                        )
+                        .await
+                        {
+                            trc::error!(err.details("Failed to delete principal"));
                         }
 
                         // Increment revision

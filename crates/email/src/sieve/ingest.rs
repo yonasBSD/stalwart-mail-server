@@ -23,7 +23,9 @@ use store::{
     Deserialize, Serialize, ValueKey,
     ahash::AHashMap,
     dispatch::lookup::KeyValue,
-    write::{AlignedBytes, Archive, ArchiveVersion, Archiver, BatchBuilder, BlobOp, ValueClass},
+    write::{
+        AlignedBytes, Archive, ArchiveVersion, Archiver, BatchBuilder, BlobLink, BlobOp, ValueClass,
+    },
 };
 use trc::{AddContext, SieveEvent};
 use types::{
@@ -697,10 +699,9 @@ impl SieveScriptIngest for Server {
                     updated_sieve_bytes.extend_from_slice(&compiled_bytes);
 
                     // Store updated blob
-                    let new_blob_hash = self
-                        .put_blob(account_id, &updated_sieve_bytes, false)
-                        .await?
-                        .hash;
+                    let (new_blob_hash, new_blob_hold) = self
+                        .put_temporary_blob(account_id, &updated_sieve_bytes, 60)
+                        .await?;
                     let mut new_script_object =
                         rkyv::deserialize(unarchived_script).caused_by(trc::location!())?;
                     let blob_hash =
@@ -718,13 +719,18 @@ impl SieveScriptIngest for Server {
                             SieveField::Archive,
                             new_archive.serialize().caused_by(trc::location!())?,
                         )
-                        .clear(BlobOp::Link { hash: blob_hash })
+                        .clear(BlobOp::Link {
+                            hash: blob_hash,
+                            to: BlobLink::Document,
+                        })
                         .set(
                             BlobOp::Link {
                                 hash: new_blob_hash,
+                                to: BlobLink::Document,
                             },
                             Vec::new(),
-                        );
+                        )
+                        .clear(new_blob_hold);
                     self.store()
                         .write(batch.build_all())
                         .await
