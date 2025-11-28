@@ -6,7 +6,7 @@
 
 use std::{borrow::Cow, collections::HashSet, future::Future, time::Duration};
 
-use common::{KV_BAYES_MODEL_GLOBAL, KV_BAYES_MODEL_USER, Server, ip_to_bytes};
+use common::{Server, ip_to_bytes};
 use mail_auth::DmarcResult;
 use nlp::{
     bayes::{

@@ -14,8 +14,7 @@ use crate::{
         pyzor::SpamFilterAnalyzePyzor, received::SpamFilterAnalyzeReceived,
         recipient::SpamFilterAnalyzeRecipient, replyto::SpamFilterAnalyzeReplyTo,
         reputation::SpamFilterAnalyzeReputation, rules::SpamFilterAnalyzeRules,
-        subject::SpamFilterAnalyzeSubject, trusted_reply::SpamFilterAnalyzeTrustedReply,
-        url::SpamFilterAnalyzeUrl,
+        subject::SpamFilterAnalyzeSubject, url::SpamFilterAnalyzeUrl,
     },
     modules::bayes::BayesClassifier,
 };
@@ -203,8 +202,8 @@ impl SpamFilterAnalyzeScore for Server {
 
         // SPDX-SnippetEnd
 
-        // Trusted reply analysis
-        self.spam_filter_analyze_reply_in(ctx).await;
+        // Reputation tracking and adjust score
+        self.spam_filter_analyze_reputation(ctx).await;
 
         // Spam trap
         self.spam_filter_analyze_spam_trap(ctx).await;
@@ -224,9 +223,6 @@ impl SpamFilterAnalyzeScore for Server {
             SpamFilterAction::Discard => return SpamFilterAction::Discard,
             SpamFilterAction::Reject => return SpamFilterAction::Reject,
         }
-
-        // Reputation tracking and adjust score
-        self.spam_filter_analyze_reputation(ctx).await;
 
         // Final score calculation
         self.spam_filter_finalize(ctx).await

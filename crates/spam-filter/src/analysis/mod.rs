@@ -37,7 +37,6 @@ pub mod reputation;
 pub mod rules;
 pub mod score;
 pub mod subject;
-pub mod trusted_reply;
 pub mod url;
 
 // SPDX-SnippetBegin

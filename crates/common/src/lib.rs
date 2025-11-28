@@ -28,7 +28,7 @@ use ipc::{BroadcastEvent, HousekeeperEvent, PushEvent, QueueEvent, ReportingEven
 use listener::{asn::AsnGeoLookupData, blocked::Security, tls::AcmeProviders};
 use mail_auth::{MX, Txt};
 use manager::webadmin::{Resource, WebAdminManager};
-use nlp::bayes::{TokenHash, Weights};
+use nlp::classifier::sgd::SGDClassifier;
 use parking_lot::{Mutex, RwLock};
 use rustls::sign::CertifiedKey;
 use std::{
@@ -73,6 +73,8 @@ pub mod enterprise;
 
 pub use psl;
 
+use crate::config::spamfilter::Reputation;
+
 pub static VERSION_PRIVATE: &str = env!("CARGO_PKG_VERSION");
 pub static VERSION_PUBLIC: &str = "1.0.0";
 
@@ -109,14 +111,7 @@ pub const KV_RATE_LIMIT_CONTACT: u8 = 7;
 pub const KV_RATE_LIMIT_HTTP_AUTHENTICATED: u8 = 8;
 pub const KV_RATE_LIMIT_HTTP_ANONYMOUS: u8 = 9;
 pub const KV_RATE_LIMIT_IMAP: u8 = 10;
-pub const KV_REPUTATION_IP: u8 = 12;
-pub const KV_REPUTATION_FROM: u8 = 13;
-pub const KV_REPUTATION_DOMAIN: u8 = 14;
-pub const KV_REPUTATION_ASN: u8 = 15;
 pub const KV_GREYLIST: u8 = 16;
-pub const KV_BAYES_MODEL_GLOBAL: u8 = 17;
-pub const KV_BAYES_MODEL_USER: u8 = 18;
-pub const KV_TRUSTED_REPLY: u8 = 19;
 pub const KV_LOCK_PURGE_ACCOUNT: u8 = 20;
 pub const KV_LOCK_QUEUE_MESSAGE: u8 = 21;
 pub const KV_LOCK_QUEUE_REPORT: u8 = 22;
@@ -139,6 +134,9 @@ pub struct Inner {
 }
 
 pub struct Data {
+    pub spam_classifier: ArcSwap<SGDClassifier>,
+    pub spam_reputation: ArcSwap<Reputation>,
+
     pub tls_certificates: ArcSwap<AHashMap<String, Arc<CertifiedKey>>>,
     pub tls_self_signed_cert: Option<Arc<CertifiedKey>>,
 
@@ -167,8 +165,6 @@ pub struct Caches {
     pub contacts: Cache<u32, CacheSwap<DavResources>>,
     pub events: Cache<u32, CacheSwap<DavResources>>,
     pub scheduling: Cache<u32, CacheSwap<DavResources>>,
-
-    pub bayes: CacheWithTtl<TokenHash, Weights>,
 
     pub dns_txt: CacheWithTtl<String, Txt>,
     pub dns_mx: CacheWithTtl<String, Arc<Vec<MX>>>,
@@ -488,7 +484,6 @@ impl Default for Caches {
             contacts: Cache::new(1024, 10 * 1024 * 1024),
             events: Cache::new(1024, 10 * 1024 * 1024),
             scheduling: Cache::new(1024, 10 * 1024 * 1024),
-            bayes: CacheWithTtl::new(1024, 10 * 1024 * 1024),
             dns_rbl: CacheWithTtl::new(1024, 10 * 1024 * 1024),
             dns_txt: CacheWithTtl::new(1024, 10 * 1024 * 1024),
             dns_mx: CacheWithTtl::new(1024, 10 * 1024 * 1024),
