@@ -266,14 +266,20 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
                             });
                         }
                         HousekeeperEvent::Exit => {
-                            trc::event!(Housekeeper(trc::HousekeeperEvent::Stop));
+                            trc::event!(
+                                Housekeeper(trc::HousekeeperEvent::Stop),
+                                Reason = "Shutdown"
+                            );
 
                             return;
                         }
                     }
                 }
                 Ok(None) => {
-                    trc::event!(Housekeeper(trc::HousekeeperEvent::Stop));
+                    trc::event!(
+                        Housekeeper(trc::HousekeeperEvent::Stop),
+                        Reason = "Channel closed"
+                    );
                     return;
                 }
                 Err(_) => {
