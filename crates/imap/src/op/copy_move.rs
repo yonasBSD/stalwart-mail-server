@@ -204,7 +204,6 @@ impl<T: SessionStream> SessionData<T> {
             // Mailboxes are in the same account
             let account_id = src_mailbox.id.account_id;
             let dest_mailbox_id = UidMailbox::new_unassigned(dest_mailbox_id);
-            let can_spam_train = self.server.email_bayes_can_train(&access_token);
             let mut has_spam_train_tasks = false;
             let mut batch = BatchBuilder::new();
 
@@ -321,28 +320,28 @@ impl<T: SessionStream> SessionData<T> {
                 }
 
                 // Add bayes train task
-                if can_spam_train {
-                    if dest_mailbox_id.mailbox_id == JUNK_ID {
-                        batch.set(
-                            ValueClass::TaskQueue(TaskQueueClass::BayesTrain {
-                                due: TaskEpoch::now(),
-                                learn_spam: true,
-                            }),
-                            vec![],
-                        );
-                        has_spam_train_tasks = true;
-                    } else if src_mailbox.id.mailbox_id == JUNK_ID
-                        && dest_mailbox_id.mailbox_id != TRASH_ID
-                    {
-                        batch.set(
-                            ValueClass::TaskQueue(TaskQueueClass::BayesTrain {
-                                due: TaskEpoch::now(),
-                                learn_spam: false,
-                            }),
-                            vec![],
-                        );
-                        has_spam_train_tasks = true;
-                    }
+                if dest_mailbox_id.mailbox_id == JUNK_ID {
+                    batch.set(
+                        ValueClass::TaskQueue(TaskQueueClass::SpamTrain {
+                            due: TaskEpoch::now(),
+                            blob_hash: Default::default(),
+                            learn_spam: true,
+                        }),
+                        vec![],
+                    );
+                    has_spam_train_tasks = true;
+                } else if src_mailbox.id.mailbox_id == JUNK_ID
+                    && dest_mailbox_id.mailbox_id != TRASH_ID
+                {
+                    batch.set(
+                        ValueClass::TaskQueue(TaskQueueClass::SpamTrain {
+                            due: TaskEpoch::now(),
+                            blob_hash: Default::default(),
+                            learn_spam: false,
+                        }),
+                        vec![],
+                    );
+                    has_spam_train_tasks = true;
                 }
                 batch.commit_point();
 

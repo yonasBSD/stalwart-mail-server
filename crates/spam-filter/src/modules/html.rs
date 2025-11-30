@@ -4,24 +4,24 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use compact_str::CompactString;
+
 use mail_parser::decoders::html::add_html_token;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum HtmlToken {
     StartTag {
         name: u64,
-        attributes: Vec<(u64, Option<CompactString>)>,
+        attributes: Vec<(u64, Option<String>)>,
         is_self_closing: bool,
     },
     EndTag {
         name: u64,
     },
     Comment {
-        text: CompactString,
+        text: String,
     },
     Text {
-        text: CompactString,
+        text: String,
     },
 }
 
@@ -131,7 +131,7 @@ pub fn html_to_tokens(input: &str) -> Vec<HtmlToken> {
                         last_ch = ch;
                     }
                     tags.push(HtmlToken::Comment {
-                        text: CompactString::from_utf8(comment).unwrap_or_default(),
+                        text: String::from_utf8(comment).unwrap_or_default(),
                     });
                 } else {
                     let mut is_end_tag = false;
@@ -157,7 +157,7 @@ pub fn html_to_tokens(input: &str) -> Vec<HtmlToken> {
                     let mut shift = 0;
 
                     let mut tag = 0;
-                    let mut attributes: Vec<(u64, Option<CompactString>)> = vec![];
+                    let mut attributes: Vec<(u64, Option<String>)> = vec![];
 
                     'outer: while let Some((_, &ch)) = iter.next() {
                         match ch {
@@ -203,7 +203,7 @@ pub fn html_to_tokens(input: &str) -> Vec<HtmlToken> {
                                     match ch {
                                         b'>' if !in_quote => {
                                             if !value.is_empty() {
-                                                let value = CompactString::from_utf8(value)
+                                                let value = String::from_utf8(value)
                                                     .unwrap_or_default();
                                                 if let Some((_, v)) = attributes.last_mut() {
                                                     *v = value.into();
@@ -232,7 +232,7 @@ pub fn html_to_tokens(input: &str) -> Vec<HtmlToken> {
                                 }
 
                                 if !value.is_empty() {
-                                    let value = CompactString::from_utf8(value).unwrap_or_default();
+                                    let value = String::from_utf8(value).unwrap_or_default();
                                     if let Some((_, v)) = attributes.last_mut() {
                                         *v = value.into();
                                     } else {

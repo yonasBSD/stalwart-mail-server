@@ -157,6 +157,8 @@ pub trait MessageCacheAccess {
 
     fn in_mailbox(&self, mailbox_id: u32) -> impl Iterator<Item = &MessageCache>;
 
+    fn in_mailboxes(&self, mailbox_ids: &[u32]) -> impl Iterator<Item = &MessageCache>;
+
     fn in_thread(&self, thread_id: u32) -> impl Iterator<Item = &MessageCache>;
 
     fn with_keyword(&self, keyword: &Keyword) -> impl Iterator<Item = &MessageCache>;
@@ -194,6 +196,14 @@ impl MessageCacheAccess for MessageStoreCache {
             .items
             .iter()
             .filter(move |m| m.mailboxes.iter().any(|m| m.mailbox_id == mailbox_id))
+    }
+
+    fn in_mailboxes(&self, mailbox_ids: &[u32]) -> impl Iterator<Item = &MessageCache> {
+        self.emails.items.iter().filter(move |m| {
+            m.mailboxes
+                .iter()
+                .any(|mb| mailbox_ids.contains(&mb.mailbox_id))
+        })
     }
 
     fn in_thread(&self, thread_id: u32) -> impl Iterator<Item = &MessageCache> {

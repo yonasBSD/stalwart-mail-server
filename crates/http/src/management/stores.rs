@@ -171,31 +171,7 @@ impl ManageStore for Server {
                     }
                     Some("rate-http-anonymous") => vec![KV_RATE_LIMIT_HTTP_ANONYMOUS].into(),
                     Some("rate-imap") => vec![KV_RATE_LIMIT_IMAP].into(),
-                    Some("reputation-ip") => vec![KV_REPUTATION_IP].into(),
-                    Some("reputation-from") => vec![KV_REPUTATION_FROM].into(),
-                    Some("reputation-domain") => vec![KV_REPUTATION_DOMAIN].into(),
-                    Some("reputation-asn") => vec![KV_REPUTATION_ASN].into(),
                     Some("greylist") => vec![KV_GREYLIST].into(),
-                    Some("bayes-account") => {
-                        if let Some(account) = path.get(5).copied() {
-                            let account_id = self
-                                .core
-                                .storage
-                                .data
-                                .get_principal_id(decode_path_element(account).as_ref())
-                                .await?
-                                .ok_or_else(|| trc::ManageEvent::NotFound.into_err())?;
-
-                            let mut key = Vec::with_capacity(std::mem::size_of::<u32>() + 1);
-                            key.push(KV_BAYES_MODEL_USER);
-                            key.extend_from_slice(&account_id.to_be_bytes());
-                            key.into()
-                        } else {
-                            vec![KV_BAYES_MODEL_USER].into()
-                        }
-                    }
-                    Some("bayes-global") => vec![KV_BAYES_MODEL_GLOBAL].into(),
-                    Some("trusted-reply") => vec![KV_TRUSTED_REPLY].into(),
                     Some("lock-purge-account") => vec![KV_LOCK_PURGE_ACCOUNT].into(),
                     Some("lock-queue-message") => vec![KV_LOCK_QUEUE_MESSAGE].into(),
                     Some("lock-queue-report") => vec![KV_LOCK_QUEUE_REPORT].into(),
@@ -512,23 +488,6 @@ pub async fn destroy_account_data(
                 .await
             {
                 trc::error!(err.details("Failed to delete FTS index"));
-            }
-        }
-
-        // Delete bayes model
-        if server
-            .core
-            .spam
-            .bayes
-            .as_ref()
-            .is_some_and(|c| c.account_classify)
-        {
-            let mut key = Vec::with_capacity(std::mem::size_of::<u32>() + 1);
-            key.push(KV_BAYES_MODEL_USER);
-            key.extend_from_slice(&account_id.to_be_bytes());
-
-            if let Err(err) = server.in_memory_store().key_delete_prefix(&key).await {
-                trc::error!(err.details("Failed to delete user bayes model"));
             }
         }
     }

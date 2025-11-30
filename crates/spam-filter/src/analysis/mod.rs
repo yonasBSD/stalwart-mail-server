@@ -10,14 +10,14 @@ use std::{
 };
 
 use common::{Server, config::spamfilter::Location};
-use compact_str::CompactString;
+
 use mail_parser::{Header, parsers::MessageStream};
 
 use crate::{
     Recipient, SpamFilterContext, SpamFilterInput, SpamFilterOutput, SpamFilterResult, TextPart,
 };
 
-pub mod bayes;
+pub mod classifier;
 pub mod date;
 pub mod dmarc;
 pub mod domain;
@@ -33,7 +33,6 @@ pub mod pyzor;
 pub mod received;
 pub mod recipient;
 pub mod replyto;
-pub mod reputation;
 pub mod rules;
 pub mod score;
 pub mod subject;
@@ -84,7 +83,7 @@ impl SpamFilterContext<'_> {
 }
 
 impl SpamFilterResult {
-    pub fn add_tag(&mut self, tag: impl Into<CompactString>) {
+    pub fn add_tag(&mut self, tag: impl Into<String>) {
         self.tags.insert(tag.into());
     }
 

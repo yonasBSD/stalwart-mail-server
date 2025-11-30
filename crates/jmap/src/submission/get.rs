@@ -292,7 +292,7 @@ fn build_address(
         .into()
 }
 
-fn format_archived_response(response: &ArchivedResponse<String>) -> String {
+fn format_archived_response(response: &ArchivedResponse<Box<str>>) -> String {
     format!(
         "Code: {}, Enhanced code: {}.{}.{}, Message: {}",
         response.code,

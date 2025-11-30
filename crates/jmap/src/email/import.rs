@@ -77,7 +77,6 @@ impl EmailImport for Server {
             created: VecMap::with_capacity(request.emails.len()),
             not_created: VecMap::new(),
         };
-        let can_train_spam = self.email_bayes_can_train(access_token);
 
         'outer: for (id, email) in request.emails {
             // Validate mailboxIds
@@ -153,9 +152,9 @@ impl EmailImport for Server {
                     mailbox_ids,
                     keywords: email.keywords,
                     received_at: email.received_at.map(|r| r.into()),
-                    source: IngestSource::Jmap,
-                    spam_classify: false,
-                    spam_train: can_train_spam,
+                    source: IngestSource::Jmap {
+                        train_classifier: true,
+                    },
                     session_id: session.session_id,
                 })
                 .await

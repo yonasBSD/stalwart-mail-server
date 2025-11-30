@@ -139,8 +139,11 @@ impl TaskLock for Task<bool> {
     }
 
     fn value_classes(&self) -> impl Iterator<Item = ValueClass> {
-        std::iter::once(ValueClass::TaskQueue(TaskQueueClass::BayesTrain {
+        let todo = "fix";
+
+        std::iter::once(ValueClass::TaskQueue(TaskQueueClass::SpamTrain {
             due: self.due,
+            blob_hash: Default::default(),
             learn_spam: self.action,
         }))
     }
@@ -260,7 +263,7 @@ impl Task<TaskAction> {
     pub(crate) fn lock_expiry(&self) -> u64 {
         match &self.action {
             TaskAction::UpdateIndex(_) => INDEX_EXPIRY,
-            TaskAction::BayesTrain(_) => BAYES_LOCK_EXPIRY,
+            TaskAction::SpamTrain(_) => BAYES_LOCK_EXPIRY,
             TaskAction::SendAlarm(_) => ALARM_EXPIRY,
             _ => ALARM_EXPIRY,
         }
@@ -282,7 +285,7 @@ impl Task<TaskAction> {
                         .ok_or_else(|| trc::Error::corrupted_key(key, None, trc::location!()))?,
                     is_insert: *v == 7,
                 }),
-                Some(v @ (1 | 2)) => TaskAction::BayesTrain(*v == 1),
+                Some(v @ (1 | 2)) => TaskAction::SpamTrain(*v == 1),
                 Some(3) => TaskAction::SendAlarm(CalendarAlarm {
                     event_id: key.deserialize_be_u16(U64_LEN + U32_LEN + U32_LEN + 1)?,
                     alarm_id: key.deserialize_be_u16(U64_LEN + U32_LEN + U32_LEN + U16_LEN + 1)?,

@@ -51,21 +51,13 @@ pub struct SpamFilterConfig {
     pub pyzor: Option<PyzorConfig>,
     pub classifier: Option<ClassifierConfig>,
     pub scores: SpamFilterScoreConfig,
-    pub headers: SpamFilterHeaderConfig,
-}
-
-#[derive(Debug, Clone)]
-pub struct SpamFilterHeaderConfig {
-    pub status: Option<String>,
-    pub result: Option<String>,
-    pub llm: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct SpamFilterScoreConfig {
-    pub reject_threshold: f64,
-    pub discard_threshold: f64,
-    pub spam_threshold: f64,
+    pub reject_threshold: f32,
+    pub discard_threshold: f32,
+    pub spam_threshold: f32,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -80,7 +72,7 @@ pub struct DnsBlConfig {
 #[derive(Debug, Clone, Default)]
 pub struct SpamFilterLists {
     pub file_extensions: GlobMap<FileExtension>,
-    pub scores: GlobMap<SpamFilterAction<f64>>,
+    pub scores: GlobMap<SpamFilterAction<f32>>,
 }
 
 #[derive(Debug, Clone)]
@@ -88,6 +80,7 @@ pub enum SpamFilterAction<T> {
     Allow(T),
     Discard,
     Reject,
+    Disabled,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -97,8 +90,8 @@ pub struct ClassifierConfig {
     pub alpha: f32,
     pub auto_learn_reply_ham: bool,
     pub auto_learn_card_is_ham: bool,
-    pub score_spam: f64,
-    pub score_ham: f64,
+    pub score_spam: f32,
+    pub score_ham: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -185,7 +178,6 @@ impl SpamFilterConfig {
             pyzor: PyzorConfig::parse(config).await,
             classifier: ClassifierConfig::parse(config),
             scores: SpamFilterScoreConfig::parse(config),
-            headers: SpamFilterHeaderConfig::parse(config),
             grey_list_expiry: config
                 .property::<Option<Duration>>("spam-filter.grey-list.duration")
                 .unwrap_or_default()
@@ -313,31 +305,6 @@ impl DnsBlServer {
             id,
         }
         .into()
-    }
-}
-
-impl SpamFilterHeaderConfig {
-    pub fn parse(config: &mut Config) -> Self {
-        let mut header = SpamFilterHeaderConfig::default();
-
-        for (typ, var) in [
-            ("status", &mut header.status),
-            ("result", &mut header.result),
-            ("llm", &mut header.llm),
-        ] {
-            if config
-                .property_or_default(("spam-filter.header", typ, "enable"), "true")
-                .unwrap_or(true)
-                && let Some(value) = config.value(("spam-filter.header", typ, "name"))
-            {
-                let value = value.trim();
-                if !value.is_empty() {
-                    *var = value.to_string().into();
-                }
-            }
-        }
-
-        header
     }
 }
 
@@ -571,16 +538,6 @@ impl Location {
     }
 }
 
-impl Default for SpamFilterHeaderConfig {
-    fn default() -> Self {
-        SpamFilterHeaderConfig {
-            status: "X-Spam-Status".to_string().into(),
-            result: "X-Spam-Result".to_string().into(),
-            llm: "X-Spam-LLM".to_string().into(),
-        }
-    }
-}
-
 pub const V_SPAM_REMOTE_IP: u32 = 100;
 pub const V_SPAM_REMOTE_IP_PTR: u32 = 101;
 pub const V_SPAM_EHLO_DOMAIN: u32 = 102;
@@ -807,5 +764,14 @@ impl IpResolver {
 impl CacheItemWeight for IpResolver {
     fn weight(&self) -> u64 {
         (std::mem::size_of::<IpResolver>() + self.ip_string.len() + self.reverse.len()) as u64
+    }
+}
+
+impl<T> SpamFilterAction<T> {
+    pub fn as_score(&self) -> Option<&T> {
+        match self {
+            SpamFilterAction::Allow(value) => Some(value),
+            _ => None,
+        }
     }
 }

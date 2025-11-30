@@ -290,8 +290,7 @@ impl<T: SessionStream> Session<T> {
                 .server
                 .core
                 .spam
-                .expiry
-                .grey_list
+                .grey_list_expiry
                 .filter(|_| self.data.authenticated_as.is_none())
             {
                 let from_addr = self

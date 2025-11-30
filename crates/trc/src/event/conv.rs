@@ -35,6 +35,12 @@ impl From<CompactString> for Value {
     }
 }
 
+impl From<Box<str>> for Value {
+    fn from(value: Box<str>) -> Self {
+        Self::String(CompactString::from(value))
+    }
+}
+
 impl From<u64> for Value {
     fn from(value: u64) -> Self {
         Self::UInt(value)

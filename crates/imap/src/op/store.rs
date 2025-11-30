@@ -12,7 +12,7 @@ use crate::{
 use ahash::AHashSet;
 use common::{listener::SessionStream, storage::index::ObjectIndexBuilder};
 use directory::Permission;
-use email::message::{ingest::EmailIngest, metadata::MessageData};
+use email::message::metadata::MessageData;
 use imap_proto::{
     Command, ResponseCode, ResponseType, StatusResponse,
     protocol::{
@@ -188,13 +188,7 @@ impl<T: SessionStream> SessionData<T> {
             .iter()
             .map(|k| Keyword::from(k.clone()))
             .collect::<Vec<_>>();
-        let access_token = self
-            .server
-            .get_access_token(account_id)
-            .await
-            .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?;
         let mut changed_mailboxes = AHashSet::new();
-        let can_spam_train = self.server.email_bayes_can_train(&access_token);
         let mut has_spam_train_tasks = false;
         let mut batch = BatchBuilder::new();
 
@@ -247,25 +241,23 @@ impl<T: SessionStream> SessionData<T> {
 
             // Train spam filter
             let mut train_spam = None;
-            if can_spam_train {
-                for keyword in new_data.added_keywords(data.inner) {
+            for keyword in new_data.added_keywords(data.inner) {
+                if keyword == &Keyword::Junk {
+                    train_spam = Some(true);
+                    break;
+                } else if keyword == &Keyword::NotJunk {
+                    train_spam = Some(false);
+                    break;
+                }
+            }
+            if train_spam.is_none() {
+                for keyword in new_data.removed_keywords(data.inner) {
                     if keyword == &Keyword::Junk {
-                        train_spam = Some(true);
-                        break;
-                    } else if keyword == &Keyword::NotJunk {
                         train_spam = Some(false);
                         break;
                     }
                 }
-                if train_spam.is_none() {
-                    for keyword in new_data.removed_keywords(data.inner) {
-                        if keyword == &Keyword::Junk {
-                            train_spam = Some(false);
-                            break;
-                        }
-                    }
-                }
-            };
+            }
 
             // Convert keywords to flags
             let flags = if !arguments.is_silent {
@@ -301,8 +293,9 @@ impl<T: SessionStream> SessionData<T> {
             // Add spam train task
             if let Some(learn_spam) = train_spam {
                 batch.set(
-                    ValueClass::TaskQueue(TaskQueueClass::BayesTrain {
+                    ValueClass::TaskQueue(TaskQueueClass::SpamTrain {
                         due: TaskEpoch::now(),
+                        blob_hash: Default::default(),
                         learn_spam,
                     }),
                     vec![],

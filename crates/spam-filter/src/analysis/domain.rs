@@ -4,17 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{collections::HashSet, future::Future};
-
-use common::{
-    Server,
-    config::spamfilter::{Element, Location},
-};
-use compact_str::CompactString;
-use mail_auth::DkimResult;
-use mail_parser::{HeaderName, HeaderValue, Host, parsers::MessageStream};
-use nlp::tokenizers::types::TokenType;
-
+use super::{ElementLocation, is_trusted_domain};
 use crate::{
     Email, Hostname, Recipient, SpamFilterContext, TextPart,
     modules::{
@@ -23,8 +13,14 @@ use crate::{
         html::{A, HREF, HtmlToken},
     },
 };
-
-use super::{ElementLocation, is_trusted_domain};
+use common::{
+    Server,
+    config::spamfilter::{Element, Location},
+};
+use mail_auth::DkimResult;
+use mail_parser::{HeaderName, HeaderValue, Host, parsers::MessageStream};
+use nlp::tokenizers::types::TokenType;
+use std::{collections::HashSet, future::Future};
 
 pub trait SpamFilterAnalyzeDomain: Sync + Send {
     fn spam_filter_analyze_domain(
@@ -36,7 +32,7 @@ pub trait SpamFilterAnalyzeDomain: Sync + Send {
 impl SpamFilterAnalyzeDomain for Server {
     async fn spam_filter_analyze_domain(&self, ctx: &mut SpamFilterContext<'_>) {
         // Obtain email addresses and domains
-        let mut domains: HashSet<ElementLocation<CompactString>> = HashSet::new();
+        let mut domains: HashSet<ElementLocation<String>> = HashSet::new();
         let mut emails: HashSet<ElementLocation<Recipient>> = HashSet::new();
 
         // Add DKIM domains
@@ -45,7 +41,7 @@ impl SpamFilterAnalyzeDomain for Server {
                 && let Some(domain) = dkim.signature().map(|s| &s.d)
             {
                 domains.insert(ElementLocation::new(
-                    CompactString::from_str_to_lowercase(domain),
+                    domain.to_lowercase(),
                     Location::HeaderDkimPass,
                 ));
             }

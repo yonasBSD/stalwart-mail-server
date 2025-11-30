@@ -289,10 +289,15 @@ impl ValueClass {
                     .write(if *is_insert { 7u8 } else { 8u8 })
                     .write(document_id)
                     .write(index.to_u8()),
-                TaskQueueClass::BayesTrain { due, learn_spam } => serializer
+                TaskQueueClass::SpamTrain {
+                    due,
+                    blob_hash,
+                    learn_spam,
+                } => serializer
                     .write(due.inner())
                     .write(account_id)
                     .write(if *learn_spam { 1u8 } else { 2u8 })
+                    .write(blob_hash.as_slice())
                     .write(document_id),
                 TaskQueueClass::SendAlarm {
                     due,
@@ -580,7 +585,7 @@ impl ValueClass {
             },
             ValueClass::TaskQueue(e) => match e {
                 TaskQueueClass::UpdateIndex { .. } => (U64_LEN * 2) + 2,
-                TaskQueueClass::BayesTrain { .. } => (U64_LEN * 2) + 1,
+                TaskQueueClass::SpamTrain { .. } => BLOB_HASH_LEN + (U64_LEN * 2) + 1,
                 TaskQueueClass::SendAlarm { .. } | TaskQueueClass::MergeThreads { .. } => {
                     U64_LEN + (U32_LEN * 3) + 1
                 }

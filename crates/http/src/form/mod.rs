@@ -11,7 +11,7 @@ use common::{
     config::network::{ContactForm, FieldOrDefault},
     ip_to_bytes, psl,
 };
-use email::message::delivery::{IngestMessage, LocalDeliveryStatus, MailDelivery};
+use email::message::delivery::{IngestMessage, IngestRecipient, LocalDeliveryStatus, MailDelivery};
 use http_proto::*;
 use hyper::StatusCode;
 use mail_auth::common::cache::NoCache;
@@ -179,7 +179,14 @@ impl FormHandler for Server {
                 .deliver_message(IngestMessage {
                     sender_address: from_email,
                     sender_authenticated: false,
-                    recipients: form.rcpt_to.clone(),
+                    recipients: form
+                        .rcpt_to
+                        .iter()
+                        .map(|address| IngestRecipient {
+                            address: address.clone(),
+                            is_spam: false,
+                        })
+                        .collect(),
                     message_blob,
                     message_size: message.len() as u64,
                     session_id: session.session_id,

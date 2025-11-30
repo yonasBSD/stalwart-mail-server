@@ -7,8 +7,8 @@
 use common::{Server, auth::AccessToken};
 use directory::backend::internal::manage;
 use email::message::crypto::{
-    Algorithm, ArchivedAlgorithm, ArchivedEncryptionMethod, EncryptMessage, EncryptMessageError,
-    EncryptionMethod, EncryptionParams, EncryptionType, try_parse_certs,
+    EncryptMessage, EncryptMessageError, EncryptionMethod, EncryptionParams, EncryptionType,
+    try_parse_certs,
 };
 use http_proto::*;
 use mail_builder::encoders::base64::base64_encode_mime;
@@ -49,14 +49,8 @@ impl CryptoHandler for Server {
             let params = params_
                 .unarchive::<EncryptionParams>()
                 .caused_by(trc::location!())?;
-            let algo = match &params.algo {
-                ArchivedAlgorithm::Aes128 => Algorithm::Aes128,
-                ArchivedAlgorithm::Aes256 => Algorithm::Aes256,
-            };
-            let method = match &params.method {
-                ArchivedEncryptionMethod::PGP => EncryptionMethod::PGP,
-                ArchivedEncryptionMethod::SMIME => EncryptionMethod::SMIME,
-            };
+            let algo = params.algo();
+            let method = params.method();
             let mut certs = Vec::new();
             certs.extend_from_slice(b"-----STALWART CERTIFICATE-----\r\n");
             let _ = base64_encode_mime(&params_.into_inner(), &mut certs, false);
@@ -115,12 +109,12 @@ impl CryptoHandler for Server {
         }
 
         // Parse certificates
+        let todo = "fetch privacy spam train";
         let certs = try_parse_certs(method, certs.into_bytes())
             .map_err(|err| manage::error(err, None::<u32>))?;
         let num_certs = certs.len();
         let params = Archiver::new(EncryptionParams {
-            method,
-            algo,
+            flags: method.flags() | algo.flags(),
             certs,
         })
         .serialize()

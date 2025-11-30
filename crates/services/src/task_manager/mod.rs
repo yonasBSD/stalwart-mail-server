@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::task_manager::bayes::BayesTrainTask;
+use crate::task_manager::bayes::SpamTrainTask;
 use crate::task_manager::imip::SendImipTask;
 use crate::task_manager::index::SearchIndexTask;
 use crate::task_manager::lock::{TaskLock, TaskLockManager};
@@ -56,7 +56,7 @@ pub struct Task<T> {
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum TaskAction {
     UpdateIndex(IndexAction),
-    BayesTrain(bool),
+    SpamTrain(bool),
     SendAlarm(CalendarAlarm),
     SendImip,
     MergeThreads(MergeThreadIds<AHashSet<u32>>),
@@ -475,7 +475,7 @@ impl TaskQueueManager for Server {
                         );
                     }
                 }
-                TaskAction::BayesTrain(learn_spam)
+                TaskAction::SpamTrain(learn_spam)
                     if roles.bayes_training.is_enabled_for_hash(&event) =>
                 {
                     if ipc
@@ -608,7 +608,7 @@ impl TaskAction {
     pub fn name(&self) -> &'static str {
         match self {
             TaskAction::UpdateIndex(_) => "UpdateIndex",
-            TaskAction::BayesTrain(_) => "BayesTrain",
+            TaskAction::SpamTrain(_) => "SpamTrain",
             TaskAction::SendAlarm(_) => "SendAlarm",
             TaskAction::SendImip => "SendImip",
             TaskAction::MergeThreads(_) => "MergeThreads",

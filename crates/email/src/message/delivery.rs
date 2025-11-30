@@ -20,10 +20,16 @@ use types::blob_hash::BlobHash;
 pub struct IngestMessage {
     pub sender_address: String,
     pub sender_authenticated: bool,
-    pub recipients: Vec<String>,
+    pub recipients: Vec<IngestRecipient>,
     pub message_blob: BlobHash,
     pub message_size: u64,
     pub session_id: u64,
+}
+
+#[derive(Debug)]
+pub struct IngestRecipient {
+    pub address: String,
+    pub is_spam: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -112,7 +118,11 @@ impl MailDelivery for Server {
 
         for rcpt in message.recipients {
             let account_id = match self
-                .email_to_id(&self.core.storage.directory, &rcpt, message.session_id)
+                .email_to_id(
+                    &self.core.storage.directory,
+                    &rcpt.address,
+                    message.session_id,
+                )
                 .await
             {
                 Ok(Some(account_id)) => account_id,
@@ -127,7 +137,7 @@ impl MailDelivery for Server {
                 Err(err) => {
                     trc::error!(
                         err.details("Failed to lookup recipient.")
-                            .ctx(trc::Key::To, rcpt)
+                            .ctx(trc::Key::To, rcpt.address.to_string())
                             .span_id(message.session_id)
                             .caused_by(trc::location!())
                     );
@@ -165,12 +175,10 @@ impl MailDelivery for Server {
                                 keywords: vec![],
                                 received_at: None,
                                 source: IngestSource::Smtp {
-                                    deliver_to: &rcpt,
+                                    deliver_to: &rcpt.address,
                                     is_sender_authenticated: message.sender_authenticated,
+                                    is_spam: rcpt.is_spam,
                                 },
-                                spam_classify: access_token
-                                    .has_permission(Permission::SpamFilterClassify),
-                                spam_train: self.email_bayes_can_train(&access_token),
                                 session_id: message.session_id,
                             })
                             .await
@@ -250,7 +258,7 @@ impl MailDelivery for Server {
                     };
 
                     trc::error!(
-                        err.ctx(trc::Key::To, rcpt.to_string())
+                        err.ctx(trc::Key::To, rcpt.address.to_string())
                             .span_id(message.session_id)
                     );
 

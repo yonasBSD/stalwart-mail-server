@@ -125,7 +125,7 @@ pub enum Permission {
     Impersonate,
     UnlimitedRequests,
     UnlimitedUploads,
-    DeleteSystemFolders,
+    DeleteSystemFolders_,
     MessageQueueList,
     MessageQueueGet,
     MessageQueueUpdate,
@@ -187,7 +187,7 @@ pub enum Permission {
     SpamFilterUpdate,
     WebadminUpdate,
     LogsView,
-    SpamFilterTrain,
+    SpamFilterTrain_,
     Restart,
     TracingList,
     TracingGet,
@@ -321,7 +321,7 @@ pub enum Permission {
 
     AiModelInteract,
     Troubleshoot,
-    SpamFilterClassify,
+    SpamFilterClassify_,
 
     // WebDAV permissions
     DavSyncCollection,
@@ -423,7 +423,7 @@ pub enum Permission {
     JmapParticipantIdentityGet,
     JmapParticipantIdentitySet,
     JmapParticipantIdentityChanges,
-    // TODO: Reuse DeleteSystemFolders position for new permission
+    // TODO: Reuse _ suffixes for new permissions
     // WARNING: add new ids at the end (TODO: use static ids)
 }
 

@@ -226,8 +226,9 @@ pub enum TaskQueueClass {
         index: SearchIndex,
         is_insert: bool,
     },
-    BayesTrain {
+    SpamTrain {
         due: TaskEpoch,
+        blob_hash: BlobHash,
         learn_spam: bool,
     },
     SendAlarm {

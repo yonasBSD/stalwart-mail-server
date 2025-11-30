@@ -23,7 +23,6 @@ use serde_json::json;
 use spam_filter::{
     SpamFilterInput,
     analysis::{init::SpamFilterInit, score::SpamFilterAnalyzeScore},
-    modules::bayes::BayesClassifier,
 };
 use std::future::Future;
 use store::ahash::AHashMap;
@@ -67,7 +66,7 @@ pub struct SpamClassifyRequest {
 #[serde(rename_all = "camelCase")]
 pub struct SpamClassifyResponse {
     pub score: f64,
-    pub tags: AHashMap<CompactString, SpamFilterDisposition<f64>>,
+    pub tags: AHashMap<String, SpamFilterDisposition<f64>>,
     pub disposition: SpamFilterDisposition<String>,
 }
 
@@ -90,11 +89,12 @@ impl ManageSpamHandler for Server {
         access_token: &AccessToken,
     ) -> trc::Result<HttpResponse> {
         // Validate the access token
-        access_token.assert_has_permission(Permission::SpamFilterTrain)?;
+        //access_token.assert_has_permission(Permission::SpamFilterTrain)?;
 
         match (path.get(1).copied(), path.get(2).copied(), req.method()) {
             (Some("train"), Some(class @ ("ham" | "spam")), &Method::POST) => {
-                let message = parse_message_or_err(body.as_deref().unwrap_or_default())?;
+                let todo = "fix";
+                /*let message = parse_message_or_err(body.as_deref().unwrap_or_default())?;
                 let input = if let Some(account) = path.get(3).copied().filter(|a| !a.is_empty()) {
                     let account_id = self
                         .store()
@@ -106,7 +106,7 @@ impl ManageSpamHandler for Server {
                     SpamFilterInput::from_message(&message, session.session_id)
                 };
                 self.bayes_train(&self.spam_filter_init(input), class == "spam", true)
-                    .await?;
+                    .await?; */
 
                 Ok(JsonResponse::new(json!({
                     "data": (),
@@ -242,16 +242,16 @@ impl ManageSpamHandler for Server {
                     env_from: &request.env_from,
                     env_from_flags: request.env_from_flags,
                     env_rcpt_to: request.env_rcpt_to.iter().map(String::as_str).collect(),
-                    account_id: None,
                     is_test: true,
                 };
 
                 // Classify
                 let mut ctx = self.spam_filter_init(input);
                 let result = self.spam_filter_classify(&mut ctx).await;
+                let todo = "fix";
 
                 // Build response
-                let mut response = SpamClassifyResponse {
+                /* let mut response = SpamClassifyResponse {
                     score: ctx.result.score,
                     tags: AHashMap::with_capacity(ctx.result.tags.len()),
                     disposition: match result {
@@ -275,7 +275,8 @@ impl ManageSpamHandler for Server {
                 Ok(JsonResponse::new(json!({
                     "data": response,
                 }))
-                .into_http_response())
+                .into_http_response())*/
+                todo!()
             }
             _ => Err(trc::ResourceEvent::NotFound.into_err()),
         }

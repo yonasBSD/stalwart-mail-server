@@ -74,7 +74,6 @@ impl EmailSet for Server {
         let cache = self.get_cached_messages(account_id).await?;
         let mut response = SetResponse::from_request(&request, self.core.jmap.set_max_objects)?
             .with_state(cache.assert_state(false, &request.if_in_state)?);
-        let can_train_spam = self.email_bayes_can_train(access_token);
 
         // Obtain mailboxIds
         let (can_add_mailbox_ids, can_delete_mailbox_ids, can_modify_mailbox_ids) =
@@ -758,9 +757,9 @@ impl EmailSet for Server {
                     mailbox_ids: mailboxes,
                     keywords,
                     received_at,
-                    source: IngestSource::Jmap,
-                    spam_classify: false,
-                    spam_train: can_train_spam,
+                    source: IngestSource::Jmap {
+                        train_classifier: true,
+                    },
                     session_id: session.session_id,
                 })
                 .await
@@ -874,6 +873,7 @@ impl EmailSet for Server {
             }
 
             // Process keywords
+            let todo = "train spam classifier";
             if has_keyword_changes {
                 // Verify permissions on shared accounts
                 if can_modify_mailbox_ids.as_ref().is_some_and(|ids| {

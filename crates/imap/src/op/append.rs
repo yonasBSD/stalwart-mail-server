@@ -94,7 +94,6 @@ impl<T: SessionStream> SessionData<T> {
             .get_access_token(mailbox.account_id)
             .await
             .imap_ctx(&arguments.tag, trc::location!())?;
-        let spam_train = self.server.email_bayes_can_train(&access_token);
 
         // Append messages
         let mut response = StatusResponse::completed(Command::Append);
@@ -111,9 +110,9 @@ impl<T: SessionStream> SessionData<T> {
                     mailbox_ids: vec![mailbox_id],
                     keywords: message.flags.into_iter().map(Keyword::from).collect(),
                     received_at: message.received_at.map(|d| d as u64),
-                    source: IngestSource::Imap,
-                    spam_classify: false,
-                    spam_train,
+                    source: IngestSource::Imap {
+                        train_classifier: true,
+                    },
                     session_id: self.session_id,
                 })
                 .await

@@ -280,8 +280,6 @@ impl UndeleteApi for Server {
                                             keywords: vec![],
                                             received_at: request.time.into(),
                                             source: IngestSource::Restore,
-                                            spam_classify: false,
-                                            spam_train: false,
                                             session_id: session.session_id,
                                         })
                                         .await
