@@ -79,7 +79,7 @@ impl SpamFilterAnalyzeScore for Server {
         let mut user_results = vec![false; ctx.result.classifier_confidence.len()];
         if !ctx.result.classifier_confidence.is_empty() {
             for (idx, &confidence) in ctx.result.classifier_confidence.iter().enumerate() {
-                if confidence != 0.0 {
+                if let Some(confidence) = confidence {
                     avg_confidence += confidence;
                     let user_score = self
                         .core

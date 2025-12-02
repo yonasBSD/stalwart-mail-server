@@ -289,16 +289,6 @@ impl ValueClass {
                     .write(if *is_insert { 7u8 } else { 8u8 })
                     .write(document_id)
                     .write(index.to_u8()),
-                TaskQueueClass::SpamTrain {
-                    due,
-                    blob_hash,
-                    learn_spam,
-                } => serializer
-                    .write(due.inner())
-                    .write(account_id)
-                    .write(if *learn_spam { 1u8 } else { 2u8 })
-                    .write(blob_hash.as_slice())
-                    .write(document_id),
                 TaskQueueClass::SendAlarm {
                     due,
                     event_id,
@@ -348,15 +338,20 @@ impl ValueClass {
                         .write(*until),
                 },
                 BlobOp::Quota { hash, until } => serializer
+                    .write(BlobLink::QUOTA_LINK)
                     .write(account_id)
-                    .write(0u8)
                     .write::<&[u8]>(hash.as_ref())
                     .write(*until),
                 BlobOp::Undelete { hash, until } => serializer
+                    .write(BlobLink::UNDELETE_LINK)
                     .write(account_id)
-                    .write(1u8)
                     .write::<&[u8]>(hash.as_ref())
                     .write(*until),
+                BlobOp::SpamSample { hash, until } => serializer
+                    .write(BlobLink::SPAM_SAMPLE_LINK)
+                    .write(*until)
+                    .write(account_id)
+                    .write::<&[u8]>(hash.as_ref()),
             },
             ValueClass::Config(key) => serializer.write(key.as_slice()),
             ValueClass::InMemory(lookup) => match lookup {
@@ -511,6 +506,12 @@ impl ValueClass {
     }
 }
 
+impl BlobLink {
+    pub const QUOTA_LINK: u8 = 0;
+    pub const UNDELETE_LINK: u8 = 1;
+    pub const SPAM_SAMPLE_LINK: u8 = 2;
+}
+
 impl<T: AsRef<[u8]> + Sync + Send + Clone> Key for IndexKey<T> {
     fn subspace(&self) -> u8 {
         SUBSPACE_INDEXES
@@ -582,10 +583,10 @@ impl ValueClass {
                 BlobOp::Quota { .. } | BlobOp::Undelete { .. } => {
                     BLOB_HASH_LEN + U32_LEN + U64_LEN + 1
                 }
+                BlobOp::SpamSample { .. } => BLOB_HASH_LEN + U32_LEN + 2,
             },
             ValueClass::TaskQueue(e) => match e {
                 TaskQueueClass::UpdateIndex { .. } => (U64_LEN * 2) + 2,
-                TaskQueueClass::SpamTrain { .. } => BLOB_HASH_LEN + (U64_LEN * 2) + 1,
                 TaskQueueClass::SendAlarm { .. } | TaskQueueClass::MergeThreads { .. } => {
                     U64_LEN + (U32_LEN * 3) + 1
                 }
@@ -642,7 +643,9 @@ impl ValueClass {
             ValueClass::TaskQueue { .. } => SUBSPACE_TASK_QUEUE,
             ValueClass::Blob(op) => match op {
                 BlobOp::Commit { .. } | BlobOp::Link { .. } => SUBSPACE_BLOB_LINK,
-                BlobOp::Quota { .. } | BlobOp::Undelete { .. } => SUBSPACE_BLOB_EXTRA,
+                BlobOp::Quota { .. } | BlobOp::Undelete { .. } | BlobOp::SpamSample { .. } => {
+                    SUBSPACE_BLOB_EXTRA
+                }
             },
             ValueClass::Config(_) => SUBSPACE_SETTINGS,
             ValueClass::InMemory(lookup) => match lookup {

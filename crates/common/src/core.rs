@@ -961,7 +961,7 @@ impl Server {
                     hash: hash.clone(),
                     to: BlobLink::Temporary { until },
                 },
-                vec![],
+                vec![BlobLink::QUOTA_LINK],
             )
             .set(
                 BlobOp::Quota {

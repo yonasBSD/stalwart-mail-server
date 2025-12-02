@@ -11,7 +11,7 @@ use crate::{
     message::{
         crypto::EncryptionParams,
         index::{IndexMessage, extractors::VisitText},
-        metadata::MessageData,
+        metadata::{MessageData, MessageMetadata},
     },
 };
 use common::{Server, auth::AccessToken};
@@ -21,13 +21,13 @@ use groupware::{
     scheduling::{ItipError, ItipMessages},
 };
 use mail_parser::{
-    Header, HeaderName, HeaderValue, Message, MessageParser, MimeHeaders, PartType,
+    DateTime, Header, HeaderName, HeaderValue, Message, MessageParser, MimeHeaders, PartType,
     parsers::fields::thread::thread_name,
 };
 use std::{borrow::Cow, cmp::Ordering, fmt::Write, time::Instant};
 use std::{future::Future, hash::Hasher};
 use store::{
-    IndexKeyPrefix, IterateParams, SerializeInfallible, U32_LEN, ValueKey,
+    IndexKeyPrefix, IterateParams, U32_LEN, ValueKey,
     ahash::{AHashMap, AHashSet},
     write::{
         AssignedId, AssignedIds, BatchBuilder, BlobLink, BlobOp, IndexPropertyClass, SearchIndex,
@@ -100,6 +100,20 @@ pub trait EmailIngest: Sync + Send {
         mailbox_ids: impl IntoIterator<Item = u32> + Sync + Send,
         generate_email_id: bool,
     ) -> impl Future<Output = trc::Result<impl Iterator<Item = u32> + 'static>> + Send;
+    fn add_account_spam_sample(
+        &self,
+        batch: &mut BatchBuilder,
+        account_id: u32,
+        document_id: u32,
+        is_spam: bool,
+    ) -> impl Future<Output = trc::Result<()>> + Send;
+    fn add_spam_sample(
+        &self,
+        batch: &mut BatchBuilder,
+        hash: BlobHash,
+        hold_override: Option<u64>,
+        is_spam: bool,
+    );
 }
 
 pub struct ThreadResult {
@@ -255,7 +269,7 @@ impl EmailIngest for Server {
                     {
                         is_spam = false;
                         train_spam = Some(false);
-                        overridden = Some("card-found");
+                        overridden = Some("card-exists");
                     }
 
                     // Check if the message is a trusted reply to a previous message
@@ -590,28 +604,11 @@ impl EmailIngest for Server {
 
         // Request spam training
         if let Some(learn_spam) = train_spam {
-            let blob_hash = params.blob_hash.unwrap_or(&blob_hash).clone();
-            let blob_expiry = if is_encrypted {
-                let hold_for = now() + 86400; // 24 hours
-                batch.set(
-                    BlobOp::Link {
-                        hash: blob_hash.clone(),
-                        to: BlobLink::Temporary { until: hold_for },
-                    },
-                    vec![],
-                );
-                hold_for.serialize()
-            } else {
-                vec![]
-            };
-
-            batch.set(
-                ValueClass::TaskQueue(TaskQueueClass::SpamTrain {
-                    due: TaskEpoch::now(),
-                    blob_hash,
-                    learn_spam,
-                }),
-                blob_expiry,
+            self.add_spam_sample(
+                &mut batch,
+                params.blob_hash.unwrap_or(&blob_hash).clone(),
+                is_encrypted.then_some(2 * 86400),
+                learn_spam,
             );
         }
 
@@ -808,6 +805,58 @@ impl EmailIngest for Server {
             Err(trc::StoreEvent::UnexpectedError
                 .caused_by(trc::location!())
                 .ctx(trc::Key::Reason, "No all document ids were generated"))
+        }
+    }
+
+    async fn add_account_spam_sample(
+        &self,
+        batch: &mut BatchBuilder,
+        account_id: u32,
+        document_id: u32,
+        is_spam: bool,
+    ) -> trc::Result<()> {
+        if let Some(archive) = self
+            .archive_by_property(
+                account_id,
+                Collection::Email,
+                document_id,
+                EmailField::Metadata.into(),
+            )
+            .await
+            .caused_by(trc::location!())?
+        {
+            let metadata = archive
+                .to_unarchived::<MessageMetadata>()
+                .caused_by(trc::location!())?;
+            self.add_spam_sample(batch, (&metadata.inner.blob_hash).into(), None, is_spam);
+        }
+
+        Ok(())
+    }
+
+    fn add_spam_sample(
+        &self,
+        batch: &mut BatchBuilder,
+        hash: BlobHash,
+        hold_override: Option<u64>,
+        is_spam: bool,
+    ) {
+        if let Some(config) = &self.core.spam.classifier {
+            let mut dt = DateTime::from_timestamp(now() as i64);
+            dt.hour = 0;
+            dt.minute = 0;
+            dt.second = 0;
+            let until = dt.to_timestamp() as u64 + hold_override.unwrap_or(config.hold_samples_for);
+
+            batch
+                .set(
+                    BlobOp::Link {
+                        hash: hash.clone(),
+                        to: BlobLink::Temporary { until },
+                    },
+                    vec![BlobLink::SPAM_SAMPLE_LINK],
+                )
+                .set(BlobOp::SpamSample { hash, until }, vec![u8::from(is_spam)]);
         }
     }
 }

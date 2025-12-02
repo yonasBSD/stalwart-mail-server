@@ -9,7 +9,6 @@ pub mod modules;
 
 use analysis::ElementLocation;
 use analysis::url::UrlParts;
-
 use mail_auth::{ArcOutput, DkimOutput, DmarcResult, IprevOutput, SpfOutput, dmarc::Policy};
 use mail_parser::Message;
 use modules::html::HtmlToken;
@@ -68,7 +67,7 @@ pub struct SpamFilterOutput<'x> {
     pub subject_lc: String,
     pub subject_thread: String,
     pub subject_thread_lc: String,
-    pub subject_tokens: Vec<TokenType<Cow<'x, str>, Email, UrlParts<'x>, IpParts<'x>>>,
+    pub subject_tokens: Vec<TokenType<Cow<'x, str>, Email, UrlParts<'x>, IpParts>>,
 
     pub ips: AHashSet<ElementLocation<IpAddr>>,
     pub urls: HashSet<ElementLocation<UrlParts<'x>>>,
@@ -79,20 +78,19 @@ pub struct SpamFilterOutput<'x> {
 }
 
 #[derive(Debug)]
-pub struct IpParts<'x> {
+pub struct IpParts {
     ip: Option<IpAddr>,
-    text: Cow<'x, str>,
 }
 
 pub enum TextPart<'x> {
     Plain {
         text_body: &'x str,
-        tokens: Vec<TokenType<Cow<'x, str>, Email, UrlParts<'x>, IpParts<'x>>>,
+        tokens: Vec<TokenType<Cow<'x, str>, Email, UrlParts<'x>, IpParts>>,
     },
     Html {
         html_tokens: Vec<HtmlToken>,
         text_body: String,
-        tokens: Vec<TokenType<Cow<'x, str>, Email, UrlParts<'x>, IpParts<'x>>>,
+        tokens: Vec<TokenType<Cow<'x, str>, Email, UrlParts<'x>, IpParts>>,
     },
     None,
 }
@@ -100,7 +98,7 @@ pub enum TextPart<'x> {
 #[derive(Debug, Default)]
 pub struct SpamFilterResult {
     pub tags: AHashSet<String>,
-    pub classifier_confidence: Vec<f32>,
+    pub classifier_confidence: Vec<Option<f32>>,
     pub score: f32,
     pub rbl_ip_checks: usize,
     pub rbl_domain_checks: usize,
@@ -191,6 +189,16 @@ impl Hash for Email {
 }
 
 impl Email {
+    pub fn classifier_parts(&self) -> Option<(&str, &str)> {
+        // Returns (local@, @domain)
+        if self.is_valid() {
+            let at_pos = self.address.find('@')?;
+            Some((&self.address[..=at_pos], &self.address[at_pos..]))
+        } else {
+            None
+        }
+    }
+
     pub fn is_valid(&self) -> bool {
         self.domain_part.sld.is_some() && !self.local_part.is_empty()
     }

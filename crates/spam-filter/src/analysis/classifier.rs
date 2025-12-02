@@ -22,22 +22,11 @@ pub trait SpamFilterAnalyzeClassify: Sync + Send {
 
 impl SpamFilterAnalyzeClassify for Server {
     async fn spam_filter_analyze_classify(&self, ctx: &mut SpamFilterContext<'_>) {
-        if self.core.spam.classifier.is_some() && !ctx.result.has_tag("SPAM_TRAP")
-        //&& !ctx.result.has_tag("TRUSTED_REPLY")
+        if self.core.spam.classifier.is_some()
+            && !ctx.result.has_tag("SPAM_TRAP")
+            && let Err(err) = self.spam_classify(ctx).await
         {
-            match self.spam_classify(ctx).await {
-                Ok(Some(score)) => {
-                    /*if score > config.score_spam {
-                        ctx.result.add_tag("BAYES_SPAM");
-                    } else if score < config.score_ham {
-                        ctx.result.add_tag("BAYES_HAM");
-                    }*/
-                }
-                Ok(None) => (),
-                Err(err) => {
-                    trc::error!(err.span_id(ctx.input.span_id).caused_by(trc::location!()));
-                }
-            }
+            trc::error!(err.span_id(ctx.input.span_id).caused_by(trc::location!()));
         }
     }
 

@@ -71,7 +71,6 @@ impl TaskLockManager for Server {
 pub(crate) trait TaskLock {
     fn account_id(&self) -> u32;
     fn document_id(&self) -> u32;
-    fn remove_lock(&self) -> bool;
     fn lock_key(&self) -> Vec<u8>;
     fn lock_expiry(&self) -> u64;
     fn value_classes(&self) -> impl Iterator<Item = ValueClass>;
@@ -84,10 +83,6 @@ impl TaskLock for Task<IndexAction> {
 
     fn document_id(&self) -> u32 {
         self.document_id
-    }
-
-    fn remove_lock(&self) -> bool {
-        true
     }
 
     fn lock_key(&self) -> Vec<u8> {
@@ -113,42 +108,6 @@ impl TaskLock for Task<IndexAction> {
     }
 }
 
-impl TaskLock for Task<bool> {
-    fn account_id(&self) -> u32 {
-        self.account_id
-    }
-
-    fn document_id(&self) -> u32 {
-        self.document_id
-    }
-
-    fn remove_lock(&self) -> bool {
-        false
-    }
-
-    fn lock_key(&self) -> Vec<u8> {
-        KeySerializer::new((U32_LEN * 2) + 1)
-            .write(1u8)
-            .write_leb128(self.account_id)
-            .write_leb128(self.document_id)
-            .finalize()
-    }
-
-    fn lock_expiry(&self) -> u64 {
-        BAYES_LOCK_EXPIRY
-    }
-
-    fn value_classes(&self) -> impl Iterator<Item = ValueClass> {
-        let todo = "fix";
-
-        std::iter::once(ValueClass::TaskQueue(TaskQueueClass::SpamTrain {
-            due: self.due,
-            blob_hash: Default::default(),
-            learn_spam: self.action,
-        }))
-    }
-}
-
 impl TaskLock for Task<CalendarAlarm> {
     fn account_id(&self) -> u32 {
         self.account_id
@@ -156,10 +115,6 @@ impl TaskLock for Task<CalendarAlarm> {
 
     fn document_id(&self) -> u32 {
         self.document_id
-    }
-
-    fn remove_lock(&self) -> bool {
-        true
     }
 
     fn lock_key(&self) -> Vec<u8> {
@@ -192,10 +147,6 @@ impl TaskLock for Task<ImipAction> {
 
     fn document_id(&self) -> u32 {
         self.document_id
-    }
-
-    fn remove_lock(&self) -> bool {
-        true
     }
 
     fn lock_key(&self) -> Vec<u8> {
@@ -235,10 +186,6 @@ impl TaskLock for Task<MergeThreadIds<AHashSet<u32>>> {
         self.document_id
     }
 
-    fn remove_lock(&self) -> bool {
-        true
-    }
-
     fn lock_key(&self) -> Vec<u8> {
         KeySerializer::new((U32_LEN * 2) + U64_LEN + 1)
             .write(4u8)
@@ -263,7 +210,6 @@ impl Task<TaskAction> {
     pub(crate) fn lock_expiry(&self) -> u64 {
         match &self.action {
             TaskAction::UpdateIndex(_) => INDEX_EXPIRY,
-            TaskAction::SpamTrain(_) => BAYES_LOCK_EXPIRY,
             TaskAction::SendAlarm(_) => ALARM_EXPIRY,
             _ => ALARM_EXPIRY,
         }
@@ -285,7 +231,6 @@ impl Task<TaskAction> {
                         .ok_or_else(|| trc::Error::corrupted_key(key, None, trc::location!()))?,
                     is_insert: *v == 7,
                 }),
-                Some(v @ (1 | 2)) => TaskAction::SpamTrain(*v == 1),
                 Some(3) => TaskAction::SendAlarm(CalendarAlarm {
                     event_id: key.deserialize_be_u16(U64_LEN + U32_LEN + U32_LEN + 1)?,
                     alarm_id: key.deserialize_be_u16(U64_LEN + U32_LEN + U32_LEN + U16_LEN + 1)?,

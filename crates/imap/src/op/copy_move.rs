@@ -27,7 +27,7 @@ use imap_proto::{
 use std::{sync::Arc, time::Instant};
 use store::{
     roaring::RoaringBitmap,
-    write::{AlignedBytes, Archive, BatchBuilder, TaskEpoch, TaskQueueClass, ValueClass},
+    write::{AlignedBytes, Archive, BatchBuilder},
 };
 use trc::AddContext;
 use types::{
@@ -204,7 +204,6 @@ impl<T: SessionStream> SessionData<T> {
             // Mailboxes are in the same account
             let account_id = src_mailbox.id.account_id;
             let dest_mailbox_id = UidMailbox::new_unassigned(dest_mailbox_id);
-            let mut has_spam_train_tasks = false;
             let mut batch = BatchBuilder::new();
 
             for (id, imap_id) in ids {
@@ -319,30 +318,23 @@ impl<T: SessionStream> SessionData<T> {
                     );
                 }
 
-                // Add bayes train task
-                if dest_mailbox_id.mailbox_id == JUNK_ID {
-                    batch.set(
-                        ValueClass::TaskQueue(TaskQueueClass::SpamTrain {
-                            due: TaskEpoch::now(),
-                            blob_hash: Default::default(),
-                            learn_spam: true,
-                        }),
-                        vec![],
-                    );
-                    has_spam_train_tasks = true;
+                // Add message to training queue
+                let learn_spam = if dest_mailbox_id.mailbox_id == JUNK_ID {
+                    Some(true)
                 } else if src_mailbox.id.mailbox_id == JUNK_ID
                     && dest_mailbox_id.mailbox_id != TRASH_ID
                 {
-                    batch.set(
-                        ValueClass::TaskQueue(TaskQueueClass::SpamTrain {
-                            due: TaskEpoch::now(),
-                            blob_hash: Default::default(),
-                            learn_spam: false,
-                        }),
-                        vec![],
-                    );
-                    has_spam_train_tasks = true;
+                    Some(false)
+                } else {
+                    None
+                };
+                if let Some(learn_spam) = learn_spam {
+                    self.server
+                        .add_account_spam_sample(&mut batch, account_id, id, learn_spam)
+                        .await
+                        .imap_ctx(&arguments.tag, trc::location!())?;
                 }
+
                 batch.commit_point();
 
                 // Update changelog
@@ -356,11 +348,6 @@ impl<T: SessionStream> SessionData<T> {
                 .commit_batch(batch)
                 .await
                 .imap_ctx(&arguments.tag, trc::location!())?;
-
-            // Trigger Bayes training
-            if has_spam_train_tasks {
-                self.server.notify_task_queue();
-            }
         } else {
             // Obtain quota for target account
             let src_account_id = src_mailbox.id.account_id;

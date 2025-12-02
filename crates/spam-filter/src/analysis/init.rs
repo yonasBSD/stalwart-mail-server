@@ -206,9 +206,7 @@ impl SpamFilterInit for Server {
                                     TokenType::UrlNoScheme(s) => TokenType::UrlNoScheme(
                                         UrlParts::new(format!("https://{}", s.trim())),
                                     ),
-                                    TokenType::IpAddr(i) => {
-                                        TokenType::IpAddr(IpParts::new(i.to_string()))
-                                    }
+                                    TokenType::IpAddr(i) => TokenType::IpAddr(IpParts::new(i)),
                                     TokenType::Email(e) => TokenType::Email(Email::new(e)),
                                     TokenType::Float(s) => TokenType::Float(s.to_string().into()),
                                 })

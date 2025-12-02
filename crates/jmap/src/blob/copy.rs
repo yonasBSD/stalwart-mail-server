@@ -78,7 +78,7 @@ impl BlobCopy for Server {
                         hash: blob_id.hash.clone(),
                         to: BlobLink::Temporary { until },
                     },
-                    0u32.serialize(),
+                    vec![],
                 );
                 self.store()
                     .write(batch.build_all())

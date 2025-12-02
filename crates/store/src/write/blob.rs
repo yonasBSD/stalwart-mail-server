@@ -143,8 +143,8 @@ impl Store {
         let mut delete_keys = Vec::new();
         let now = now();
         self.iterate(
-            IterateParams::new(from_key, to_key).ascending().no_values(),
-            |key, _| {
+            IterateParams::new(from_key, to_key).ascending(),
+            |key, value| {
                 let hash = BlobHash::try_from_hash_slice(
                     key.get(0..BLOB_HASH_LEN)
                         .ok_or_else(|| trc::Error::corrupted_key(key, None, trc::location!()))?,
@@ -181,21 +181,35 @@ impl Store {
                                     to: BlobLink::Temporary { until },
                                 },
                             ));
-                            if account_id != u32::MAX {
-                                delete_keys.push((
-                                    Some(account_id),
-                                    BlobOp::Quota {
-                                        hash: last_hash.clone(),
-                                        until,
-                                    },
-                                ));
-                                delete_keys.push((
-                                    Some(account_id),
-                                    BlobOp::Undelete {
-                                        hash: last_hash.clone(),
-                                        until,
-                                    },
-                                ));
+                            match value.first().copied() {
+                                Some(BlobLink::QUOTA_LINK) => {
+                                    delete_keys.push((
+                                        Some(account_id),
+                                        BlobOp::Quota {
+                                            hash: last_hash.clone(),
+                                            until,
+                                        },
+                                    ));
+                                }
+                                Some(BlobLink::UNDELETE_LINK) => {
+                                    delete_keys.push((
+                                        Some(account_id),
+                                        BlobOp::Undelete {
+                                            hash: last_hash.clone(),
+                                            until,
+                                        },
+                                    ));
+                                }
+                                Some(BlobLink::SPAM_SAMPLE_LINK) => {
+                                    delete_keys.push((
+                                        Some(account_id),
+                                        BlobOp::SpamSample {
+                                            hash: last_hash.clone(),
+                                            until,
+                                        },
+                                    ));
+                                }
+                                _ => {}
                             }
                         } else {
                             last_hash_is_linked = true;

@@ -15,21 +15,9 @@ use crate::{
 };
 use std::borrow::Cow;
 
-pub struct StreamTokenizer<T: Iterator<Item = StreamInputToken<I>>, I: StreamInputTokenTrait> {
-    stream: T,
+pub struct WordStemTokenizer {
     stemmer: Stemmer,
     stop_words: Option<StopwordFnc>,
-    tokens: Vec<I>,
-}
-
-pub enum StreamInputToken<T: StreamInputTokenTrait> {
-    Word(String),
-    Other(T),
-}
-
-pub trait StreamInputTokenTrait {
-    fn from_owned(word: String) -> Self;
-    fn from_borrowed(word: &str) -> Self;
 }
 
 enum Stemmer {
@@ -39,8 +27,8 @@ enum Stemmer {
     None,
 }
 
-impl<T: Iterator<Item = StreamInputToken<I>>, I: StreamInputTokenTrait> StreamTokenizer<T, I> {
-    pub fn new(text: &str, stream: T) -> Self {
+impl WordStemTokenizer {
+    pub fn new(text: &str) -> Self {
         // Detect language
         let (mut language, score) =
             LanguageDetector::detect_single(text).unwrap_or((Language::English, 1.0));
@@ -49,7 +37,6 @@ impl<T: Iterator<Item = StreamInputToken<I>>, I: StreamInputTokenTrait> StreamTo
         }
 
         Self {
-            stream,
             stemmer: match language {
                 Language::Mandarin => Stemmer::Mandarin,
                 Language::Japanese => Stemmer::Japanese,
@@ -58,66 +45,31 @@ impl<T: Iterator<Item = StreamInputToken<I>>, I: StreamInputTokenTrait> StreamTo
                     .unwrap_or(Stemmer::None),
             },
             stop_words: STOP_WORDS[language as usize],
-            tokens: vec![],
         }
     }
-}
 
-impl<T: Iterator<Item = StreamInputToken<I>>, I: StreamInputTokenTrait> Iterator
-    for StreamTokenizer<T, I>
-{
-    type Item = I;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some(prev_token) = self.tokens.pop() {
-            return Some(prev_token);
+    pub fn tokenize<'x>(&self, word: &'x str, mut cb: impl FnMut(Cow<'x, str>)) {
+        if self.stop_words.is_some_and(|sw| sw(word)) {
+            return;
         }
-
-        for token in self.stream.by_ref() {
-            return match token {
-                StreamInputToken::Word(word) => {
-                    if self.stop_words.is_some_and(|sw| sw(word.as_str())) {
-                        continue;
-                    }
-                    match &self.stemmer {
-                        Stemmer::IndoEuropean(stemmer) => match stemmer.stem(&word) {
-                            Cow::Borrowed(word) => I::from_borrowed(word),
-                            Cow::Owned(stemmed_word) => I::from_owned(stemmed_word),
-                        },
-                        Stemmer::Mandarin => {
-                            let mut result = JIEBA.cut(&word, false).into_iter();
-                            if let Some(stemmed_word) = result.next() {
-                                let stemmed_word = I::from_borrowed(stemmed_word);
-                                self.tokens = result
-                                    .rev()
-                                    .map(|word| I::from_borrowed(word))
-                                    .collect::<Vec<_>>();
-                                stemmed_word
-                            } else {
-                                // This shouldn't happen, but just in case
-                                continue;
-                            }
-                        }
-                        Stemmer::Japanese => {
-                            let mut result = japanese::tokenize(&word).into_iter();
-                            if let Some(stemmed_word) = result.next() {
-                                self.tokens =
-                                    result.rev().map(|b| I::from_owned(b)).collect::<Vec<_>>();
-                                I::from_owned(stemmed_word)
-                            } else {
-                                // This shouldn't happen, but just in case
-                                continue;
-                            }
-                        }
-                        Stemmer::None => I::from_owned(word),
-                    }
-                }
-                StreamInputToken::Other(raw) => raw,
+        match &self.stemmer {
+            Stemmer::IndoEuropean(stemmer) => {
+                cb(stemmer.stem(word));
             }
-            .into();
+            Stemmer::Mandarin => {
+                for word in JIEBA.cut(word, false) {
+                    cb(Cow::from(word));
+                }
+            }
+            Stemmer::Japanese => {
+                for word in japanese::tokenize(word) {
+                    cb(Cow::from(word));
+                }
+            }
+            Stemmer::None => {
+                cb(Cow::from(word));
+            }
         }
-
-        None
     }
 }
 
@@ -7872,89 +7824,12 @@ pub fn symbols(input: &str) -> bool {
     )
 }
 
-impl StreamInputTokenTrait for Vec<u8> {
-    fn from_owned(word: String) -> Self {
-        word.into_bytes()
-    }
-
-    fn from_borrowed(word: &str) -> Self {
-        word.as_bytes().to_vec()
-    }
-}
-
 #[cfg(test)]
 pub mod tests {
-    use super::{StreamInputToken, symbols};
     use crate::tokenizers::{
-        stream::StreamTokenizer,
+        stream::WordStemTokenizer,
         types::{TokenType, TypesTokenizer},
     };
-    use std::{borrow::Cow, net::IpAddr};
-
-    pub trait ToStreamToken {
-        fn to_stream_token(&self) -> Option<StreamInputToken<Vec<u8>>>;
-    }
-
-    impl<T: AsRef<str>, E: AsRef<str>, U: AsRef<str>, I: AsRef<str>> ToStreamToken
-        for TokenType<T, E, U, I>
-    {
-        fn to_stream_token(&self) -> Option<StreamInputToken<Vec<u8>>> {
-            match self {
-                TokenType::Alphabetic(word) => {
-                    Some(StreamInputToken::Word(word.as_ref().to_lowercase()))
-                }
-                TokenType::Url(word) => {
-                    let word = word.as_ref();
-                    word.split_once("://")
-                        .map(|(_, host)| StreamInputToken::Other(url_host_as_bytes(host)))
-                }
-                TokenType::IpAddr(word) => word.as_ref().parse::<IpAddr>().ok().map(|ip| {
-                    StreamInputToken::Other(match ip {
-                        IpAddr::V4(ip) => ip.octets().to_vec(),
-                        IpAddr::V6(ip) => ip.octets().to_vec(),
-                    })
-                }),
-                TokenType::UrlNoScheme(word) => {
-                    StreamInputToken::Other(url_host_as_bytes(word.as_ref())).into()
-                }
-                TokenType::Alphanumeric(word) | TokenType::UrlNoHost(word) => {
-                    StreamInputToken::Other(word.as_ref().to_lowercase().into_bytes()).into()
-                }
-                TokenType::Email(word) => {
-                    StreamInputToken::Other(word.as_ref().to_lowercase().into_bytes()).into()
-                }
-                TokenType::Other(ch) => {
-                    let ch = ch.to_string();
-                    if symbols(&ch) {
-                        Some(StreamInputToken::Other(ch.into_bytes()))
-                    } else {
-                        None
-                    }
-                }
-                TokenType::Integer(word) => number_to_tag(false, word.as_ref()).into(),
-                TokenType::Float(word) => number_to_tag(true, word.as_ref()).into(),
-                TokenType::Punctuation(_) | TokenType::Space => None,
-            }
-        }
-    }
-
-    fn url_host_as_bytes(host: &str) -> Vec<u8> {
-        host.split_once('/')
-            .map_or(host, |(h, _)| h.rsplit_once(':').map_or(h, |(h, _)| h))
-            .to_lowercase()
-            .into_bytes()
-    }
-
-    fn number_to_tag(is_float: bool, num: &str) -> StreamInputToken<Vec<u8>> {
-        let t = match (is_float, num.starts_with('-')) {
-            (true, true) => b'F',
-            (true, false) => b'f',
-            (false, true) => b'I',
-            (false, false) => b'i',
-        };
-
-        StreamInputToken::Other([t, num.len() as u8].to_vec())
-    }
 
     #[test]
     fn stream_tokenizer() {
@@ -8040,15 +7915,17 @@ pub mod tests {
         ];
 
         for (input, expect) in inputs.iter() {
-            let input = StreamTokenizer::new(
-                input,
-                TypesTokenizer::new(input).filter_map(|t| t.word.to_stream_token()),
-            )
-            .map(|word| String::from_utf8(word).unwrap())
-            .collect::<Vec<_>>();
-            let expect = expect.iter().copied().map(Cow::from).collect::<Vec<_>>();
+            let tokenizer = WordStemTokenizer::new(input);
+            let mut result = Vec::new();
+            for token in TypesTokenizer::new(input) {
+                if let TokenType::Alphabetic(word) = token.word {
+                    tokenizer.tokenize(word, |t| {
+                        result.push(t.into_owned());
+                    });
+                }
+            }
 
-            assert_eq!(input, expect,);
+            assert_eq!(&result, expect,);
         }
     }
 }

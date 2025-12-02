@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::task_manager::bayes::SpamTrainTask;
 use crate::task_manager::imip::SendImipTask;
 use crate::task_manager::index::SearchIndexTask;
 use crate::task_manager::lock::{TaskLock, TaskLockManager};
@@ -39,7 +38,6 @@ use trc::TaskQueueEvent;
 use utils::snowflake::SnowflakeIdGenerator;
 
 pub mod alarm;
-pub mod bayes;
 pub mod imip;
 pub mod index;
 pub mod lock;
@@ -56,7 +54,6 @@ pub struct Task<T> {
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum TaskAction {
     UpdateIndex(IndexAction),
-    SpamTrain(bool),
     SendAlarm(CalendarAlarm),
     SendImip,
     MergeThreads(MergeThreadIds<AHashSet<u32>>),
@@ -72,13 +69,11 @@ pub struct IndexAction {
 pub(crate) struct ImipAction;
 
 const INDEX_EXPIRY: u64 = 60 * 5; // 5 minutes
-const BAYES_LOCK_EXPIRY: u64 = 60 * 30; // 30 minutes
 const ALARM_EXPIRY: u64 = 60 * 2; // 2 minutes
 const QUEUE_REFRESH_INTERVAL: u64 = 60 * 5; // 5 minutes
 
 pub(crate) struct TaskManagerIpc {
     tx_fts: mpsc::Sender<Task<IndexAction>>,
-    tx_bayes: mpsc::Sender<Task<bool>>,
     tx_alarm: mpsc::Sender<Task<CalendarAlarm>>,
     tx_imip: mpsc::Sender<Task<ImipAction>>,
     tx_threads: mpsc::Sender<Task<MergeThreadIds<AHashSet<u32>>>>,
@@ -94,10 +89,9 @@ struct Locked {
 pub fn spawn_task_manager(inner: Arc<Inner>) {
     // Create mpsc channels for the different task types
     let (tx_index_1, mut rx_index_1) = mpsc::channel::<Task<IndexAction>>(IPC_CHANNEL_BUFFER);
-    let (tx_index_2, mut rx_index_2) = mpsc::channel::<Task<bool>>(IPC_CHANNEL_BUFFER);
-    let (tx_index_3, mut rx_index_3) = mpsc::channel::<Task<CalendarAlarm>>(IPC_CHANNEL_BUFFER);
-    let (tx_index_4, mut rx_index_4) = mpsc::channel::<Task<ImipAction>>(IPC_CHANNEL_BUFFER);
-    let (tx_index_5, mut rx_index_5) =
+    let (tx_index_2, mut rx_index_2) = mpsc::channel::<Task<CalendarAlarm>>(IPC_CHANNEL_BUFFER);
+    let (tx_index_3, mut rx_index_3) = mpsc::channel::<Task<ImipAction>>(IPC_CHANNEL_BUFFER);
+    let (tx_index_4, mut rx_index_4) =
         mpsc::channel::<Task<MergeThreadIds<AHashSet<u32>>>>(IPC_CHANNEL_BUFFER);
 
     // Create dummy server instance for alarms
@@ -177,49 +171,12 @@ pub fn spawn_task_manager(inner: Arc<Inner>) {
         });
     }
 
-    // Bayes training worker
-    {
-        let inner = inner.clone();
-        tokio::spawn(async move {
-            while let Some(task) = rx_index_2.recv().await {
-                let server = inner.build_server();
-
-                // Lock task
-                if server
-                    .try_lock_task(
-                        task.account_id,
-                        task.document_id,
-                        task.lock_key(),
-                        task.lock_expiry(),
-                    )
-                    .await
-                {
-                    let success = server
-                        .bayes_train(task.account_id, task.document_id, task.action)
-                        .await;
-
-                    // Remove entry from queue
-                    if success {
-                        delete_tasks(&server, &[task]).await;
-                    } else {
-                        trc::event!(
-                            TaskQueue(TaskQueueEvent::TaskFailed),
-                            AccountId = task.account_id,
-                            DocumentId = task.document_id,
-                            Details = "Bayes training task failed",
-                        );
-                    }
-                }
-            }
-        });
-    }
-
     // Send alarm worker
     {
         let inner = inner.clone();
         let server_instance = server_instance.clone();
         tokio::spawn(async move {
-            while let Some(task) = rx_index_3.recv().await {
+            while let Some(task) = rx_index_2.recv().await {
                 let server = inner.build_server();
 
                 // Lock task
@@ -263,7 +220,7 @@ pub fn spawn_task_manager(inner: Arc<Inner>) {
         let inner = inner.clone();
         let server_instance = server_instance.clone();
         tokio::spawn(async move {
-            while let Some(task) = rx_index_4.recv().await {
+            while let Some(task) = rx_index_3.recv().await {
                 let server = inner.build_server();
 
                 // Lock task
@@ -306,7 +263,7 @@ pub fn spawn_task_manager(inner: Arc<Inner>) {
     {
         let inner = inner.clone();
         tokio::spawn(async move {
-            while let Some(task) = rx_index_5.recv().await {
+            while let Some(task) = rx_index_4.recv().await {
                 let server = inner.build_server();
 
                 // Lock task
@@ -340,10 +297,9 @@ pub fn spawn_task_manager(inner: Arc<Inner>) {
     tokio::spawn(async move {
         let mut ipc = TaskManagerIpc {
             tx_fts: tx_index_1,
-            tx_bayes: tx_index_2,
-            tx_alarm: tx_index_3,
-            tx_imip: tx_index_4,
-            tx_threads: tx_index_5,
+            tx_alarm: tx_index_2,
+            tx_imip: tx_index_3,
+            tx_threads: tx_index_4,
             locked: Default::default(),
             revision: 0,
         };
@@ -475,27 +431,6 @@ impl TaskQueueManager for Server {
                         );
                     }
                 }
-                TaskAction::SpamTrain(learn_spam)
-                    if roles.bayes_training.is_enabled_for_hash(&event) =>
-                {
-                    if ipc
-                        .tx_bayes
-                        .send(Task {
-                            account_id: event.account_id,
-                            document_id: event.document_id,
-                            due: event.due,
-                            action: learn_spam,
-                        })
-                        .await
-                        .is_err()
-                    {
-                        trc::event!(
-                            Server(trc::ServerEvent::ThreadError),
-                            Details = "Error sending task.",
-                            CausedBy = trc::location!()
-                        );
-                    }
-                }
                 TaskAction::SendAlarm(alarm)
                     if roles.calendar_alerts.is_enabled_for_hash(&event) =>
                 {
@@ -598,9 +533,7 @@ async fn delete_tasks<T: TaskLock>(server: &Server, tasks: &[T]) {
     }
 
     for task in tasks {
-        if task.remove_lock() {
-            server.remove_index_lock(task.lock_key()).await;
-        }
+        server.remove_index_lock(task.lock_key()).await;
     }
 }
 
@@ -608,7 +541,6 @@ impl TaskAction {
     pub fn name(&self) -> &'static str {
         match self {
             TaskAction::UpdateIndex(_) => "UpdateIndex",
-            TaskAction::SpamTrain(_) => "SpamTrain",
             TaskAction::SendAlarm(_) => "SendAlarm",
             TaskAction::SendImip => "SendImip",
             TaskAction::MergeThreads(_) => "MergeThreads",

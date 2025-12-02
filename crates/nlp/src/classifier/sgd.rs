@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::classifier::feature::{Features, Sample, SampleBuilder};
+use crate::classifier::feature::{FeatureBuilder, Features, Sample};
 use rand::{SeedableRng, rngs::StdRng, seq::SliceRandom};
 
 #[derive(Default)]
@@ -114,8 +114,8 @@ impl SGDClassifier {
             .collect()
     }
 
-    pub fn sample_builder(&self) -> SampleBuilder {
-        SampleBuilder {
+    pub fn feature_builder(&self) -> FeatureBuilder {
+        FeatureBuilder {
             features_mask: (self.weights.len() - 1) as u32,
         }
     }
@@ -163,9 +163,13 @@ fn log1pexp(x: f32) -> f32 {
 
 #[cfg(test)]
 pub mod tests {
-    use crate::classifier::{feature::Sample, sgd::SGDClassifier};
+    use crate::classifier::{
+        feature::{Feature, Sample},
+        sgd::SGDClassifier,
+    };
     use rand::{SeedableRng, rngs::StdRng, seq::SliceRandom};
     use std::{
+        collections::HashMap,
         fs::File,
         io::{BufRead, BufReader},
         time::Instant,
@@ -262,6 +266,24 @@ pub mod tests {
         (train, test)
     }
 
+    impl Feature for String {
+        fn prefix(&self) -> u16 {
+            0
+        }
+
+        fn value(&self) -> &[u8] {
+            self.as_bytes()
+        }
+
+        fn is_global_feature(&self) -> bool {
+            true
+        }
+
+        fn is_local_feature(&self) -> bool {
+            false
+        }
+    }
+
     #[test]
     fn sgd_classifier() {
         let reader = BufReader::new(
@@ -271,7 +293,7 @@ pub mod tests {
         let mut samples = Vec::with_capacity(1024);
 
         let mut model = SGDClassifier::new(1 << 20, 1000, 0.0001, 42);
-        let builder = model.sample_builder();
+        let builder = model.feature_builder();
 
         let time = Instant::now();
 
@@ -279,14 +301,18 @@ pub mod tests {
             let line = line.unwrap();
             let (text, class) = line.trim().rsplit_once(',').unwrap();
             let text = text.trim_start_matches('"').trim_end_matches('"');
-            samples.push(
-                builder.build(
-                    text.split_whitespace(),
-                    class
-                        .parse()
-                        .unwrap_or_else(|_| panic!("Invalid class value: {line}")),
-                ),
-            );
+
+            let mut sample: HashMap<String, f32> = HashMap::new();
+            for word in text.split_whitespace() {
+                *sample.entry(word.to_string()).or_default() += 1.0;
+            }
+            builder.scale(&mut sample);
+            samples.push(Sample {
+                features: builder.build(&sample, None),
+                class: class
+                    .parse()
+                    .unwrap_or_else(|_| panic!("Invalid class value: {line}")),
+            });
         }
 
         println!("Loaded {} samples in {:?}", samples.len(), time.elapsed());

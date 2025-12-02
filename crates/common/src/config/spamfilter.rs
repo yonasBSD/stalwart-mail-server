@@ -90,8 +90,7 @@ pub struct ClassifierConfig {
     pub alpha: f32,
     pub auto_learn_reply_ham: bool,
     pub auto_learn_card_is_ham: bool,
-    pub score_spam: f32,
-    pub score_ham: f32,
+    pub hold_samples_for: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -464,20 +463,18 @@ impl ClassifierConfig {
                 .property_or_default("spam-filter.classifier.epochs", "1000")
                 .unwrap_or(1000),
             alpha: config
-                .property_or_default("spam-filter.classifier.alpha", "0.0001")
-                .unwrap_or(0.0001),
-            score_spam: config
-                .property_or_default("spam-filter.classifier.score.spam", "0.7")
-                .unwrap_or(0.7),
-            score_ham: config
-                .property_or_default("spam-filter.classifier.score.ham", "0.5")
-                .unwrap_or(0.5),
+                .property_or_default("spam-filter.classifier.alpha", "0.00001")
+                .unwrap_or(0.00001),
             auto_learn_card_is_ham: config
                 .property_or_default("spam-filter.classifier.auto-learn.card-is-ham", "true")
                 .unwrap_or(true),
             auto_learn_reply_ham: config
                 .property_or_default("spam-filter.classifier.auto-learn.trusted-reply", "true")
                 .unwrap_or(true),
+            hold_samples_for: config
+                .property_or_default::<Duration>("spam-filter.classifier.hold-samples-for", "365d")
+                .unwrap_or(Duration::from_secs(365 * 24 * 60 * 60))
+                .as_secs(),
         }
         .into()
     }

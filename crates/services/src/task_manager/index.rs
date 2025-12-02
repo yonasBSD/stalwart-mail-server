@@ -593,7 +593,7 @@ async fn delete_email_metadata(
                                 hash: blob_hash.clone(),
                                 to: BlobLink::Temporary { until },
                             },
-                            vec![],
+                            vec![BlobLink::UNDELETE_LINK],
                         )
                         .set(
                             BlobOp::Undelete {

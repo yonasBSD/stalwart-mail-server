@@ -226,11 +226,6 @@ pub enum TaskQueueClass {
         index: SearchIndex,
         is_insert: bool,
     },
-    SpamTrain {
-        due: TaskEpoch,
-        blob_hash: BlobHash,
-        learn_spam: bool,
-    },
     SendAlarm {
         due: TaskEpoch,
         event_id: u16,
@@ -380,6 +375,7 @@ pub enum BlobOp {
     Link { hash: BlobHash, to: BlobLink },
     Quota { hash: BlobHash, until: u64 },
     Undelete { hash: BlobHash, until: u64 },
+    SpamSample { hash: BlobHash, until: u64 },
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
