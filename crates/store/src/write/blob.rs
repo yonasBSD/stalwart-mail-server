@@ -135,94 +135,19 @@ impl Store {
                 to: BlobLink::Document,
             }),
         };
-        const TEMP_LINK: usize = BLOB_HASH_LEN + U32_LEN + U64_LEN;
-        const DOC_LINK: usize = BLOB_HASH_LEN + U64_LEN + 1;
 
-        let mut last_hash = BlobHash::default();
-        let mut last_hash_is_linked = true; // Avoid deleting non-existing last_hash on first iteration
-        let mut delete_keys = Vec::new();
-        let now = now();
+        let mut state = BlobPurgeState::new();
         self.iterate(
             IterateParams::new(from_key, to_key).ascending(),
             |key, value| {
-                let hash = BlobHash::try_from_hash_slice(
-                    key.get(0..BLOB_HASH_LEN)
-                        .ok_or_else(|| trc::Error::corrupted_key(key, None, trc::location!()))?,
-                )
-                .unwrap();
+                let hash =
+                    BlobHash::try_from_hash_slice(key.get(0..BLOB_HASH_LEN).ok_or_else(|| {
+                        trc::Error::corrupted_key(key, value.into(), trc::location!())
+                    })?)
+                    .unwrap();
 
-                if last_hash != hash {
-                    if !last_hash_is_linked {
-                        delete_keys.push((
-                            None,
-                            BlobOp::Commit {
-                                hash: std::mem::replace(&mut last_hash, hash),
-                            },
-                        ));
-                    } else {
-                        last_hash = hash;
-                    }
-                    last_hash_is_linked = false;
-                }
-
-                match key.len() {
-                    BLOB_HASH_LEN => {
-                        // Main blob entry
-                    }
-                    TEMP_LINK => {
-                        // Temporary link
-                        let until = key.deserialize_be_u64(BLOB_HASH_LEN + U32_LEN)?;
-                        if until <= now {
-                            let account_id = key.deserialize_be_u32(BLOB_HASH_LEN)?;
-                            delete_keys.push((
-                                Some(account_id),
-                                BlobOp::Link {
-                                    hash: last_hash.clone(),
-                                    to: BlobLink::Temporary { until },
-                                },
-                            ));
-                            match value.first().copied() {
-                                Some(BlobLink::QUOTA_LINK) => {
-                                    delete_keys.push((
-                                        Some(account_id),
-                                        BlobOp::Quota {
-                                            hash: last_hash.clone(),
-                                            until,
-                                        },
-                                    ));
-                                }
-                                Some(BlobLink::UNDELETE_LINK) => {
-                                    delete_keys.push((
-                                        Some(account_id),
-                                        BlobOp::Undelete {
-                                            hash: last_hash.clone(),
-                                            until,
-                                        },
-                                    ));
-                                }
-                                Some(BlobLink::SPAM_SAMPLE_LINK) => {
-                                    delete_keys.push((
-                                        Some(account_id),
-                                        BlobOp::SpamSample {
-                                            hash: last_hash.clone(),
-                                            until,
-                                        },
-                                    ));
-                                }
-                                _ => {}
-                            }
-                        } else {
-                            last_hash_is_linked = true;
-                        }
-                    }
-                    DOC_LINK => {
-                        // Document link
-                        last_hash_is_linked = true;
-                    }
-                    _ => {
-                        return Err(trc::Error::corrupted_key(key, None, trc::location!()));
-                    }
-                }
+                state.update_hash(hash);
+                state.process_key(key, value)?;
 
                 Ok(true)
             },
@@ -230,12 +155,10 @@ impl Store {
         .await
         .caused_by(trc::location!())?;
 
-        if !last_hash_is_linked {
-            delete_keys.push((None, BlobOp::Commit { hash: last_hash }));
-        }
+        state.finalize(BlobHash::default());
 
         // Delete expired or unlinked blobs
-        for (_, op) in &delete_keys {
+        for (_, op) in &state.delete_keys {
             if let BlobOp::Commit { hash } = op {
                 blob_store
                     .delete_blob(hash.as_ref())
@@ -246,7 +169,7 @@ impl Store {
 
         // Delete hashes
         let mut batch = BatchBuilder::new();
-        for (account_id, op) in delete_keys {
+        for (account_id, op) in state.delete_keys {
             if batch.is_large_batch() {
                 self.write(batch.build_all())
                     .await
@@ -270,5 +193,158 @@ impl Store {
         }
 
         Ok(())
+    }
+}
+
+struct BlobPurgeState {
+    last_hash: BlobHash,
+    last_hash_is_linked: bool,
+    delete_keys: Vec<(Option<u32>, BlobOp)>,
+    spam_train_samples: Vec<(u32, u64)>,
+    now: u64,
+}
+
+impl BlobPurgeState {
+    fn new() -> Self {
+        Self {
+            last_hash: BlobHash::default(),
+            last_hash_is_linked: true, // Avoid deleting non-existing last_hash on first iteration
+            delete_keys: Vec::new(),
+            spam_train_samples: Vec::new(),
+            now: now(),
+        }
+    }
+
+    pub fn update_hash(&mut self, hash: BlobHash) {
+        if self.last_hash != hash {
+            self.finalize(hash);
+            self.last_hash_is_linked = false;
+        }
+    }
+
+    pub fn finalize(&mut self, new_hash: BlobHash) {
+        if !self.last_hash_is_linked {
+            self.delete_keys.push((
+                None,
+                BlobOp::Commit {
+                    hash: std::mem::replace(&mut self.last_hash, new_hash),
+                },
+            ));
+        } else {
+            if !self.spam_train_samples.is_empty() {
+                if self.spam_train_samples.len() > 1 {
+                    // Sort by account_id ascending, then until descending
+                    self.spam_train_samples
+                        .sort_unstable_by(|(a_id, a_until), (b_id, b_until)| {
+                            a_id.cmp(b_id).then_with(|| b_until.cmp(a_until))
+                        });
+                    let mut samples = self.spam_train_samples.iter().peekable();
+                    while let Some((account_id, until)) = samples.next() {
+                        // Keep only the latest sample per account
+                        let mut last_until = *until;
+                        while let Some((next_account_id, next_until)) = samples.peek() {
+                            if next_account_id == account_id {
+                                self.delete_keys.push((
+                                    Some(*account_id),
+                                    BlobOp::SpamSample {
+                                        hash: self.last_hash.clone(),
+                                        until: last_until,
+                                    },
+                                ));
+                                self.delete_keys.push((
+                                    Some(*account_id),
+                                    BlobOp::Link {
+                                        hash: self.last_hash.clone(),
+                                        to: BlobLink::Temporary { until: last_until },
+                                    },
+                                ));
+                                samples.next();
+                                last_until = *next_until;
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                self.spam_train_samples.clear();
+            }
+            self.last_hash = new_hash;
+        }
+    }
+
+    pub fn process_key(&mut self, key: &[u8], value: &[u8]) -> trc::Result<()> {
+        const TEMP_LINK: usize = BLOB_HASH_LEN + U32_LEN + U64_LEN;
+        const DOC_LINK: usize = BLOB_HASH_LEN + U64_LEN + 1;
+
+        match key.len() {
+            BLOB_HASH_LEN => {
+                // Main blob entry
+                Ok(())
+            }
+            TEMP_LINK => {
+                // Temporary link
+                let until = key.deserialize_be_u64(BLOB_HASH_LEN + U32_LEN)?;
+                if until <= self.now {
+                    let account_id = key.deserialize_be_u32(BLOB_HASH_LEN)?;
+                    self.delete_keys.push((
+                        Some(account_id),
+                        BlobOp::Link {
+                            hash: self.last_hash.clone(),
+                            to: BlobLink::Temporary { until },
+                        },
+                    ));
+                    match value.first().copied() {
+                        Some(BlobLink::QUOTA_LINK) => {
+                            self.delete_keys.push((
+                                Some(account_id),
+                                BlobOp::Quota {
+                                    hash: self.last_hash.clone(),
+                                    until,
+                                },
+                            ));
+                        }
+                        Some(BlobLink::UNDELETE_LINK) => {
+                            self.delete_keys.push((
+                                Some(account_id),
+                                BlobOp::Undelete {
+                                    hash: self.last_hash.clone(),
+                                    until,
+                                },
+                            ));
+                        }
+                        Some(BlobLink::SPAM_SAMPLE_LINK) => {
+                            self.delete_keys.push((
+                                Some(account_id),
+                                BlobOp::SpamSample {
+                                    hash: self.last_hash.clone(),
+                                    until,
+                                },
+                            ));
+                        }
+                        _ => {}
+                    }
+                } else {
+                    // Delete attempts to train the same message multiple times
+                    if matches!(value.first(), Some(&BlobLink::SPAM_SAMPLE_LINK)) {
+                        let account_id = key.deserialize_be_u32(BLOB_HASH_LEN)?;
+                        self.spam_train_samples.push((account_id, until));
+                    }
+
+                    self.last_hash_is_linked = true;
+                }
+                Ok(())
+            }
+            DOC_LINK => {
+                // Document link
+                self.last_hash_is_linked = true;
+                Ok(())
+            }
+            _ => Err(trc::Error::corrupted_key(
+                key,
+                value.into(),
+                trc::location!(),
+            )),
+        }
     }
 }

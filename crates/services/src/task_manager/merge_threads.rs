@@ -14,7 +14,10 @@ use store::{
     IndexKeyPrefix, IterateParams, U32_LEN, ValueKey,
     ahash::{AHashMap, AHashSet},
     rand::Rng,
-    write::{BatchBuilder, IndexPropertyClass, ValueClass, key::DeserializeBigEndian},
+    write::{
+        AlignedBytes, Archive, BatchBuilder, IndexPropertyClass, ValueClass,
+        key::DeserializeBigEndian,
+    },
 };
 use trc::AddContext;
 use types::{
@@ -132,7 +135,12 @@ async fn merge_threads(
             if thread_id != group_thread_id {
                 for &document_id in document_ids {
                     if let Some(data_) = server
-                        .archive(account_id, Collection::Email, document_id)
+                        .store()
+                        .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                            account_id,
+                            Collection::Email,
+                            document_id,
+                        ))
                         .await
                         .caused_by(trc::location!())?
                     {

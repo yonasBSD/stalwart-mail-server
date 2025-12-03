@@ -26,6 +26,10 @@ use jmap_proto::{
 use jmap_tools::{Key, Map, Value};
 use mail_parser::HeaderValue;
 use std::future::Future;
+use store::{
+    ValueKey,
+    write::{AlignedBytes, Archive},
+};
 use trc::{AddContext, StoreEvent};
 use types::{
     acl::Acl,
@@ -153,12 +157,13 @@ impl EmailGet for Server {
                 continue;
             }
             let metadata_ = match self
-                .archive_by_property(
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::property(
                     account_id,
                     Collection::Email,
                     id.document_id(),
-                    EmailField::Metadata.into(),
-                )
+                    EmailField::Metadata,
+                ))
                 .await?
             {
                 Some(metadata) => metadata,

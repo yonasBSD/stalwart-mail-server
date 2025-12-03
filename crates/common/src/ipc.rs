@@ -100,6 +100,7 @@ pub enum BroadcastEvent {
     ReloadPushServers(u32),
     ReloadSettings,
     ReloadBlockedIps,
+    ReloadSpamFilter,
 }
 
 #[derive(Debug)]

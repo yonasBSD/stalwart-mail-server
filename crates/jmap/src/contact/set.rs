@@ -17,7 +17,7 @@ use jmap_proto::{
     types::state::State,
 };
 use jmap_tools::{JsonPointerHandler, JsonPointerItem, Key, Value};
-use store::{ahash::AHashSet, roaring::RoaringBitmap, write::BatchBuilder};
+use store::{ValueKey, ahash::AHashSet, roaring::RoaringBitmap, write::{AlignedBytes, Archive, BatchBuilder}};
 use trc::AddContext;
 use types::{
     acl::Acl,
@@ -115,7 +115,12 @@ impl ContactCardSet for Server {
             // Obtain contact card
             let document_id = id.document_id();
             let contact_card_ = if let Some(contact_card_) = self
-                .archive(account_id, Collection::ContactCard, document_id)
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                    account_id,
+                    Collection::ContactCard,
+                    document_id,
+                ))
                 .await?
             {
                 contact_card_
@@ -281,7 +286,12 @@ impl ContactCardSet for Server {
             };
 
             let Some(contact_card_) = self
-                .archive(account_id, Collection::ContactCard, document_id)
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                    account_id,
+                    Collection::ContactCard,
+                    document_id,
+                ))
                 .await
                 .caused_by(trc::location!())?
             else {

@@ -636,7 +636,12 @@ impl SieveScriptIngest for Server {
     ) -> trc::Result<Option<CompiledScript>> {
         // Obtain script object
         let Some(script_object) = self
-            .archive(account_id, Collection::SieveScript, document_id)
+            .store()
+            .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                account_id,
+                Collection::SieveScript,
+                document_id,
+            ))
             .await?
         else {
             return Ok(None);

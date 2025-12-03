@@ -34,8 +34,8 @@ use common::{
     i18n,
 };
 use store::{
-    rand,
-    write::{BatchBuilder, now},
+    ValueKey, rand,
+    write::{AlignedBytes, Archive, BatchBuilder, now},
 };
 use trc::AddContext;
 use types::{
@@ -164,7 +164,12 @@ impl ItipIngest for Server {
 
         if let Some(document_id) = document_id {
             if let Some(archive) = self
-                .archive(account_id, Collection::CalendarEvent, document_id)
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                    account_id,
+                    Collection::CalendarEvent,
+                    document_id,
+                ))
                 .await
                 .caused_by(trc::location!())?
             {
@@ -403,7 +408,12 @@ impl ItipIngest for Server {
     async fn http_rsvp_handle(&self, query: &str, language: &str) -> trc::Result<String> {
         let response = if let Some(rsvp) = decode_rsvp_response(self, query).await {
             if let Some(archive) = self
-                .archive(rsvp.account_id, Collection::CalendarEvent, rsvp.document_id)
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                    rsvp.account_id,
+                    Collection::CalendarEvent,
+                    rsvp.document_id,
+                ))
                 .await
                 .caused_by(trc::location!())?
             {

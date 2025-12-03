@@ -10,7 +10,10 @@ use directory::Permission;
 use email::sieve::SieveScript;
 use imap_proto::receiver::Request;
 use std::time::Instant;
-use store::write::BatchBuilder;
+use store::{
+    ValueKey,
+    write::{AlignedBytes, Archive, BatchBuilder},
+};
 use trc::AddContext;
 use types::collection::Collection;
 
@@ -58,7 +61,12 @@ impl<T: SessionStream> Session<T> {
         // Obtain script values
         let script = self
             .server
-            .archive(account_id, Collection::SieveScript, document_id)
+            .store()
+            .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                account_id,
+                Collection::SieveScript,
+                document_id,
+            ))
             .await
             .caused_by(trc::location!())?
             .ok_or_else(|| {

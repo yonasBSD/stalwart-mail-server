@@ -29,7 +29,10 @@ use imap_proto::{
     receiver::Request,
 };
 use std::{sync::Arc, time::Instant};
-use store::write::{AlignedBytes, Archive, BatchBuilder};
+use store::{
+    ValueKey,
+    write::{AlignedBytes, Archive, BatchBuilder},
+};
 use trc::AddContext;
 use types::{
     acl::{Acl, AclGrant},
@@ -460,7 +463,12 @@ impl<T: SessionStream> SessionData<T> {
         if let Some(mailbox) = self.get_mailbox_by_name(&arguments.mailbox_name) {
             if let Some(values) = self
                 .server
-                .archive(mailbox.account_id, Collection::Mailbox, mailbox.mailbox_id)
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                    mailbox.account_id,
+                    Collection::Mailbox,
+                    mailbox.mailbox_id,
+                ))
                 .await
                 .caused_by(trc::location!())?
             {

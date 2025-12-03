@@ -12,6 +12,7 @@ use common::{
 };
 use email::message::delete::EmailDeletion;
 use smtp::reporting::SmtpReporting;
+use spam_filter::modules::classifier::SpamClassifier;
 use std::{
     collections::BinaryHeap,
     future::Future,
@@ -55,6 +56,7 @@ enum ActionClass {
     #[cfg(feature = "enterprise")]
     RenewLicense,
     // SPDX-SnippetEnd
+    TrainSpamClassifier,
 }
 
 #[derive(Default)]
@@ -96,6 +98,22 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
                         ActionClass::Store(idx),
                     );
                 }
+            }
+
+            // Spam classifier training
+            if roles.spam_training.is_enabled_or_sharded()
+                && let Some(train_frequency) = server
+                    .core
+                    .spam
+                    .classifier
+                    .as_ref()
+                    .and_then(|c| c.train_frequency)
+            {
+                let todo = "check last train";
+                queue.schedule(
+                    Instant::now() + train_frequency,
+                    ActionClass::TrainSpamClassifier,
+                );
             }
 
             // OTEL Push Metrics
@@ -537,6 +555,41 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
                                         }
                                     }
                                 });
+                            }
+                            ActionClass::TrainSpamClassifier => {
+                                if server
+                                    .core
+                                    .network
+                                    .roles
+                                    .spam_training
+                                    .is_enabled_or_sharded()
+                                    && let Some(train_frequency) = server
+                                        .core
+                                        .spam
+                                        .classifier
+                                        .as_ref()
+                                        .and_then(|c| c.train_frequency)
+                                {
+                                    trc::event!(
+                                        Housekeeper(trc::HousekeeperEvent::Run),
+                                        Type = "spam_classifier_train"
+                                    );
+
+                                    // Schedule next training
+                                    queue.schedule(
+                                        Instant::now() + train_frequency,
+                                        ActionClass::TrainSpamClassifier,
+                                    );
+
+                                    let server = server.clone();
+                                    tokio::spawn(async move {
+                                        if let Err(err) = server.spam_train(false).await {
+                                            trc::error!(
+                                                err.details("Failed to train spam classifier")
+                                            );
+                                        }
+                                    });
+                                }
                             }
 
                             // SPDX-SnippetBegin

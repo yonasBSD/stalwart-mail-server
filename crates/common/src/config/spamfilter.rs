@@ -5,9 +5,9 @@
  */
 
 use super::{Variable, functions::ResolveVariable, if_block::IfBlock, tokenizer::TokenMap};
-use ahash::{AHashMap, AHashSet};
-use compact_str::CompactString;
+use ahash::AHashSet;
 use mail_auth::common::resolver::ToReverseName;
+use nlp::classifier::sgd::TextClassifier;
 use std::{
     net::{IpAddr, SocketAddr},
     time::Duration,
@@ -19,30 +19,20 @@ use utils::{
     glob::GlobMap,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum ReputationType {
-    Domain(CompactString),
-    Asn(u32),
-    Ip(IpAddr),
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub struct ReputationCount {
-    pub ham: u32,
-    pub spam: u32,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct Reputation {
-    pub items: AHashMap<ReputationType, ReputationCount>,
-    pub total: ReputationCount,
-    pub last_fetch: u64,
+#[derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default)]
+pub struct SpamClassifierModel {
+    pub classifier: TextClassifier,
+    pub ham_count: u64,
+    pub spam_count: u64,
+    pub last_sample_expiry: u64,
+    pub last_trained_at: u64,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct SpamFilterConfig {
     pub enabled: bool,
     pub card_is_ham: bool,
+    pub trusted_reply: bool,
     pub grey_list_expiry: Option<u64>,
 
     pub dnsbl: DnsBlConfig,
@@ -88,9 +78,13 @@ pub struct ClassifierConfig {
     pub epochs: usize,
     pub feature_hash_size: usize,
     pub alpha: f32,
+    pub train_batch_size: usize,
+    pub min_ham_samples: u64,
+    pub min_spam_samples: u64,
     pub auto_learn_reply_ham: bool,
     pub auto_learn_card_is_ham: bool,
     pub hold_samples_for: u64,
+    pub train_frequency: Option<Duration>,
 }
 
 #[derive(Debug, Clone)]
@@ -169,7 +163,10 @@ impl SpamFilterConfig {
                 .property_or_default("spam-filter.enable", "true")
                 .unwrap_or(true),
             card_is_ham: config
-                .property_or_default("spam-filter.card-is-ham", "true")
+                .property_or_default("spam-filter.card-is-ham.enable", "true")
+                .unwrap_or(true),
+            trusted_reply: config
+                .property_or_default("spam-filter.trusted-reply.enable", "true")
                 .unwrap_or(true),
             dnsbl: DnsBlConfig::parse(config),
             rules: SpamFilterRules::parse(config),
@@ -447,34 +444,49 @@ impl ClassifierConfig {
         }
 
         let feature_hash_size: usize = config
-            .property_or_default("spam-filter.classifier.feature-hash-size", "1048576")
+            .property_or_default("spam-filter.classifier.parameters.features", "1048576")
             .unwrap_or(1048576);
 
         if !feature_hash_size.is_power_of_two() {
             config.new_build_error(
-                "spam-filter.classifier.feature-hash-size",
-                "Feature hash size must be a power of two.",
+                "spam-filter.classifier.parameters.features",
+                "Feature size must be a power of two.",
             );
         }
 
         ClassifierConfig {
             feature_hash_size,
             epochs: config
-                .property_or_default("spam-filter.classifier.epochs", "1000")
+                .property_or_default("spam-filter.classifier.parameters.epochs", "1000")
                 .unwrap_or(1000),
             alpha: config
-                .property_or_default("spam-filter.classifier.alpha", "0.00001")
+                .property_or_default("spam-filter.classifier.parameters.alpha", "0.00001")
                 .unwrap_or(0.00001),
             auto_learn_card_is_ham: config
-                .property_or_default("spam-filter.classifier.auto-learn.card-is-ham", "true")
+                .property_or_default("spam-filter.card-is-ham.learn", "true")
                 .unwrap_or(true),
             auto_learn_reply_ham: config
-                .property_or_default("spam-filter.classifier.auto-learn.trusted-reply", "true")
+                .property_or_default("spam-filter.trusted-reply.learn", "true")
                 .unwrap_or(true),
             hold_samples_for: config
-                .property_or_default::<Duration>("spam-filter.classifier.hold-samples-for", "365d")
-                .unwrap_or(Duration::from_secs(365 * 24 * 60 * 60))
+                .property_or_default::<Duration>("spam-filter.classifier.samples.hold-for", "180d")
+                .unwrap_or(Duration::from_secs(180 * 24 * 60 * 60))
                 .as_secs(),
+            min_ham_samples: config
+                .property_or_default("spam-filter.classifier.samples.min-ham", "10")
+                .unwrap_or(10),
+            min_spam_samples: config
+                .property_or_default("spam-filter.classifier.samples.min-spam", "10")
+                .unwrap_or(10),
+            train_batch_size: config
+                .property_or_default("spam-filter.classifier.training.batch-size", "100")
+                .unwrap_or(100),
+            train_frequency: config
+                .property_or_default::<Option<Duration>>(
+                    "spam-filter.classifier.training.frequency",
+                    "12h",
+                )
+                .unwrap_or(Some(Duration::from_secs(12 * 60 * 60))),
         }
         .into()
     }

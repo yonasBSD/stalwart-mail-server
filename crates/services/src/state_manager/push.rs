@@ -18,8 +18,9 @@ use std::{
     time::{Duration, Instant},
 };
 use store::{
+    ValueKey,
     ahash::{AHashMap, AHashSet},
-    write::now,
+    write::{AlignedBytes, Archive, now},
 };
 use tokio::sync::mpsc;
 use trc::{AddContext, PushSubscriptionEvent, ServerEvent};
@@ -488,12 +489,13 @@ async fn load_push_subscriptions(
         .collect::<Vec<_>>();
 
     if let Some(push_subscriptions) = server
-        .archive_by_property(
+        .store()
+        .get_value::<Archive<AlignedBytes>>(ValueKey::property(
             account_id,
             Collection::Principal,
             0,
-            PrincipalField::PushSubscriptions.into(),
-        )
+            PrincipalField::PushSubscriptions,
+        ))
         .await?
     {
         push_subscriptions

@@ -23,6 +23,10 @@ use groupware::{
 use http_proto::HttpResponse;
 use hyper::StatusCode;
 use store::write::BatchBuilder;
+use store::{
+    ValueKey,
+    write::{AlignedBytes, Archive},
+};
 use trc::AddContext;
 use types::{
     acl::Acl,
@@ -437,7 +441,12 @@ async fn copy_card(
 ) -> crate::Result<HttpResponse> {
     // Fetch card
     let card_ = server
-        .archive(from_account_id, Collection::ContactCard, from_document_id)
+        .store()
+        .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+            from_account_id,
+            Collection::ContactCard,
+            from_document_id,
+        ))
         .await
         .caused_by(trc::location!())?
         .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
@@ -498,7 +507,12 @@ async fn copy_card(
     let response = if let Some(to_document_id) = to_document_id {
         // Overwrite card on destination
         let card_ = server
-            .archive(to_account_id, Collection::ContactCard, to_document_id)
+            .store()
+            .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                to_account_id,
+                Collection::ContactCard,
+                to_document_id,
+            ))
             .await
             .caused_by(trc::location!())?;
         if let Some(card_) = card_ {
@@ -547,7 +561,12 @@ async fn move_card(
 ) -> crate::Result<HttpResponse> {
     // Fetch card
     let card_ = server
-        .archive(from_account_id, Collection::ContactCard, from_document_id)
+        .store()
+        .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+            from_account_id,
+            Collection::ContactCard,
+            from_document_id,
+        ))
         .await
         .caused_by(trc::location!())?
         .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
@@ -641,7 +660,12 @@ async fn move_card(
     let response = if let Some(to_document_id) = to_document_id {
         // Overwrite card on destination
         let card_ = server
-            .archive(to_account_id, Collection::ContactCard, to_document_id)
+            .store()
+            .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                to_account_id,
+                Collection::ContactCard,
+                to_document_id,
+            ))
             .await
             .caused_by(trc::location!())?;
         if let Some(card_) = card_ {
@@ -687,7 +711,12 @@ async fn rename_card(
 ) -> crate::Result<HttpResponse> {
     // Fetch card
     let card_ = server
-        .archive(account_id, Collection::ContactCard, document_id)
+        .store()
+        .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+            account_id,
+            Collection::ContactCard,
+            document_id,
+        ))
         .await
         .caused_by(trc::location!())?
         .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
@@ -736,7 +765,12 @@ async fn copy_container(
 ) -> crate::Result<HttpResponse> {
     // Fetch book
     let book_ = server
-        .archive(from_account_id, Collection::AddressBook, from_document_id)
+        .store()
+        .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+            from_account_id,
+            Collection::AddressBook,
+            from_document_id,
+        ))
         .await
         .caused_by(trc::location!())?
         .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
@@ -777,7 +811,12 @@ async fn copy_container(
     let to_document_id = if let Some(to_document_id) = to_document_id {
         // Overwrite destination
         let book_ = server
-            .archive(to_account_id, Collection::AddressBook, to_document_id)
+            .store()
+            .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                to_account_id,
+                Collection::AddressBook,
+                to_document_id,
+            ))
             .await
             .caused_by(trc::location!())?;
         if let Some(book_) = book_ {
@@ -814,11 +853,12 @@ async fn copy_container(
     let mut required_space = 0;
     for from_child_document_id in from_children_ids {
         if let Some(card_) = server
-            .archive(
+            .store()
+            .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
                 from_account_id,
                 Collection::ContactCard,
                 from_child_document_id,
-            )
+            ))
             .await?
         {
             let card = card_
@@ -928,7 +968,12 @@ async fn rename_container(
 ) -> crate::Result<HttpResponse> {
     // Fetch book
     let book_ = server
-        .archive(account_id, Collection::AddressBook, document_id)
+        .store()
+        .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+            account_id,
+            Collection::AddressBook,
+            document_id,
+        ))
         .await
         .caused_by(trc::location!())?
         .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;

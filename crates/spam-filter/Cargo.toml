@@ -26,6 +26,7 @@ infer = "0.19"
 sha1 = "0.10"
 sha2 = "0.10.6"
 compact_str = "0.9.0"
+rkyv = { version = "0.8.10", features = ["little_endian"] }
 
 [features]
 test_mode = []

@@ -16,7 +16,7 @@ use mail_parser::MessageParser;
 use serde_json::json;
 use std::{future::Future, sync::Arc};
 use store::{
-    Deserialize, Serialize,
+    Deserialize, Serialize, ValueKey,
     write::{AlignedBytes, Archive, Archiver, BatchBuilder},
 };
 use trc::AddContext;
@@ -38,12 +38,13 @@ pub trait CryptoHandler: Sync + Send {
 impl CryptoHandler for Server {
     async fn handle_crypto_get(&self, access_token: Arc<AccessToken>) -> trc::Result<HttpResponse> {
         let ec = if let Some(params_) = self
-            .archive_by_property(
+            .store()
+            .get_value::<Archive<AlignedBytes>>(ValueKey::property(
                 access_token.primary_id(),
                 Collection::Principal,
                 0,
-                PrincipalField::EncryptionKeys.into(),
-            )
+                PrincipalField::EncryptionKeys,
+            ))
             .await?
         {
             let params = params_

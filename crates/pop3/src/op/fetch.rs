@@ -9,6 +9,10 @@ use common::listener::SessionStream;
 use directory::Permission;
 use email::message::metadata::MessageMetadata;
 use std::time::Instant;
+use store::{
+    ValueKey,
+    write::{AlignedBytes, Archive},
+};
 use trc::AddContext;
 use types::{collection::Collection, field::EmailField};
 use utils::chained_bytes::ChainedBytes;
@@ -25,12 +29,13 @@ impl<T: SessionStream> Session<T> {
         if let Some(message) = mailbox.messages.get(msg.saturating_sub(1) as usize) {
             if let Some(metadata_) = self
                 .server
-                .archive_by_property(
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::property(
                     mailbox.account_id,
                     Collection::Email,
                     message.id,
-                    EmailField::Metadata.into(),
-                )
+                    EmailField::Metadata,
+                ))
                 .await
                 .caused_by(trc::location!())?
             {

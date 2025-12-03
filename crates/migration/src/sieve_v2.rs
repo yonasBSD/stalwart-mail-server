@@ -32,7 +32,12 @@ pub(crate) async fn migrate_sieve_v013(server: &Server, account_id: u32) -> trc:
 
     for script_id in &script_ids {
         match server
-            .archive(account_id, Collection::SieveScript, script_id)
+            .store()
+            .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                account_id,
+                Collection::SieveScript,
+                script_id,
+            ))
             .await
         {
             Ok(Some(legacy)) => match legacy.deserialize_untrusted::<SieveScriptV2>() {

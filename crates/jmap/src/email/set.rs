@@ -43,7 +43,7 @@ use mail_builder::{
 use mail_parser::MessageParser;
 use std::future::Future;
 use std::{borrow::Cow, collections::HashMap};
-use store::{ahash::AHashMap, roaring::RoaringBitmap, write::BatchBuilder};
+use store::{ValueKey, ahash::AHashMap, roaring::RoaringBitmap, write::{AlignedBytes, Archive, BatchBuilder}};
 use trc::AddContext;
 use types::{
     acl::Acl,
@@ -795,7 +795,12 @@ impl EmailSet for Server {
             // Obtain message data
             let document_id = id.document_id();
             let data_ = match self
-                .archive(account_id, Collection::Email, document_id)
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                    account_id,
+                    Collection::Email,
+                    document_id,
+                ))
                 .await?
             {
                 Some(data) => data,

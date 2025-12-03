@@ -23,6 +23,10 @@ use std::{
     collections::BTreeMap,
     sync::{Arc, atomic::Ordering},
 };
+use store::{
+    ValueKey,
+    write::{AlignedBytes, Archive},
+};
 use trc::AddContext;
 use types::{acl::Acl, collection::Collection, id::Id, keyword::Keyword, special_use::SpecialUse};
 
@@ -396,7 +400,12 @@ impl<T: SessionStream> SessionData<T> {
         Ok(access_token.is_member(account_id)
             || self
                 .server
-                .archive(account_id, Collection::Mailbox, document_id)
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                    account_id,
+                    Collection::Mailbox,
+                    document_id,
+                ))
                 .await
                 .and_then(|mailbox| {
                     if let Some(mailbox) = mailbox {

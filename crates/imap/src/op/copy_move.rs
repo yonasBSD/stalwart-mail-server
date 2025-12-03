@@ -26,6 +26,7 @@ use imap_proto::{
 };
 use std::{sync::Arc, time::Instant};
 use store::{
+    ValueKey,
     roaring::RoaringBitmap,
     write::{AlignedBytes, Archive, BatchBuilder},
 };
@@ -319,18 +320,16 @@ impl<T: SessionStream> SessionData<T> {
                 }
 
                 // Add message to training queue
-                let learn_spam = if dest_mailbox_id.mailbox_id == JUNK_ID {
-                    Some(true)
+                if dest_mailbox_id.mailbox_id == JUNK_ID {
+                    self.server
+                        .add_account_spam_sample(&mut batch, account_id, id, true)
+                        .await
+                        .imap_ctx(&arguments.tag, trc::location!())?;
                 } else if src_mailbox.id.mailbox_id == JUNK_ID
                     && dest_mailbox_id.mailbox_id != TRASH_ID
                 {
-                    Some(false)
-                } else {
-                    None
-                };
-                if let Some(learn_spam) = learn_spam {
                     self.server
-                        .add_account_spam_sample(&mut batch, account_id, id, learn_spam)
+                        .add_account_spam_sample(&mut batch, account_id, id, false)
                         .await
                         .imap_ctx(&arguments.tag, trc::location!())?;
                 }
@@ -551,7 +550,12 @@ impl<T: SessionStream> SessionData<T> {
     ) -> trc::Result<Option<Archive<AlignedBytes>>> {
         if let Some(data) = self
             .server
-            .archive(account_id, Collection::Email, id)
+            .store()
+            .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                account_id,
+                Collection::Email,
+                id,
+            ))
             .await?
         {
             Ok(Some(data))

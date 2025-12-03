@@ -21,9 +21,10 @@ use groupware::{
 };
 use http_proto::HttpResponse;
 use hyper::StatusCode;
+use store::write::{BatchBuilder, ValueClass};
 use store::{
     ValueKey,
-    write::{BatchBuilder, ValueClass},
+    write::{AlignedBytes, Archive},
 };
 use trc::AddContext;
 use types::{
@@ -71,7 +72,12 @@ impl CardDeleteRequestHandler for Server {
         let mut batch = BatchBuilder::new();
         if delete_resource.is_container() {
             let book_ = self
-                .archive(account_id, Collection::AddressBook, document_id)
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                    account_id,
+                    Collection::AddressBook,
+                    document_id,
+                ))
                 .await
                 .caused_by(trc::location!())?
                 .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
@@ -158,7 +164,12 @@ impl CardDeleteRequestHandler for Server {
             }
 
             let card_ = self
-                .archive(account_id, Collection::ContactCard, document_id)
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                    account_id,
+                    Collection::ContactCard,
+                    document_id,
+                ))
                 .await
                 .caused_by(trc::location!())?
                 .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;

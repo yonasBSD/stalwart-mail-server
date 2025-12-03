@@ -83,6 +83,7 @@ pub enum PrincipalField {
     DefaultAddressBookId,
     ActiveScriptId,
     PushSubscriptions,
+    SpamModel,
 }
 
 impl From<ContactField> for u8 {
@@ -162,6 +163,7 @@ impl From<PrincipalField> for u8 {
             PrincipalField::DefaultAddressBookId => 48,
             PrincipalField::ActiveScriptId => 49,
             PrincipalField::PushSubscriptions => 44,
+            PrincipalField::SpamModel => 52,
             PrincipalField::Archive => ARCHIVE_FIELD,
         }
     }

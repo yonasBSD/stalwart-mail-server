@@ -9,7 +9,8 @@ use common::{
     MessageCache, MessageStoreCache, MessageUidCache, MessagesCache, Server, auth::AccessToken,
     sharing::EffectiveAcl,
 };
-use store::{ahash::AHashMap, roaring::RoaringBitmap, write::Archive};
+use store::write::{AlignedBytes, Archive};
+use store::{ValueKey, ahash::AHashMap, roaring::RoaringBitmap};
 use trc::AddContext;
 use types::{
     acl::Acl,
@@ -43,7 +44,12 @@ pub(crate) async fn update_email_cache(
     for (document_id, is_update) in changed_ids {
         if *is_update
             && let Some(archive) = server
-                .archive(account_id, Collection::Email, *document_id)
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                    account_id,
+                    Collection::Email,
+                    *document_id,
+                ))
                 .await
                 .caused_by(trc::location!())?
         {

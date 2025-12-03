@@ -450,7 +450,12 @@ async fn process_changes(
             Change::InsertItem(id) | Change::UpdateItem(id) => {
                 let document_id = id as u32;
                 if let Some(archive) = server
-                    .archive(account_id, collection.collection(false), document_id)
+                    .store()
+                    .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                        account_id,
+                        collection.collection(false),
+                        document_id,
+                    ))
                     .await
                     .caused_by(trc::location!())?
                 {
@@ -473,7 +478,12 @@ async fn process_changes(
             Change::InsertContainer(id) | Change::UpdateContainer(id) => {
                 let document_id = id as u32;
                 if let Some(archive) = server
-                    .archive(account_id, collection.collection(true), document_id)
+                    .store()
+                    .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                        account_id,
+                        collection.collection(true),
+                        document_id,
+                    ))
                     .await
                     .caused_by(trc::location!())?
                 {

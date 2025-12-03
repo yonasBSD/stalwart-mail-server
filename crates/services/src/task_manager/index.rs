@@ -17,11 +17,13 @@ use email::{cache::MessageCacheFetch, message::metadata::MessageMetadata};
 use groupware::{cache::GroupwareCache, calendar::CalendarEvent, contact::ContactCard};
 use std::cmp::Ordering;
 use store::{
-    SerializeInfallible,
+    SerializeInfallible, ValueKey,
     ahash::AHashMap,
     roaring::RoaringBitmap,
     search::{IndexDocument, SearchField, SearchFilter, SearchQuery},
-    write::{BatchBuilder, SearchIndex, TaskEpoch, TaskQueueClass, ValueClass},
+    write::{
+        AlignedBytes, Archive, BatchBuilder, SearchIndex, TaskEpoch, TaskQueueClass, ValueClass,
+    },
 };
 use trc::{AddContext, TaskQueueEvent};
 use types::{
@@ -402,12 +404,13 @@ async fn build_email_document(
     };
 
     match server
-        .archive_by_property(
+        .store()
+        .get_value::<Archive<AlignedBytes>>(ValueKey::property(
             account_id,
             Collection::Email,
             document_id,
-            EmailField::Metadata.into(),
-        )
+            EmailField::Metadata,
+        ))
         .await?
     {
         Some(metadata_) => {
@@ -448,7 +451,12 @@ async fn build_calendar_document(
     };
 
     match server
-        .archive(account_id, Collection::CalendarEvent, document_id)
+        .store()
+        .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+            account_id,
+            Collection::CalendarEvent,
+            document_id,
+        ))
         .await?
     {
         Some(metadata_) => Ok(Some(
@@ -476,7 +484,12 @@ async fn build_contact_document(
     };
 
     match server
-        .archive(account_id, Collection::ContactCard, document_id)
+        .store()
+        .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+            account_id,
+            Collection::ContactCard,
+            document_id,
+        ))
         .await?
     {
         Some(metadata_) => Ok(Some(
@@ -520,12 +533,13 @@ async fn delete_email_metadata(
     document_id: u32,
 ) -> trc::Result<()> {
     match server
-        .archive_by_property(
+        .store()
+        .get_value::<Archive<AlignedBytes>>(ValueKey::property(
             account_id,
             Collection::Email,
             document_id,
-            EmailField::Metadata.into(),
-        )
+            EmailField::Metadata,
+        ))
         .await?
     {
         Some(metadata_) => {

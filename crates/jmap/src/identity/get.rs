@@ -15,9 +15,7 @@ use jmap_proto::{
 use jmap_tools::{Map, Value};
 use std::future::Future;
 use store::{
-    rkyv::{option::ArchivedOption, vec::ArchivedVec},
-    roaring::RoaringBitmap,
-    write::BatchBuilder,
+    ValueKey, rkyv::{option::ArchivedOption, vec::ArchivedVec}, roaring::RoaringBitmap, write::{AlignedBytes, Archive, BatchBuilder}
 };
 use trc::AddContext;
 use types::{
@@ -83,7 +81,12 @@ impl IdentityGet for Server {
                 continue;
             }
             let _identity = if let Some(identity) = self
-                .archive(account_id, Collection::Identity, document_id)
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                    account_id,
+                    Collection::Identity,
+                    document_id,
+                ))
                 .await?
             {
                 identity

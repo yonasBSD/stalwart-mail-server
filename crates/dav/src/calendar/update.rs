@@ -36,6 +36,10 @@ use http_proto::HttpResponse;
 use hyper::StatusCode;
 use std::collections::HashSet;
 use store::write::{BatchBuilder, now};
+use store::{
+    ValueKey,
+    write::{AlignedBytes, Archive},
+};
 use trc::AddContext;
 use types::{
     acl::Acl,
@@ -121,7 +125,12 @@ impl CalendarUpdateRequestHandler for Server {
 
             // Update
             let event_ = self
-                .archive(account_id, Collection::CalendarEvent, document_id)
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                    account_id,
+                    Collection::CalendarEvent,
+                    document_id,
+                ))
                 .await
                 .caused_by(trc::location!())?
                 .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;

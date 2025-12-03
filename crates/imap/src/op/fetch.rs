@@ -35,6 +35,10 @@ use imap_proto::{
 };
 use std::{borrow::Cow, sync::Arc, time::Instant};
 use store::{
+    ValueKey,
+    write::{AlignedBytes, Archive},
+};
+use store::{
     query::log::{Change, Query},
     rkyv::rend::u16_le,
     write::BatchBuilder,
@@ -323,12 +327,13 @@ impl<T: SessionStream> SessionData<T> {
             // Obtain attributes and keywords
             let (metadata_, data) = if let (Some(email), Some(data)) = (
                 self.server
-                    .archive_by_property(
+                    .store()
+                    .get_value::<Archive<AlignedBytes>>(ValueKey::property(
                         account_id,
                         Collection::Email,
                         id,
-                        EmailField::Metadata.into(),
-                    )
+                        EmailField::Metadata,
+                    ))
                     .await
                     .imap_ctx(&arguments.tag, trc::location!())?,
                 message_cache.email_by_id(&id),
@@ -545,7 +550,12 @@ impl<T: SessionStream> SessionData<T> {
             if set_seen_flag
                 && let Some(data_) = self
                     .server
-                    .archive(account_id, Collection::Email, id)
+                    .store()
+                    .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                        account_id,
+                        Collection::Email,
+                        id,
+                    ))
                     .await
                     .imap_ctx(&arguments.tag, trc::location!())?
             {

@@ -12,8 +12,8 @@ use imap_proto::receiver::Request;
 use sieve::compiler::ErrorType;
 use std::time::Instant;
 use store::{
-    Serialize,
-    write::{Archiver, BatchBuilder},
+    Serialize, ValueKey,
+    write::{AlignedBytes, Archive, Archiver, BatchBuilder},
 };
 use trc::AddContext;
 use types::{collection::Collection, field::SieveField};
@@ -102,7 +102,12 @@ impl<T: SessionStream> Session<T> {
             // Obtain script values
             let script_ = self
                 .server
-                .archive(account_id, Collection::SieveScript, document_id)
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                    account_id,
+                    Collection::SieveScript,
+                    document_id,
+                ))
                 .await
                 .caused_by(trc::location!())?
                 .ok_or_else(|| {

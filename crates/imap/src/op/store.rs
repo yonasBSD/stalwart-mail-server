@@ -12,7 +12,7 @@ use crate::{
 use ahash::AHashSet;
 use common::{listener::SessionStream, storage::index::ObjectIndexBuilder};
 use directory::Permission;
-use email::message::metadata::MessageData;
+use email::message::{ingest::EmailIngest, metadata::MessageData};
 use imap_proto::{
     Command, ResponseCode, ResponseType, StatusResponse,
     protocol::{
@@ -24,8 +24,9 @@ use imap_proto::{
 };
 use std::{sync::Arc, time::Instant};
 use store::{
+    ValueKey,
     query::log::{Change, Query},
-    write::{BatchBuilder, TaskEpoch, TaskQueueClass, ValueClass},
+    write::{AlignedBytes, Archive, BatchBuilder},
 };
 use trc::AddContext;
 use types::{
@@ -189,14 +190,18 @@ impl<T: SessionStream> SessionData<T> {
             .map(|k| Keyword::from(k.clone()))
             .collect::<Vec<_>>();
         let mut changed_mailboxes = AHashSet::new();
-        let mut has_spam_train_tasks = false;
         let mut batch = BatchBuilder::new();
 
         for (id, imap_id) in &ids {
             // Obtain message data
             let data_ = if let Some(data) = self
                 .server
-                .archive(account_id, Collection::Email, *id)
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                    account_id,
+                    Collection::Email,
+                    *id,
+                ))
                 .await
                 .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?
             {
@@ -292,15 +297,10 @@ impl<T: SessionStream> SessionData<T> {
 
             // Add spam train task
             if let Some(learn_spam) = train_spam {
-                batch.set(
-                    ValueClass::TaskQueue(TaskQueueClass::SpamTrain {
-                        due: TaskEpoch::now(),
-                        blob_hash: Default::default(),
-                        learn_spam,
-                    }),
-                    vec![],
-                );
-                has_spam_train_tasks = true;
+                self.server
+                    .add_account_spam_sample(&mut batch, account_id, *id, learn_spam)
+                    .await
+                    .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?;
             }
 
             // Set commit point
@@ -333,11 +333,6 @@ impl<T: SessionStream> SessionData<T> {
             for parent_id in changed_mailboxes {
                 batch.log_container_property_change(SyncCollection::Email, parent_id);
             }
-        }
-
-        // Trigger Bayes training
-        if has_spam_train_tasks {
-            self.server.notify_task_queue();
         }
 
         // Write changes

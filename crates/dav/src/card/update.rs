@@ -25,6 +25,10 @@ use groupware::{cache::GroupwareCache, contact::ContactCard};
 use http_proto::HttpResponse;
 use hyper::StatusCode;
 use store::write::BatchBuilder;
+use store::{
+    ValueKey,
+    write::{AlignedBytes, Archive},
+};
 use trc::AddContext;
 use types::{
     acl::Acl,
@@ -110,7 +114,12 @@ impl CardUpdateRequestHandler for Server {
 
             // Update
             let card_ = self
-                .archive(account_id, Collection::ContactCard, document_id)
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                    account_id,
+                    Collection::ContactCard,
+                    document_id,
+                ))
                 .await
                 .caused_by(trc::location!())?
                 .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;

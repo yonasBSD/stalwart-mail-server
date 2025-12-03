@@ -77,7 +77,12 @@ pub(crate) async fn migrate_calendar_events_v013(
 
     for document_id in document_ids.iter() {
         let Some(archive) = server
-            .archive(account_id, Collection::CalendarEvent, document_id)
+            .store()
+            .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                account_id,
+                Collection::CalendarEvent,
+                document_id,
+            ))
             .await
             .caused_by(trc::location!())?
         else {
@@ -151,11 +156,12 @@ pub(crate) async fn migrate_calendar_scheduling_v013(
 
     for document_id in document_ids.iter() {
         let Some(archive) = server
-            .archive(
+            .store()
+            .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
                 account_id,
                 Collection::CalendarEventNotification,
                 document_id,
-            )
+            ))
             .await
             .caused_by(trc::location!())?
         else {

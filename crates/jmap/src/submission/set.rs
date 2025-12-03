@@ -35,7 +35,10 @@ use smtp::{
 use smtp_proto::{MailFrom, RcptTo, request::parser::Rfc5321Parser};
 use std::{borrow::Cow, future::Future};
 use std::{collections::HashMap, sync::Arc, time::Duration};
-use store::write::{BatchBuilder, now};
+use store::{
+    ValueKey,
+    write::{AlignedBytes, Archive, BatchBuilder, now},
+};
 use trc::AddContext;
 use types::{collection::Collection, field::EmailField, id::Id};
 use utils::{map::vec_map::VecMap, sanitize_email};
@@ -117,7 +120,12 @@ impl EmailSubmissionSet for Server {
             // Obtain submission
             let document_id = id.document_id();
             let submission = if let Some(submission) = self
-                .archive(account_id, Collection::EmailSubmission, document_id)
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                    account_id,
+                    Collection::EmailSubmission,
+                    document_id,
+                ))
                 .await?
             {
                 submission
@@ -210,7 +218,12 @@ impl EmailSubmissionSet for Server {
         for id in will_destroy {
             let document_id = id.document_id();
             if let Some(submission) = self
-                .archive(account_id, Collection::EmailSubmission, document_id)
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                    account_id,
+                    Collection::EmailSubmission,
+                    document_id,
+                ))
                 .await?
             {
                 // Update record
@@ -455,7 +468,12 @@ impl EmailSubmissionSet for Server {
 
         // Fetch identity's mailFrom
         let identity_mail_from = if let Some(identity) = self
-            .archive(account_id, Collection::Identity, submission.identity_id)
+            .store()
+            .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                account_id,
+                Collection::Identity,
+                submission.identity_id,
+            ))
             .await?
         {
             identity
@@ -491,12 +509,13 @@ impl EmailSubmissionSet for Server {
 
         // Obtain message metadata
         let metadata_ = if let Some(metadata) = self
-            .archive_by_property(
+            .store()
+            .get_value::<Archive<AlignedBytes>>(ValueKey::property(
                 account_id,
                 Collection::Email,
                 submission.email_id,
-                EmailField::Metadata.into(),
-            )
+                EmailField::Metadata,
+            ))
             .await?
         {
             metadata

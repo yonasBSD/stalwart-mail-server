@@ -9,6 +9,10 @@ use common::listener::SessionStream;
 use directory::Permission;
 use email::sieve::{SieveScript, ingest::SieveScriptIngest};
 use std::time::Instant;
+use store::{
+    ValueKey,
+    write::{AlignedBytes, Archive},
+};
 use trc::AddContext;
 use types::{collection::Collection, field::SieveField};
 
@@ -36,7 +40,12 @@ impl<T: SessionStream> Session<T> {
         for document_id in document_ids {
             if let Some(script_) = self
                 .server
-                .archive(account_id, Collection::SieveScript, document_id)
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                    account_id,
+                    Collection::SieveScript,
+                    document_id,
+                ))
                 .await
                 .caused_by(trc::location!())?
             {

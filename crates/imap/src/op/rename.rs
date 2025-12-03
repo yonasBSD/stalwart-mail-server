@@ -14,7 +14,10 @@ use imap_proto::{
     Command, ResponseCode, StatusResponse, protocol::rename::Arguments, receiver::Request,
 };
 use std::time::Instant;
-use store::write::BatchBuilder;
+use store::{
+    ValueKey,
+    write::{AlignedBytes, Archive, BatchBuilder},
+};
 use trc::AddContext;
 use types::{acl::Acl, collection::Collection};
 
@@ -85,7 +88,12 @@ impl<T: SessionStream> SessionData<T> {
         // Obtain mailbox
         let mailbox_ = self
             .server
-            .archive(params.account_id, Collection::Mailbox, mailbox_id)
+            .store()
+            .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                params.account_id,
+                Collection::Mailbox,
+                mailbox_id,
+            ))
             .await
             .imap_ctx(&arguments.tag, trc::location!())?
             .ok_or_else(|| {

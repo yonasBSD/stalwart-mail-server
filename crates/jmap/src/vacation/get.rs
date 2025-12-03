@@ -17,6 +17,10 @@ use jmap_proto::{
 };
 use jmap_tools::{Map, Value};
 use std::future::Future;
+use store::{
+    ValueKey,
+    write::{AlignedBytes, Archive},
+};
 use trc::AddContext;
 use types::{
     collection::{Collection, SyncCollection},
@@ -81,7 +85,12 @@ impl VacationResponseGet for Server {
         if do_get {
             if let Some(document_id) = self.get_vacation_sieve_script_id(account_id).await? {
                 if let Some(sieve_) = self
-                    .archive(account_id, Collection::SieveScript, document_id)
+                    .store()
+                    .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                        account_id,
+                        Collection::SieveScript,
+                        document_id,
+                    ))
                     .await?
                 {
                     let active_script_id = self.sieve_script_get_active_id(account_id).await?;

@@ -7,7 +7,10 @@
 use super::{ArchivedFileNode, FileNode};
 use crate::DestroyArchive;
 use common::{Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
-use store::write::{Archive, BatchBuilder, now};
+use store::{
+    ValueKey,
+    write::{AlignedBytes, Archive, BatchBuilder, now},
+};
 use trc::AddContext;
 use types::collection::{Collection, VanishedCollection};
 
@@ -124,7 +127,12 @@ impl DestroyArchive<Vec<u32>> {
             .with_collection(Collection::FileNode);
         for document_id in self.0 {
             if let Some(node) = server
-                .archive(account_id, Collection::FileNode, document_id)
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                    account_id,
+                    Collection::FileNode,
+                    document_id,
+                ))
                 .await?
             {
                 // Delete record

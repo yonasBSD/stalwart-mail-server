@@ -33,8 +33,7 @@ use jmap_proto::{
 use jmap_tools::{Key, Map, Value};
 use std::{str::FromStr, sync::Arc};
 use store::{
-    ahash::{AHashMap, AHashSet},
-    roaring::RoaringBitmap,
+    ValueKey, ahash::{AHashMap, AHashSet}, roaring::RoaringBitmap, write::{AlignedBytes, Archive}
 };
 use trc::AddContext;
 use types::{
@@ -203,7 +202,12 @@ impl CalendarEventGet for Server {
             }
 
             let Some(_calendar_event) = self
-                .archive(account_id, Collection::CalendarEvent, document_id)
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                    account_id,
+                    Collection::CalendarEvent,
+                    document_id,
+                ))
                 .await?
             else {
                 response.not_found.push(id);

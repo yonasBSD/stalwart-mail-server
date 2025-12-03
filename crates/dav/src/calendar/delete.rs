@@ -22,9 +22,10 @@ use groupware::{
 };
 use http_proto::HttpResponse;
 use hyper::StatusCode;
+use store::write::{BatchBuilder, ValueClass};
 use store::{
     ValueKey,
-    write::{BatchBuilder, ValueClass},
+    write::{AlignedBytes, Archive},
 };
 use trc::AddContext;
 use types::{
@@ -91,7 +92,12 @@ impl CalendarDeleteRequestHandler for Server {
             }
 
             let calendar_ = self
-                .archive(account_id, Collection::Calendar, document_id)
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                    account_id,
+                    Collection::Calendar,
+                    document_id,
+                ))
                 .await
                 .caused_by(trc::location!())?
                 .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
@@ -175,7 +181,12 @@ impl CalendarDeleteRequestHandler for Server {
             }
 
             let event_ = self
-                .archive(account_id, Collection::CalendarEvent, document_id)
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                    account_id,
+                    Collection::CalendarEvent,
+                    document_id,
+                ))
                 .await
                 .caused_by(trc::location!())?
                 .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;

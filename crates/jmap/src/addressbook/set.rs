@@ -24,7 +24,7 @@ use rand::{Rng, distr::Alphanumeric};
 use store::{
     SerializeInfallible, ValueKey,
     ahash::AHashSet,
-    write::{BatchBuilder, ValueClass},
+    write::{AlignedBytes, Archive, BatchBuilder, ValueClass},
 };
 use trc::AddContext;
 use types::{
@@ -131,7 +131,12 @@ impl AddressBookSet for Server {
             // Obtain address book
             let document_id = id.document_id();
             let address_book_ = if let Some(address_book_) = self
-                .archive(account_id, Collection::AddressBook, document_id)
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                    account_id,
+                    Collection::AddressBook,
+                    document_id,
+                ))
                 .await?
             {
                 address_book_
@@ -223,7 +228,12 @@ impl AddressBookSet for Server {
                 };
 
                 let Some(address_book_) = self
-                    .archive(account_id, Collection::AddressBook, document_id)
+                    .store()
+                    .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                        account_id,
+                        Collection::AddressBook,
+                        document_id,
+                    ))
                     .await
                     .caused_by(trc::location!())?
                 else {
@@ -278,7 +288,12 @@ impl AddressBookSet for Server {
             if !destroy_children.is_empty() {
                 for document_id in destroy_children {
                     if let Some(card_) = self
-                        .archive(account_id, Collection::ContactCard, document_id)
+                        .store()
+                        .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                            account_id,
+                            Collection::ContactCard,
+                            document_id,
+                        ))
                         .await?
                     {
                         let card = card_

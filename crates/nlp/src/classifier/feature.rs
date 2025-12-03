@@ -22,8 +22,6 @@ pub struct FeatureBuilder {
 pub trait Feature {
     fn prefix(&self) -> u16;
     fn value(&self) -> &[u8];
-    fn is_global_feature(&self) -> bool;
-    fn is_local_feature(&self) -> bool;
 }
 
 impl FeatureBuilder {
@@ -47,17 +45,13 @@ impl FeatureBuilder {
             buf.extend_from_slice(&feature.prefix().to_be_bytes());
             buf.extend_from_slice(feature.value());
 
-            if feature.is_global_feature() {
-                let big_hash = xxh3_64_with_seed(&buf, 0);
-                let hash = big_hash as u32 & self.features_mask;
-                let sign = if big_hash & (1 << 63) == 0 { 1.0 } else { -1.0 };
+            let big_hash = xxh3_64_with_seed(&buf, 0);
+            let hash = big_hash as u32 & self.features_mask;
+            let sign = if big_hash & (1 << 63) == 0 { 1.0 } else { -1.0 };
 
-                *features_map.entry(hash).or_default() += sign * count;
-            }
+            *features_map.entry(hash).or_default() += sign * count;
 
-            if feature.is_local_feature()
-                && let Some(account_id) = account_id
-            {
+            if let Some(account_id) = account_id {
                 buf.extend_from_slice(&account_id.to_be_bytes());
                 let big_hash = xxh3_64_with_seed(&buf, 0);
                 let hash = big_hash as u32 & self.features_mask;

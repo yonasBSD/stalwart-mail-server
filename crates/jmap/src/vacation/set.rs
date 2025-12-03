@@ -24,8 +24,8 @@ use mail_parser::decoders::html::html_to_text;
 use std::borrow::Cow;
 use std::future::Future;
 use store::{
-    Serialize, SerializeInfallible,
-    write::{Archiver, BatchBuilder},
+    Serialize, SerializeInfallible, ValueKey,
+    write::{AlignedBytes, Archive, Archiver, BatchBuilder},
 };
 use trc::AddContext;
 use types::{
@@ -132,7 +132,12 @@ impl VacationResponseSet for Server {
 
             let (mut sieve, prev_sieve) = if let Some(document_id) = document_id {
                 let prev_sieve = self
-                    .archive(account_id, Collection::SieveScript, document_id)
+                    .store()
+                    .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                        account_id,
+                        Collection::SieveScript,
+                        document_id,
+                    ))
                     .await?
                     .ok_or_else(|| {
                         trc::StoreEvent::NotFound

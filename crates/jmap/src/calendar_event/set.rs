@@ -38,9 +38,7 @@ use jmap_proto::{
 use jmap_tools::{JsonPointerHandler, JsonPointerItem, Key, Map, Value};
 use std::{borrow::Cow, str::FromStr};
 use store::{
-    ahash::AHashSet,
-    roaring::RoaringBitmap,
-    write::{BatchBuilder, now, serialize::rkyv_deserialize},
+    ValueKey, ahash::AHashSet, roaring::RoaringBitmap, write::{AlignedBytes, Archive, BatchBuilder, now, serialize::rkyv_deserialize}
 };
 use trc::AddContext;
 use types::{
@@ -150,7 +148,12 @@ impl CalendarEventSet for Server {
             // Obtain calendar_event card
             let document_id = id.document_id();
             let calendar_event_ = if let Some(calendar_event_) = self
-                .archive(account_id, Collection::CalendarEvent, document_id)
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                    account_id,
+                    Collection::CalendarEvent,
+                    document_id,
+                ))
                 .await?
             {
                 calendar_event_
@@ -436,7 +439,12 @@ impl CalendarEventSet for Server {
             }
 
             let Some(calendar_event_) = self
-                .archive(account_id, Collection::CalendarEvent, document_id)
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                    account_id,
+                    Collection::CalendarEvent,
+                    document_id,
+                ))
                 .await
                 .caused_by(trc::location!())?
             else {
@@ -546,7 +554,12 @@ impl CalendarEventSet for Server {
                 ))));
             } else if let Some(show_without_time) = use_default_alerts
                 && let Some(_calendar) = self
-                    .archive(account_id, Collection::Calendar, name.parent_id)
+                    .store()
+                    .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                        account_id,
+                        Collection::Calendar,
+                        name.parent_id,
+                    ))
                     .await?
             {
                 ical.components.extend(

@@ -21,7 +21,8 @@ use store::{
     IterateParams, U16_LEN, U32_LEN, U64_LEN, ValueKey,
     roaring::RoaringBitmap,
     write::{
-        Archive, BatchBuilder, IndexPropertyClass, TaskEpoch, TaskQueueClass, ValueClass,
+        AlignedBytes, Archive, BatchBuilder, IndexPropertyClass, TaskEpoch, TaskQueueClass,
+        ValueClass,
         key::{DeserializeBigEndian, KeySerializer},
         now,
     },
@@ -136,11 +137,12 @@ impl ItipAutoExpunge for Server {
         for document_id in destroy_ids {
             // Fetch event
             if let Some(event_) = self
-                .archive(
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
                     account_id,
                     Collection::CalendarEventNotification,
                     document_id,
-                )
+                ))
                 .await
                 .caused_by(trc::location!())?
             {
@@ -328,7 +330,12 @@ impl DestroyArchive<Archive<&ArchivedCalendar>> {
         let calendar_id = document_id;
         for document_id in children_ids {
             if let Some(event_) = server
-                .archive(account_id, Collection::CalendarEvent, document_id)
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                    account_id,
+                    Collection::CalendarEvent,
+                    document_id,
+                ))
                 .await?
             {
                 DestroyArchive(
@@ -567,11 +574,12 @@ impl ArchivedCalendarEvent {
     ) -> trc::Result<String> {
         for event_name in self.names.iter() {
             if let Some(calendar_) = server
-                .archive(
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
                     access_token.primary_id,
                     Collection::Calendar,
                     event_name.parent_id.to_native(),
-                )
+                ))
                 .await
                 .caused_by(trc::location!())?
             {

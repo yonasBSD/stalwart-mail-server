@@ -26,7 +26,7 @@ use jmap_proto::{
     },
     types::state::State,
 };
-use store::{roaring::RoaringBitmap, write::BatchBuilder};
+use store::{ValueKey, roaring::RoaringBitmap, write::{AlignedBytes, Archive, BatchBuilder}};
 use trc::AddContext;
 use types::{
     acl::Acl,
@@ -123,11 +123,12 @@ impl JmapCalendarEventCopy for Server {
             }
 
             let Some(_calendar_event) = self
-                .archive(
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
                     from_account_id,
                     Collection::CalendarEvent,
                     from_calendar_event_id,
-                )
+                ))
                 .await?
             else {
                 response.not_created.append(

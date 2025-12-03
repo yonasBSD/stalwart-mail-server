@@ -22,7 +22,11 @@ use jmap_proto::{
 use mail_parser::decoders::html::html_to_text;
 use nlp::language::{Language, search_snippet::generate_snippet, stemmer::Stemmer};
 use std::future::Future;
-use store::backend::MAX_TOKEN_LENGTH;
+use store::{
+    ValueKey,
+    backend::MAX_TOKEN_LENGTH,
+    write::{AlignedBytes, Archive},
+};
 use trc::AddContext;
 use types::{acl::Acl, collection::Collection, field::EmailField};
 use utils::chained_bytes::ChainedBytes;
@@ -126,12 +130,13 @@ impl EmailSearchSnippet for Server {
                 continue;
             }
             let metadata_ = match self
-                .archive_by_property(
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::property(
                     account_id,
                     Collection::Email,
                     document_id,
-                    EmailField::Metadata.into(),
-                )
+                    EmailField::Metadata,
+                ))
                 .await?
             {
                 Some(metadata) => metadata,

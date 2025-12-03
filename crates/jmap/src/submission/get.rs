@@ -22,7 +22,9 @@ use std::future::Future;
 use store::{
     IterateParams, U32_LEN, ValueKey,
     rkyv::option::ArchivedOption,
-    write::{IndexPropertyClass, ValueClass, key::DeserializeBigEndian, now},
+    write::{
+        AlignedBytes, Archive, IndexPropertyClass, ValueClass, key::DeserializeBigEndian, now,
+    },
 };
 use trc::AddContext;
 use types::{
@@ -112,7 +114,12 @@ impl EmailSubmissionGet for Server {
             // Obtain the email_submission object
             let document_id = id.document_id();
             let submission_ = if let Some(submission) = self
-                .archive(account_id, Collection::EmailSubmission, document_id)
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                    account_id,
+                    Collection::EmailSubmission,
+                    document_id,
+                ))
                 .await?
             {
                 submission

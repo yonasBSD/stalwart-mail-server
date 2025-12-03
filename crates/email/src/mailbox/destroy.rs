@@ -17,6 +17,10 @@ use store::{
     roaring::RoaringBitmap,
     write::{BatchBuilder, SearchIndex, TaskEpoch, TaskQueueClass, ValueClass},
 };
+use store::{
+    ValueKey,
+    write::{AlignedBytes, Archive},
+};
 use trc::AddContext;
 use types::{
     acl::Acl,
@@ -173,7 +177,12 @@ impl MailboxDestroy for Server {
 
         // Obtain mailbox
         if let Some(mailbox_) = self
-            .archive(account_id, Collection::Mailbox, document_id)
+            .store()
+            .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                account_id,
+                Collection::Mailbox,
+                document_id,
+            ))
             .await
             .caused_by(trc::location!())?
         {

@@ -28,7 +28,7 @@ use ipc::{BroadcastEvent, HousekeeperEvent, PushEvent, QueueEvent, ReportingEven
 use listener::{asn::AsnGeoLookupData, blocked::Security, tls::AcmeProviders};
 use mail_auth::{MX, Txt};
 use manager::webadmin::{Resource, WebAdminManager};
-use nlp::classifier::sgd::SGDClassifier;
+use nlp::classifier::sgd::TextClassifier;
 use parking_lot::{Mutex, RwLock};
 use rustls::sign::CertifiedKey;
 use std::{
@@ -72,8 +72,6 @@ pub mod enterprise;
 // SPDX-SnippetEnd
 
 pub use psl;
-
-use crate::config::spamfilter::Reputation;
 
 pub static VERSION_PRIVATE: &str = env!("CARGO_PKG_VERSION");
 pub static VERSION_PUBLIC: &str = "1.0.0";
@@ -133,9 +131,14 @@ pub struct Inner {
     pub ipc: Ipc,
 }
 
+#[derive(Default)]
+pub struct SpamClassifier {
+    pub model: TextClassifier,
+    pub last_trained_at: u64,
+}
+
 pub struct Data {
-    pub spam_classifier: ArcSwap<SGDClassifier>,
-    pub spam_reputation: ArcSwap<Reputation>,
+    pub spam_classifier: ArcSwap<SpamClassifier>,
 
     pub tls_certificates: ArcSwap<AHashMap<String, Arc<CertifiedKey>>>,
     pub tls_self_signed_cert: Option<Arc<CertifiedKey>>,

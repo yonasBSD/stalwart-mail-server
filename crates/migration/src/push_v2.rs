@@ -36,7 +36,12 @@ pub(crate) async fn migrate_push_subscriptions_v013(
 
     for push_id in &push_ids {
         match server
-            .archive(account_id, Collection::PushSubscription, push_id)
+            .store()
+            .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                account_id,
+                Collection::PushSubscription,
+                push_id,
+            ))
             .await
         {
             Ok(Some(legacy)) => match legacy.deserialize_untrusted::<PushSubscriptionV2>() {

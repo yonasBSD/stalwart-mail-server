@@ -17,9 +17,7 @@ use jmap_proto::{
 use nlp::language::Language;
 use std::{cmp::Ordering, sync::Arc};
 use store::{
-    roaring::RoaringBitmap,
-    search::{CalendarSearchField, SearchComparator, SearchFilter, SearchQuery},
-    write::SearchIndex,
+    ValueKey, roaring::RoaringBitmap, search::{CalendarSearchField, SearchComparator, SearchFilter, SearchQuery}, write::{AlignedBytes, Archive, SearchIndex}
 };
 use trc::AddContext;
 use types::{
@@ -260,7 +258,12 @@ impl CalendarEventQuery for Server {
 
             for document_id in results {
                 let Some(_calendar_event) = self
-                    .archive(account_id, Collection::CalendarEvent, document_id)
+                    .store()
+                    .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                        account_id,
+                        Collection::CalendarEvent,
+                        document_id,
+                    ))
                     .await?
                 else {
                     continue;

@@ -57,6 +57,7 @@ impl SpamFilterAnalyzeDomain for Server {
                     {
                         if let Host::Name(name) = host
                             && let Some(name) = Hostname::new(name.as_ref()).sld
+                            && !is_trusted_domain(self, &name, ctx.input.span_id).await
                         {
                             domains.insert(ElementLocation::new(name, Location::HeaderReceived));
                         }
@@ -70,6 +71,8 @@ impl SpamFilterAnalyzeDomain for Server {
                             let host = Hostname::new(d);
                             if host.sld.is_some() { Some(host) } else { None }
                         })
+                        && !is_trusted_domain(self, mid_domain.sld_or_default(), ctx.input.span_id)
+                            .await
                     {
                         domains.insert(ElementLocation::new(mid_domain.fqdn, Location::HeaderMid));
                     }

@@ -27,9 +27,7 @@ use rand::distr::Alphanumeric;
 use sieve::compiler::ErrorType;
 use std::future::Future;
 use store::{
-    Serialize, SerializeInfallible,
-    rand::{Rng, rng},
-    write::{Archive, Archiver, BatchBuilder},
+    Serialize, SerializeInfallible, ValueKey, rand::{Rng, rng}, write::{AlignedBytes, Archive, Archiver, BatchBuilder}
 };
 use trc::AddContext;
 use types::{
@@ -199,7 +197,12 @@ impl SieveScriptSet for Server {
             // Obtain sieve script
             let document_id = id.document_id();
             if let Some(sieve_) = self
-                .archive(account_id, Collection::SieveScript, document_id)
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                    account_id,
+                    Collection::SieveScript,
+                    document_id,
+                ))
                 .await?
             {
                 let sieve = sieve_

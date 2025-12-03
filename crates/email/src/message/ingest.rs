@@ -26,6 +26,7 @@ use mail_parser::{
 };
 use std::{borrow::Cow, cmp::Ordering, fmt::Write, time::Instant};
 use std::{future::Future, hash::Hasher};
+use store::write::{AlignedBytes, Archive};
 use store::{
     IndexKeyPrefix, IterateParams, U32_LEN, ValueKey,
     ahash::{AHashMap, AHashSet},
@@ -111,8 +112,8 @@ pub trait EmailIngest: Sync + Send {
         &self,
         batch: &mut BatchBuilder,
         hash: BlobHash,
-        hold_override: Option<u64>,
         is_spam: bool,
+        hold_sample: bool,
     );
 }
 
@@ -268,12 +269,23 @@ impl EmailIngest for Server {
                             .caused_by(trc::location!())?
                     {
                         is_spam = false;
-                        train_spam = Some(false);
+                        if self
+                            .core
+                            .spam
+                            .classifier
+                            .as_ref()
+                            .is_some_and(|c| c.auto_learn_card_is_ham)
+                        {
+                            train_spam = Some(false);
+                        }
                         overridden = Some("card-exists");
                     }
 
                     // Check if the message is a trusted reply to a previous message
-                    if is_spam && let Some(thread_id) = thread_result.thread_id {
+                    if is_spam
+                        && self.core.spam.trusted_reply
+                        && let Some(thread_id) = thread_result.thread_id
+                    {
                         let cache = self
                             .get_cached_messages(account_id)
                             .await
@@ -288,7 +300,15 @@ impl EmailIngest for Server {
                             .any(|m| m.mailboxes.iter().any(|mb| mb.mailbox_id == sent_folder_id))
                         {
                             is_spam = false;
-                            train_spam = Some(false);
+                            if self
+                                .core
+                                .spam
+                                .classifier
+                                .as_ref()
+                                .is_some_and(|c| c.auto_learn_reply_ham)
+                            {
+                                train_spam = Some(false);
+                            }
                             overridden = Some("trusted-reply");
                         }
                     }
@@ -446,12 +466,13 @@ impl EmailIngest for Server {
         let is_encrypted = if do_encrypt
             && !message.is_encrypted()
             && let Some(encrypt_params_) = self
-                .archive_by_property(
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::property(
                     account_id,
                     Collection::Principal,
                     0,
-                    PrincipalField::EncryptionKeys.into(),
-                )
+                    PrincipalField::EncryptionKeys,
+                ))
                 .await
                 .caused_by(trc::location!())?
         {
@@ -607,8 +628,8 @@ impl EmailIngest for Server {
             self.add_spam_sample(
                 &mut batch,
                 params.blob_hash.unwrap_or(&blob_hash).clone(),
-                is_encrypted.then_some(2 * 86400),
                 learn_spam,
+                !is_encrypted,
             );
         }
 
@@ -816,19 +837,20 @@ impl EmailIngest for Server {
         is_spam: bool,
     ) -> trc::Result<()> {
         if let Some(archive) = self
-            .archive_by_property(
+            .store()
+            .get_value::<Archive<AlignedBytes>>(ValueKey::property(
                 account_id,
                 Collection::Email,
                 document_id,
-                EmailField::Metadata.into(),
-            )
+                EmailField::Metadata,
+            ))
             .await
             .caused_by(trc::location!())?
         {
             let metadata = archive
                 .to_unarchived::<MessageMetadata>()
                 .caused_by(trc::location!())?;
-            self.add_spam_sample(batch, (&metadata.inner.blob_hash).into(), None, is_spam);
+            self.add_spam_sample(batch, (&metadata.inner.blob_hash).into(), is_spam, true);
         }
 
         Ok(())
@@ -838,15 +860,15 @@ impl EmailIngest for Server {
         &self,
         batch: &mut BatchBuilder,
         hash: BlobHash,
-        hold_override: Option<u64>,
         is_spam: bool,
+        hold_sample: bool,
     ) {
         if let Some(config) = &self.core.spam.classifier {
             let mut dt = DateTime::from_timestamp(now() as i64);
             dt.hour = 0;
             dt.minute = 0;
             dt.second = 0;
-            let until = dt.to_timestamp() as u64 + hold_override.unwrap_or(config.hold_samples_for);
+            let until = dt.to_timestamp() as u64 + config.hold_samples_for;
 
             batch
                 .set(
@@ -856,7 +878,10 @@ impl EmailIngest for Server {
                     },
                     vec![BlobLink::SPAM_SAMPLE_LINK],
                 )
-                .set(BlobOp::SpamSample { hash, until }, vec![u8::from(is_spam)]);
+                .set(
+                    BlobOp::SpamSample { hash, until },
+                    vec![u8::from(is_spam), u8::from(hold_sample)],
+                );
         }
     }
 }

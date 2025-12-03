@@ -12,6 +12,7 @@ use jmap_proto::{
     object::sieve::{Sieve, SieveProperty, SieveValue},
 };
 use jmap_tools::{Map, Value};
+use store::{ValueKey, write::{AlignedBytes, Archive}};
 use std::future::Future;
 use trc::AddContext;
 use types::{
@@ -71,7 +72,12 @@ impl SieveScriptGet for Server {
                 continue;
             }
             let sieve_ = if let Some(sieve) = self
-                .archive(account_id, Collection::SieveScript, document_id)
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                    account_id,
+                    Collection::SieveScript,
+                    document_id,
+                ))
                 .await?
             {
                 sieve

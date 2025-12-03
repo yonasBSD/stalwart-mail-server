@@ -13,10 +13,7 @@ use jmap_proto::{
     request::IntoValid,
 };
 use std::future::Future;
-use store::{
-    SerializeInfallible,
-    write::{BatchBuilder, BlobLink, BlobOp, now},
-};
+use store::write::{BatchBuilder, BlobLink, BlobOp, now};
 use trc::AddContext;
 use types::blob::{BlobClass, BlobId};
 use utils::map::vec_map::VecMap;

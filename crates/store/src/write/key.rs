@@ -19,7 +19,7 @@ use crate::{
     write::{BlobLink, IndexPropertyClass, SearchIndex, SearchIndexId, SearchIndexType},
 };
 use std::convert::TryInto;
-use types::{blob_hash::BLOB_HASH_LEN, collection::SyncCollection};
+use types::{blob_hash::BLOB_HASH_LEN, collection::SyncCollection, field::Field};
 use utils::codec::leb128::Leb128_;
 
 pub struct KeySerializer {
@@ -154,6 +154,19 @@ impl DeserializeBigEndian for &[u8] {
 }
 
 impl<T: AsRef<ValueClass>> ValueKey<T> {
+    pub fn with_document_id(self, document_id: u32) -> Self {
+        Self {
+            document_id,
+            ..self
+        }
+    }
+
+    pub fn is_counter(&self) -> bool {
+        self.class.as_ref().is_counter(self.collection)
+    }
+}
+
+impl ValueKey<ValueClass> {
     pub fn property(
         account_id: u32,
         collection: impl Into<u8>,
@@ -168,15 +181,17 @@ impl<T: AsRef<ValueClass>> ValueKey<T> {
         }
     }
 
-    pub fn with_document_id(self, document_id: u32) -> Self {
-        Self {
+    pub fn archive(
+        account_id: u32,
+        collection: impl Into<u8>,
+        document_id: u32,
+    ) -> ValueKey<ValueClass> {
+        ValueKey {
+            account_id,
+            collection: collection.into(),
             document_id,
-            ..self
+            class: ValueClass::Property(Field::ARCHIVE.into()),
         }
-    }
-
-    pub fn is_counter(&self) -> bool {
-        self.class.as_ref().is_counter(self.collection)
     }
 }
 

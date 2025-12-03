@@ -7,39 +7,33 @@
 use crate::classifier::feature::{FeatureBuilder, Features, Sample};
 use rand::{SeedableRng, rngs::StdRng, seq::SliceRandom};
 
-#[derive(Default)]
-pub struct SGDClassifier {
+#[derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default)]
+pub struct TextClassifier {
     weights: Vec<f32>,
     intercept: f32,
-    n_epochs: usize,
-    alpha: f32,
-    random_state: u64,
 }
 
 const MAX_DLOSS: f32 = 1e4;
 
-impl SGDClassifier {
-    pub fn new(n_features: usize, n_epochs: usize, alpha: f32, random_state: u64) -> Self {
-        SGDClassifier {
+impl TextClassifier {
+    pub fn new(n_features: usize) -> Self {
+        TextClassifier {
             weights: vec![0.0; n_features],
-            n_epochs,
-            random_state,
-            alpha,
             intercept: 0.0,
         }
     }
 
-    pub fn fit(&mut self, samples: &mut [impl AsRef<Sample>]) {
-        let mut rng = StdRng::seed_from_u64(self.random_state);
+    pub fn fit(&mut self, samples: &mut [impl AsRef<Sample>], n_epochs: usize, alpha: f32) {
+        let mut rng = StdRng::seed_from_u64(42);
         let mut t = 1;
         let mut w_scale = 1.0;
 
         // Heuristic to initialize 'optimal' learning rate
-        let typw = (1.0 / self.alpha.sqrt()).sqrt();
+        let typw = (1.0 / alpha.sqrt()).sqrt();
         let initial_eta0 = typw / 1.0_f32.max(gradient(1.0, -typw));
-        let optimal_init = 1.0 / (initial_eta0 * self.alpha);
+        let optimal_init = 1.0 / (initial_eta0 * alpha);
 
-        for _ in 0..self.n_epochs {
+        for _ in 0..n_epochs {
             samples.shuffle(&mut rng);
 
             for sample in samples.iter() {
@@ -50,13 +44,13 @@ impl SGDClassifier {
                     dot += self.weights[*idx as usize] * *feature;
                 }
                 let p = (dot * w_scale) + self.intercept;
-                let eta = 1.0 / (self.alpha * (optimal_init + (t as f32) - 1.0));
+                let eta = 1.0 / (alpha * (optimal_init + (t as f32) - 1.0));
 
                 // Compute Loss & Gradient
                 let dloss = gradient(sample.class, p).clamp(-MAX_DLOSS, MAX_DLOSS);
 
                 // Lazy weight decay
-                w_scale *= 1.0 - (eta * self.alpha);
+                w_scale *= 1.0 - (eta * alpha);
 
                 // Update weights
                 let update = -eta * dloss;
@@ -165,7 +159,7 @@ fn log1pexp(x: f32) -> f32 {
 pub mod tests {
     use crate::classifier::{
         feature::{Feature, Sample},
-        sgd::SGDClassifier,
+        sgd::TextClassifier,
     };
     use rand::{SeedableRng, rngs::StdRng, seq::SliceRandom};
     use std::{
@@ -274,14 +268,6 @@ pub mod tests {
         fn value(&self) -> &[u8] {
             self.as_bytes()
         }
-
-        fn is_global_feature(&self) -> bool {
-            true
-        }
-
-        fn is_local_feature(&self) -> bool {
-            false
-        }
     }
 
     #[test]
@@ -292,7 +278,7 @@ pub mod tests {
         );
         let mut samples = Vec::with_capacity(1024);
 
-        let mut model = SGDClassifier::new(1 << 20, 1000, 0.0001, 42);
+        let mut model = TextClassifier::new(1 << 20);
         let builder = model.feature_builder();
 
         let time = Instant::now();
@@ -329,7 +315,7 @@ pub mod tests {
 
         println!("Training SGD Classifier...");
         let time = Instant::now();
-        model.fit(&mut train_samples);
+        model.fit(&mut train_samples, 1000, 0.0001);
         println!("SGD Classifier trained in {:?}", time.elapsed());
 
         let y_pred = model.predict_batch(test_samples.iter().map(|s| &s.features));

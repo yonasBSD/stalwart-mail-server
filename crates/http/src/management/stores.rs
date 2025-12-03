@@ -35,9 +35,12 @@ use serde_json::json;
 use services::task_manager::index::ReindexIndexTask;
 use std::future::Future;
 use store::{
-    Serialize, rand,
+    Serialize, ValueKey, rand,
     search::SearchQuery,
-    write::{Archiver, BatchBuilder, BlobLink, BlobOp, DirectoryClass, SearchIndex, ValueClass},
+    write::{
+        AlignedBytes, Archive, Archiver, BatchBuilder, BlobLink, BlobOp, DirectoryClass,
+        SearchIndex, ValueClass,
+    },
 };
 use trc::AddContext;
 use types::{
@@ -506,7 +509,12 @@ pub async fn reset_imap_uids(server: &Server, account_id: u32) -> trc::Result<(u
 
     for &mailbox_id in cache.mailboxes.index.keys() {
         let mailbox = server
-            .archive(account_id, Collection::Mailbox, mailbox_id)
+            .store()
+            .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                account_id,
+                Collection::Mailbox,
+                mailbox_id,
+            ))
             .await
             .caused_by(trc::location!())?
             .ok_or_else(|| trc::ImapEvent::Error.into_err().caused_by(trc::location!()))?
@@ -537,7 +545,12 @@ pub async fn reset_imap_uids(server: &Server, account_id: u32) -> trc::Result<(u
     // Reset all UIDs
     for message_id in cache.emails.items.iter().map(|i| i.document_id) {
         let data = server
-            .archive(account_id, Collection::Email, message_id)
+            .store()
+            .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                account_id,
+                Collection::Email,
+                message_id,
+            ))
             .await
             .caused_by(trc::location!())?;
         let data_ = if let Some(data) = data {

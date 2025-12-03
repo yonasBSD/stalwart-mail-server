@@ -13,7 +13,10 @@ use common::{listener::SessionStream, storage::index::ObjectIndexBuilder};
 use directory::Permission;
 use imap_proto::{Command, ResponseCode, StatusResponse, receiver::Request};
 use std::time::Instant;
-use store::write::BatchBuilder;
+use store::{
+    ValueKey,
+    write::{AlignedBytes, Archive, BatchBuilder},
+};
 use types::collection::Collection;
 
 impl<T: SessionStream> Session<T> {
@@ -92,7 +95,12 @@ impl<T: SessionStream> SessionData<T> {
         // Obtain mailbox
         let mailbox_ = self
             .server
-            .archive(account_id, Collection::Mailbox, mailbox_id)
+            .store()
+            .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                account_id,
+                Collection::Mailbox,
+                mailbox_id,
+            ))
             .await
             .imap_ctx(&tag, trc::location!())?
             .ok_or_else(|| {

@@ -23,6 +23,10 @@ use mail_parser::parsers::fields::thread::thread_name;
 use store::write::{
     BatchBuilder, IndexPropertyClass, SearchIndex, TaskEpoch, TaskQueueClass, ValueClass,
 };
+use store::{
+    ValueKey,
+    write::{AlignedBytes, Archive},
+};
 use trc::AddContext;
 use types::{
     blob::{BlobClass, BlobId},
@@ -66,12 +70,13 @@ impl EmailCopy for Server {
         // Obtain metadata
         let account_id = resource_token.account_id;
         let mut metadata = if let Some(metadata) = self
-            .archive_by_property(
+            .store()
+            .get_value::<Archive<AlignedBytes>>(ValueKey::property(
                 from_account_id,
                 Collection::Email,
                 from_message_id,
-                EmailField::Metadata.into(),
-            )
+                EmailField::Metadata,
+            ))
             .await?
         {
             metadata

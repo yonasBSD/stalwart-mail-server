@@ -25,9 +25,9 @@ use store::write::key::DeserializeBigEndian;
 use store::write::serialize::rkyv_deserialize;
 use store::write::{
     AlignedBytes, Archive, Archiver, BatchBuilder, BlobLink, BlobOp, MergeResult, Params,
-    QueueClass, TaskEpoch, TaskQueueClass, ValueClass, now,
+    QueueClass, ValueClass, now,
 };
-use store::{Deserialize, IterateParams, Serialize, SerializeInfallible, U64_LEN, ValueKey};
+use store::{Deserialize, IterateParams, Serialize, U64_LEN, ValueKey};
 use trc::{AddContext, ServerEvent};
 use types::blob_hash::BlobHash;
 use utils::DomainPart;
@@ -352,7 +352,8 @@ impl MessageWrapper {
 
         // Reserve and write blob
         let mut batch = BatchBuilder::new();
-        let reserve_until = now() + if !train_spam { 120 } else { 86400 };
+        let now = now();
+        let reserve_until = now + 120;
         batch.set(
             BlobOp::Link {
                 hash: self.message.blob_hash.clone(),
@@ -438,25 +439,33 @@ impl MessageWrapper {
             );
         }
 
-        if !train_spam {
-            batch.clear(BlobOp::Link {
+        if train_spam && let Some(config) = &server.core.spam.classifier {
+            let hold_period = now + config.hold_samples_for;
+
+            batch
+                .set(
+                    BlobOp::Link {
+                        hash: self.message.blob_hash.clone(),
+                        to: BlobLink::Temporary { until: hold_period },
+                    },
+                    vec![BlobLink::SPAM_SAMPLE_LINK],
+                )
+                .set(
+                    BlobOp::SpamSample {
+                        hash: self.message.blob_hash.clone(),
+                        until: hold_period,
+                    },
+                    vec![1, 1],
+                );
+        }
+
+        batch
+            .clear(BlobOp::Link {
                 hash: self.message.blob_hash.clone(),
                 to: BlobLink::Temporary {
                     until: reserve_until,
                 },
-            });
-        } else {
-            batch.set(
-                ValueClass::TaskQueue(TaskQueueClass::SpamTrain {
-                    due: TaskEpoch::now(),
-                    blob_hash: self.message.blob_hash.clone(),
-                    learn_spam: true,
-                }),
-                reserve_until.serialize(),
-            );
-        }
-
-        batch
+            })
             .set(
                 BlobOp::Link {
                     hash: self.message.blob_hash.clone(),

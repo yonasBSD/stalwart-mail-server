@@ -17,7 +17,7 @@ use jmap_proto::{
 };
 use jmap_tools::{Key, Value};
 use std::future::Future;
-use store::write::BatchBuilder;
+use store::{ValueKey, write::{AlignedBytes, Archive, BatchBuilder}};
 use trc::AddContext;
 use types::{
     collection::{Collection, SyncCollection},
@@ -129,7 +129,12 @@ impl IdentitySet for Server {
             // Obtain identity
             let document_id = id.document_id();
             let identity_ = if let Some(identity_) = self
-                .archive(account_id, Collection::Identity, document_id)
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                    account_id,
+                    Collection::Identity,
+                    document_id,
+                ))
                 .await?
             {
                 identity_

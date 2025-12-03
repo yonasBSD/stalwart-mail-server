@@ -484,6 +484,14 @@ impl BootManager {
                     cache,
                 });
 
+                // Load spam model
+                if let Err(err) = inner.build_server().spam_model_reload().await {
+                    trc::error!(
+                        err.details("Failed to load spam filter model")
+                            .caused_by(trc::location!())
+                    );
+                }
+
                 // Fetch ASN database
                 if has_remote_asn {
                     inner

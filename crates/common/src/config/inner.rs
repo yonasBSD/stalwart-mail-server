@@ -7,12 +7,9 @@
 use super::server::tls::{build_self_signed_cert, parse_certificates};
 use crate::{
     CacheSwap, Caches, Data, DavResource, DavResources, MailboxCache, MessageStoreCache,
-    MessageUidCache, TlsConnectors,
+    MessageUidCache, SpamClassifier, TlsConnectors,
     auth::{AccessToken, roles::RolePermissions},
-    config::{
-        smtp::resolver::{Policy, Tlsa},
-        spamfilter::Reputation,
-    },
+    config::smtp::resolver::{Policy, Tlsa},
     listener::blocked::BlockedIps,
     manager::webadmin::WebAdminManager,
 };
@@ -20,7 +17,6 @@ use ahash::{AHashMap, AHashSet};
 use arc_swap::ArcSwap;
 use mail_auth::{MX, Parameters, Txt};
 use mail_send::smtp::tls::build_tls_connector;
-use nlp::classifier::sgd::SGDClassifier;
 use parking_lot::RwLock;
 use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
@@ -52,8 +48,7 @@ impl Data {
         }
 
         Data {
-            spam_classifier: ArcSwap::from_pointee(SGDClassifier::default()),
-            spam_reputation: ArcSwap::from_pointee(Reputation::default()),
+            spam_classifier: ArcSwap::from_pointee(SpamClassifier::default()),
             tls_certificates: ArcSwap::from_pointee(certificates),
             tls_self_signed_cert: build_self_signed_cert(
                 subject_names.into_iter().collect::<Vec<_>>(),
@@ -223,7 +218,6 @@ impl Default for Data {
     fn default() -> Self {
         Self {
             spam_classifier: Default::default(),
-            spam_reputation: Default::default(),
             tls_certificates: Default::default(),
             tls_self_signed_cert: Default::default(),
             blocked_ips: Default::default(),

@@ -42,7 +42,7 @@ pub struct ClusterRoles {
     pub purge_accounts: ClusterRole,
     pub push_notifications: ClusterRole,
     pub fts_indexing: ClusterRole,
-    pub bayes_training: ClusterRole,
+    pub spam_training: ClusterRole,
     pub imip_processing: ClusterRole,
     pub merge_threads: ClusterRole,
     pub calendar_alerts: ClusterRole,
@@ -246,8 +246,8 @@ impl Network {
                 "cluster.roles.fts-indexing",
             ),
             (
-                &mut network.roles.bayes_training,
-                "cluster.roles.bayes-training",
+                &mut network.roles.spam_training,
+                "cluster.roles.spam-training",
             ),
             (
                 &mut network.roles.imip_processing,

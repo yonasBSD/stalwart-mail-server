@@ -9,6 +9,8 @@ use email::cache::MessageCacheFetch;
 use email::cache::email::MessageCacheAccess;
 use email::message::metadata::MessageMetadata;
 use groupware::cache::GroupwareCache;
+use store::ValueKey;
+use store::write::{AlignedBytes, Archive};
 use std::future::Future;
 use trc::AddContext;
 use types::acl::Acl;
@@ -59,12 +61,13 @@ impl BlobDownload for Server {
                         Ok(Some(data)),
                     ) if *collection == Collection::Email as u8 => {
                         let Some(archive) = self
-                            .archive_by_property(
+                            .store()
+                            .get_value::<Archive<AlignedBytes>>(ValueKey::property(
                                 *account_id,
                                 Collection::Email,
                                 *document_id,
-                                EmailField::Metadata.into(),
-                            )
+                                EmailField::Metadata,
+                            ))
                             .await
                             .caused_by(trc::location!())?
                         else {

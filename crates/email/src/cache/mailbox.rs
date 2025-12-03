@@ -9,6 +9,10 @@ use common::{
     MailboxCache, MailboxesCache, MessageStoreCache, Server, auth::AccessToken,
     sharing::EffectiveAcl,
 };
+use store::{
+    ValueKey,
+    write::{AlignedBytes, Archive},
+};
 use store::{ahash::AHashMap, roaring::RoaringBitmap};
 use trc::AddContext;
 use types::{
@@ -41,7 +45,12 @@ pub(crate) async fn update_mailbox_cache(
     for (document_id, is_update) in changed_ids {
         if *is_update
             && let Some(archive) = server
-                .archive(account_id, Collection::Mailbox, *document_id)
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                    account_id,
+                    Collection::Mailbox,
+                    *document_id,
+                ))
                 .await
                 .caused_by(trc::location!())?
         {

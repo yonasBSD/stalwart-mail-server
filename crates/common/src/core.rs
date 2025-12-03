@@ -5,14 +5,17 @@
  */
 
 use crate::{
-    Inner, Server,
+    Inner, Server, SpamClassifier,
     auth::{AccessToken, ResourceToken, TenantInfo},
-    config::smtp::{
-        auth::{ArcSealer, DkimSigner, LazySignature, ResolvedSignature, build_signature},
-        queue::{
-            ConnectionStrategy, DEFAULT_QUEUE_NAME, MxConfig, QueueExpiry, QueueName,
-            QueueStrategy, RequireOptional, RoutingStrategy, TlsStrategy, VirtualQueue,
+    config::{
+        smtp::{
+            auth::{ArcSealer, DkimSigner, LazySignature, ResolvedSignature, build_signature},
+            queue::{
+                ConnectionStrategy, DEFAULT_QUEUE_NAME, MxConfig, QueueExpiry, QueueName,
+                QueueStrategy, RequireOptional, RoutingStrategy, TlsStrategy, VirtualQueue,
+            },
         },
+        spamfilter::SpamClassifierModel,
     },
     ipc::{BroadcastEvent, PushEvent, PushNotification},
 };
@@ -38,7 +41,7 @@ use types::{
     blob::{BlobClass, BlobId},
     blob_hash::BlobHash,
     collection::{Collection, SyncCollection},
-    field::Field,
+    field::{Field, PrincipalField},
     type_state::{DataType, StateChange},
 };
 use utils::{map::bitmap::Bitmap, snowflake::SnowflakeIdGenerator};
@@ -439,57 +442,6 @@ impl Server {
 
             quotas
         })
-    }
-
-    #[inline(always)]
-    pub async fn archive(
-        &self,
-        account_id: u32,
-        collection: Collection,
-        document_id: u32,
-    ) -> trc::Result<Option<Archive<AlignedBytes>>> {
-        self.core
-            .storage
-            .data
-            .get_value(ValueKey {
-                account_id,
-                collection: collection.into(),
-                document_id,
-                class: ValueClass::Property(Field::ARCHIVE.into()),
-            })
-            .await
-            .add_context(|err| {
-                err.caused_by(trc::location!())
-                    .account_id(account_id)
-                    .collection(collection)
-                    .document_id(document_id)
-            })
-    }
-
-    #[inline(always)]
-    pub async fn archive_by_property(
-        &self,
-        account_id: u32,
-        collection: Collection,
-        document_id: u32,
-        property: Field,
-    ) -> trc::Result<Option<Archive<AlignedBytes>>> {
-        self.core
-            .storage
-            .data
-            .get_value(ValueKey {
-                account_id,
-                collection: collection.into(),
-                document_id,
-                class: ValueClass::Property(property.into()),
-            })
-            .await
-            .add_context(|err| {
-                err.caused_by(trc::location!())
-                    .account_id(account_id)
-                    .collection(collection)
-                    .document_id(document_id)
-            })
     }
 
     pub async fn archives<I, CB>(
@@ -1089,6 +1041,44 @@ impl Server {
             .count_principals(None, Type::Domain.into(), None)
             .await
             .caused_by(trc::location!())
+    }
+
+    pub async fn spam_model_reload(&self) -> trc::Result<()> {
+        if let Some(config) = &self.core.spam.classifier {
+            if let Some(model) = self
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::property(
+                    u32::MAX,
+                    Collection::Principal,
+                    u32::MAX,
+                    PrincipalField::SpamModel,
+                ))
+                .await
+                .and_then(|archive| match archive {
+                    Some(archive) => archive.deserialize::<SpamClassifierModel>().map(Some),
+                    None => Ok(None),
+                })
+                .caused_by(trc::location!())?
+            {
+                if model.ham_count >= config.min_ham_samples
+                    && model.spam_count >= config.min_spam_samples
+                {
+                    self.inner
+                        .data
+                        .spam_classifier
+                        .store(Arc::new(SpamClassifier {
+                            model: model.classifier,
+                            last_trained_at: model.last_trained_at,
+                        }));
+                } else {
+                    let todo = "log insufficient samples, keep existing model";
+                }
+            } else {
+                let todo = "log missing model, keep existing one";
+            }
+        }
+
+        Ok(())
     }
 
     #[cfg(not(feature = "enterprise"))]

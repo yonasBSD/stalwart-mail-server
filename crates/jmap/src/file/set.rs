@@ -21,8 +21,7 @@ use jmap_proto::{
 };
 use jmap_tools::{JsonPointerItem, Key, Value};
 use store::{
-    ahash::{AHashMap, AHashSet},
-    write::BatchBuilder,
+    ValueKey, ahash::{AHashMap, AHashSet}, write::{AlignedBytes, Archive, BatchBuilder}
 };
 use trc::AddContext;
 use types::{
@@ -187,7 +186,12 @@ impl FileNodeSet for Server {
             // Obtain file node
             let document_id = id.document_id();
             let file_node_ = if let Some(file_node_) = self
-                .archive(account_id, Collection::FileNode, document_id)
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                    account_id,
+                    Collection::FileNode,
+                    document_id,
+                ))
                 .await?
             {
                 file_node_

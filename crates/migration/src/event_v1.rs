@@ -89,7 +89,12 @@ pub(crate) async fn migrate_calendar_events_v012(server: &Server) -> trc::Result
 
         for document_id in document_ids.iter() {
             let Some(archive) = server
-                .archive(account_id, Collection::CalendarEvent, document_id)
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                    account_id,
+                    Collection::CalendarEvent,
+                    document_id,
+                ))
                 .await
                 .caused_by(trc::location!())?
             else {
