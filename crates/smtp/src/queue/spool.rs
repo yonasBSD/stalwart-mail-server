@@ -28,7 +28,7 @@ use store::write::{
     QueueClass, ValueClass, now,
 };
 use store::{Deserialize, IterateParams, Serialize, U64_LEN, ValueKey};
-use trc::{AddContext, ServerEvent};
+use trc::{AddContext, ServerEvent, SpamEvent};
 use types::blob_hash::BlobHash;
 use utils::DomainPart;
 
@@ -457,6 +457,13 @@ impl MessageWrapper {
                     },
                     vec![1, 1],
                 );
+
+            trc::event!(
+                Spam(SpamEvent::TrainSampleAdded),
+                Details = "spam",
+                Expires = trc::Value::Timestamp(hold_period),
+                SpanId = self.span_id,
+            );
         }
 
         batch

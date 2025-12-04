@@ -340,16 +340,18 @@ impl EventType {
                 | SieveEvent::ActionReject => Level::Debug,
             },
             EventType::Spam(event) => match event {
-                SpamEvent::PyzorError
-                | SpamEvent::TrainError
+                SpamEvent::Pyzor
+                | SpamEvent::PyzorError
+                | SpamEvent::Dnsbl
                 | SpamEvent::DnsblError
-                | SpamEvent::Pyzor
-                | SpamEvent::Train
-                | SpamEvent::TrainAccount
                 | SpamEvent::Classify
-                | SpamEvent::ClassifyError
-                | SpamEvent::TrainBalance
-                | SpamEvent::Dnsbl => Level::Debug,
+                | SpamEvent::TrainSampleAdded => Level::Debug,
+                SpamEvent::TrainSampleNotFound => Level::Warn,
+                SpamEvent::TrainStarted
+                | SpamEvent::TrainCompleted
+                | SpamEvent::ModelLoaded
+                | SpamEvent::ModelNotReady
+                | SpamEvent::ModelNotFound => Level::Info,
             },
             EventType::Http(event) => match event {
                 HttpEvent::ConnectionStart | HttpEvent::ConnectionEnd => Level::Debug,

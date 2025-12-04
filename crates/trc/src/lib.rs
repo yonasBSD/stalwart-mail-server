@@ -605,12 +605,14 @@ pub enum SpamEvent {
     PyzorError,
     Dnsbl,
     DnsblError,
-    Train,
-    TrainBalance,
-    TrainError,
+    TrainStarted,
+    TrainCompleted,
+    TrainSampleAdded,
+    TrainSampleNotFound,
     Classify,
-    ClassifyError,
-    TrainAccount,
+    ModelLoaded,
+    ModelNotReady,
+    ModelNotFound,
 }
 
 #[event_type]

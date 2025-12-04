@@ -36,7 +36,7 @@ use store::{
         DirectoryClass, QueueClass, ValueClass, key::DeserializeBigEndian, now,
     },
 };
-use trc::AddContext;
+use trc::{AddContext, SpamEvent};
 use types::{
     blob::{BlobClass, BlobId},
     blob_hash::BlobHash,
@@ -1071,10 +1071,16 @@ impl Server {
                             last_trained_at: model.last_trained_at,
                         }));
                 } else {
-                    let todo = "log insufficient samples, keep existing model";
+                    trc::event!(
+                        Spam(SpamEvent::ModelNotReady),
+                        Details = vec![
+                            trc::Value::from(model.ham_count),
+                            trc::Value::from(model.spam_count)
+                        ],
+                    );
                 }
             } else {
-                let todo = "log missing model, keep existing one";
+                trc::event!(Spam(SpamEvent::ModelNotFound));
             }
         }
 

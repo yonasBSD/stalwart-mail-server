@@ -78,6 +78,15 @@ impl FeatureBuilder {
     }
 }
 
+impl Sample {
+    pub fn new(features: Features, class: bool) -> Self {
+        Self {
+            features,
+            class: if class { 1.0 } else { 0.0 },
+        }
+    }
+}
+
 impl AsRef<Sample> for Sample {
     fn as_ref(&self) -> &Sample {
         self

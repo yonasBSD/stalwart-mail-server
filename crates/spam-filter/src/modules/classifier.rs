@@ -4,11 +4,17 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::analysis::domain::SpamFilterAnalyzeDomain;
+use crate::analysis::init::SpamFilterInit;
+use crate::analysis::is_trusted_domain;
+use crate::analysis::url::SpamFilterAnalyzeUrl;
 use crate::{Email, IpParts, SpamFilterContext, TextPart, analysis::url::UrlParts};
+use crate::{Hostname, SpamFilterInput};
 use common::config::spamfilter::SpamClassifierModel;
 use common::{Server, config::spamfilter::Location, ipc::BroadcastEvent};
 use mail_auth::DmarcResult;
-use mail_parser::MimeHeaders;
+use mail_parser::{MessageParser, MimeHeaders};
+use nlp::classifier::feature::Sample;
 use nlp::{
     classifier::{feature::Feature, sgd::TextClassifier},
     tokenizers::{
@@ -16,6 +22,7 @@ use nlp::{
         types::TokenType,
     },
 };
+use std::time::Instant;
 use std::{
     borrow::Cow,
     collections::{HashMap, hash_map::Entry},
@@ -30,8 +37,11 @@ use store::{
         key::DeserializeBigEndian,
     },
 };
-use trc::AddContext;
+use tokio::sync::{mpsc, oneshot};
+use trc::{AddContext, SpamEvent};
 use types::{blob_hash::BlobHash, collection::Collection, field::PrincipalField};
+use unicode_security::is_potential_mixed_script_confusable_char;
+use unicode_security::mixed_script::AugmentedScriptSet;
 
 pub trait SpamClassifier {
     fn spam_train(&self, retrain: bool) -> impl Future<Output = trc::Result<()>> + Send;
@@ -40,6 +50,11 @@ pub trait SpamClassifier {
         &self,
         ctx: &mut SpamFilterContext<'_>,
     ) -> impl Future<Output = trc::Result<()>> + Send;
+
+    fn spam_build_tokens<'x>(
+        &self,
+        ctx: &'x SpamFilterContext<'_>,
+    ) -> impl Future<Output = Tokens<'x>> + Send;
 }
 
 struct TrainingSample {
@@ -51,10 +66,12 @@ struct TrainingSample {
 
 impl SpamClassifier for Server {
     async fn spam_train(&self, retrain: bool) -> trc::Result<()> {
-        let todo = "parse ASN and other stuff, build context properly";
         let Some(config) = &self.core.spam.classifier else {
             return Ok(());
         };
+
+        let started = Instant::now();
+        trc::event!(Spam(SpamEvent::TrainStarted));
 
         // Fetch model
         let mut model = if !retrain
@@ -126,15 +143,23 @@ impl SpamClassifier for Server {
                     };
 
                     let do_remove = *hold == 0;
+                    let is_spam = *is_spam == 1;
                     samples.push(TrainingSample {
                         hash,
                         account_id,
-                        is_spam: *is_spam == 1,
+                        is_spam,
                         remove: do_remove.then_some(until),
                     });
 
                     remove_entries |= do_remove;
+
+                    // Update model stats
                     model.last_sample_expiry = until;
+                    if is_spam {
+                        model.spam_count += 1;
+                    } else {
+                        model.ham_count += 1;
+                    }
 
                     Ok(true)
                 },
@@ -142,27 +167,113 @@ impl SpamClassifier for Server {
             .await
             .caused_by(trc::location!())?;
 
-        if !samples.is_empty() {
-            let todo = "log no new samples";
+        if samples.is_empty() {
+            trc::event!(
+                Spam(SpamEvent::TrainCompleted),
+                Total = 0,
+                Elapsed = started.elapsed()
+            );
+
             return Ok(());
         }
+        let num_samples = samples.len();
+
+        // Spawn training task
+        struct TrainJob {
+            samples: Vec<Sample>,
+            done: oneshot::Sender<()>,
+        }
+        let builder = model.classifier.feature_builder();
+        let n_epochs = config.epochs;
+        let alpha = config.alpha;
+        let (batch_tx, mut batch_rx) = mpsc::channel::<TrainJob>(1);
+        let (model_tx, model_rx) = oneshot::channel();
+
+        std::thread::Builder::new()
+            .name("SGD Train Task".into())
+            .spawn(move || {
+                while let Some(mut job) = batch_rx.blocking_recv() {
+                    model.classifier.fit(&mut job.samples, n_epochs, alpha);
+                    let _ = job.done.send(());
+                }
+                // Send model back when done
+                let _ = model_tx.send(model);
+            })
+            .map_err(|err| {
+                trc::EventType::Server(trc::ServerEvent::ThreadError)
+                    .reason(err)
+                    .details("Failed to spawn spam train task")
+                    .caused_by(trc::location!())
+            })?;
 
         // Train model
         for chunk in samples.chunks(config.train_batch_size.max(10)) {
-            let todo = "do magic here";
-
             let mut samples = Vec::with_capacity(chunk.len());
             for sample in chunk {
-                if sample.is_spam {
-                    model.spam_count += 1;
+                let account_id = if sample.account_id != u32::MAX {
+                    Some(sample.account_id)
                 } else {
-                    model.ham_count += 1;
-                }
-                samples.push(sample);
+                    None
+                };
+                let Some(raw_message) = self
+                    .blob_store()
+                    .get_blob(sample.hash.as_slice(), 0..usize::MAX)
+                    .await
+                    .caused_by(trc::location!())?
+                else {
+                    trc::event!(
+                        Spam(SpamEvent::TrainSampleNotFound),
+                        Reason = "Blob not found",
+                        AccountId = account_id,
+                        BlobId = sample.hash.to_hex(),
+                    );
+                    continue;
+                };
+
+                // Build features
+                let message = MessageParser::new().parse(&raw_message).unwrap_or_default();
+                let mut ctx =
+                    self.spam_filter_init(SpamFilterInput::from_message(&message, 0).train_mode());
+                self.spam_filter_analyze_domain(&mut ctx).await;
+                self.spam_filter_analyze_url(&mut ctx).await;
+                let mut tokens = self.spam_build_tokens(&ctx).await.0;
+                builder.scale(&mut tokens);
+                let features = builder.build(&tokens, account_id);
+
+                samples.push(Sample::new(features, sample.is_spam));
             }
 
-            let todo = "use blocking";
+            // Send batch for training
+            let (done_tx, done_rx) = oneshot::channel();
+            batch_tx
+                .send(TrainJob {
+                    samples,
+                    done: done_tx,
+                })
+                .await
+                .map_err(|err| {
+                    trc::EventType::Server(trc::ServerEvent::ThreadError)
+                        .reason(err)
+                        .details("Spam train task failed")
+                        .caused_by(trc::location!())
+                })?;
+
+            done_rx.await.map_err(|err| {
+                trc::EventType::Server(trc::ServerEvent::ThreadError)
+                    .reason(err)
+                    .details("Spam train task failed")
+                    .caused_by(trc::location!())
+            })?;
         }
+
+        // Take ownership of model
+        drop(batch_tx);
+        let mut model = model_rx.await.map_err(|err| {
+            trc::EventType::Server(trc::ServerEvent::ThreadError)
+                .reason(err)
+                .details("Spam train task failed")
+                .caused_by(trc::location!())
+        })?;
 
         // Store updated model
         model.last_trained_at = now();
@@ -195,6 +306,15 @@ impl SpamClassifier for Server {
             self.cluster_broadcast(BroadcastEvent::ReloadSpamFilter)
                 .await;
         }
+        trc::event!(
+            Spam(SpamEvent::TrainCompleted),
+            Total = num_samples,
+            Details = vec![
+                trc::Value::from(model.ham_count),
+                trc::Value::from(model.spam_count)
+            ],
+            Elapsed = started.elapsed()
+        );
 
         // Remove samples marked for deletion
         if remove_entries {
@@ -236,9 +356,10 @@ impl SpamClassifier for Server {
         let model = &classifier.model;
 
         if model.is_active() {
+            let started = Instant::now();
             let mut classifier_confidence = Vec::with_capacity(ctx.input.env_rcpt_to.len());
             let mut has_prediction = false;
-            let mut tokens = ctx.classifier_tokens().0;
+            let mut tokens = self.spam_build_tokens(ctx).await.0;
             let feature_builder = model.feature_builder();
             feature_builder.scale(&mut tokens);
 
@@ -267,49 +388,45 @@ impl SpamClassifier for Server {
                 ctx.result.classifier_confidence =
                     vec![prediction.into(); ctx.input.env_rcpt_to.len()];
             }
+
+            trc::event!(
+                Spam(SpamEvent::Classify),
+                Result = ctx
+                    .result
+                    .classifier_confidence
+                    .iter()
+                    .zip(ctx.input.env_rcpt_to.iter())
+                    .map(|(v, rcpt)| trc::Value::Array(vec![
+                        trc::Value::from(rcpt.to_string()),
+                        trc::Value::from(*v)
+                    ]))
+                    .collect::<Vec<_>>(),
+                SpanId = ctx.input.span_id,
+                Elapsed = started.elapsed()
+            );
         }
 
         Ok(())
     }
-}
 
-const MAX_TOKEN_LENGTH: usize = 16;
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Token<'x> {
-    // User types
-    Word { value: Cow<'x, str> },
-    Number { code: [u8; 3] },
-    Alphanumeric { code: [u8; 4] },
-    Symbol { value: String },
-
-    // User and global types
-    Sender { value: Cow<'x, str> },
-    Asn { number: [u8; 4] },
-    Url { value: Cow<'x, str> },
-    Email { value: Cow<'x, str> },
-    Hostname { value: &'x str },
-    Attachment { value: Cow<'x, str> },
-    MimeType { value: String },
-}
-
-#[derive(Debug)]
-struct Tokens<'x>(HashMap<Token<'x>, f32, RandomState>);
-
-impl<'x> SpamFilterContext<'x> {
-    fn classifier_tokens(&'x self) -> Tokens<'x> {
+    async fn spam_build_tokens<'x>(&self, ctx: &'x SpamFilterContext<'_>) -> Tokens<'x> {
         let mut tokens = Tokens::default();
 
         // Add From addresses
-        if !matches!(self.input.dmarc_result, Some(DmarcResult::Pass)) {
+        if ctx
+            .input
+            .dmarc_result
+            .as_ref()
+            .is_some_and(|result| **result != DmarcResult::Pass)
+        {
             tokens.insert(Token::Sender { value: "!".into() });
         }
-        for email in [&self.output.env_from_addr, &self.output.from.email] {
+        for email in [&ctx.output.env_from_addr, &ctx.output.from.email] {
             tokens.insert_email(email, true);
         }
 
         // Add Email addresses
-        for email in &self.output.emails {
+        for email in &ctx.output.emails {
             let is_sender = match &email.location {
                 Location::HeaderReplyTo | Location::HeaderDnt => true,
                 Location::BodyText
@@ -319,12 +436,23 @@ impl<'x> SpamFilterContext<'x> {
                 _ => continue,
             };
 
-            tokens.insert_email(&email.element.email, is_sender);
+            if is_sender
+                || !is_trusted_domain(
+                    self,
+                    email.element.email.domain_part.sld_or_default(),
+                    ctx.input.span_id,
+                )
+                .await
+            {
+                tokens.insert_email(&email.element.email, is_sender);
+            }
         }
 
         // Add URLs
-        for url in &self.output.urls {
-            if let Some(url) = &url.element.url_parsed {
+        for url in &ctx.output.urls {
+            if let Some(url) = &url.element.url_parsed
+                && !is_trusted_domain(self, url.host.sld_or_default(), ctx.input.span_id).await
+            {
                 if let Some(host) = &url.host.sld {
                     tokens.insert(Token::Url { value: host.into() });
                     if host != &url.host.fqdn {
@@ -351,26 +479,37 @@ impl<'x> SpamFilterContext<'x> {
         }
 
         // Add hostnames
-        for domain in &self.output.domains {
+        for domain in &ctx.output.domains {
             if matches!(
                 domain.location,
                 Location::HeaderReceived | Location::HeaderMid | Location::Ehlo | Location::Tcp
             ) {
-                tokens.insert(Token::Hostname {
-                    value: &domain.element,
-                });
+                let host = Hostname::new(&domain.element);
+                let host_sld = host.sld_or_default();
+
+                if !is_trusted_domain(self, host_sld, ctx.input.span_id).await {
+                    if host_sld != host.fqdn {
+                        tokens.insert(Token::Hostname {
+                            value: host_sld.to_string().into(),
+                        });
+                    }
+
+                    tokens.insert(Token::Hostname {
+                        value: host.fqdn.into(),
+                    });
+                }
             }
         }
 
         // Add ASN
-        if let Some(asn) = self.input.asn {
+        if let Some(asn) = ctx.input.asn {
             tokens.insert(Token::Asn {
                 number: asn.to_be_bytes(),
             });
         }
 
         // Add MIME and attachment indicators
-        for part in &self.input.message.parts {
+        for part in &ctx.input.message.parts {
             if let Some(name) = part.attachment_name()
                 && let Some((name, ext)) = name.rsplit_once('.')
             {
@@ -407,26 +546,26 @@ impl<'x> SpamFilterContext<'x> {
         }
 
         // Tokenize the subject
-        for token in &self.output.subject_tokens {
+        for token in &ctx.output.subject_tokens {
             tokens.insert_type(
-                &WordStemTokenizer::new(&self.output.subject_thread_lc),
+                &WordStemTokenizer::new(&ctx.output.subject_thread_lc),
                 token,
             );
         }
 
         // Tokenize the text parts
-        let body_idx = self
+        let body_idx = ctx
             .input
             .message
             .html_body
             .first()
-            .or_else(|| self.input.message.text_body.first())
+            .or_else(|| ctx.input.message.text_body.first())
             .map(|idx| *idx as usize);
         let mut alt_tokens = Tokens::default();
-        for (idx, part) in self.output.text_parts.iter().enumerate() {
+        for (idx, part) in ctx.output.text_parts.iter().enumerate() {
             if Some(idx) == body_idx
-                || (!self.input.message.text_body.contains(&(idx as u32))
-                    && !self.input.message.html_body.contains(&(idx as u32)))
+                || (!ctx.input.message.text_body.contains(&(idx as u32))
+                    && !ctx.input.message.html_body.contains(&(idx as u32)))
             {
                 tokens.insert_text_part(part);
             } else {
@@ -445,6 +584,29 @@ impl<'x> SpamFilterContext<'x> {
     }
 }
 
+const MAX_TOKEN_LENGTH: usize = 16;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Token<'x> {
+    // User types
+    Word { value: Cow<'x, str> },
+    Number { code: [u8; 2] },
+    Alphanumeric { code: [u8; 4] },
+    Symbol { value: String },
+
+    // User and global types
+    Sender { value: Cow<'x, str> },
+    Asn { number: [u8; 4] },
+    Url { value: Cow<'x, str> },
+    Email { value: Cow<'x, str> },
+    Hostname { value: Cow<'x, str> },
+    Attachment { value: Cow<'x, str> },
+    MimeType { value: String },
+}
+
+#[derive(Debug)]
+pub struct Tokens<'x>(HashMap<Token<'x>, f32, RandomState>);
+
 impl<'x> Tokens<'x> {
     fn insert_text_part(&mut self, part: &'x TextPart<'x>) {
         match part {
@@ -459,6 +621,7 @@ impl<'x> Tokens<'x> {
                 text_body, tokens, ..
             } => {
                 let word_tokenizer = WordStemTokenizer::new(text_body);
+
                 for token in tokens {
                     self.insert_type(&word_tokenizer, token);
                 }
@@ -474,7 +637,32 @@ impl<'x> Tokens<'x> {
     ) {
         match token {
             TokenType::Alphabetic(word) => {
-                if word.chars().all(|c| c.is_lowercase() || !c.is_uppercase()) {
+                let mut set: Option<AugmentedScriptSet> = None;
+                let mut has_confusables = false;
+                let mut is_lowercase = true;
+                for ch in word.chars() {
+                    has_confusables |=
+                        !ch.is_ascii() && is_potential_mixed_script_confusable_char(ch);
+                    is_lowercase &= ch.is_lowercase() || !ch.is_uppercase();
+                    set.get_or_insert_default().intersect_with(ch.into());
+                }
+                let is_mixed_script = set.is_some_and(|set| set.is_empty());
+
+                if (is_mixed_script || has_confusables)
+                    && let Ok(word) = decancer::cure(word.as_ref(), decancer::Options::default())
+                {
+                    if word.len() > MAX_TOKEN_LENGTH {
+                        self.insert(Token::Word {
+                            value: truncate_word(word.as_str(), MAX_TOKEN_LENGTH)
+                                .to_string()
+                                .into(),
+                        });
+                    } else {
+                        self.insert(Token::Word {
+                            value: String::from(word).into(),
+                        });
+                    }
+                } else if is_lowercase {
                     word_tokenizer.tokenize(word, |value| match value {
                         Cow::Borrowed(value) => {
                             self.insert(Token::Word {
@@ -531,10 +719,14 @@ impl<'x> Tokens<'x> {
             TokenType::Float(word) => {
                 self.insert(Token::from_number(true, word.as_ref()));
             }
+            TokenType::IpAddr(_) => {
+                self.insert(Token::Url {
+                    value: "!ip".into(),
+                });
+            }
             TokenType::Email(_)
             | TokenType::Url(_)
             | TokenType::UrlNoScheme(_)
-            | TokenType::IpAddr(_)
             | TokenType::Punctuation(_)
             | TokenType::Space => {}
         }
@@ -579,90 +771,143 @@ impl<'x> Tokens<'x> {
 
 impl Token<'static> {
     fn from_alphanumeric(s: &str) -> Self {
-        // Character class counts
-        let mut upper = 0u32;
-        let mut lower = 0u32;
-        let mut digit = 0u32;
-        let mut len = 0;
-        let mut char_types = Vec::with_capacity(len);
-        for c in s.chars() {
-            let char_type = CharType::from_char(c);
-            char_types.push(char_type);
-            match char_type {
-                CharType::Upper => upper += 1,
-                CharType::Lower => lower += 1,
-                CharType::Digit => digit += 1,
-                CharType::Other => (),
-            }
-            len += 1;
-        }
+        let mut is_hex = true;
+        let mut is_ascii = true;
+        let mut digit_count = 0;
 
-        // Determine dominant composition
-        let composition = match (upper > 0, lower > 0, digit > 0) {
-            (true, false, false) => b'U',  // UPPERCASE only
-            (false, true, false) => b'L',  // lowercase only
-            (false, false, true) => b'D',  // digits only
-            (true, true, false) => b'A',   // Alphabetic mixed case
-            (true, false, true) => b'H',   // Upper + digits (common in codes)
-            (false, true, true) => b'M',   // lower + digits (common in identifiers)
-            (true, true, true) => b'X',    // eXtreme mix - all three
-            (false, false, false) => b'E', // empty/invalid
-        };
-
-        // Length bucket (log-ish scale)
-        let len_code = match len {
-            1 => b'1',
-            2 => b'2',
-            3 => b'3',
-            4 => b'4',
-            5..=6 => b'5',
-            7..=8 => b'6',
-            9..=12 => b'7',
-            13..=16 => b'8',
-            17..=32 => b'9',
-            _ => b'Z',
-        };
-
-        // Ratio encoding (which class dominates)
-        let max_count = upper.max(lower).max(digit);
-        let dominance = (max_count * 100) / len.min(1) as u32;
-        let ratio = match dominance {
-            0..=50 => b'B',  // Balanced
-            51..=75 => b'P', // Partial dominance
-            76..=99 => b'D', // Dominant
-            _ => b'O',       // One class only (100%)
-        };
-
-        // Run code
-        let mut run_count = 0;
-        if len > 1 {
-            let mut prev_type = char_types[0];
-            for &current_type in char_types.iter().skip(1) {
-                if current_type != prev_type {
-                    run_count += 1;
-                    prev_type = current_type;
+        for ch in s.chars() {
+            match ch {
+                'a'..='f' | 'A'..='F' => {}
+                '0'..='9' => {
+                    digit_count += 1;
+                }
+                _ => {
+                    is_ascii &= ch.is_ascii();
+                    is_hex = false;
                 }
             }
         }
-        let run_ratio = (run_count as f64) / ((len - 1) as f64);
-        let run_code = match run_ratio {
-            r if r <= 0.1 => b'0', // Very long runs (e.g., AAAABBBB)
-            r if r <= 0.3 => b'1', // Moderate runs
-            r if r <= 0.5 => b'2', // Balanced runs/alternation
-            r if r <= 0.7 => b'3', // High alternation
-            _ => b'4',             // Near maximum alternation (e.g., A1A1A1)
-        };
 
-        Token::Alphanumeric {
-            code: [composition, len_code, ratio, run_code],
+        if is_hex {
+            Token::Number {
+                code: [b'X', s.len().min(u8::MAX as usize) as u8],
+            }
+        } else if !is_ascii {
+            let word: String = if let Ok(cured) = decancer::cure(s, decancer::Options::default()) {
+                cured
+                    .as_str()
+                    .chars()
+                    .filter(|ch| ch.is_alphabetic())
+                    .take(MAX_TOKEN_LENGTH)
+                    .collect()
+            } else {
+                s.chars()
+                    .filter(|ch| ch.is_alphabetic())
+                    .flat_map(|ch| ch.to_lowercase())
+                    .take(MAX_TOKEN_LENGTH)
+                    .collect()
+            };
+
+            Token::Word { value: word.into() }
+        } else if s.len() > 3 && digit_count == 1 {
+            let word: String = s
+                .chars()
+                .filter(|ch| ch.is_alphabetic())
+                .flat_map(|ch| ch.to_lowercase())
+                .take(MAX_TOKEN_LENGTH)
+                .collect();
+            Token::Word { value: word.into() }
+        } else {
+            // Character class counts
+            let mut upper = 0u32;
+            let mut lower = 0u32;
+            let mut digit = 0u32;
+            let mut len = 0;
+            let mut char_types = Vec::with_capacity(len);
+            for c in s.chars() {
+                let char_type = CharType::from_char(c);
+                char_types.push(char_type);
+                match char_type {
+                    CharType::Upper => upper += 1,
+                    CharType::Lower => lower += 1,
+                    CharType::Digit => digit += 1,
+                    CharType::Other => (),
+                }
+                len += 1;
+            }
+
+            // Determine dominant composition
+            let composition = match (upper > 0, lower > 0, digit > 0) {
+                (true, false, false) => b'U',  // UPPERCASE only
+                (false, true, false) => b'L',  // lowercase only
+                (false, false, true) => b'D',  // digits only
+                (true, true, false) => b'A',   // Alphabetic mixed case
+                (true, false, true) => b'H',   // Upper + digits (common in codes)
+                (false, true, true) => b'M',   // lower + digits (common in identifiers)
+                (true, true, true) => b'X',    // eXtreme mix - all three
+                (false, false, false) => b'E', // empty/invalid
+            };
+
+            // Length bucket (log-ish scale)
+            let len_code = match len {
+                1 => b'1',
+                2 => b'2',
+                3 => b'3',
+                4 => b'4',
+                5..=6 => b'5',
+                7..=8 => b'6',
+                9..=12 => b'7',
+                13..=16 => b'8',
+                17..=32 => b'9',
+                _ => b'Z',
+            };
+
+            // Ratio encoding (which class dominates)
+            let max_count = upper.max(lower).max(digit);
+            let dominance = (max_count * 100) / len.min(1) as u32;
+            let ratio = match dominance {
+                0..=50 => b'B',  // Balanced
+                51..=75 => b'P', // Partial dominance
+                76..=99 => b'D', // Dominant
+                _ => b'O',       // One class only (100%)
+            };
+
+            // Run code
+            let mut run_count = 0;
+            if len > 1 {
+                let mut prev_type = char_types[0];
+                for &current_type in char_types.iter().skip(1) {
+                    if current_type != prev_type {
+                        run_count += 1;
+                        prev_type = current_type;
+                    }
+                }
+            }
+            let run_ratio = (run_count as f64) / ((len - 1) as f64);
+            let run_code = match run_ratio {
+                r if r <= 0.1 => b'0', // Very long runs (e.g., AAAABBBB)
+                r if r <= 0.3 => b'1', // Moderate runs
+                r if r <= 0.5 => b'2', // Balanced runs/alternation
+                r if r <= 0.7 => b'3', // High alternation
+                _ => b'4',             // Near maximum alternation (e.g., A1A1A1)
+            };
+
+            Token::Alphanumeric {
+                code: [composition, len_code, ratio, run_code],
+            }
         }
     }
 
     fn from_number(is_float: bool, num: &str) -> Self {
         Token::Number {
             code: [
-                u8::from(is_float),
-                u8::from(num.starts_with('-')),
+                if num.starts_with("-") {
+                    if is_float { b'F' } else { b'I' }
+                } else if is_float {
+                    b'f'
+                } else {
+                    b'i'
+                },
                 num.as_bytes()
                     .iter()
                     .filter(|c| c.is_ascii_digit())

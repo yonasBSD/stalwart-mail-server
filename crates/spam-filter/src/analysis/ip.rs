@@ -116,6 +116,11 @@ impl SpamFilterAnalyzeIp for Server {
                 IprevResult::Pass | IprevResult::None => (),
             }
         }
+
+        // Add ASN
+        if let Some(asn_id) = &ctx.input.asn {
+            ctx.result.add_tag(format!("SOURCE_ASN_{asn_id}"));
+        }
     }
 }
 

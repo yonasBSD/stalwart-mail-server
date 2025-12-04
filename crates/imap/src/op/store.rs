@@ -298,7 +298,13 @@ impl<T: SessionStream> SessionData<T> {
             // Add spam train task
             if let Some(learn_spam) = train_spam {
                 self.server
-                    .add_account_spam_sample(&mut batch, account_id, *id, learn_spam)
+                    .add_account_spam_sample(
+                        &mut batch,
+                        account_id,
+                        *id,
+                        learn_spam,
+                        self.session_id,
+                    )
                     .await
                     .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?;
             }

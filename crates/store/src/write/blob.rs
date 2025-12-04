@@ -117,79 +117,83 @@ impl Store {
     }
 
     pub async fn purge_blobs(&self, blob_store: BlobStore) -> trc::Result<()> {
-        // Validate linked blobs
-        let from_key = ValueKey {
-            account_id: 0,
-            collection: 0,
-            document_id: 0,
-            class: ValueClass::Blob(BlobOp::Commit {
-                hash: BlobHash::default(),
-            }),
-        };
-        let to_key = ValueKey {
-            account_id: u32::MAX,
-            collection: u8::MAX,
-            document_id: u32::MAX,
-            class: ValueClass::Blob(BlobOp::Link {
-                hash: BlobHash::new_max(),
-                to: BlobLink::Document,
-            }),
-        };
+        for byte in 0..=u8::MAX {
+            // Validate linked blobs
+            let mut from_hash = BlobHash::default();
+            let mut to_hash = BlobHash::new_max();
+            from_hash.0[0] = byte;
+            to_hash.0[0] = byte;
+            let from_key = ValueKey {
+                account_id: 0,
+                collection: 0,
+                document_id: 0,
+                class: ValueClass::Blob(BlobOp::Commit { hash: from_hash }),
+            };
+            let to_key = ValueKey {
+                account_id: u32::MAX,
+                collection: u8::MAX,
+                document_id: u32::MAX,
+                class: ValueClass::Blob(BlobOp::Link {
+                    hash: to_hash,
+                    to: BlobLink::Document,
+                }),
+            };
 
-        let mut state = BlobPurgeState::new();
-        self.iterate(
-            IterateParams::new(from_key, to_key).ascending(),
-            |key, value| {
-                let hash =
-                    BlobHash::try_from_hash_slice(key.get(0..BLOB_HASH_LEN).ok_or_else(|| {
-                        trc::Error::corrupted_key(key, value.into(), trc::location!())
-                    })?)
-                    .unwrap();
+            let mut state = BlobPurgeState::new();
+            self.iterate(
+                IterateParams::new(from_key, to_key).ascending(),
+                |key, value| {
+                    let hash =
+                        BlobHash::try_from_hash_slice(key.get(0..BLOB_HASH_LEN).ok_or_else(
+                            || trc::Error::corrupted_key(key, value.into(), trc::location!()),
+                        )?)
+                        .unwrap();
 
-                state.update_hash(hash);
-                state.process_key(key, value)?;
+                    state.update_hash(hash);
+                    state.process_key(key, value)?;
 
-                Ok(true)
-            },
-        )
-        .await
-        .caused_by(trc::location!())?;
+                    Ok(true)
+                },
+            )
+            .await
+            .caused_by(trc::location!())?;
 
-        state.finalize(BlobHash::default());
+            state.finalize(BlobHash::default());
 
-        // Delete expired or unlinked blobs
-        for (_, op) in &state.delete_keys {
-            if let BlobOp::Commit { hash } = op {
-                blob_store
-                    .delete_blob(hash.as_ref())
-                    .await
-                    .caused_by(trc::location!())?;
+            // Delete expired or unlinked blobs
+            for (_, op) in &state.delete_keys {
+                if let BlobOp::Commit { hash } = op {
+                    blob_store
+                        .delete_blob(hash.as_ref())
+                        .await
+                        .caused_by(trc::location!())?;
+                }
             }
-        }
 
-        // Delete hashes
-        let mut batch = BatchBuilder::new();
-        for (account_id, op) in state.delete_keys {
-            if batch.is_large_batch() {
+            // Delete hashes
+            let mut batch = BatchBuilder::new();
+            for (account_id, op) in state.delete_keys {
+                if batch.is_large_batch() {
+                    self.write(batch.build_all())
+                        .await
+                        .caused_by(trc::location!())?;
+                    batch = BatchBuilder::new();
+                }
+
+                if let Some(account_id) = account_id {
+                    batch.with_account_id(account_id);
+                }
+
+                batch.any_op(Operation::Value {
+                    class: ValueClass::Blob(op),
+                    op: ValueOp::Clear,
+                });
+            }
+            if !batch.is_empty() {
                 self.write(batch.build_all())
                     .await
                     .caused_by(trc::location!())?;
-                batch = BatchBuilder::new();
             }
-
-            if let Some(account_id) = account_id {
-                batch.with_account_id(account_id);
-            }
-
-            batch.any_op(Operation::Value {
-                class: ValueClass::Blob(op),
-                op: ValueOp::Clear,
-            });
-        }
-        if !batch.is_empty() {
-            self.write(batch.build_all())
-                .await
-                .caused_by(trc::location!())?;
         }
 
         Ok(())

@@ -84,7 +84,7 @@ pub struct ClassifierConfig {
     pub auto_learn_reply_ham: bool,
     pub auto_learn_card_is_ham: bool,
     pub hold_samples_for: u64,
-    pub train_frequency: Option<Duration>,
+    pub train_frequency: Option<u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -486,7 +486,8 @@ impl ClassifierConfig {
                     "spam-filter.classifier.training.frequency",
                     "12h",
                 )
-                .unwrap_or(Some(Duration::from_secs(12 * 60 * 60))),
+                .unwrap_or(Some(Duration::from_secs(12 * 60 * 60)))
+                .map(|d| d.as_secs()),
         }
         .into()
     }

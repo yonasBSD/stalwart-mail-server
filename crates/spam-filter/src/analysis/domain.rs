@@ -57,7 +57,6 @@ impl SpamFilterAnalyzeDomain for Server {
                     {
                         if let Host::Name(name) = host
                             && let Some(name) = Hostname::new(name.as_ref()).sld
-                            && !is_trusted_domain(self, &name, ctx.input.span_id).await
                         {
                             domains.insert(ElementLocation::new(name, Location::HeaderReceived));
                         }
@@ -71,8 +70,6 @@ impl SpamFilterAnalyzeDomain for Server {
                             let host = Hostname::new(d);
                             if host.sld.is_some() { Some(host) } else { None }
                         })
-                        && !is_trusted_domain(self, mid_domain.sld_or_default(), ctx.input.span_id)
-                            .await
                     {
                         domains.insert(ElementLocation::new(mid_domain.fqdn, Location::HeaderMid));
                     }
@@ -188,7 +185,7 @@ impl SpamFilterAnalyzeDomain for Server {
 
             for token in tokens {
                 if let TokenType::Email(email) = token {
-                    if is_body && !ctx.result.has_tag("RCPT_IN_BODY") {
+                    if !ctx.input.is_train && is_body && !ctx.result.has_tag("RCPT_IN_BODY") {
                         for rcpt in ctx.output.all_recipients() {
                             if rcpt.email.address == email.address {
                                 ctx.result.add_tag("RCPT_IN_BODY");
@@ -214,42 +211,44 @@ impl SpamFilterAnalyzeDomain for Server {
             }
         }
 
-        // Validate email
-        for email in &emails {
-            // Skip trusted domains
-            if !email.element.email.is_valid()
-                || is_trusted_domain(
-                    self,
-                    &email.element.email.domain_part.fqdn,
-                    ctx.input.span_id,
-                )
-                .await
-            {
-                continue;
+        if !ctx.input.is_train {
+            // Validate email
+            for email in &emails {
+                // Skip trusted domains
+                if !email.element.email.is_valid()
+                    || is_trusted_domain(
+                        self,
+                        &email.element.email.domain_part.fqdn,
+                        ctx.input.span_id,
+                    )
+                    .await
+                {
+                    continue;
+                }
+
+                // Check Email DNSBL
+                check_dnsbl(self, ctx, &email.element, Element::Email, email.location).await;
+
+                domains.insert(ElementLocation::new(
+                    email.element.email.domain_part.fqdn.clone(),
+                    email.location,
+                ));
             }
 
-            // Check Email DNSBL
-            check_dnsbl(self, ctx, &email.element, Element::Email, email.location).await;
-
-            domains.insert(ElementLocation::new(
-                email.element.email.domain_part.fqdn.clone(),
-                email.location,
-            ));
-        }
-
-        // Validate domains
-        for domain in &domains {
-            // Skip trusted domains
-            if !is_trusted_domain(self, &domain.element, ctx.input.span_id).await {
-                // Check Domain DNSBL
-                check_dnsbl(
-                    self,
-                    ctx,
-                    &StringResolver(domain.element.as_str()),
-                    Element::Domain,
-                    domain.location,
-                )
-                .await;
+            // Validate domains
+            for domain in &domains {
+                // Skip trusted domains
+                if !is_trusted_domain(self, &domain.element, ctx.input.span_id).await {
+                    // Check Domain DNSBL
+                    check_dnsbl(
+                        self,
+                        ctx,
+                        &StringResolver(domain.element.as_str()),
+                        Element::Domain,
+                        domain.location,
+                    )
+                    .await;
+                }
             }
         }
         ctx.output.emails = emails;

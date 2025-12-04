@@ -87,6 +87,7 @@ impl<T: SessionStream> Session<T> {
                 .map(|r| r.address_lcase.as_str())
                 .collect(),
             is_test: false,
+            is_train: false,
         }
     }
 }

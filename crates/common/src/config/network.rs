@@ -363,14 +363,14 @@ impl ClusterRole {
         matches!(self, ClusterRole::Enabled | ClusterRole::Sharded { .. })
     }
 
-    pub fn is_enabled_for_account(&self, account_id: u32) -> bool {
+    pub fn is_enabled_for_integer(&self, value: u32) -> bool {
         match self {
             ClusterRole::Enabled => true,
             ClusterRole::Disabled => false,
             ClusterRole::Sharded {
                 shard_id,
                 total_shards,
-            } => (account_id % total_shards) == *shard_id,
+            } => (value % total_shards) == *shard_id,
         }
     }
 

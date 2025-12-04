@@ -120,7 +120,7 @@ impl EmailDeletion for Server {
                             .network
                             .roles
                             .purge_accounts
-                            .is_enabled_for_account(*id)
+                            .is_enabled_for_integer(*id)
                 })
                 .collect();
 

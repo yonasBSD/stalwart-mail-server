@@ -15,7 +15,7 @@ use common::{
 };
 use email::{
     cache::{MessageCacheFetch, email::MessageCacheAccess, mailbox::MailboxCacheAccess},
-    mailbox::UidMailbox,
+    mailbox::{JUNK_ID, TRASH_ID, UidMailbox},
     message::{
         delete::EmailDeletion,
         ingest::{EmailIngest, IngestEmail, IngestSource},
@@ -43,13 +43,18 @@ use mail_builder::{
 use mail_parser::MessageParser;
 use std::future::Future;
 use std::{borrow::Cow, collections::HashMap};
-use store::{ValueKey, ahash::AHashMap, roaring::RoaringBitmap, write::{AlignedBytes, Archive, BatchBuilder}};
+use store::{
+    ValueKey,
+    ahash::AHashMap,
+    roaring::RoaringBitmap,
+    write::{AlignedBytes, Archive, BatchBuilder},
+};
 use trc::AddContext;
 use types::{
     acl::Acl,
     collection::{Collection, SyncCollection, VanishedCollection},
     id::Id,
-    keyword::Keyword,
+    keyword::{ArchivedKeyword, Keyword},
     type_state::{DataType, StateChange},
 };
 
@@ -878,7 +883,7 @@ impl EmailSet for Server {
             }
 
             // Process keywords
-            let todo = "train spam classifier";
+            let mut train_spam = None;
             if has_keyword_changes {
                 // Verify permissions on shared accounts
                 if can_modify_mailbox_ids.as_ref().is_some_and(|ids| {
@@ -895,14 +900,36 @@ impl EmailSet for Server {
                     continue 'update;
                 }
 
+                // Process keyword changes
+                let mut changed_seen = false;
+                for keyword in new_data.added_keywords(data.inner) {
+                    match keyword {
+                        Keyword::Seen => {
+                            changed_seen = true;
+                        }
+                        Keyword::Junk => {
+                            train_spam = Some(true);
+                        }
+                        Keyword::NotJunk => {
+                            train_spam = Some(false);
+                        }
+                        _ => {}
+                    }
+                }
+                for keyword in new_data.removed_keywords(data.inner) {
+                    match keyword {
+                        ArchivedKeyword::Seen => {
+                            changed_seen = true;
+                        }
+                        ArchivedKeyword::Junk if train_spam.is_none() => {
+                            train_spam = Some(false);
+                        }
+                        _ => {}
+                    }
+                }
+
                 // Set all current mailboxes as changed if the Seen tag changed
-                if new_data
-                    .added_keywords(data.inner)
-                    .any(|keyword| keyword == &Keyword::Seen)
-                    || new_data
-                        .removed_keywords(data.inner)
-                        .any(|keyword| keyword == &Keyword::Seen)
-                {
+                if changed_seen {
                     for mailbox_id in new_data.mailboxes.iter() {
                         changed_mailboxes.insert(mailbox_id.mailbox_id, Vec::new());
                     }
@@ -930,6 +957,10 @@ impl EmailSet for Server {
                             .as_ref()
                             .is_none_or(|ids| ids.contains(mailbox_id.mailbox_id))
                         {
+                            if mailbox_id.mailbox_id == JUNK_ID {
+                                train_spam = Some(true);
+                            }
+
                             changed_mailboxes.insert(mailbox_id.mailbox_id, Vec::new());
                         } else {
                             response.not_updated.append(
@@ -962,6 +993,15 @@ impl EmailSet for Server {
                         .as_ref()
                         .is_none_or(|ids| ids.contains(u32::from(mailbox_id.mailbox_id)))
                     {
+                        if mailbox_id.mailbox_id == JUNK_ID
+                            && !new_data
+                                .mailboxes
+                                .iter()
+                                .any(|mb| mb.mailbox_id == TRASH_ID)
+                        {
+                            train_spam = Some(false);
+                        }
+
                         changed_mailboxes
                             .entry(mailbox_id.mailbox_id.to_native())
                             .or_default()
@@ -1011,8 +1051,21 @@ impl EmailSet for Server {
                         .with_current(data)
                         .with_changes(new_data.seal()),
                 )
-                .caused_by(trc::location!())?
-                .commit_point();
+                .caused_by(trc::location!())?;
+
+            if let Some(train_spam) = train_spam {
+                self.add_account_spam_sample(
+                    &mut batch,
+                    account_id,
+                    document_id,
+                    train_spam,
+                    session.session_id,
+                )
+                .await
+                .caused_by(trc::location!())?;
+            }
+
+            batch.commit_point();
             will_update.push(id);
         }
 

@@ -6,6 +6,7 @@
 
 use common::Server;
 
+use mail_auth::DmarcResult;
 use mail_parser::{HeaderName, PartType, parsers::fields::thread::thread_name};
 use nlp::tokenizers::types::{TokenType, TypesTokenizer};
 
@@ -24,13 +25,14 @@ pub trait SpamFilterInit {
 const POSTMASTER_ADDRESSES: [&str; 3] = ["postmaster", "mailer-daemon", "root"];
 
 impl SpamFilterInit for Server {
-    fn spam_filter_init<'x>(&self, input: SpamFilterInput<'x>) -> SpamFilterContext<'x> {
+    fn spam_filter_init<'x>(&self, mut input: SpamFilterInput<'x>) -> SpamFilterContext<'x> {
         let mut subject = "";
         let mut from = None;
         let mut reply_to = None;
         let mut recipients_to = Vec::new();
         let mut recipients_cc = Vec::new();
         let mut recipients_bcc = Vec::new();
+        let mut found_spam_status = false;
 
         for header in input.message.headers() {
             match &header.name {
@@ -82,6 +84,31 @@ impl SpamFilterInit for Server {
                 }
                 HeaderName::From => {
                     from = header.value().as_address().and_then(|addrs| addrs.first());
+                }
+                HeaderName::Other(name)
+                    if input.is_train && !found_spam_status && name.eq("X-Spam-Status") =>
+                {
+                    for token in header
+                        .value()
+                        .as_text()
+                        .unwrap_or_default()
+                        .split_ascii_whitespace()
+                    {
+                        if let Some(dmarc) = token.strip_prefix("DMARC_") {
+                            input.dmarc_result = if dmarc == "POLICY_ALLOW" {
+                                Some(&DmarcResult::Pass)
+                            } else {
+                                Some(&DmarcResult::None)
+                            };
+                        } else if let Some(asn) = token
+                            .strip_prefix("SOURCE_ASN_")
+                            .and_then(|v| v.parse().ok())
+                        {
+                            input.asn = Some(asn);
+                        }
+                    }
+
+                    found_spam_status = true;
                 }
                 _ => {}
             }

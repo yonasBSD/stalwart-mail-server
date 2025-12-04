@@ -4,17 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::{
+    Recipient, SpamFilterContext, SpamFilterInput, SpamFilterOutput, SpamFilterResult, TextPart,
+};
+use common::{Server, config::spamfilter::Location};
+use mail_parser::{Header, parsers::MessageStream};
 use std::{
     borrow::Cow,
     hash::{Hash, Hasher},
-};
-
-use common::{Server, config::spamfilter::Location};
-
-use mail_parser::{Header, parsers::MessageStream};
-
-use crate::{
-    Recipient, SpamFilterContext, SpamFilterInput, SpamFilterOutput, SpamFilterResult, TextPart,
 };
 
 pub mod classifier;

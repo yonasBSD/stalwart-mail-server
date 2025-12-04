@@ -109,9 +109,15 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
                     .as_ref()
                     .and_then(|c| c.train_frequency)
             {
-                let todo = "check last train";
+                let last_trained_at = server.inner.data.spam_classifier.load().last_trained_at;
+                let next_train = if last_trained_at > 0 {
+                    now().saturating_sub(last_trained_at).min(train_frequency)
+                } else {
+                    train_frequency
+                };
+
                 queue.schedule(
-                    Instant::now() + train_frequency,
+                    Instant::now() + Duration::from_secs(next_train),
                     ActionClass::TrainSpamClassifier,
                 );
             }
@@ -577,7 +583,7 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
 
                                     // Schedule next training
                                     queue.schedule(
-                                        Instant::now() + train_frequency,
+                                        Instant::now() + Duration::from_secs(train_frequency),
                                         ActionClass::TrainSpamClassifier,
                                     );
 

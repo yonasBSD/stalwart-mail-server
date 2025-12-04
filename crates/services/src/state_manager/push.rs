@@ -59,7 +59,7 @@ pub fn spawn_push_manager(inner: Arc<Inner>) -> mpsc::Sender<Event> {
                             .network
                             .roles
                             .push_notifications
-                            .is_enabled_for_account(account_id)
+                            .is_enabled_for_integer(account_id)
                         {
                             // Load push subscriptions for account
                             let (subscriptions, member_account_ids) =
@@ -147,7 +147,7 @@ pub fn spawn_push_manager(inner: Arc<Inner>) -> mpsc::Sender<Event> {
                             .network
                             .roles
                             .push_notifications
-                            .is_enabled_for_account(account_id)
+                            .is_enabled_for_integer(account_id)
                         {
                             continue;
                         }

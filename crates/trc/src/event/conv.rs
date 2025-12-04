@@ -59,6 +59,12 @@ impl From<f64> for Value {
     }
 }
 
+impl From<f32> for Value {
+    fn from(value: f32) -> Self {
+        Self::Float(value.into())
+    }
+}
+
 impl From<u16> for Value {
     fn from(value: u16) -> Self {
         Self::UInt(value.into())

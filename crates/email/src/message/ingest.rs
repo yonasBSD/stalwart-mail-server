@@ -35,7 +35,7 @@ use store::{
         TaskEpoch, TaskQueueClass, ValueClass, key::DeserializeBigEndian, now,
     },
 };
-use trc::{AddContext, MessageIngestEvent};
+use trc::{AddContext, MessageIngestEvent, SpamEvent};
 use types::{
     blob::{BlobClass, BlobId},
     blob_hash::BlobHash,
@@ -107,6 +107,7 @@ pub trait EmailIngest: Sync + Send {
         account_id: u32,
         document_id: u32,
         is_spam: bool,
+        span_id: u64,
     ) -> impl Future<Output = trc::Result<()>> + Send;
     fn add_spam_sample(
         &self,
@@ -114,6 +115,7 @@ pub trait EmailIngest: Sync + Send {
         hash: BlobHash,
         is_spam: bool,
         hold_sample: bool,
+        span_id: u64,
     );
 }
 
@@ -630,6 +632,7 @@ impl EmailIngest for Server {
                 params.blob_hash.unwrap_or(&blob_hash).clone(),
                 learn_spam,
                 !is_encrypted,
+                params.session_id,
             );
         }
 
@@ -835,22 +838,30 @@ impl EmailIngest for Server {
         account_id: u32,
         document_id: u32,
         is_spam: bool,
+        span_id: u64,
     ) -> trc::Result<()> {
-        if let Some(archive) = self
-            .store()
-            .get_value::<Archive<AlignedBytes>>(ValueKey::property(
-                account_id,
-                Collection::Email,
-                document_id,
-                EmailField::Metadata,
-            ))
-            .await
-            .caused_by(trc::location!())?
+        if self.core.spam.classifier.is_some()
+            && let Some(archive) = self
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::property(
+                    account_id,
+                    Collection::Email,
+                    document_id,
+                    EmailField::Metadata,
+                ))
+                .await
+                .caused_by(trc::location!())?
         {
             let metadata = archive
                 .to_unarchived::<MessageMetadata>()
                 .caused_by(trc::location!())?;
-            self.add_spam_sample(batch, (&metadata.inner.blob_hash).into(), is_spam, true);
+            self.add_spam_sample(
+                batch,
+                (&metadata.inner.blob_hash).into(),
+                is_spam,
+                true,
+                span_id,
+            );
         }
 
         Ok(())
@@ -862,6 +873,7 @@ impl EmailIngest for Server {
         hash: BlobHash,
         is_spam: bool,
         hold_sample: bool,
+        span_id: u64,
     ) {
         if let Some(config) = &self.core.spam.classifier {
             let mut dt = DateTime::from_timestamp(now() as i64);
@@ -882,6 +894,14 @@ impl EmailIngest for Server {
                     BlobOp::SpamSample { hash, until },
                     vec![u8::from(is_spam), u8::from(hold_sample)],
                 );
+
+            trc::event!(
+                Spam(SpamEvent::TrainSampleAdded),
+                AccountId = batch.last_account_id(),
+                Details = if is_spam { "spam" } else { "ham" },
+                Expires = trc::Value::Timestamp(until),
+                SpanId = span_id,
+            );
         }
     }
 }

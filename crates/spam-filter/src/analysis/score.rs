@@ -45,6 +45,7 @@ pub struct SpamFilterScore {
     pub results: Vec<bool>,
     pub headers: String,
     pub spam_trap: bool,
+    pub score: f32,
 }
 
 impl SpamFilterAnalyzeScore for Server {
@@ -76,11 +77,14 @@ impl SpamFilterAnalyzeScore for Server {
 
         let mut final_score = ctx.result.score;
         let mut avg_confidence: f32 = 0.0;
+        let mut total_results = 0;
         let mut user_results = vec![false; ctx.result.classifier_confidence.len()];
         if !ctx.result.classifier_confidence.is_empty() {
             for (idx, &confidence) in ctx.result.classifier_confidence.iter().enumerate() {
                 if let Some(confidence) = confidence {
                     avg_confidence += confidence;
+                    total_results += 1;
+
                     let user_score = self
                         .core
                         .spam
@@ -97,7 +101,9 @@ impl SpamFilterAnalyzeScore for Server {
                 }
             }
 
-            avg_confidence /= ctx.result.classifier_confidence.len() as f32;
+            if total_results > 0 {
+                avg_confidence /= total_results as f32;
+            }
 
             if avg_confidence != 0.0 {
                 let tag = avg_confidence.spam_tag();
@@ -161,6 +167,7 @@ impl SpamFilterAnalyzeScore for Server {
                 results: user_results,
                 headers,
                 spam_trap: ctx.result.spam_trap,
+                score: final_score,
             })
         }
     }

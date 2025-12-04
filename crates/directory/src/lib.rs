@@ -187,7 +187,7 @@ pub enum Permission {
     SpamFilterUpdate,
     WebadminUpdate,
     LogsView,
-    SpamFilterTrain_,
+    SpamFilterTrain,
     Restart,
     TracingList,
     TracingGet,
@@ -321,7 +321,7 @@ pub enum Permission {
 
     AiModelInteract,
     Troubleshoot,
-    SpamFilterClassify_,
+    SpamFilterTest,
 
     // WebDAV permissions
     DavSyncCollection,

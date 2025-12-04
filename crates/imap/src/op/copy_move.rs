@@ -322,14 +322,14 @@ impl<T: SessionStream> SessionData<T> {
                 // Add message to training queue
                 if dest_mailbox_id.mailbox_id == JUNK_ID {
                     self.server
-                        .add_account_spam_sample(&mut batch, account_id, id, true)
+                        .add_account_spam_sample(&mut batch, account_id, id, true, self.session_id)
                         .await
                         .imap_ctx(&arguments.tag, trc::location!())?;
                 } else if src_mailbox.id.mailbox_id == JUNK_ID
                     && dest_mailbox_id.mailbox_id != TRASH_ID
                 {
                     self.server
-                        .add_account_spam_sample(&mut batch, account_id, id, false)
+                        .add_account_spam_sample(&mut batch, account_id, id, false, self.session_id)
                         .await
                         .imap_ctx(&arguments.tag, trc::location!())?;
                 }

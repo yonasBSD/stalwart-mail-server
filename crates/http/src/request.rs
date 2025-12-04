@@ -85,7 +85,6 @@ impl ParseHttp for Server {
             }
         }
 
-        let todo = "hashify";
         match path.next().unwrap_or_default() {
             "jmap" => {
                 match (path.next().unwrap_or_default(), req.method()) {

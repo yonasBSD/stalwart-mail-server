@@ -47,6 +47,7 @@ pub struct SpamFilterInput<'x> {
     pub env_from_flags: u64,
     pub env_rcpt_to: Vec<&'x str>,
 
+    pub is_train: bool,
     pub is_test: bool,
 }
 
@@ -156,7 +157,13 @@ impl<'x> SpamFilterInput<'x> {
             env_from_flags: 0,
             env_rcpt_to: vec![],
             is_test: false,
+            is_train: false,
         }
+    }
+
+    pub fn train_mode(mut self) -> Self {
+        self.is_train = true;
+        self
     }
 }
 
