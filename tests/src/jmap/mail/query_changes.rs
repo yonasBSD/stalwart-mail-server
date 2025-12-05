@@ -18,8 +18,9 @@ use jmap_client::{
 use jmap_proto::types::state::State;
 use std::str::FromStr;
 use store::{
+    ValueKey,
     ahash::{AHashMap, AHashSet},
-    write::BatchBuilder,
+    write::{AlignedBytes, Archive, BatchBuilder},
 };
 use types::{
     collection::{Collection, SyncCollection},
@@ -137,11 +138,12 @@ pub async fn test(params: &mut JMAPTest) {
                 //let new_thread_id = store::rand::random::<u32>();
 
                 let old_message_ = server
-                    .archive(
+                    .store()
+                    .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
                         account.id().document_id(),
                         Collection::Email,
                         id.document_id(),
-                    )
+                    ))
                     .await
                     .unwrap()
                     .unwrap();

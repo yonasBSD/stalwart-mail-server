@@ -83,7 +83,7 @@ impl TextClassifier {
         }
     }
 
-    fn predict_proba_sample(&self, features: &Features) -> f32 {
+    pub fn predict_proba_sample(&self, features: &Features) -> f32 {
         let mut z: f32 = 0.0;
         for (idx, feature) in &features.0 {
             z += self.weights[*idx as usize] * *feature;

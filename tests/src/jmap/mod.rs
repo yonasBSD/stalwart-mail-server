@@ -22,7 +22,7 @@ use base64::{
     engine::general_purpose::{self, STANDARD},
 };
 use common::{
-    Caches, Core, Data, Inner, KV_BAYES_MODEL_GLOBAL, Server,
+    Caches, Core, Data, Inner, Server,
     config::{
         server::{Listeners, ServerProtocol},
         telemetry::Telemetry,
@@ -259,13 +259,6 @@ pub async fn wait_for_index(server: &Server) {
 pub async fn assert_is_empty(server: &Server) {
     // Wait for pending index tasks
     wait_for_index(server).await;
-
-    // Delete bayes model
-    server
-        .in_memory_store()
-        .key_delete_prefix(&[KV_BAYES_MODEL_GLOBAL])
-        .await
-        .unwrap();
 
     // Assert is empty
     store_assert_is_empty(server.store(), server.core.storage.blob.clone(), false).await;

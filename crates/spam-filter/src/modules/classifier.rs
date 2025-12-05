@@ -8,19 +8,18 @@ use crate::analysis::domain::SpamFilterAnalyzeDomain;
 use crate::analysis::init::SpamFilterInit;
 use crate::analysis::is_trusted_domain;
 use crate::analysis::url::SpamFilterAnalyzeUrl;
-use crate::{Email, IpParts, SpamFilterContext, TextPart, analysis::url::UrlParts};
+use crate::modules::html::{A, ALT, HREF, HtmlToken, IMG, SRC, TITLE};
+use crate::{Email, SpamFilterContext, TextPart};
 use crate::{Hostname, SpamFilterInput};
 use common::config::spamfilter::SpamClassifierModel;
 use common::{Server, config::spamfilter::Location, ipc::BroadcastEvent};
 use mail_auth::DmarcResult;
 use mail_parser::{MessageParser, MimeHeaders};
 use nlp::classifier::feature::Sample;
+use nlp::tokenizers::types::TypesTokenizer;
 use nlp::{
     classifier::{feature::Feature, sgd::TextClassifier},
-    tokenizers::{
-        stream::{WordStemTokenizer, symbols},
-        types::TokenType,
-    },
+    tokenizers::{stream::WordStemTokenizer, types::TokenType},
 };
 use std::time::Instant;
 use std::{
@@ -40,7 +39,8 @@ use store::{
 use tokio::sync::{mpsc, oneshot};
 use trc::{AddContext, SpamEvent};
 use types::{blob_hash::BlobHash, collection::Collection, field::PrincipalField};
-use unicode_security::is_potential_mixed_script_confusable_char;
+use unicode_general_category::{GeneralCategory, get_general_category};
+use unicode_normalization::UnicodeNormalization;
 use unicode_security::mixed_script::AugmentedScriptSet;
 
 pub trait SpamClassifier {
@@ -372,7 +372,7 @@ impl SpamClassifier for Server {
                 {
                     has_prediction = true;
                     model
-                        .predict(&feature_builder.build(&tokens, account_id.into()))
+                        .predict_proba_sample(&feature_builder.build(&tokens, account_id.into()))
                         .into()
                 } else {
                     None
@@ -384,7 +384,7 @@ impl SpamClassifier for Server {
                 ctx.result.classifier_confidence = classifier_confidence;
             } else {
                 // None of the recipients are local, default to global model prediction
-                let prediction = model.predict(&feature_builder.build(&tokens, None));
+                let prediction = model.predict_proba_sample(&feature_builder.build(&tokens, None));
                 ctx.result.classifier_confidence =
                     vec![prediction.into(); ctx.input.env_rcpt_to.len()];
             }
@@ -465,14 +465,17 @@ impl SpamClassifier for Server {
                         value: url.host.fqdn.as_str().into(),
                     });
                 }
-                if let Some(path) = url.parts.path_and_query() {
-                    for token in path.as_str().split(|c: char| !c.is_alphanumeric()) {
-                        if token.len() > 1 {
-                            let token = truncate_word(token, MAX_TOKEN_LENGTH);
-                            tokens.insert(Token::Url {
-                                value: format!("_{token}").into(),
-                            });
-                        }
+                for token in url
+                    .parts
+                    .path()
+                    .split(['/', '.', '_'])
+                    .filter(|v| v.chars().all(|ch| ch.is_alphabetic()))
+                {
+                    if token.len() > 2 {
+                        let token = truncate_word(token, MAX_TOKEN_LENGTH);
+                        tokens.insert(Token::Url {
+                            value: format!("_{token}").into(),
+                        });
                     }
                 }
             }
@@ -488,7 +491,7 @@ impl SpamClassifier for Server {
                 let host_sld = host.sld_or_default();
 
                 if !is_trusted_domain(self, host_sld, ctx.input.span_id).await {
-                    if host_sld != host.fqdn {
+                    if !host_sld.is_empty() && host_sld != host.fqdn {
                         tokens.insert(Token::Hostname {
                             value: host_sld.to_string().into(),
                         });
@@ -518,10 +521,18 @@ impl SpamClassifier for Server {
                         value: lower_prefix("!", truncate_word(ext, MAX_TOKEN_LENGTH)).into(),
                     });
                 }
-                for token in name.split(|c: char| !c.is_alphanumeric()) {
-                    if token.len() > 1 {
-                        tokens.insert(Token::Attachment {
-                            value: lower_prefix("_", truncate_word(token, MAX_TOKEN_LENGTH)).into(),
+                let name = name.to_lowercase();
+                let word_tokenizer = WordStemTokenizer::new(&name);
+                for token in TypesTokenizer::new(&name) {
+                    if let TokenType::Alphabetic(word) = token.word {
+                        word_tokenizer.tokenize(word, |token| {
+                            tokens.insert(Token::Attachment {
+                                value: format!(
+                                    "_{}",
+                                    truncate_word(token.as_ref(), MAX_TOKEN_LENGTH)
+                                )
+                                .into(),
+                            });
                         });
                     }
                 }
@@ -550,6 +561,7 @@ impl SpamClassifier for Server {
             tokens.insert_type(
                 &WordStemTokenizer::new(&ctx.output.subject_thread_lc),
                 token,
+                false,
             );
         }
 
@@ -563,13 +575,14 @@ impl SpamClassifier for Server {
             .map(|idx| *idx as usize);
         let mut alt_tokens = Tokens::default();
         for (idx, part) in ctx.output.text_parts.iter().enumerate() {
-            if Some(idx) == body_idx
+            let is_body = Some(idx) == body_idx;
+            if is_body
                 || (!ctx.input.message.text_body.contains(&(idx as u32))
                     && !ctx.input.message.html_body.contains(&(idx as u32)))
             {
-                tokens.insert_text_part(part);
+                tokens.insert_text_part(part, is_body);
             } else {
-                alt_tokens.insert_text_part(part);
+                alt_tokens.insert_text_part(part, false);
             }
         }
         if !alt_tokens.0.is_empty() {
@@ -586,15 +599,15 @@ impl SpamClassifier for Server {
 
 const MAX_TOKEN_LENGTH: usize = 16;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, PartialOrd, Ord,
+)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum Token<'x> {
-    // User types
     Word { value: Cow<'x, str> },
     Number { code: [u8; 2] },
     Alphanumeric { code: [u8; 4] },
-    Symbol { value: String },
-
-    // User and global types
+    UnicodeCategory { value: &'x str },
     Sender { value: Cow<'x, str> },
     Asn { number: [u8; 4] },
     Url { value: Cow<'x, str> },
@@ -602,87 +615,124 @@ pub enum Token<'x> {
     Hostname { value: Cow<'x, str> },
     Attachment { value: Cow<'x, str> },
     MimeType { value: String },
+    HtmlImage { src: &'x str },
+    HtmlAnchor { href: &'x str },
 }
 
 #[derive(Debug)]
-pub struct Tokens<'x>(HashMap<Token<'x>, f32, RandomState>);
+pub struct Tokens<'x>(pub HashMap<Token<'x>, f32, RandomState>);
 
 impl<'x> Tokens<'x> {
-    fn insert_text_part(&mut self, part: &'x TextPart<'x>) {
+    fn insert_text_part(&mut self, part: &'x TextPart<'x>, is_body: bool) {
         match part {
             TextPart::Plain { text_body, tokens } => {
                 let word_tokenizer = WordStemTokenizer::new(text_body);
 
                 for token in tokens {
-                    self.insert_type(&word_tokenizer, token);
+                    self.insert_type(&word_tokenizer, token, is_body);
+                }
+
+                if is_body
+                    && (tokens.is_empty()
+                        || !tokens.iter().any(|t| matches!(t, TokenType::Alphabetic(_))))
+                {
+                    self.insert(Token::Word {
+                        value: "_null".into(),
+                    });
                 }
             }
             TextPart::Html {
-                text_body, tokens, ..
+                text_body,
+                tokens,
+                html_tokens,
             } => {
                 let word_tokenizer = WordStemTokenizer::new(text_body);
 
                 for token in tokens {
-                    self.insert_type(&word_tokenizer, token);
+                    self.insert_type(&word_tokenizer, token, is_body);
+                }
+
+                if is_body {
+                    if tokens.is_empty()
+                        || !tokens.iter().any(|t| matches!(t, TokenType::Alphabetic(_)))
+                    {
+                        self.insert(Token::Word {
+                            value: "_null".into(),
+                        });
+                    }
+
+                    for token in html_tokens {
+                        if let HtmlToken::StartTag {
+                            name: A | IMG,
+                            attributes,
+                            ..
+                        } = token
+                        {
+                            for (name, value) in attributes {
+                                match (*name, value) {
+                                    (ALT | TITLE, Some(value)) => {
+                                        for token in TypesTokenizer::new(value) {
+                                            self.insert_type(&word_tokenizer, &token.word, is_body);
+                                        }
+                                    }
+                                    (SRC, Some(value)) => {
+                                        self.insert(Token::HtmlImage {
+                                            src: value.split_once(':').unwrap_or_default().0,
+                                        });
+                                    }
+                                    (HREF, Some(value)) => {
+                                        self.insert(Token::HtmlAnchor {
+                                            href: value.split_once(':').unwrap_or_default().0,
+                                        });
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
                 }
             }
             TextPart::None => (),
         }
     }
 
-    fn insert_type(
+    fn insert_type<T: AsRef<str>, E, U, I>(
         &mut self,
         word_tokenizer: &WordStemTokenizer,
-        token: &'x TokenType<Cow<'x, str>, Email, UrlParts<'x>, IpParts>,
+        token: &TokenType<T, E, U, I>,
+        is_body: bool,
     ) {
         match token {
             TokenType::Alphabetic(word) => {
+                let word = word.as_ref();
                 let mut set: Option<AugmentedScriptSet> = None;
                 let mut has_confusables = false;
-                let mut is_lowercase = true;
+                let mut upper_count = 0;
                 for ch in word.chars() {
+                    if ch.is_uppercase() {
+                        upper_count += 1;
+                    }
+
                     has_confusables |=
-                        !ch.is_ascii() && is_potential_mixed_script_confusable_char(ch);
-                    is_lowercase &= ch.is_lowercase() || !ch.is_uppercase();
+                        !ch.is_ascii() && !std::iter::once(ch).nfc().eq(std::iter::once(ch).nfkc());
                     set.get_or_insert_default().intersect_with(ch.into());
                 }
                 let is_mixed_script = set.is_some_and(|set| set.is_empty());
 
                 if (is_mixed_script || has_confusables)
-                    && let Ok(word) = decancer::cure(word.as_ref(), decancer::Options::default())
+                    && let Ok(cured_word) = decancer::cure(word, decancer::Options::default())
                 {
                     if word.len() > MAX_TOKEN_LENGTH {
                         self.insert(Token::Word {
-                            value: truncate_word(word.as_str(), MAX_TOKEN_LENGTH)
+                            value: truncate_word(cured_word.as_str(), MAX_TOKEN_LENGTH)
                                 .to_string()
                                 .into(),
                         });
                     } else {
                         self.insert(Token::Word {
-                            value: String::from(word).into(),
+                            value: String::from(cured_word).into(),
                         });
                     }
-                } else if is_lowercase {
-                    word_tokenizer.tokenize(word, |value| match value {
-                        Cow::Borrowed(value) => {
-                            self.insert(Token::Word {
-                                value: truncate_word(value, MAX_TOKEN_LENGTH).into(),
-                            });
-                        }
-                        Cow::Owned(value) => {
-                            if value.len() <= MAX_TOKEN_LENGTH {
-                                self.insert(Token::Word {
-                                    value: value.into(),
-                                });
-                            } else {
-                                self.insert(Token::Word {
-                                    value: truncate_word(&value, MAX_TOKEN_LENGTH)
-                                        .to_string()
-                                        .into(),
-                                });
-                            }
-                        }
-                    });
                 } else {
                     let word = word.to_lowercase();
                     word_tokenizer.tokenize(&word, |token| {
@@ -693,13 +743,29 @@ impl<'x> Tokens<'x> {
                         });
                     });
                 }
+
+                if is_body {
+                    self.insert(Token::Word {
+                        value: "_word".into(),
+                    });
+                    if word.len() == upper_count && word.len() > 3 {
+                        self.insert(Token::Word {
+                            value: "_allcaps".into(),
+                        });
+                    }
+                }
             }
             TokenType::Alphanumeric(word) => {
                 self.insert(Token::from_alphanumeric(word.as_ref()));
             }
             TokenType::UrlNoHost(url) => {
-                for token in url.to_lowercase().split(|c: char| !c.is_alphanumeric()) {
-                    if token.len() > 1 {
+                for token in url
+                    .as_ref()
+                    .to_lowercase()
+                    .split(['/', '.', '_'])
+                    .filter(|v| v.chars().all(|ch| ch.is_alphabetic()))
+                {
+                    if token.len() > 2 {
                         let token = truncate_word(token, MAX_TOKEN_LENGTH);
                         self.insert(Token::Url {
                             value: format!("_{token}").into(),
@@ -707,10 +773,22 @@ impl<'x> Tokens<'x> {
                     }
                 }
             }
-            TokenType::Other(ch) => {
-                let value = ch.to_string();
-                if symbols(&value) {
-                    self.insert(Token::Symbol { value });
+            TokenType::Other(ch) | TokenType::Punctuation(ch) => {
+                let category = get_general_category(*ch);
+                if !matches!(
+                    category,
+                    GeneralCategory::ClosePunctuation
+                        | GeneralCategory::ConnectorPunctuation
+                        | GeneralCategory::DashPunctuation
+                        | GeneralCategory::FinalPunctuation
+                        | GeneralCategory::InitialPunctuation
+                        | GeneralCategory::OpenPunctuation
+                        | GeneralCategory::OtherPunctuation
+                        | GeneralCategory::SpaceSeparator
+                ) {
+                    self.insert(Token::UnicodeCategory {
+                        value: category.abbreviation(),
+                    });
                 }
             }
             TokenType::Integer(word) => {
@@ -727,7 +805,6 @@ impl<'x> Tokens<'x> {
             TokenType::Email(_)
             | TokenType::Url(_)
             | TokenType::UrlNoScheme(_)
-            | TokenType::Punctuation(_)
             | TokenType::Space => {}
         }
     }
@@ -741,29 +818,32 @@ impl<'x> Tokens<'x> {
     }
 
     fn insert_email(&mut self, email: &'x Email, is_sender: bool) {
-        if is_sender {
-            self.insert_if_missing(Token::Sender {
-                value: email.address.as_str().into(),
-            });
-            self.insert_if_missing(Token::Sender {
-                value: email.domain_part.fqdn.as_str().into(),
-            });
-            if let Some(sld) = &email.domain_part.sld
-                && sld != &email.domain_part.fqdn
-            {
-                self.insert_if_missing(Token::Sender { value: sld.into() });
-            }
-        } else {
-            self.insert_if_missing(Token::Email {
-                value: email.address.as_str().into(),
-            });
-            self.insert_if_missing(Token::Email {
-                value: email.domain_part.fqdn.as_str().into(),
-            });
-            if let Some(sld) = &email.domain_part.sld
-                && sld != &email.domain_part.fqdn
-            {
-                self.insert_if_missing(Token::Email { value: sld.into() });
+        if !email.address.is_empty() {
+            if is_sender {
+                self.insert_if_missing(Token::Sender {
+                    value: email.address.as_str().into(),
+                });
+                self.insert_if_missing(Token::Sender {
+                    value: email.domain_part.fqdn.as_str().into(),
+                });
+                if let Some(sld) = &email.domain_part.sld
+                    && sld != &email.domain_part.fqdn
+                {
+                    self.insert_if_missing(Token::Sender { value: sld.into() });
+                }
+            } else {
+                self.insert_if_missing(Token::Email {
+                    value: email.address.as_str().into(),
+                });
+                self.insert_if_missing(Token::Email {
+                    value: email.domain_part.fqdn.as_str().into(),
+                });
+                if let Some(sld) = &email.domain_part.sld
+                    && !sld.is_empty()
+                    && sld != &email.domain_part.fqdn
+                {
+                    self.insert_if_missing(Token::Email { value: sld.into() });
+                }
             }
         }
     }
@@ -950,7 +1030,7 @@ impl Feature for Token<'_> {
             Token::Word { .. } => 0,
             Token::Number { .. } => 1,
             Token::Alphanumeric { .. } => 2,
-            Token::Symbol { .. } => 3,
+            Token::UnicodeCategory { .. } => 3,
             Token::Sender { .. } => 4,
             Token::Asn { .. } => 5,
             Token::Url { .. } => 6,
@@ -958,6 +1038,8 @@ impl Feature for Token<'_> {
             Token::Hostname { .. } => 8,
             Token::Attachment { .. } => 9,
             Token::MimeType { .. } => 10,
+            Token::HtmlImage { .. } => 11,
+            Token::HtmlAnchor { .. } => 12,
         }
     }
 
@@ -966,7 +1048,7 @@ impl Feature for Token<'_> {
             Token::Word { value } => value.as_bytes(),
             Token::Number { code } => code,
             Token::Alphanumeric { code } => code,
-            Token::Symbol { value } => value.as_bytes(),
+            Token::UnicodeCategory { value } => value.as_bytes(),
             Token::Sender { value } => value.as_bytes(),
             Token::Asn { number } => number,
             Token::Url { value } => value.as_bytes(),
@@ -974,6 +1056,8 @@ impl Feature for Token<'_> {
             Token::Hostname { value } => value.as_bytes(),
             Token::Attachment { value } => value.as_bytes(),
             Token::MimeType { value } => value.as_bytes(),
+            Token::HtmlImage { src } => src.as_bytes(),
+            Token::HtmlAnchor { href } => href.as_bytes(),
         }
     }
 }

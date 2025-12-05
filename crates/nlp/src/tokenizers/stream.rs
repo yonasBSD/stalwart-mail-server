@@ -73,6 +73,7 @@ impl WordStemTokenizer {
     }
 }
 
+/*
 pub fn symbols(input: &str) -> bool {
     hashify::set!(
         input.as_bytes(),
@@ -7824,6 +7825,7 @@ pub fn symbols(input: &str) -> bool {
     )
 }
 
+*/
 #[cfg(test)]
 pub mod tests {
     use crate::tokenizers::{

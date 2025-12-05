@@ -315,8 +315,8 @@ impl EmailIngest for Server {
                         }
                     }
 
-                    // Add Spam-Result header
-                    const HEADER: &str = "X-Spam-Result";
+                    // Add Spam-Status header
+                    const HEADER: &str = "X-Spam-Status";
                     let offset_field = extra_headers.len();
                     let offset_start = offset_field + HEADER.len() + 1;
                     let result = if is_spam { "Yes" } else { "No" };

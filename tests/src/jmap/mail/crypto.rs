@@ -179,13 +179,14 @@ pub async fn import_certs_and_encrypt() {
 
         if method == EncryptionMethod::PGP && certs.len() == 2 {
             // PGP library won't encrypt using EC
-            certs.pop();
+            let mut certs_ = certs.to_vec();
+            certs_.pop();
+            certs = certs_.into();
         }
 
         let mut params = EncryptionParams {
-            method,
-            algo: Algorithm::Aes128,
             certs,
+            flags: method.flags(),
         };
 
         for algo in [Algorithm::Aes128, Algorithm::Aes256] {
@@ -193,7 +194,7 @@ pub async fn import_certs_and_encrypt() {
                 .parse(b"Subject: test\r\ntest\r\n")
                 .unwrap();
             assert!(!message.is_encrypted());
-            params.algo = algo;
+            params.flags = algo.flags() | method.flags();
             let arch =
                 Archive::deserialize_owned(Archiver::new(params.clone()).serialize().unwrap())
                     .unwrap();

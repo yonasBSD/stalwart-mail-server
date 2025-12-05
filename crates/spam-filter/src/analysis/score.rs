@@ -103,9 +103,7 @@ impl SpamFilterAnalyzeScore for Server {
 
             if total_results > 0 {
                 avg_confidence /= total_results as f32;
-            }
 
-            if avg_confidence != 0.0 {
                 let tag = avg_confidence.spam_tag();
                 let score = self
                     .core
@@ -132,7 +130,7 @@ impl SpamFilterAnalyzeScore for Server {
         } else {
             let mut headers = String::with_capacity(header_len + 40);
             results.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap().then_with(|| a.0.cmp(b.0)));
-            headers.push_str("X-Spam-Status: ");
+            headers.push_str("X-Spam-Result: ");
             for (idx, (tag, score)) in results.into_iter().enumerate() {
                 if idx > 0 {
                     headers.push_str(",\r\n\t");

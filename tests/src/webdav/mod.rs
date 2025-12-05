@@ -46,7 +46,11 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use store::rand::{Rng, distr::Alphanumeric, rng};
+use store::{
+    ValueKey,
+    rand::{Rng, distr::Alphanumeric, rng},
+    write::{AlignedBytes, Archive},
+};
 use tokio::sync::watch;
 use types::{collection::Collection, field::EmailField};
 use utils::config::Config;
@@ -1050,12 +1054,13 @@ impl WebDavTest {
     pub async fn fetch_email(&self, account_id: u32, document_id: u32) -> Vec<u8> {
         let metadata_ = self
             .server
-            .archive_by_property(
+            .store()
+            .get_value::<Archive<AlignedBytes>>(ValueKey::property(
                 account_id,
                 Collection::Email,
                 document_id,
-                EmailField::Metadata.into(),
-            )
+                EmailField::Metadata,
+            ))
             .await
             .unwrap()
             .unwrap();

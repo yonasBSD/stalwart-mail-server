@@ -14,7 +14,7 @@ use directory::{
     Permission, Type,
     backend::internal::{PrincipalField, PrincipalSet, PrincipalUpdate, PrincipalValue},
 };
-use email::message::delivery::{IngestMessage, LocalDeliveryStatus, MailDelivery};
+use email::message::delivery::{IngestMessage, IngestRecipient, LocalDeliveryStatus, MailDelivery};
 use std::sync::Arc;
 
 pub async fn test(params: &JMAPTest) {
@@ -619,7 +619,10 @@ pub async fn test(params: &JMAPTest) {
             .deliver_message(IngestMessage {
                 sender_address: "bill@foobar.org".to_string(),
                 sender_authenticated: true,
-                recipients: vec!["john@foobar.org".to_string()],
+                recipients: vec![IngestRecipient {
+                    address: "john@foobar.org".to_string(),
+                    is_spam: false
+                }],
                 message_blob: message_blob.clone(),
                 message_size: TEST_MESSAGE.len() as u64,
                 session_id: 0,
@@ -658,7 +661,10 @@ pub async fn test(params: &JMAPTest) {
             .deliver_message(IngestMessage {
                 sender_address: "bill@foobar.org".to_string(),
                 sender_authenticated: true,
-                recipients: vec!["john@foobar.org".to_string()],
+                recipients: vec![IngestRecipient {
+                    address: "john@foobar.org".to_string(),
+                    is_spam: false
+                }],
                 message_blob: message_blob.clone(),
                 message_size: TEST_MESSAGE.len() as u64,
                 session_id: 0,
@@ -684,7 +690,10 @@ pub async fn test(params: &JMAPTest) {
             .deliver_message(IngestMessage {
                 sender_address: "bill@foobar.org".to_string(),
                 sender_authenticated: true,
-                recipients: vec!["john@foobar.org".to_string()],
+                recipients: vec![IngestRecipient {
+                    address: "john@foobar.org".to_string(),
+                    is_spam: false
+                }],
                 message_blob,
                 message_size: TEST_MESSAGE.len() as u64,
                 session_id: 0,

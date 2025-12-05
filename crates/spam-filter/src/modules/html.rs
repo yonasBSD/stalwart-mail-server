@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-
 use mail_parser::decoders::html::add_html_token;
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "type")]
 pub enum HtmlToken {
     StartTag {
         name: u64,
@@ -35,6 +35,12 @@ pub(crate) const META: u64 =
     (b'm' as u64) | ((b'e' as u64) << 8) | ((b't' as u64) << 16) | ((b'a' as u64) << 24);
 pub(crate) const LINK: u64 =
     (b'l' as u64) | ((b'i' as u64) << 8) | ((b'n' as u64) << 16) | ((b'k' as u64) << 24);
+pub(crate) const ALT: u64 = (b'a' as u64) | ((b'l' as u64) << 8) | ((b't' as u64) << 16);
+pub(crate) const TITLE: u64 = (b't' as u64)
+    | ((b'i' as u64) << 8)
+    | ((b't' as u64) << 16)
+    | ((b'l' as u64) << 24)
+    | ((b'e' as u64) << 32);
 
 pub(crate) const HREF: u64 =
     (b'h' as u64) | ((b'r' as u64) << 8) | ((b'e' as u64) << 16) | ((b'f' as u64) << 24);
@@ -203,8 +209,8 @@ pub fn html_to_tokens(input: &str) -> Vec<HtmlToken> {
                                     match ch {
                                         b'>' if !in_quote => {
                                             if !value.is_empty() {
-                                                let value = String::from_utf8(value)
-                                                    .unwrap_or_default();
+                                                let value =
+                                                    String::from_utf8(value).unwrap_or_default();
                                                 if let Some((_, v)) = attributes.last_mut() {
                                                     *v = value.into();
                                                 } else {

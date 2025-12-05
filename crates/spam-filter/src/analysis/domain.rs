@@ -55,10 +55,15 @@ impl SpamFilterAnalyzeDomain for Server {
                         .into_iter()
                         .flatten()
                     {
-                        if let Host::Name(name) = host
-                            && let Some(name) = Hostname::new(name.as_ref()).sld
-                        {
-                            domains.insert(ElementLocation::new(name, Location::HeaderReceived));
+                        if let Host::Name(name) = host {
+                            let host = Hostname::new(name.as_ref());
+
+                            if host.sld.is_some() {
+                                domains.insert(ElementLocation::new(
+                                    host.fqdn,
+                                    Location::HeaderReceived,
+                                ));
+                            }
                         }
                     }
                 }

@@ -19,8 +19,10 @@ use jmap_client::{
 };
 use std::{str::FromStr, sync::Arc, time::Duration};
 use store::{
+    ValueKey,
     rand::{self, Rng},
     roaring::RoaringBitmap,
+    write::{AlignedBytes, Archive},
 };
 use types::{collection::Collection, id::Id};
 
@@ -227,7 +229,12 @@ async fn email_tests(server: Server, client: Arc<Client>) {
 
             for email_id in &email_ids_in_mailbox {
                 if let Some(mailbox_tags) = server
-                    .archive(TEST_USER_ID, Collection::Email, email_id)
+                    .store()
+                    .get_value::<Archive<AlignedBytes>>(ValueKey::archive(
+                        TEST_USER_ID,
+                        Collection::Email,
+                        email_id,
+                    ))
                     .await
                     .unwrap()
                 {

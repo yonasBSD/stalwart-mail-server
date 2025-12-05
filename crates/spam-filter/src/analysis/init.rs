@@ -86,7 +86,7 @@ impl SpamFilterInit for Server {
                     from = header.value().as_address().and_then(|addrs| addrs.first());
                 }
                 HeaderName::Other(name)
-                    if input.is_train && !found_spam_status && name.eq("X-Spam-Status") =>
+                    if input.is_train && !found_spam_status && name.eq("X-Spam-Result") =>
                 {
                     for token in header
                         .value()

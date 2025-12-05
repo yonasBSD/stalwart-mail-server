@@ -16,6 +16,10 @@ use email::{
 use groupware::DavResourceName;
 use jmap::blob::download::BlobDownload;
 use std::{sync::Arc, time::Duration};
+use store::{
+    ValueKey,
+    write::{AlignedBytes, Archive},
+};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines, ReadHalf, WriteHalf},
     net::TcpStream,
@@ -271,12 +275,13 @@ END:VCARD
 
         for document_id in cache.emails.items.iter().map(|e| e.document_id) {
             let archive = server
-                .archive_by_property(
+                .store()
+                .get_value::<Archive<AlignedBytes>>(ValueKey::property(
                     account_id,
                     Collection::Email,
                     document_id,
-                    EmailField::Metadata.into(),
-                )
+                    EmailField::Metadata,
+                ))
                 .await
                 .unwrap()
                 .unwrap();

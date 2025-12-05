@@ -238,9 +238,8 @@ async fn test_multi_thread(params: &mut JMAPTest) {
                         source: IngestSource::Smtp {
                             deliver_to: "test@domain.org",
                             is_sender_authenticated: true,
+                            is_spam: false,
                         },
-                        spam_classify: false,
-                        spam_train: false,
                         session_id: 0,
                     })
                     .await
