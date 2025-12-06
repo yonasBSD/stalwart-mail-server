@@ -1279,7 +1279,7 @@ impl PurgeEvent {
             PurgeEvent::Error => "Purge error",
             PurgeEvent::InProgress => "Active purge in progress",
             PurgeEvent::AutoExpunge => "Auto-expunge executed",
-            PurgeEvent::TombstoneCleanup => "Tombstone cleanup executed",
+            PurgeEvent::BlobCleanup => "Blob storage cleanup completed",
         }
     }
 
@@ -1291,7 +1291,7 @@ impl PurgeEvent {
             PurgeEvent::Error => "An error occurred with the purge",
             PurgeEvent::InProgress => "An active purge is in progress",
             PurgeEvent::AutoExpunge => "Auto-expunge has been executed",
-            PurgeEvent::TombstoneCleanup => "Tombstone cleanup has been executed",
+            PurgeEvent::BlobCleanup => "Blob storage cleanup has completed",
         }
     }
 }

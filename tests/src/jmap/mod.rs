@@ -78,7 +78,7 @@ async fn jmap_tests() {
 
     server::webhooks::test(&mut params).await;
 
-    /*mail::get::test(&mut params).await;
+    mail::get::test(&mut params).await;
     mail::set::test(&mut params).await;
     mail::parse::test(&mut params).await;
     mail::query::test(&mut params, delete).await;
@@ -95,6 +95,7 @@ async fn jmap_tests() {
     mail::vacation_response::test(&mut params).await;
     mail::submission::test(&mut params).await;
     mail::crypto::test(&mut params).await;
+    mail::antispam::test(&mut params).await;
 
     core::event_source::test(&mut params).await;
     core::websocket::test(&mut params).await;
@@ -122,7 +123,7 @@ async fn jmap_tests() {
     calendar::acl::test(&mut params).await;
 
     principal::get::test(&mut params).await;
-    principal::availability::test(&mut params).await;*/
+    principal::availability::test(&mut params).await;
 
     server::purge::test(&mut params).await;
     server::enterprise::test(&mut params).await;
@@ -1580,15 +1581,15 @@ WiYrLO4z8/kmkqvA7wGElBok9IqhRANCAAQxZK68FnQtHC0eyh8CA05xRIvxhVHn
 '''
 signature-algorithm = "ES256"
 
-[spam-filter.bayes.auto-learn]
-card-is-ham = false
-
 [session.extensions]
 expn = true
 vrfy = true
 
 [spam-filter]
 enable = true
+
+[spam-filter.list]
+scores = {"GTUBE_TEST" = "1000.0"}
 
 [sharing]
 allow-directory-query = true

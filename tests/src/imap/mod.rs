@@ -5,9 +5,9 @@
  */
 
 pub mod acl;
+pub mod antispam;
 pub mod append;
 pub mod basic;
-pub mod bayes;
 pub mod body_structure;
 pub mod condstore;
 pub mod copy_move;
@@ -109,8 +109,8 @@ pub async fn imap_tests() {
         imap.assert_read(Type::Untagged, ResponseType::Bye).await;
     }
 
-    // Bayes training
-    bayes::test(&handle).await;
+    // Antispam training
+    antispam::test(&handle).await;
 
     // Run ManageSieve tests
     managesieve::test().await;
@@ -268,10 +268,18 @@ async fn init_imap_tests(delete_if_exists: bool) -> IMAPTest {
         .await;
     store
         .create_test_user(
-            "bayes@example.com",
+            "sgd@example.com",
             "secret",
-            "Thomas Bayes",
-            &["bayes@example.com"],
+            "Sigmund Gudmund Dudmundsson",
+            &["sgd@example.com"],
+        )
+        .await;
+    store
+        .create_test_user(
+            "spamtrap@example.com",
+            "secret",
+            "Spam Trap",
+            &["spamtrap@example.com"],
         )
         .await;
     store
@@ -658,12 +666,11 @@ wait = "1ms"
 [spam-filter]
 enable = true
 
-[spam-filter.bayes.account]
-enable = true
+[spam-filter.list]
+scores = {"PROB_SPAM_HIGH" = "10.0"}
 
-[spam-filter.bayes.classify]
-balance = "0.0"
-learns = 10
+[lookup]
+"spam-traps" = {"spamtrap@*"}
 
 [queue]
 path = "{TMP}"

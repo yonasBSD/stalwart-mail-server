@@ -273,9 +273,8 @@ impl EventType {
                 PurgeEvent::Finished => Level::Debug,
                 PurgeEvent::Running => Level::Info,
                 PurgeEvent::Error => Level::Error,
-                PurgeEvent::InProgress | PurgeEvent::AutoExpunge | PurgeEvent::TombstoneCleanup => {
-                    Level::Debug
-                }
+                PurgeEvent::BlobCleanup => Level::Info,
+                PurgeEvent::InProgress | PurgeEvent::AutoExpunge => Level::Debug,
             },
             EventType::Eval(event) => match event {
                 EvalEvent::Error | EvalEvent::StoreNotFound => Level::Debug,

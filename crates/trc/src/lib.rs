@@ -717,7 +717,7 @@ pub enum PurgeEvent {
     Error,
     InProgress,
     AutoExpunge,
-    TombstoneCleanup,
+    BlobCleanup,
 }
 
 #[event_type]

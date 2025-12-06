@@ -32,8 +32,12 @@ use common::{
         tracers::store::TracingStore,
     },
 };
-use http::management::enterprise::undelete::{
-    DeletedBlobResponse, DeletedItemResponse, UndeleteRequest, UndeleteResponse,
+use directory::{QueryBy, backend::internal::manage::ManageDirectory};
+use http::management::{
+    enterprise::undelete::{
+        DeletedBlobResponse, DeletedItemResponse, UndeleteRequest, UndeleteResponse,
+    },
+    stores::destroy_account_data,
 };
 use imap_proto::ResponseType;
 use nlp::language::Language;
@@ -135,7 +139,7 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Create test account
     let server = params.server.inner.build_server();
-    server
+    let account_id = server
         .store()
         .create_test_user(
             "jdoe@example.com",
@@ -149,6 +153,17 @@ pub async fn test(params: &mut JMAPTest) {
     undelete(params).await;
     tracing(params).await;
     metrics(params).await;
+
+    // Delete test account
+    server
+        .store()
+        .delete_principal(QueryBy::Id(account_id))
+        .await
+        .unwrap();
+    destroy_account_data(&server, account_id, true)
+        .await
+        .unwrap();
+    params.assert_is_empty().await;
 
     params.server.inner.shared_core.store(
         params

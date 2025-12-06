@@ -61,14 +61,6 @@ use store::{Stores, write::BatchBuilder};
 use utils::config::Config;
 
 const CONFIG: &str = r#"
-[spam-filter.bayes.classify]
-balance = "0.0"
-learns = 10
-
-[spam-filter.bayes.auto-learn.threshold]
-ham = "-0.5"
-spam = "6.0"
-
 [spam-filter.score]
 spam = "5.0"
 

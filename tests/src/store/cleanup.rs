@@ -120,8 +120,8 @@ pub async fn store_blob_expire_all(store: &Store) {
     let mut last_account_id = u32::MAX;
     store
         .iterate(
-            IterateParams::new(from_key, to_key).ascending().no_values(),
-            |key, _| {
+            IterateParams::new(from_key, to_key).ascending(),
+            |key, value| {
                 if key.len() == BLOB_HASH_LEN + U32_LEN + U64_LEN {
                     let account_id = key
                         .deserialize_be_u32(BLOB_HASH_LEN)
@@ -136,16 +136,32 @@ pub async fn store_blob_expire_all(store: &Store) {
                         .deserialize_be_u64(BLOB_HASH_LEN + U32_LEN)
                         .caused_by(trc::location!())?;
 
-                    batch
-                        .clear(ValueClass::Blob(BlobOp::Link {
-                            hash: hash.clone(),
-                            to: BlobLink::Temporary { until },
-                        }))
-                        .clear(ValueClass::Blob(BlobOp::Quota {
-                            hash: hash.clone(),
-                            until,
-                        }))
-                        .clear(ValueClass::Blob(BlobOp::Undelete { hash, until }));
+                    match value.first().copied() {
+                        Some(BlobLink::QUOTA_LINK) => {
+                            batch.clear(ValueClass::Blob(BlobOp::Quota {
+                                hash: hash.clone(),
+                                until,
+                            }));
+                        }
+                        Some(BlobLink::UNDELETE_LINK) => {
+                            batch.clear(ValueClass::Blob(BlobOp::Undelete {
+                                hash: hash.clone(),
+                                until,
+                            }));
+                        }
+                        Some(BlobLink::SPAM_SAMPLE_LINK) => {
+                            batch.clear(ValueClass::Blob(BlobOp::SpamSample {
+                                hash: hash.clone(),
+                                until,
+                            }));
+                        }
+                        _ => {}
+                    }
+
+                    batch.clear(ValueClass::Blob(BlobOp::Link {
+                        hash,
+                        to: BlobLink::Temporary { until },
+                    }));
                 }
 
                 Ok(true)

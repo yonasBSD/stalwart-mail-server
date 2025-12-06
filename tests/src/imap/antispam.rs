@@ -5,42 +5,40 @@
  */
 
 use super::{IMAPTest, ImapConnection};
-use crate::{
-    imap::Type,
-    jmap::{mail::delivery::SmtpConnection, wait_for_index},
-    smtp::session::VerifyResponse,
-};
-use directory::backend::internal::manage::ManageDirectory;
+use crate::{imap::Type, jmap::mail::delivery::SmtpConnection, smtp::session::VerifyResponse};
+use common::{Server, config::spamfilter::SpamClassifierModel};
 use imap_proto::ResponseType;
+use spam_filter::modules::classifier::SpamClassifier;
+use store::{
+    IterateParams, U32_LEN, U64_LEN, ValueKey,
+    write::{AlignedBytes, Archive, BlobOp, ValueClass, key::DeserializeBigEndian},
+};
+use types::{blob_hash::BlobHash, collection::Collection, field::PrincipalField};
 
 pub async fn test(handle: &IMAPTest) {
     println!("Running Spam classifier tests...");
     let mut imap = ImapConnection::connect(b"_x ").await;
     imap.assert_read(Type::Untagged, ResponseType::Ok).await;
-    imap.send("AUTHENTICATE PLAIN AGJheWVzQGV4YW1wbGUuY29tAHNlY3JldA==")
-        .await;
-    imap.assert_read(Type::Tagged, ResponseType::Ok).await;
+    imap.authenticate("sgd@example.com", "secret").await;
 
-    let todo = "fix + test jmap";
-
-    // Make sure the bayes classifier is empty
-    /*let account_id = handle
+    let account_id = handle
         .server
-        .store()
-        .get_principal_id("bayes@example.com")
+        .directory()
+        .email_to_id("sgd@example.com")
         .await
         .unwrap()
         .unwrap();
-    let w = handle.spam_weights(account_id).await;
-    assert_eq!(w.ham, 0);
-    assert_eq!(w.spam, 0);
+
+    // Make sure there are no training samples
+    spam_delete_samples(&handle.server).await;
+    assert_eq!(spam_training_samples(&handle.server).await.total_count, 0);
 
     // Train the classifier via APPEND
     imap.append("INBOX", HAM[0]).await;
     imap.append("Junk Mail", SPAM[0]).await;
-    let w = handle.spam_weights(account_id).await;
-    assert_eq!(w.ham, 1);
-    assert_eq!(w.spam, 1);
+    let samples = spam_training_samples(&handle.server).await;
+    assert_eq!(samples.ham_count, 1);
+    assert_eq!(samples.spam_count, 1);
 
     // Append two spam samples to "Drafts", then train the classifier via STORE and MOVE
     imap.append("Drafts", SPAM[1]).await;
@@ -48,9 +46,9 @@ pub async fn test(handle: &IMAPTest) {
     imap.send_ok("SELECT Drafts").await;
     imap.send_ok("STORE 1 +FLAGS ($Junk)").await;
     imap.send_ok("MOVE 2 \"Junk Mail\"").await;
-    let w = handle.spam_weights(account_id).await;
-    assert_eq!(w.ham, 1);
-    assert_eq!(w.spam, 3);
+    let samples = spam_training_samples(&handle.server).await;
+    assert_eq!(samples.ham_count, 1);
+    assert_eq!(samples.spam_count, 3);
 
     // Add the remaining messages via APPEND
     for message in HAM.iter().skip(1) {
@@ -59,14 +57,42 @@ pub async fn test(handle: &IMAPTest) {
     for message in SPAM.iter().skip(3) {
         imap.append("Junk Mail", message).await;
     }
-    let w = handle.spam_weights(account_id).await;
-    assert_eq!(w.ham, 10);
-    assert_eq!(w.spam, 10);
+    let samples = spam_training_samples(&handle.server).await;
+    assert_eq!(samples.ham_count, 10);
+    assert_eq!(samples.spam_count, 10);
+    assert_eq!(samples.samples.len(), 20);
+    assert!(
+        samples
+            .samples
+            .iter()
+            .all(|s| s.account_id == account_id && s.remove.is_none())
+    );
+
+    // Train the classifier
+    handle.server.spam_train(false).await.unwrap();
+    let model = spam_classifier_model(&handle.server).await;
+    assert_eq!(model.ham_count, 10);
+    assert_eq!(model.spam_count, 10);
+    assert_eq!(
+        model.last_sample_expiry,
+        samples.samples.iter().map(|s| s.until).max().unwrap()
+    );
+    assert_eq!(spam_training_samples(&handle.server).await.total_count, 20);
+    assert!(
+        handle
+            .server
+            .inner
+            .data
+            .spam_classifier
+            .load()
+            .model
+            .is_active()
+    );
 
     // Send 3 test emails
     for message in TEST {
         let mut lmtp = SmtpConnection::connect_port(11201).await;
-        lmtp.ingest("bill@example.com", &["bayes@example.com"], message)
+        lmtp.ingest("bill@example.com", &["sgd@example.com"], message)
             .await;
     }
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
@@ -76,24 +102,159 @@ pub async fn test(handle: &IMAPTest) {
         .await
         .assert_not_contains("FLAGS ($Junk")
         .assert_contains("Subject: can someone explain")
-        .assert_contains("X-Spam-Bayes: No");
+        .assert_contains("X-Spam-Status: No")
+        .assert_contains("PROB_HAM_HIGH");
     imap.send("FETCH 12 (FLAGS RFC822.TEXT)").await;
     imap.assert_read(Type::Tagged, ResponseType::Ok)
         .await
         .assert_not_contains("FLAGS ($Junk")
         .assert_contains("Subject: classifier test")
-        .assert_not_contains("X-Spam-Bayes: ");
+        .assert_contains("X-Spam-Status: No")
+        .assert_contains("PROB_HAM_MEDIUM");
     imap.send_ok("SELECT \"Junk Mail\"").await;
     imap.send("FETCH 10 (FLAGS RFC822.TEXT)").await;
     imap.assert_read(Type::Tagged, ResponseType::Ok)
         .await
         .assert_contains("FLAGS ($Junk")
         .assert_contains("Subject: save up to")
-        .assert_contains("X-Spam-Bayes: Yes");
+        .assert_contains("X-Spam-Status: Yes")
+        .assert_contains("PROB_SPAM_HIGH");
     imap.send_ok("MOVE 10 INBOX").await;
-    let w = handle.spam_weights(account_id).await;
-    assert_eq!(w.ham, 11);
-    assert_eq!(w.spam, 10);*/
+    let samples = spam_training_samples(&handle.server).await;
+    assert_eq!(samples.ham_count, 11);
+    assert_eq!(samples.spam_count, 10);
+
+    // Make sure spam traps trigger spam classification
+    let mut lmtp = SmtpConnection::connect_port(11201).await;
+    lmtp.ingest("bill@example.com", &["spamtrap@example.com"], SPAM[4])
+        .await;
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    let samples = spam_training_samples(&handle.server).await;
+    assert_eq!(samples.ham_count, 11);
+    assert_eq!(samples.spam_count, 11);
+}
+
+#[derive(Default, Debug)]
+pub struct TrainingSamples {
+    pub samples: Vec<TrainingSample>,
+    pub spam_count: usize,
+    pub ham_count: usize,
+    pub total_count: usize,
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+pub struct TrainingSample {
+    pub hash: BlobHash,
+    pub account_id: u32,
+    pub is_spam: bool,
+    pub remove: Option<u64>,
+    pub until: u64,
+}
+
+pub async fn spam_classifier_model(server: &Server) -> SpamClassifierModel {
+    server
+        .store()
+        .get_value::<Archive<AlignedBytes>>(ValueKey::property(
+            u32::MAX,
+            Collection::Principal,
+            u32::MAX,
+            PrincipalField::SpamModel,
+        ))
+        .await
+        .and_then(|archive| match archive {
+            Some(archive) => archive.deserialize::<SpamClassifierModel>().map(Some),
+            None => Ok(None),
+        })
+        .unwrap()
+        .unwrap()
+}
+
+pub async fn spam_delete_samples(server: &Server) {
+    let from_key = ValueKey {
+        account_id: 0,
+        collection: 0,
+        document_id: 0,
+        class: ValueClass::Blob(BlobOp::SpamSample {
+            hash: BlobHash::default(),
+            until: 0,
+        }),
+    };
+    let to_key = ValueKey {
+        account_id: u32::MAX,
+        collection: u8::MAX,
+        document_id: u32::MAX,
+        class: ValueClass::Blob(BlobOp::SpamSample {
+            hash: BlobHash::new_max(),
+            until: u64::MAX,
+        }),
+    };
+    server.store().delete_range(from_key, to_key).await.unwrap();
+}
+
+pub async fn spam_training_samples(server: &Server) -> TrainingSamples {
+    let mut samples = TrainingSamples::default();
+    let from_key = ValueKey {
+        account_id: 0,
+        collection: 0,
+        document_id: 0,
+        class: ValueClass::Blob(BlobOp::SpamSample {
+            hash: BlobHash::default(),
+            until: 0,
+        }),
+    };
+    let to_key = ValueKey {
+        account_id: u32::MAX,
+        collection: u8::MAX,
+        document_id: u32::MAX,
+        class: ValueClass::Blob(BlobOp::SpamSample {
+            hash: BlobHash::new_max(),
+            until: u64::MAX,
+        }),
+    };
+    server
+        .store()
+        .iterate(
+            IterateParams::new(from_key, to_key).ascending(),
+            |key, value| {
+                let until = key.deserialize_be_u64(1)?;
+                let account_id = key.deserialize_be_u32(U64_LEN + 1)?;
+                let hash =
+                    BlobHash::try_from_hash_slice(key.get(U64_LEN + U32_LEN + 1..).ok_or_else(
+                        || trc::Error::corrupted_key(key, value.into(), trc::location!()),
+                    )?)
+                    .unwrap();
+                let (Some(is_spam), Some(hold)) = (value.first(), value.get(1)) else {
+                    return Err(trc::Error::corrupted_key(
+                        key,
+                        value.into(),
+                        trc::location!(),
+                    ));
+                };
+
+                let do_remove = *hold == 0;
+                let is_spam = *is_spam == 1;
+                samples.samples.push(TrainingSample {
+                    hash,
+                    account_id,
+                    is_spam,
+                    remove: do_remove.then_some(until),
+                    until,
+                });
+                if is_spam {
+                    samples.spam_count += 1;
+                } else {
+                    samples.ham_count += 1;
+                }
+                samples.total_count += 1;
+
+                Ok(true)
+            },
+        )
+        .await
+        .unwrap();
+
+    samples
 }
 
 impl ImapConnection {
@@ -113,7 +274,7 @@ impl ImapConnection {
     }
 }
 
-const SPAM: [&str; 10] = [
+pub const SPAM: [&str; 10] = [
     concat!(
         "Subject: save up to NUMBER on life insurance\r\n\r\n wh",
         "y spend more than you have to life quote savings e",
@@ -426,7 +587,7 @@ const SPAM: [&str; 10] = [
     ),
 ];
 
-const HAM: [&str; 10] = [
+pub const HAM: [&str; 10] = [
     concat!(
         "Message-ID: <mid1@foobar.org>\r\nSubject: i have been",
         " trying to research via sa mirrors and search engi",
@@ -654,7 +815,7 @@ const TEST: [&str; 3] = [
     ),
     concat!(
         "Subject: classifier test\r\n\r\nthis is a novel text tha",
-        "t the bayes classifier has never seen before, it s",
+        "t the sgd classifier has never seen before, it s",
         "hould be classified as ham or non-ham\r\n"
     ),
 ];

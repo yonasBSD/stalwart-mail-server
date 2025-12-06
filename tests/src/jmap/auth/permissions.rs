@@ -21,6 +21,13 @@ pub async fn test(params: &JMAPTest) {
     println!("Running permissions tests...");
     let server = params.server.clone();
 
+    // Disable spam filtering to avoid adding extra headers
+    let old_core = params.server.core.clone();
+    let mut new_core = old_core.as_ref().clone();
+    new_core.spam.enabled = false;
+    new_core.smtp.session.data.add_delivered_to = false;
+    params.server.inner.shared_core.store(Arc::new(new_core));
+
     // Remove unlimited requests permission
     for &account in params.accounts.keys() {
         params
@@ -675,13 +682,14 @@ pub async fn test(params: &JMAPTest) {
     );
 
     // Quota for the tenant and user should be updated
+    const EXTRA_BYTES: i64 = 19; // Storage overhead
     assert_eq!(
         server.get_used_quota(tenant_id).await.unwrap(),
-        TEST_MESSAGE.len() as i64
+        TEST_MESSAGE.len() as i64 + EXTRA_BYTES
     );
     assert_eq!(
         server.get_used_quota(tenant_user_id).await.unwrap(),
-        TEST_MESSAGE.len() as i64
+        TEST_MESSAGE.len() as i64 + EXTRA_BYTES
     );
 
     // Next delivery should fail due to tenant quota
@@ -720,7 +728,7 @@ pub async fn test(params: &JMAPTest) {
     assert_eq!(server.get_used_quota(tenant_id).await.unwrap(), 0);
     assert_eq!(
         server.get_used_quota(other_tenant_id).await.unwrap(),
-        TEST_MESSAGE.len() as i64
+        TEST_MESSAGE.len() as i64 + EXTRA_BYTES
     );
 
     // Deleting tenants with data should fail

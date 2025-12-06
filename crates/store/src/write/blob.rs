@@ -4,12 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::time::Instant;
+
 use super::{BlobOp, Operation, ValueClass, ValueOp, key::DeserializeBigEndian, now};
 use crate::{
     BlobStore, IterateParams, Store, U32_LEN, U64_LEN, ValueKey,
     write::{BatchBuilder, BlobLink},
 };
-use trc::AddContext;
+use trc::{AddContext, PurgeEvent};
 use types::{
     blob::BlobClass,
     blob_hash::{BLOB_HASH_LEN, BlobHash},
@@ -117,6 +119,10 @@ impl Store {
     }
 
     pub async fn purge_blobs(&self, blob_store: BlobStore) -> trc::Result<()> {
+        let mut total_active = 0;
+        let mut total_deleted = 0;
+        let started = Instant::now();
+
         for byte in 0..=u8::MAX {
             // Validate linked blobs
             let mut from_hash = BlobHash::default();
@@ -194,7 +200,17 @@ impl Store {
                     .await
                     .caused_by(trc::location!())?;
             }
+
+            total_active += state.total_active - 1; // Exclude default hash
+            total_deleted += state.total_deleted;
         }
+
+        trc::event!(
+            Purge(PurgeEvent::BlobCleanup),
+            Expires = total_deleted,
+            Total = total_active,
+            Elapsed = started.elapsed()
+        );
 
         Ok(())
     }
@@ -206,6 +222,8 @@ struct BlobPurgeState {
     delete_keys: Vec<(Option<u32>, BlobOp)>,
     spam_train_samples: Vec<(u32, u64)>,
     now: u64,
+    total_deleted: u64,
+    total_active: u64,
 }
 
 impl BlobPurgeState {
@@ -216,6 +234,8 @@ impl BlobPurgeState {
             delete_keys: Vec::new(),
             spam_train_samples: Vec::new(),
             now: now(),
+            total_deleted: 0,
+            total_active: 0,
         }
     }
 
@@ -228,6 +248,7 @@ impl BlobPurgeState {
 
     pub fn finalize(&mut self, new_hash: BlobHash) {
         if !self.last_hash_is_linked {
+            self.total_deleted += 1;
             self.delete_keys.push((
                 None,
                 BlobOp::Commit {
@@ -235,6 +256,7 @@ impl BlobPurgeState {
                 },
             ));
         } else {
+            self.total_active += 1;
             if !self.spam_train_samples.is_empty() {
                 if self.spam_train_samples.len() > 1 {
                     // Sort by account_id ascending, then until descending
@@ -243,27 +265,25 @@ impl BlobPurgeState {
                             a_id.cmp(b_id).then_with(|| b_until.cmp(a_until))
                         });
                     let mut samples = self.spam_train_samples.iter().peekable();
-                    while let Some((account_id, until)) = samples.next() {
+                    while let Some((account_id, _)) = samples.next() {
                         // Keep only the latest sample per account
-                        let mut last_until = *until;
                         while let Some((next_account_id, next_until)) = samples.peek() {
                             if next_account_id == account_id {
                                 self.delete_keys.push((
                                     Some(*account_id),
                                     BlobOp::SpamSample {
                                         hash: self.last_hash.clone(),
-                                        until: last_until,
+                                        until: *next_until,
                                     },
                                 ));
                                 self.delete_keys.push((
                                     Some(*account_id),
                                     BlobOp::Link {
                                         hash: self.last_hash.clone(),
-                                        to: BlobLink::Temporary { until: last_until },
+                                        to: BlobLink::Temporary { until: *next_until },
                                     },
                                 ));
                                 samples.next();
-                                last_until = *next_until;
                             } else {
                                 break;
                             }
@@ -280,6 +300,7 @@ impl BlobPurgeState {
     pub fn process_key(&mut self, key: &[u8], value: &[u8]) -> trc::Result<()> {
         const TEMP_LINK: usize = BLOB_HASH_LEN + U32_LEN + U64_LEN;
         const DOC_LINK: usize = BLOB_HASH_LEN + U64_LEN + 1;
+        const ID_LINK: usize = BLOB_HASH_LEN + U64_LEN;
 
         match key.len() {
             BLOB_HASH_LEN => {
@@ -339,8 +360,8 @@ impl BlobPurgeState {
                 }
                 Ok(())
             }
-            DOC_LINK => {
-                // Document link
+            DOC_LINK | ID_LINK => {
+                // Document/Id link
                 self.last_hash_is_linked = true;
                 Ok(())
             }

@@ -6,7 +6,7 @@
 
 use crate::{
     imap::{AssertResult, ImapConnection, Type},
-    jmap::JMAPTest,
+    jmap::{JMAPTest, wait_for_index},
 };
 use ahash::AHashSet;
 use common::Server;
@@ -149,6 +149,7 @@ pub async fn test(params: &mut JMAPTest) {
     }
 
     // Delete account
+    wait_for_index(&server).await;
     server
         .store()
         .delete_principal(QueryBy::Id(account.id().document_id()))
