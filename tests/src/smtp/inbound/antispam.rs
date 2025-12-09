@@ -331,8 +331,8 @@ async fn antispam() {
         "dmarc",
         "rbl",
         "spamtrap",
-        //"classifier_html",
-        //"classifier_features",
+        "classifier_html",
+        "classifier_features",
         "classifier",
         "pyzor",
         "llm",
@@ -372,7 +372,7 @@ async fn antispam() {
                             .put_temporary_blob(u32::MAX, sample.as_bytes(), 60)
                             .await
                             .unwrap();
-                        server.add_spam_sample(&mut batch, hash, class == "spam", false, 0);
+                        server.add_spam_sample(&mut batch, hash, class == "spam", true, 0);
                         batch.clear(blob_hold);
                     }
                 }

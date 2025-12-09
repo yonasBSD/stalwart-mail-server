@@ -6,7 +6,7 @@
 
 use common::{
     Inner, KV_LOCK_HOUSEKEEPER, LONG_1D_SLUMBER, Server,
-    config::telemetry::OtelMetrics,
+    config::{spamfilter, telemetry::OtelMetrics},
     core::BuildServer,
     ipc::{BroadcastEvent, HousekeeperEvent, PurgeType},
 };
@@ -109,11 +109,14 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
                     .as_ref()
                     .and_then(|c| c.train_frequency)
             {
-                let last_trained_at = server.inner.data.spam_classifier.load().last_trained_at;
-                let next_train = if last_trained_at > 0 {
-                    now().saturating_sub(last_trained_at).min(train_frequency)
-                } else {
-                    train_frequency
+                let next_train = match server.inner.data.spam_classifier.load().as_ref() {
+                    spamfilter::SpamClassifier::FhClassifier {
+                        last_trained_at, ..
+                    }
+                    | spamfilter::SpamClassifier::CcfhClassifier {
+                        last_trained_at, ..
+                    } => now().saturating_sub(*last_trained_at).min(train_frequency),
+                    spamfilter::SpamClassifier::Disabled => train_frequency,
                 };
 
                 queue.schedule(

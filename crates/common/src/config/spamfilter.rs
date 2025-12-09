@@ -7,7 +7,7 @@
 use super::{Variable, functions::ResolveVariable, if_block::IfBlock, tokenizer::TokenMap};
 use ahash::AHashSet;
 use mail_auth::common::resolver::ToReverseName;
-use nlp::classifier::sgd::TextClassifier;
+use nlp::classifier::model::{CcfhClassifier, FhClassifier};
 use std::{
     net::{IpAddr, SocketAddr},
     time::Duration,
@@ -20,12 +20,17 @@ use utils::{
 };
 
 #[derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default)]
-pub struct SpamClassifierModel {
-    pub classifier: TextClassifier,
-    pub ham_count: u64,
-    pub spam_count: u64,
-    pub last_sample_expiry: u64,
-    pub last_trained_at: u64,
+pub enum SpamClassifier {
+    FhClassifier {
+        classifier: FhClassifier,
+        last_trained_at: u64,
+    },
+    CcfhClassifier {
+        classifier: CcfhClassifier,
+        last_trained_at: u64,
+    },
+    #[default]
+    Disabled,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -75,16 +80,25 @@ pub enum SpamFilterAction<T> {
 
 #[derive(Debug, Clone, Default)]
 pub struct ClassifierConfig {
-    pub epochs: usize,
-    pub feature_hash_size: usize,
-    pub alpha: f32,
-    pub train_batch_size: usize,
+    pub w_params: FtrlParameters,
+    pub i_params: Option<FtrlParameters>,
+    pub num_epochs: usize,
+    pub reservoir_capacity: usize,
     pub min_ham_samples: u64,
     pub min_spam_samples: u64,
     pub auto_learn_reply_ham: bool,
     pub auto_learn_card_is_ham: bool,
     pub hold_samples_for: u64,
     pub train_frequency: Option<u64>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct FtrlParameters {
+    pub feature_hash_size: usize,
+    pub alpha: f64,
+    pub beta: f64,
+    pub l1_ratio: f64,
+    pub l2_ratio: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -443,25 +457,29 @@ impl ClassifierConfig {
             return None;
         }
 
-        let feature_hash_size: usize = config
-            .property_or_default("spam-filter.classifier.parameters.features", "1048576")
-            .unwrap_or(1048576);
-
-        if !feature_hash_size.is_power_of_two() {
-            config.new_build_error(
-                "spam-filter.classifier.parameters.features",
-                "Feature size must be a power of two.",
-            );
-        }
+        let w_params = FtrlParameters::parse(config, "spam-filter.classifier.parameters", 20);
+        let i_params = if config
+            .property_or_default("spam-filter.classifier.ccfh.enable", "false")
+            .unwrap_or(false)
+        {
+            Some(FtrlParameters::parse(
+                config,
+                "spam-filter.classifier.ccfh.parameters",
+                w_params.feature_hash_size - 2,
+            ))
+        } else {
+            None
+        };
 
         ClassifierConfig {
-            feature_hash_size,
-            epochs: config
-                .property_or_default("spam-filter.classifier.parameters.epochs", "1000")
-                .unwrap_or(1000),
-            alpha: config
-                .property_or_default("spam-filter.classifier.parameters.alpha", "0.00001")
-                .unwrap_or(0.00001),
+            w_params,
+            i_params,
+            num_epochs: config
+                .property_or_default("spam-filter.classifier.training.epochs", "3")
+                .unwrap_or(3),
+            reservoir_capacity: config
+                .property_or_default("spam-filter.classifier.reservoir-capacity", "1024")
+                .unwrap_or(1024),
             auto_learn_card_is_ham: config
                 .property_or_default("spam-filter.card-is-ham.learn", "true")
                 .unwrap_or(true),
@@ -478,9 +496,6 @@ impl ClassifierConfig {
             min_spam_samples: config
                 .property_or_default("spam-filter.classifier.samples.min-spam", "10")
                 .unwrap_or(10),
-            train_batch_size: config
-                .property_or_default("spam-filter.classifier.training.batch-size", "100")
-                .unwrap_or(100),
             train_frequency: config
                 .property_or_default::<Option<Duration>>(
                     "spam-filter.classifier.training.frequency",
@@ -490,6 +505,43 @@ impl ClassifierConfig {
                 .map(|d| d.as_secs()),
         }
         .into()
+    }
+}
+
+impl FtrlParameters {
+    pub fn parse(config: &mut Config, prefix: &str, default_features: usize) -> Self {
+        let feature_hash_size: usize = config
+            .property((prefix, "features"))
+            .unwrap_or(default_features);
+
+        if !(16..=28).contains(&feature_hash_size) {
+            config.new_build_error(
+                (prefix, "features"),
+                "Feature size must be between 2^16 and 2^28.",
+            );
+        }
+
+        FtrlParameters {
+            feature_hash_size: 1 << feature_hash_size,
+            alpha: config
+                .property_or_default((prefix, "alpha"), "2.0")
+                .unwrap_or(2.0),
+            beta: config
+                .property_or_default((prefix, "beta"), "1.0")
+                .unwrap_or(1.0),
+            l1_ratio: config
+                .property_or_default((prefix, "l1"), "0.001")
+                .unwrap_or(0.001),
+            l2_ratio: config
+                .property_or_default((prefix, "l2"), "0.0001")
+                .unwrap_or(0.0001),
+        }
+    }
+}
+
+impl SpamClassifier {
+    pub fn is_active(&self) -> bool {
+        !matches!(self, SpamClassifier::Disabled)
     }
 }
 

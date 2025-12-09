@@ -5,7 +5,7 @@
  */
 
 use crate::{
-    Inner, Server, SpamClassifier,
+    Inner, Server,
     auth::{AccessToken, ResourceToken, TenantInfo},
     config::{
         smtp::{
@@ -15,9 +15,10 @@ use crate::{
                 QueueStrategy, RequireOptional, RoutingStrategy, TlsStrategy, VirtualQueue,
             },
         },
-        spamfilter::SpamClassifierModel,
+        spamfilter::SpamClassifier,
     },
     ipc::{BroadcastEvent, PushEvent, PushNotification},
+    manager::SPAM_CLASSIFIER_KEY,
 };
 use directory::{Directory, QueryParams, Type, backend::internal::manage::ManageDirectory};
 use mail_auth::IpLookupStrategy;
@@ -41,7 +42,7 @@ use types::{
     blob::{BlobClass, BlobId},
     blob_hash::BlobHash,
     collection::{Collection, SyncCollection},
-    field::{Field, PrincipalField},
+    field::Field,
     type_state::{DataType, StateChange},
 };
 use utils::{map::bitmap::Bitmap, snowflake::SnowflakeIdGenerator};
@@ -1044,41 +1045,20 @@ impl Server {
     }
 
     pub async fn spam_model_reload(&self) -> trc::Result<()> {
-        if let Some(config) = &self.core.spam.classifier {
+        if self.core.spam.classifier.is_some() {
             if let Some(model) = self
-                .store()
-                .get_value::<Archive<AlignedBytes>>(ValueKey::property(
-                    u32::MAX,
-                    Collection::Principal,
-                    u32::MAX,
-                    PrincipalField::SpamModel,
-                ))
+                .blob_store()
+                .get_blob(SPAM_CLASSIFIER_KEY, 0..usize::MAX)
                 .await
                 .and_then(|archive| match archive {
-                    Some(archive) => archive.deserialize::<SpamClassifierModel>().map(Some),
+                    Some(archive) => <Archive<AlignedBytes> as Deserialize>::deserialize(&archive)
+                        .and_then(|archive| archive.deserialize_untrusted::<SpamClassifier>())
+                        .map(Some),
                     None => Ok(None),
                 })
                 .caused_by(trc::location!())?
             {
-                if model.ham_count >= config.min_ham_samples
-                    && model.spam_count >= config.min_spam_samples
-                {
-                    self.inner
-                        .data
-                        .spam_classifier
-                        .store(Arc::new(SpamClassifier {
-                            model: model.classifier,
-                            last_trained_at: model.last_trained_at,
-                        }));
-                } else {
-                    trc::event!(
-                        Spam(SpamEvent::ModelNotReady),
-                        Details = vec![
-                            trc::Value::from(model.ham_count),
-                            trc::Value::from(model.spam_count)
-                        ],
-                    );
-                }
+                self.inner.data.spam_classifier.store(Arc::new(model));
             } else {
                 trc::event!(Spam(SpamEvent::ModelNotFound));
             }

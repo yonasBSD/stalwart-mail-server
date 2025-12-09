@@ -1,5 +1,5 @@
 envelope_to hello@world.com
-expect PROB_SPAM_HIGH
+expect PROB_SPAM_MEDIUM
 
 Subject: save up to NUMBER on life insurance
 
@@ -7,14 +7,14 @@ why spend more than you have to life quote savings ensuring your family s financ
 
 <!-- NEXT TEST -->
 envelope_to hello@world.com
-expect PROB_HAM_HIGH
+expect PROB_HAM_MEDIUM
 
 Subject: can someone explain
 
 what type of operating system solaris is as ive never seen or used it i dont know wheather to get a server from sun or from dell i would prefer a linux based server and sun seems to be the one for that but im not sure if solaris is a distro of linux or a completely different operating system can someone explain kiall mac innes irish linux users group ilug URL URL for un subscription information list maintainer listmaster URL 
 <!-- NEXT TEST -->
 envelope_to hello@world.com
-expect PROB_HAM_LOW
+expect PROB_SPAM_LOW
 
 Subject: Lorem ipsum dolor sit amet, consectetur adipiscing elit
 

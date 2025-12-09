@@ -667,7 +667,7 @@ wait = "1ms"
 enable = true
 
 [spam-filter.list]
-scores = {"PROB_SPAM_HIGH" = "10.0"}
+scores = {"PROB_SPAM_LOW" = "10.0", "PROB_SPAM_HIGH" = "10.0"}
 
 [lookup]
 "spam-traps" = {"spamtrap@*"}

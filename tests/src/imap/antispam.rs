@@ -6,14 +6,14 @@
 
 use super::{IMAPTest, ImapConnection};
 use crate::{imap::Type, jmap::mail::delivery::SmtpConnection, smtp::session::VerifyResponse};
-use common::{Server, config::spamfilter::SpamClassifierModel};
+use common::{Server, manager::SPAM_TRAINER_KEY};
 use imap_proto::ResponseType;
-use spam_filter::modules::classifier::SpamClassifier;
+use spam_filter::modules::classifier::{SpamClassifier, SpamTrainer};
 use store::{
-    IterateParams, U32_LEN, U64_LEN, ValueKey,
+    Deserialize, IterateParams, U32_LEN, U64_LEN, ValueKey,
     write::{AlignedBytes, Archive, BlobOp, ValueClass, key::DeserializeBigEndian},
 };
-use types::{blob_hash::BlobHash, collection::Collection, field::PrincipalField};
+use types::blob_hash::BlobHash;
 
 pub async fn test(handle: &IMAPTest) {
     println!("Running Spam classifier tests...");
@@ -71,23 +71,14 @@ pub async fn test(handle: &IMAPTest) {
     // Train the classifier
     handle.server.spam_train(false).await.unwrap();
     let model = spam_classifier_model(&handle.server).await;
-    assert_eq!(model.ham_count, 10);
-    assert_eq!(model.spam_count, 10);
+    assert_eq!(model.reservoir.ham.total_seen, 10);
+    assert_eq!(model.reservoir.spam.total_seen, 10);
     assert_eq!(
         model.last_sample_expiry,
         samples.samples.iter().map(|s| s.until).max().unwrap()
     );
     assert_eq!(spam_training_samples(&handle.server).await.total_count, 20);
-    assert!(
-        handle
-            .server
-            .inner
-            .data
-            .spam_classifier
-            .load()
-            .model
-            .is_active()
-    );
+    assert!(handle.server.inner.data.spam_classifier.load().is_active());
 
     // Send 3 test emails
     for message in TEST {
@@ -110,7 +101,7 @@ pub async fn test(handle: &IMAPTest) {
         .assert_not_contains("FLAGS ($Junk")
         .assert_contains("Subject: classifier test")
         .assert_contains("X-Spam-Status: No")
-        .assert_contains("PROB_HAM_MEDIUM");
+        .assert_contains("PROB_SPAM_UNCERTAIN");
     imap.send_ok("SELECT \"Junk Mail\"").await;
     imap.send("FETCH 10 (FLAGS RFC822.TEXT)").await;
     imap.assert_read(Type::Tagged, ResponseType::Ok)
@@ -152,18 +143,15 @@ pub struct TrainingSample {
     pub until: u64,
 }
 
-pub async fn spam_classifier_model(server: &Server) -> SpamClassifierModel {
+pub async fn spam_classifier_model(server: &Server) -> SpamTrainer {
     server
-        .store()
-        .get_value::<Archive<AlignedBytes>>(ValueKey::property(
-            u32::MAX,
-            Collection::Principal,
-            u32::MAX,
-            PrincipalField::SpamModel,
-        ))
+        .blob_store()
+        .get_blob(SPAM_TRAINER_KEY, 0..usize::MAX)
         .await
         .and_then(|archive| match archive {
-            Some(archive) => archive.deserialize::<SpamClassifierModel>().map(Some),
+            Some(archive) => <Archive<AlignedBytes> as Deserialize>::deserialize(&archive)
+                .and_then(|archive| archive.deserialize_untrusted::<SpamTrainer>())
+                .map(Some),
             None => Ok(None),
         })
         .unwrap()
@@ -276,7 +264,7 @@ impl ImapConnection {
 
 pub const SPAM: [&str; 10] = [
     concat!(
-        "Subject: save up to NUMBER on life insurance\r\n\r\n wh",
+        "Subject: save up to = on life insurance\r\n\r\n wh",
         "y spend more than you have to life quote savings e",
         "nsuring your family s financial security is very i",
         "mportant life quote savings makes buying life insu",
@@ -287,8 +275,8 @@ pub const SPAM: [&str; 10] = [
         "in the country on new coverage you can save hundre",
         "ds or even thousands of dollars by requesting a fr",
         "ee quote from lifequote savings our service will t",
-        "ake you less than NUMBER minutes to complete shop ",
-        "and compare save up to NUMBER on all types of life",
+        "ake you less than = minutes to complete shop ",
+        "and compare save up to = on all types of life",
         " insurance hyperlink click here for your free quot",
         "e protecting your family is the best investment yo",
         "u ll ever make if you are in receipt of this email",
@@ -304,38 +292,38 @@ pub const SPAM: [&str; 10] = [
         "ayers are on this one for once be where the player",
         "s are this is your private invitation experts are ",
         "calling this the fastest way to huge cash flow eve",
-        "r conceived leverage NUMBER NUMBER into NUMBER NUM",
+        "r conceived leverage = = into = NUM",
         "BER over and over again the question here is you e",
         "ither want to be wealthy or you don t which one ar",
         "e you i am tossing you a financial lifeline and fo",
         "r your sake i hope you grab onto it and hold on ti",
         "ght for the ride of your life testimonials hear wh",
         "at average people are doing their first few days w",
-        "e ve received NUMBER NUMBER in NUMBER day and we a",
+        "e ve received = = in = day and we a",
         "re doing that over and over again q s in al i m a ",
-        "single mother in fl and i ve received NUMBER NUMBE",
-        "R in the last NUMBER days d s in fl i was not sure",
-        " about this when i sent off my NUMBER NUMBER pledg",
-        "e but i got back NUMBER NUMBER the very next day l",
+        "single mother in fl and i ve received = NUMBE",
+        "R in the last = days d s in fl i was not sure",
+        " about this when i sent off my = = pledg",
+        "e but i got back = = the very next day l",
         " l in ky i didn t have the money so i found myself",
         " a partner to work this with we have received NUMB",
-        "ER NUMBER over the last NUMBER days i think i made",
+        "ER = over the last = days i think i made",
         " the right decision don t you k c in fl i pick up ",
-        "NUMBER NUMBER my first day and i they gave me free",
+        "= = my first day and i they gave me free",
         " leads and all the training you can too j w in ca ",
         "announcing we will close your sales for you and he",
         "lp you get a fax blast immediately upon your entry",
         " you make the money free leads training don t wait",
-        " call now fax back to NUMBER NUMBER NUMBER NUMBER ",
-        "or call NUMBER NUMBER NUMBER NUMBER name__________",
+        " call now fax back to = = = = ",
+        "or call = = = = name__________",
         "________________________phone_____________________",
         "______________________ fax________________________",
         "_____________email________________________________",
         "____________ best time to call____________________",
         "_____time zone____________________________________",
         "____ this message is sent in compliance of the new",
-        " e mail bill per section NUMBER paragraph a NUMBER",
-        " c of s NUMBER further transmissions by the sender",
+        " e mail bill per section = paragraph a =",
+        " c of s = further transmissions by the sender",
         " of this email may be stopped at no cost to you by",
         " sending a reply to this email address with the wo",
         "rd remove in the subject line errors omissions and",
@@ -345,70 +333,70 @@ pub const SPAM: [&str; 10] = [
         " for the sole purpose of these communications your",
         " continued inclusion is only by your gracious perm",
         "ission if you wish to not receive this mail from m",
-        "e please send an email to tesrewinter URL with rem",
+        "e please send an email to tesrewinter  with rem",
         "ove in the subject and you will be deleted immedia",
         "tely\r\n\r\n"
     ),
     concat!(
-        "Subject: help wanted \r\n\r\nwe are a NUMBER year old f",
-        "ortune NUMBER company that is growing at a tremend",
+        "Subject: help wanted \r\n\r\nwe are a = year old f",
+        "ortune = company that is growing at a tremend",
         "ous rate we are looking for individuals who want t",
         "o work from home this is an opportunity to make an",
         " excellent income no experience is required we wil",
         "l train you so if you are looking to be employed f",
         "rom home with a career that has vast opportunities",
-        " then go URL we are looking for energetic and self",
+        " then go  we are looking for energetic and self",
         " motivated people if that is you than click on the",
         " link and fill out the form and one of our employe",
         "ment specialist will contact you to be removed fro",
-        "m our link simple go to URL \r\n\r\n"
+        "m our link simple go to  \r\n\r\n"
     ),
     concat!(
         "Subject: tired of the bull out there\r\n\r\n want to st",
         "op losing money want a real money maker receive NU",
-        "MBER NUMBER NUMBER NUMBER today experts are callin",
+        "MBER = = = today experts are callin",
         "g this the fastest way to huge cash flow ever conc",
         "eived a powerhouse gifting program you don t want ",
         "to miss we work as a team this is your private inv",
         "itation get in with the founders this is where the",
         " big boys play the major players are on this one f",
         "or once be where the players are this is a system ",
-        "that will drive NUMBER NUMBER s to your doorstep i",
-        "n a short period of time leverage NUMBER NUMBER in",
-        "to NUMBER NUMBER over and over again the question ",
+        "that will drive = = s to your doorstep i",
+        "n a short period of time leverage = = in",
+        "to = = over and over again the question ",
         "here is you either want to be wealthy or you don t",
         " which one are you i am tossing you a financial li",
         "feline and for your sake i hope you grab onto it a",
         "nd hold on tight for the ride of your life testimo",
         "nials hear what average people are doing their fir",
-        "st few days we ve received NUMBER NUMBER in NUMBER",
+        "st few days we ve received = = in =",
         " day and we are doing that over and over again q s",
         " in al i m a single mother in fl and i ve received",
-        " NUMBER NUMBER in the last NUMBER days d s in fl i",
-        " was not sure about this when i sent off my NUMBER",
-        " NUMBER pledge but i got back NUMBER NUMBER the ve",
+        " = = in the last = days d s in fl i",
+        " was not sure about this when i sent off my =",
+        " = pledge but i got back = = the ve",
         "ry next day l l in ky i didn t have the money so i",
         " found myself a partner to work this with we have ",
-        "received NUMBER NUMBER over the last NUMBER days i",
+        "received = = over the last = days i",
         " think i made the right decision don t you k c in ",
-        "fl i pick up NUMBER NUMBER my first day and i they",
+        "fl i pick up = = my first day and i they",
         " gave me free leads and all the training you can t",
         "oo j w in ca this will be the most important call ",
         "you make this year free leads training announcing ",
         "we will close your sales for you and help you get ",
         "a fax blast immediately upon your entry you make t",
         "he money free leads training don t wait call now N",
-        "UMBER NUMBER NUMBER NUMBER print and fax to NUMBER",
-        " NUMBER NUMBER NUMBER or send an email requesting ",
-        "more information to successleads URL please includ",
-        "e your name and telephone number receive NUMBER NU",
-        "MBER free leads just for responding a NUMBER NUMBE",
+        "UMBER = = = print and fax to =",
+        " = = = or send an email requesting ",
+        "more information to successleads  please includ",
+        "e your name and telephone number receive = NU",
+        "MBER free leads just for responding a = NUMBE",
         "R value name___________________________________ ph",
         "one___________________________________ fax________",
         "_____________________________ email_______________",
         "____________________ this message is sent in compl",
-        "iance of the new e mail bill per section NUMBER pa",
-        "ragraph a NUMBER c of s NUMBER further transmissio",
+        "iance of the new e mail bill per section = pa",
+        "ragraph a = c of s = further transmissio",
         "ns by the sender of this email may be stopped at n",
         "o cost to you by sending a reply to this email add",
         "ress with the word remove in the subject line erro",
@@ -419,35 +407,35 @@ pub const SPAM: [&str; 10] = [
         "munications your continued inclusion is only by yo",
         "ur gracious permission if you wish to not receive ",
         "this mail from me please send an email to tesrewin",
-        "ter URL with remove in the subject and you will be",
+        "ter  with remove in the subject and you will be",
         " deleted immediately\r\n\r\n"
     ),
     concat!(
         "Subject: cellular phone accessories \r\n\r\n all at bel",
-        "ow wholesale prices http NUMBER NUMBER NUMBER NUMB",
-        "ER NUMBER sites merchant sales hands free ear buds",
-        " NUMBER NUMBER phone holsters NUMBER NUMBER booste",
-        "r antennas only NUMBER NUMBER phone cases NUMBER N",
-        "UMBER car chargers NUMBER NUMBER face plates as lo",
-        "w as NUMBER NUMBER lithium ion batteries as low as",
-        " NUMBER NUMBER http NUMBER NUMBER NUMBER NUMBER NU",
+        "ow wholesale prices http = = = NUMB",
+        "ER = sites merchant sales hands free ear buds",
+        " = = phone holsters = = booste",
+        "r antennas only = = phone cases = N",
+        "UMBER car chargers = = face plates as lo",
+        "w as = = lithium ion batteries as low as",
+        " = = http = = = = NU",
         "MBER sites merchant sales click below for accessor",
         "ies on all nokia motorola lg nextel samsung qualco",
         "mm ericsson audiovox phones at below wholesale pri",
-        "ces http NUMBER NUMBER NUMBER NUMBER NUMBER sites ",
+        "ces http = = = = = sites ",
         "merchant sales if you need assistance please call ",
-        "us NUMBER NUMBER NUMBER to be removed from future ",
+        "us = = = to be removed from future ",
         "mailings please send your remove request to remove",
-        " me now NUMBER URL thank you and have a super day\r\n",
+        " me now =  thank you and have a super day\r\n",
         " \r\n"
     ),
     concat!(
-        "Subject: conferencing made easy\r\n\r\n only NUMBER cen",
+        "Subject: conferencing made easy\r\n\r\n only = cen",
         "ts per minute including long distance no setup fee",
         "s no contracts or monthly fees call anytime from a",
-        "nywhere to anywhere connects up to NUMBER particip",
+        "nywhere to anywhere connects up to = particip",
         "ants simplicity in set up and administration opera",
-        "tor help available NUMBER NUMBER the highest quali",
+        "tor help available = = the highest quali",
         "ty service for the lowest rate in the industry fil",
         "l out the form below to find out how you can lower",
         " your phone bill every month required input field ",
@@ -483,8 +471,8 @@ pub const SPAM: [&str; 10] = [
         "ated by the french government and as such i had to",
         " change my identity so that my investment will not",
         " be traced and confiscated i have deposited the su",
-        "m eighteen million united state dollars us NUMBER ",
-        "NUMBER NUMBER NUMBER with a security company for s",
+        "m eighteen million united state dollars us = ",
+        "= = = with a security company for s",
         "afekeeping the funds are security coded to prevent",
         " them from knowing the content what i want you to ",
         "do is to indicate your interest that you will assi",
@@ -506,35 +494,35 @@ pub const SPAM: [&str; 10] = [
         " remunerationfor your services for this reason kin",
         "dly furnish us your contact information that is yo",
         "ur personal telephone and fax number for confident",
-        "ial URL regards mrs m sese seko\r\n\r\n"
+        "ial  regards mrs m sese seko\r\n\r\n"
     ),
     concat!(
         "Subject: lowest rates available for term life insu",
         "rance\r\n\r\n take a moment and fill out our online for",
         "m to see the low rate you qualify for save up to N",
-        "UMBER from regular rates smokers accepted URL repr",
+        "UMBER from regular rates smokers accepted  repr",
         "esenting quality nationwide carriers act now to ea",
-        "sily remove your address from the list go to URL p",
-        "lease allow NUMBER NUMBER hours for removal\r\n\r\n"
+        "sily remove your address from the list go to  p",
+        "lease allow = = hours for removal\r\n\r\n"
     ),
     concat!(
         "Subject: central bank of nigeria foreign remittanc",
         "e \r\n\r\n dept tinubu square lagos nigeria email smith",
-        "_j URL NUMBERth of august NUMBER attn president ce",
+        "_j  =th of august = attn president ce",
         "o strictly private business proposal i am mr johns",
         "on s abu the bills and exchange director at the fo",
         "reignremittance department of the central bank of ",
         "nigeria i am writingyou this letter to ask for you",
         "r support and cooperation to carrying thisbusiness",
         " opportunity in my department we discovered abando",
-        "ned the sumof us NUMBER NUMBER NUMBER NUMBER thirt",
+        "ned the sumof us = = = = thirt",
         "y seven million four hundred thousand unitedstates",
         " dollars in an account that belong to one of our f",
         "oreign customers an american late engr john creek ",
         "junior an oil merchant with the federal government",
         " of nigeria who died along with his entire family ",
-        "of a wifeand two children in kenya airbus aNUMBER ",
-        "NUMBER flight kqNUMBER in novemberNUMBER since we ",
+        "of a wifeand two children in kenya airbus a= ",
+        "= flight kq= in november= since we ",
         "heard of his death we have been expecting his next",
         " of kin tocome over and put claims for his money a",
         "s the heir because we cannotrelease the fund from ",
@@ -550,11 +538,11 @@ pub const SPAM: [&str; 10] = [
         "r bank other wisethe fund will be returned to the ",
         "bank treasury as unclaimed fund we have agreed tha",
         "t our ratio of sharing will be as stated thus NUMB",
-        "ER for you as foreign partner and NUMBER for us th",
+        "ER for you as foreign partner and = for us th",
         "e officials in my department upon the successful c",
         "ompletion of this transfer my colleague and i will",
         "come to your country and mind our share it is from",
-        " our NUMBER we intendto import computer accessorie",
+        " our = we intendto import computer accessorie",
         "s into my country as way of recycling thefund to c",
         "ommence this transaction we require you to immedia",
         "tely indicateyour interest by calling me or sendin",
@@ -567,23 +555,23 @@ pub const SPAM: [&str; 10] = [
         "t be kept strictly confidential becauseof its natu",
         "re nb please remember to give me your phone and fa",
         "x no mr johnson smith abu irish linux users group ",
-        "ilug URL URL for un subscription information list ",
-        "maintainer listmaster URL\r\n\r\n"
+        "ilug   for un subscription information list ",
+        "maintainer listmaster \r\n\r\n"
     ),
     concat!(
         "Subject: dear stuart\r\n\r\n are you tired of searching",
         " for love in all the wrong places find love now at",
-        " URL URL browse through thousands of personals in ",
-        "your area join for free URL search e mail chat use",
-        " URL to meet cool guys and hot girls go NUMBER on ",
-        "NUMBER or use our private chat rooms click on the ",
-        "link to get started URL find love now you have rec",
+        "   browse through thousands of personals in ",
+        "your area join for free  search e mail chat use",
+        "  to meet cool guys and hot girls go = on ",
+        "= or use our private chat rooms click on the ",
+        "link to get started  find love now you have rec",
         "eived this email because you have registerd with e",
         "mailrewardz or subscribed through one of our marke",
         "ting partners if you have received this message in",
         " error or wish to stop receiving these great offer",
         "s please click the remove link above to unsubscrib",
-        "e from these mailings please click here URL\r\n\r\n"
+        "e from these mailings please click here \r\n\r\n"
     ),
 ];
 
@@ -600,20 +588,20 @@ pub const HAM: [&str; 10] = [
         "ering i would prefer not to have to write a script",
         " myself but will appreciate any suggestions this U",
         "RL email is sponsored by osdn tired of that same o",
-        "ld cell phone get a new here for free URL ________",
+        "ld cell phone get a new here for free  ________",
         "_______________________________________ spamassass",
-        "in talk mailing list spamassassin talk URL URL\r\n\r\n"
+        "in talk mailing list spamassassin talk  \r\n\r\n"
     ),
     concat!(
         "Message-ID: mid2@foobar.org\r\nSubject: hello\r\n\r\nhave y",
         "ou seen and discussed this article and his approac",
-        "h thank you URL hell there are no rules here we re",
+        "h thank you  hell there are no rules here we re",
         " trying to accomplish something thomas alva edison",
-        " this URL email is sponsored by osdn tired of that",
-        " same old cell phone get a new here for free URL _",
+        " this  email is sponsored by osdn tired of that",
+        " same old cell phone get a new here for free  _",
         "______________________________________________ spa",
         "massassin devel mailing list spamassassin devel UR",
-        "L URL \r\n\r\n"
+        "L  \r\n\r\n"
     ),
     concat!(
         "Message-ID: <mid3@foobar.org>\r\nSubject: hi all apol",
@@ -625,9 +613,9 @@ pub const HAM: [&str; 10] = [
         "internet wild i e machines with static real ips an",
         "y help pointers would be helpful cheers rgrds bern",
         "ard bernard tyers national centre for sensor resea",
-        "rch p NUMBER NUMBER NUMBER NUMBER e bernard tyers ",
-        "URL w URL l nNUMBER ______________________________",
-        "_________________ iiu mailing list iiu URL URL \r\n\r\n"
+        "rch p = = = = e bernard tyers ",
+        " w  l n= ______________________________",
+        "_________________ iiu mailing list iiu   \r\n\r\n"
     ),
     concat!(
         "Message-ID: <mid4@foobar.org>\r\nSubject: can someone",
@@ -638,8 +626,8 @@ pub const HAM: [&str; 10] = [
         "ne for that but im not sure if solaris is a distro",
         " of linux or a completely different operating syst",
         "em can someone explain kiall mac innes irish linux",
-        " users group ilug URL URL for un subscription info",
-        "rmation list maintainer listmaster URL \r\n\r\n"
+        " users group ilug   for un subscription info",
+        "rmation list maintainer listmaster  \r\n\r\n"
     ),
     concat!(
         "Message-ID: <mid5@foobar.org>\r\nSubject: folks my fi",
@@ -647,13 +635,13 @@ pub const HAM: [&str; 10] = [
         "t am new to linux just got a new pc at home dell b",
         "ox with windows xp added a second hard disk for li",
         "nux partitioned the disk and have installed suse N",
-        "UMBER NUMBER from cd which went fine except it did",
+        "UMBER = from cd which went fine except it did",
         "n t pick up my monitor i have a dell branded eNUMB",
-        "ERfpp NUMBER lcd flat panel monitor and a nvidia g",
-        "eforceNUMBER tiNUMBER video card both of which are",
+        "ERfpp = lcd flat panel monitor and a nvidia g",
+        "eforce= ti= video card both of which are",
         " probably too new to feature in suse s default set",
         " i downloaded a driver from the nvidia website and",
-        " installed it using rpm then i ran saxNUMBER as wa",
+        " installed it using rpm then i ran sax= as wa",
         "s recommended in some postings i found on the net ",
         "but it still doesn t feature my video card in the ",
         "available list what next another problem i have a ",
@@ -665,9 +653,9 @@ pub const HAM: [&str; 10] = [
         "ful i ve searched the net but have run out of idea",
         "s or should i be going for a different version of ",
         "linux such as redhat opinions welcome thanks a lot",
-        " peter irish linux users group ilug URL URL for un",
+        " peter irish linux users group ilug   for un",
         " subscription information list maintainer listmast",
-        "er URL\r\n\r\n"
+        "er \r\n\r\n"
     ),
     concat!(
         "Message-ID: <mid6@foobar.org>\r\nSubject: has anyone\r\n",
@@ -675,23 +663,23 @@ pub const HAM: [&str; 10] = [
         "random person go to a webpage create a mailing lis",
         "t then administer that list also of course let ppl",
         " sign up for the lists and manage their subscripti",
-        "ons similar to the old URL but i d like to have it",
-        " running on my server not someone elses chris URL ",
+        "ons similar to the old  but i d like to have it",
+        " running on my server not someone elses chris  ",
         "\r\n\r\n"
     ),
     concat!(
         "Message-ID: <mid7@foobar.org>\r\nSubject: hi thank yo",
         "u for the useful replies\r\n\r\ni have found some intere",
         "sting tutorials in the ibm developer connection UR",
-        "L and URL registration is needed i will post the s",
+        "L and  registration is needed i will post the s",
         "ame message on the web application security list a",
         "s suggested by someone for now i thing i will use ",
-        "mdNUMBER for password checking i will use the appr",
+        "md= for password checking i will use the appr",
         "oach described in secure programmin fo linux and u",
         "nix how to i will separate the authentication modu",
         "le so i can change its implementation at anytime t",
         "hank you again mario torre please avoid sending me",
-        " word or powerpoint attachments see URL \r\n\r\n"
+        " word or powerpoint attachments see  \r\n\r\n"
     ),
     concat!(
         "Message-ID: <mid8@foobar.org>\r\nSubject: hehe sorry\r\n",
@@ -701,21 +689,21 @@ pub const HAM: [&str; 10] = [
         "edhat dell provide some computers pre loaded with ",
         "red hat i dont know for sure tho so get someone el",
         "ses opnion as well as mine original message from i",
-        "lug admin URL mailto ilug admin URL on behalf of p",
-        "eter staunton sent NUMBER august NUMBER NUMBER NUM",
-        "BER to ilug URL subject ilug newbie seeks advice s",
-        "use NUMBER NUMBER folks my first time posting have",
+        "lug admin  mailto ilug admin  on behalf of p",
+        "eter staunton sent = august = = NUM",
+        "BER to ilug  subject ilug newbie seeks advice s",
+        "use = = folks my first time posting have",
         " a bit of unix experience but am new to linux just",
         " got a new pc at home dell box with windows xp add",
         "ed a second hard disk for linux partitioned the di",
-        "sk and have installed suse NUMBER NUMBER from cd w",
+        "sk and have installed suse = = from cd w",
         "hich went fine except it didn t pick up my monitor",
-        " i have a dell branded eNUMBERfpp NUMBER lcd flat ",
-        "panel monitor and a nvidia geforceNUMBER tiNUMBER ",
+        " i have a dell branded e=fpp = lcd flat ",
+        "panel monitor and a nvidia geforce= ti= ",
         "video card both of which are probably too new to f",
         "eature in suse s default set i downloaded a driver",
         " from the nvidia website and installed it using rp",
-        "m then i ran saxNUMBER as was recommended in some ",
+        "m then i ran sax= as was recommended in some ",
         "postings i found on the net but it still doesn t f",
         "eature my video card in the available list what ne",
         "xt another problem i have a dell branded keyboard ",
@@ -727,32 +715,32 @@ pub const HAM: [&str; 10] = [
         "net but have run out of ideas or should i be going",
         " for a different version of linux such as redhat o",
         "pinions welcome thanks a lot peter irish linux use",
-        "rs group ilug URL URL for un subscription informat",
-        "ion list maintainer listmaster URL irish linux use",
-        "rs group ilug URL URL for un subscription informat",
-        "ion list maintainer listmaster URL\r\n\r\n"
+        "rs group ilug   for un subscription informat",
+        "ion list maintainer listmaster  irish linux use",
+        "rs group ilug   for un subscription informat",
+        "ion list maintainer listmaster \r\n\r\n"
     ),
     concat!(
         "Message-ID: <mid9@foobar.org>\r\nSubject: it will fun",
         "ction as a router\r\n\r\nif that is what you wish it eve",
         "n looks like the modem s embedded os is some kind ",
         "of linux being that it has interesting interfaces ",
-        "like ethNUMBER i don t use it as a router though i",
+        "like eth= i don t use it as a router though i",
         " just have it do the absolute minimum dsl stuff an",
         "d do all the really fun stuff like pppoe on my lin",
         "ux box also the manual tells you what the default ",
         "password is don t forget to run pppoe over the alc",
-        "atel speedtouch NUMBERi as in my case you have to ",
+        "atel speedtouch =i as in my case you have to ",
         "have a bridge configured in the router modem s sof",
         "tware this lists your vci values etc also does any",
-        "one know if the high end speedtouch with NUMBER et",
+        "one know if the high end speedtouch with = et",
         "hernet ports can act as a full router or do i stil",
         "l need to run a pppoe stack on the linux box regar",
-        "ds vin irish linux users group ilug URL URL for un",
+        "ds vin irish linux users group ilug   for un",
         " subscription information list maintainer listmast",
-        "er URL irish linux users group ilug URL URL for un",
+        "er  irish linux users group ilug   for un",
         " subscription information list maintainer listmast",
-        "er URL \r\n\r\n"
+        "er  \r\n\r\n"
     ),
     concat!(
         "Message-ID: <mid10@foobar.org>\r\nSubject: all is it ",
@@ -764,23 +752,23 @@ pub const HAM: [&str; 10] = [
         "sia and elsewhere coupled with the false emails i ",
         "received myself it s really starting to annoy me a",
         "m i the only one seeing an increase in recent week",
-        "s martin martin whelan déise design URL tel NUMBE",
-        "R NUMBER our core product déiseditor allows organ",
+        "s martin martin whelan déise design  tel NUMBE",
+        "R = our core product déiseditor allows organ",
         "isations to publish information to their web site ",
         "in a fast and cost effective manner there is no ne",
         "ed for a full time web developer as the site can b",
         "e easily updated by the organisations own staff in",
         "stant updates to keep site information fresh sites",
         " which are updated regularly bring users back visi",
-        "t URL for a demonstration déiseditor managing you",
+        "t  for a demonstration déiseditor managing you",
         "r information ____________________________________",
-        "___________ iiu mailing list iiu URL URL ,0\r\n"
+        "___________ iiu mailing list iiu   ,0\r\n"
     ),
 ];
 
 const TEST: [&str; 3] = [
     concat!(
-        "Subject: save up to NUMBER on life insurance\r\n\r\nwhy ",
+        "Subject: save up to = on life insurance\r\n\r\nwhy ",
         "spend more than you have to life quote savings ens",
         "uring your family s financial security is very imp",
         "ortant life quote savings makes buying life insura",
@@ -791,8 +779,8 @@ const TEST: [&str; 3] = [
         " the country on new coverage you can save hundreds",
         " or even thousands of dollars by requesting a free",
         " quote from lifequote savings our service will tak",
-        "e you less than NUMBER minutes to complete shop an",
-        "d compare save up to NUMBER on all types of life i",
+        "e you less than = minutes to complete shop an",
+        "d compare save up to = on all types of life i",
         "nsurance hyperlink click here for your free quote ",
         "protecting your family is the best investment you ",
         "ll ever make if you are in receipt of this email i",
@@ -809,9 +797,9 @@ const TEST: [&str; 3] = [
         "un seems to be the one for that but im not sure if",
         " solaris is a distro of linux or a completely diff",
         "erent operating system can someone explain kiall m",
-        "ac innes irish linux users group ilug URL URL for ",
+        "ac innes irish linux users group ilug   for ",
         "un subscription information list maintainer listma",
-        "ster URL \r\n"
+        "ster  \r\n"
     ),
     concat!(
         "Subject: classifier test\r\n\r\nthis is a novel text tha",

@@ -250,19 +250,17 @@ impl SpamFilterAnalyzeScore for Server {
 
 pub trait ConfidenceStore {
     fn spam_tag(&self) -> &'static str;
-    fn is_certain(&self) -> Option<bool>;
 }
 
 impl ConfidenceStore for f32 {
     fn spam_tag(&self) -> &'static str {
         match *self {
-            p if p < 0.10 => "PROB_HAM_HIGH",
+            p if p < 0.15 => "PROB_HAM_HIGH",
             p if p < 0.25 => "PROB_HAM_MEDIUM",
             p if p < 0.40 => "PROB_HAM_LOW",
-            p if p < 0.50 => "PROB_HAM_UNCERTAIN",
             p if p < 0.60 => "PROB_SPAM_UNCERTAIN",
             p if p < 0.75 => "PROB_SPAM_LOW",
-            p if p < 0.90 => "PROB_SPAM_MEDIUM",
+            p if p < 0.85 => "PROB_SPAM_MEDIUM",
             p => {
                 if p.is_finite() {
                     "PROB_SPAM_HIGH"
@@ -270,14 +268,6 @@ impl ConfidenceStore for f32 {
                     "PROB_SPAM_UNCERTAIN"
                 }
             }
-        }
-    }
-
-    fn is_certain(&self) -> Option<bool> {
-        match *self {
-            p if p < 0.40 => Some(false), // certain ham
-            p if p > 0.60 => Some(true),  // certain spam
-            _ => None,                    // uncertain
         }
     }
 }

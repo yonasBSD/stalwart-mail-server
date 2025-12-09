@@ -7,9 +7,12 @@
 use super::server::tls::{build_self_signed_cert, parse_certificates};
 use crate::{
     CacheSwap, Caches, Data, DavResource, DavResources, MailboxCache, MessageStoreCache,
-    MessageUidCache, SpamClassifier, TlsConnectors,
+    MessageUidCache, TlsConnectors,
     auth::{AccessToken, roles::RolePermissions},
-    config::smtp::resolver::{Policy, Tlsa},
+    config::{
+        smtp::resolver::{Policy, Tlsa},
+        spamfilter::SpamClassifier,
+    },
     listener::blocked::BlockedIps,
     manager::webadmin::WebAdminManager,
 };
