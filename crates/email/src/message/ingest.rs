@@ -993,7 +993,7 @@ impl std::hash::Hash for MergeThreadIds<AHashSet<u32>> {
     }
 }
 
-pub(crate) struct ThreadInfo;
+pub struct ThreadInfo;
 
 impl ThreadInfo {
     pub fn serialize(thread_id: u32, ref_ids: &[CheekyHash]) -> Vec<u8> {

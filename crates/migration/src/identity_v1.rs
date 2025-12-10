@@ -5,7 +5,10 @@
  */
 
 use super::object::Object;
-use crate::object::{FromLegacy, Property, Value};
+use crate::{
+    get_document_ids,
+    object::{FromLegacy, Property, Value},
+};
 use common::Server;
 use email::identity::{EmailAddress, Identity};
 use store::{
@@ -15,10 +18,9 @@ use store::{
 use trc::AddContext;
 use types::{collection::Collection, field::Field};
 
-pub(crate) async fn migrate_identities(server: &Server, account_id: u32) -> trc::Result<u64> {
-    // Obtain email ids
-    let identity_ids = server
-        .get_document_ids(account_id, Collection::Identity)
+pub(crate) async fn migrate_identities_v011(server: &Server, account_id: u32) -> trc::Result<u64> {
+    // Obtain identity ids
+    let identity_ids = get_document_ids(server, account_id, Collection::Identity)
         .await
         .caused_by(trc::location!())?
         .unwrap_or_default();

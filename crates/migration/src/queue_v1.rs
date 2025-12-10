@@ -4,15 +4,19 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::LegacyBincode;
+use crate::{
+    LegacyBincode,
+    queue_v2::{LegacyHostResponse, LegacyQuotaKey},
+};
 use common::{
     Server,
     config::smtp::queue::{DEFAULT_QUEUE_NAME, QueueExpiry, QueueName},
 };
 use smtp::queue::{
-    Error, ErrorDetails, HostResponse, Message, QueueId, QuotaKey, Recipient, Schedule, Status,
+    Error, ErrorDetails, HostResponse, Message, QueueId, Recipient, Schedule, Status,
     UnexpectedResponse,
 };
+use smtp_proto::Response;
 use std::net::{IpAddr, Ipv4Addr};
 use store::{
     IterateParams, SUBSPACE_QUEUE_EVENT, Serialize, U64_LEN, ValueKey,
@@ -272,7 +276,7 @@ where
         Message {
             created: message.created,
             blob_hash: message.blob_hash,
-            return_path: message.return_path_lcase,
+            return_path: message.return_path_lcase.into_boxed_str(),
             recipients: message
                 .recipients
                 .into_iter()
@@ -289,7 +293,14 @@ where
                                 Status::PermanentFailure(migrate_legacy_error(&domain.domain, err))
                             }
                         },
-                        Status::Completed(details) => Status::Completed(details),
+                        Status::Completed(details) => Status::Completed(HostResponse {
+                            hostname: details.hostname.into_boxed_str(),
+                            response: Response {
+                                code: details.response.code,
+                                esc: details.response.esc,
+                                message: details.response.message.into_boxed_str(),
+                            },
+                        }),
                         Status::TemporaryFailure(err) => {
                             Status::TemporaryFailure(migrate_host_response(err))
                         }
@@ -298,7 +309,7 @@ where
                         }
                     };
                     rcpt.flags = r.flags;
-                    rcpt.orcpt = r.orcpt;
+                    rcpt.orcpt = r.orcpt.map(|o| o.into_boxed_str());
                     rcpt.retry = domain.retry.clone();
                     rcpt.notify = domain.notify.clone();
                     rcpt.queue = QueueName::default();
@@ -307,10 +318,10 @@ where
                 })
                 .collect(),
             flags: message.flags,
-            env_id: message.env_id,
+            env_id: message.env_id.map(|e| e.into_boxed_str()),
             priority: message.priority,
             size: message.size.as_u64(),
-            quota_keys: message.quota_keys,
+            quota_keys: message.quota_keys.into_iter().map(Into::into).collect(),
             received_from_ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
             received_via_port: 0,
         }
@@ -339,53 +350,61 @@ impl AsU64 for u64 {
 fn migrate_legacy_error(domain: &str, err: &LegacyError) -> ErrorDetails {
     match err {
         LegacyError::DnsError(err) => ErrorDetails {
-            entity: domain.to_string(),
-            details: Error::DnsError(err.clone()),
+            entity: domain.into(),
+            details: Error::DnsError(err.as_str().into()),
         },
         LegacyError::UnexpectedResponse(err) => ErrorDetails {
-            entity: err.hostname.entity.to_string(),
+            entity: err.hostname.entity.as_str().into(),
             details: Error::UnexpectedResponse(UnexpectedResponse {
-                command: err.hostname.details.clone(),
-                response: err.response.clone(),
+                command: err.hostname.details.as_str().into(),
+                response: Response {
+                    code: err.response.code,
+                    esc: err.response.esc,
+                    message: err.response.message.as_str().into(),
+                },
             }),
         },
         LegacyError::ConnectionError(err) => ErrorDetails {
-            entity: err.entity.to_string(),
-            details: Error::ConnectionError(err.details.clone()),
+            entity: err.entity.as_str().into(),
+            details: Error::ConnectionError(err.details.as_str().into()),
         },
         LegacyError::TlsError(err) => ErrorDetails {
-            entity: err.entity.to_string(),
-            details: Error::TlsError(err.details.clone()),
+            entity: err.entity.as_str().into(),
+            details: Error::TlsError(err.details.as_str().into()),
         },
         LegacyError::DaneError(err) => ErrorDetails {
-            entity: err.entity.to_string(),
-            details: Error::DaneError(err.details.clone()),
+            entity: err.entity.as_str().into(),
+            details: Error::DaneError(err.details.as_str().into()),
         },
         LegacyError::MtaStsError(err) => ErrorDetails {
-            entity: domain.to_string(),
-            details: Error::MtaStsError(err.clone()),
+            entity: domain.into(),
+            details: Error::MtaStsError(err.as_str().into()),
         },
         LegacyError::RateLimited => ErrorDetails {
-            entity: domain.to_string(),
+            entity: domain.into(),
             details: Error::RateLimited,
         },
         LegacyError::ConcurrencyLimited => ErrorDetails {
-            entity: domain.to_string(),
+            entity: domain.into(),
             details: Error::ConcurrencyLimited,
         },
         LegacyError::Io(err) => ErrorDetails {
-            entity: domain.to_string(),
-            details: Error::Io(err.clone()),
+            entity: domain.into(),
+            details: Error::Io(err.as_str().into()),
         },
     }
 }
 
-fn migrate_host_response(response: HostResponse<LegacyErrorDetails>) -> ErrorDetails {
+fn migrate_host_response(response: LegacyHostResponse<LegacyErrorDetails>) -> ErrorDetails {
     ErrorDetails {
-        entity: response.hostname.entity,
+        entity: response.hostname.entity.into_boxed_str(),
         details: Error::UnexpectedResponse(UnexpectedResponse {
-            command: response.hostname.details,
-            response: response.response,
+            command: response.hostname.details.into_boxed_str(),
+            response: Response {
+                code: response.response.code,
+                esc: response.response.esc,
+                message: response.response.message.into_boxed_str(),
+            },
         }),
     }
 }
@@ -419,7 +438,7 @@ pub struct LegacyMessage<SIZE, IDX> {
     pub priority: i16,
 
     pub size: SIZE,
-    pub quota_keys: Vec<QuotaKey>,
+    pub quota_keys: Vec<LegacyQuotaKey>,
 
     #[serde(skip)]
     #[rkyv(with = rkyv::with::Skip)]
@@ -440,7 +459,7 @@ pub struct LegacyRecipient<IDX> {
     pub domain_idx: IDX,
     pub address: String,
     pub address_lcase: String,
-    pub status: Status<HostResponse<String>, HostResponse<LegacyErrorDetails>>,
+    pub status: Status<LegacyHostResponse<String>, LegacyHostResponse<LegacyErrorDetails>>,
     pub flags: u64,
     pub orcpt: Option<String>,
 }
@@ -475,7 +494,7 @@ pub struct LegacyDomain {
 )]
 pub enum LegacyError {
     DnsError(String),
-    UnexpectedResponse(HostResponse<LegacyErrorDetails>),
+    UnexpectedResponse(LegacyHostResponse<LegacyErrorDetails>),
     ConnectionError(LegacyErrorDetails),
     TlsError(LegacyErrorDetails),
     DaneError(LegacyErrorDetails),

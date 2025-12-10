@@ -5,12 +5,15 @@
  */
 
 use super::object::Object;
-use crate::object::{Property, TryFromLegacy, Value};
+use crate::{
+    get_document_ids,
+    object::{Property, TryFromLegacy, Value},
+    v014::SUBSPACE_BITMAP_TEXT,
+};
 use common::Server;
 use email::sieve::{SieveScript, VacationResponse};
 use store::{
-    SUBSPACE_BITMAP_TEXT, SUBSPACE_INDEXES, SUBSPACE_PROPERTY, Serialize, SerializeInfallible,
-    U64_LEN, ValueKey,
+    SUBSPACE_INDEXES, SUBSPACE_PROPERTY, Serialize, SerializeInfallible, U64_LEN, ValueKey,
     write::{
         AlignedBytes, AnyKey, Archive, Archiver, BatchBuilder, ValueClass, key::KeySerializer,
     },
@@ -23,8 +26,7 @@ use types::{
 
 pub(crate) async fn migrate_sieve_v011(server: &Server, account_id: u32) -> trc::Result<u64> {
     // Obtain email ids
-    let script_ids = server
-        .get_document_ids(account_id, Collection::SieveScript)
+    let script_ids = get_document_ids(server, account_id, Collection::SieveScript)
         .await
         .caused_by(trc::location!())?
         .unwrap_or_default();

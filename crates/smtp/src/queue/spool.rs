@@ -90,7 +90,7 @@ impl SmtpSpool for Server {
                 priority: 0,
                 size: 0,
                 blob_hash: Default::default(),
-                quota_keys: Vec::new(),
+                quota_keys: Default::default(),
                 received_from_ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
                 received_via_port: 0,
             },
@@ -417,11 +417,11 @@ impl MessageWrapper {
         for quota_key in &self.message.quota_keys {
             match quota_key {
                 QuotaKey::Count { key, .. } => {
-                    batch.add(ValueClass::Queue(QueueClass::QuotaCount(key.clone())), 1);
+                    batch.add(ValueClass::Queue(QueueClass::QuotaCount(key.to_vec())), 1);
                 }
                 QuotaKey::Size { key, .. } => {
                     batch.add(
-                        ValueClass::Queue(QueueClass::QuotaSize(key.clone())),
+                        ValueClass::Queue(QueueClass::QuotaSize(key.to_vec())),
                         self.message.size as i64,
                     );
                 }
@@ -691,11 +691,11 @@ impl MessageWrapper {
         for quota_key in self.message.quota_keys {
             match quota_key {
                 QuotaKey::Count { key, .. } => {
-                    batch.add(ValueClass::Queue(QueueClass::QuotaCount(key)), -1);
+                    batch.add(ValueClass::Queue(QueueClass::QuotaCount(key.to_vec())), -1);
                 }
                 QuotaKey::Size { key, .. } => {
                     batch.add(
-                        ValueClass::Queue(QueueClass::QuotaSize(key)),
+                        ValueClass::Queue(QueueClass::QuotaSize(key.to_vec())),
                         -(self.message.size as i64),
                     );
                 }

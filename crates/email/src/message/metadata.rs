@@ -127,6 +127,53 @@ pub enum MetadataHeaderName {
     ArcAuthenticationResults,
     ArcMessageSignature,
     ArcSeal,
+
+    // Delivery/Routing
+    DeliveredTo,
+    XOriginalTo,
+    ReturnReceiptTo,
+    DispositionNotificationTo,
+    ErrorsTo,
+
+    // Authentication
+    AuthenticationResults,
+    ReceivedSpf,
+
+    // Spam/Virus
+    XSpamStatus,
+    XSpamScore,
+    XSpamFlag,
+    XSpamResult,
+
+    // Priority
+    Importance,
+    Priority,
+    XPriority,
+    XMSMailPriority,
+
+    // Client/Agent
+    XMailer,
+    UserAgent,
+    XMimeOLE,
+
+    // Network/Origin
+    XOriginatingIp,
+    XForwardedTo,
+    XForwardedFor,
+
+    // Auto-response
+    AutoSubmitted,
+    XAutoResponseSuppress,
+    Precedence,
+
+    // Organization/Threading
+    Organization,
+    ThreadIndex,
+    ThreadTopic,
+
+    // List (additional)
+    ListUnsubscribePost,
+    FeedbackId,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, rkyv::Serialize, rkyv::Deserialize, rkyv::Archive)]
@@ -691,7 +738,57 @@ impl From<HeaderName<'_>> for MetadataHeaderName {
             HeaderName::ArcMessageSignature => MetadataHeaderName::ArcMessageSignature,
             HeaderName::ArcSeal => MetadataHeaderName::ArcSeal,
             HeaderName::Other(value) => {
-                MetadataHeaderName::Other(value.into_owned().into_boxed_str())
+                let name = hashify::tiny_map_ignore_case!(value.as_bytes(),
+                    // Delivery/Routing
+                    "Delivered-To" => MetadataHeaderName::DeliveredTo,
+                    "X-Original-To" => MetadataHeaderName::XOriginalTo,
+                    "Return-Receipt-To" => MetadataHeaderName::ReturnReceiptTo,
+                    "Disposition-Notification-To" => MetadataHeaderName::DispositionNotificationTo,
+                    "Errors-To" => MetadataHeaderName::ErrorsTo,
+
+                    // Authentication
+                    "Authentication-Results" => MetadataHeaderName::AuthenticationResults,
+                    "Received-SPF" => MetadataHeaderName::ReceivedSpf,
+
+                    // Spam/Virus
+                    "X-Spam-Status" => MetadataHeaderName::XSpamStatus,
+                    "X-Spam-Score" => MetadataHeaderName::XSpamScore,
+                    "X-Spam-Flag" => MetadataHeaderName::XSpamFlag,
+                    "X-Spam-Result" => MetadataHeaderName::XSpamResult,
+
+                    // Priority
+                    "Importance" => MetadataHeaderName::Importance,
+                    "Priority" => MetadataHeaderName::Priority,
+                    "X-Priority" => MetadataHeaderName::XPriority,
+                    "X-MSMail-Priority" => MetadataHeaderName::XMSMailPriority,
+
+                    // Client/Agent
+                    "X-Mailer" => MetadataHeaderName::XMailer,
+                    "User-Agent" => MetadataHeaderName::UserAgent,
+                    "X-MimeOLE" => MetadataHeaderName::XMimeOLE,
+
+                    // Network/Origin
+                    "X-Originating-IP" => MetadataHeaderName::XOriginatingIp,
+                    "X-Forwarded-To" => MetadataHeaderName::XForwardedTo,
+                    "X-Forwarded-For" => MetadataHeaderName::XForwardedFor,
+
+                    // Auto-response
+                    "Auto-Submitted" => MetadataHeaderName::AutoSubmitted,
+                    "X-Auto-Response-Suppress" => MetadataHeaderName::XAutoResponseSuppress,
+                    "Precedence" => MetadataHeaderName::Precedence,
+
+                    // Organization/Threading
+                    "Organization" => MetadataHeaderName::Organization,
+                    "Thread-Index" => MetadataHeaderName::ThreadIndex,
+                    "Thread-Topic" => MetadataHeaderName::ThreadTopic,
+
+                    // List (additional)
+                    "List-Unsubscribe-Post" => MetadataHeaderName::ListUnsubscribePost,
+                    "Feedback-ID" => MetadataHeaderName::FeedbackId,
+                );
+                name.unwrap_or_else(|| {
+                    MetadataHeaderName::Other(value.into_owned().into_boxed_str())
+                })
             }
             other => MetadataHeaderName::Other(other.as_str().to_string().into_boxed_str()),
         }
@@ -787,6 +884,7 @@ impl ArchivedMessageMetadataContents {
     }
 }
 
+#[derive(Default)]
 pub struct MessageDataBuilder {
     pub mailboxes: Vec<UidMailbox>,
     pub keywords: Vec<Keyword>,
@@ -1086,6 +1184,35 @@ impl ArchivedMetadataHeaderName {
             ArchivedMetadataHeaderName::ArcMessageSignature => "ARC-Message-Signature",
             ArchivedMetadataHeaderName::ArcSeal => "ARC-Seal",
             ArchivedMetadataHeaderName::DkimSignature => "DKIM-Signature",
+            ArchivedMetadataHeaderName::DeliveredTo => "Delivered-To",
+            ArchivedMetadataHeaderName::XOriginalTo => "X-Original-To",
+            ArchivedMetadataHeaderName::ReturnReceiptTo => "Return-Receipt-To",
+            ArchivedMetadataHeaderName::DispositionNotificationTo => "Disposition-Notification-To",
+            ArchivedMetadataHeaderName::ErrorsTo => "Errors-To",
+            ArchivedMetadataHeaderName::AuthenticationResults => "Authentication-Results",
+            ArchivedMetadataHeaderName::ReceivedSpf => "Received-SPF",
+            ArchivedMetadataHeaderName::XSpamStatus => "X-Spam-Status",
+            ArchivedMetadataHeaderName::XSpamScore => "X-Spam-Score",
+            ArchivedMetadataHeaderName::XSpamFlag => "X-Spam-Flag",
+            ArchivedMetadataHeaderName::XSpamResult => "X-Spam-Result",
+            ArchivedMetadataHeaderName::Importance => "Importance",
+            ArchivedMetadataHeaderName::Priority => "Priority",
+            ArchivedMetadataHeaderName::XPriority => "X-Priority",
+            ArchivedMetadataHeaderName::XMSMailPriority => "X-MSMail-Priority",
+            ArchivedMetadataHeaderName::XMailer => "X-Mailer",
+            ArchivedMetadataHeaderName::UserAgent => "User-Agent",
+            ArchivedMetadataHeaderName::XMimeOLE => "X-MimeOLE",
+            ArchivedMetadataHeaderName::XOriginatingIp => "X-Originating-IP",
+            ArchivedMetadataHeaderName::XForwardedTo => "X-Forwarded-To",
+            ArchivedMetadataHeaderName::XForwardedFor => "X-Forwarded-For",
+            ArchivedMetadataHeaderName::AutoSubmitted => "Auto-Submitted",
+            ArchivedMetadataHeaderName::XAutoResponseSuppress => "X-Auto-Response-Suppress",
+            ArchivedMetadataHeaderName::Precedence => "Precedence",
+            ArchivedMetadataHeaderName::Organization => "Organization",
+            ArchivedMetadataHeaderName::ThreadIndex => "Thread-Index",
+            ArchivedMetadataHeaderName::ThreadTopic => "Thread-Topic",
+            ArchivedMetadataHeaderName::ListUnsubscribePost => "List-Unsubscribe-Post",
+            ArchivedMetadataHeaderName::FeedbackId => "Feedback-ID",
             ArchivedMetadataHeaderName::Other(name) => name.as_ref(),
         }
     }

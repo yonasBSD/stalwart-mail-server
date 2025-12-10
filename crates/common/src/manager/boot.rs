@@ -14,7 +14,10 @@ use crate::{
     Caches, Core, Data, IPC_CHANNEL_BUFFER, Inner, Ipc,
     config::{network::AsnGeoLookupConfig, server::Listeners, telemetry::Telemetry},
     core::BuildServer,
-    ipc::{BroadcastEvent, HousekeeperEvent, PushEvent, QueueEvent, ReportingEvent},
+    ipc::{
+        BroadcastEvent, HousekeeperEvent, PushEvent, QueueEvent, ReportingEvent,
+        TrainTaskController,
+    },
 };
 use arc_swap::ArcSwap;
 use pwhash::sha512_crypt;
@@ -562,6 +565,7 @@ pub fn build_ipc(has_pubsub: bool) -> (Ipc, IpcReceivers) {
             report_tx,
             broadcast_tx: has_pubsub.then_some(broadcast_tx),
             task_tx: Arc::new(Notify::new()),
+            train_task_controller: Arc::new(TrainTaskController::default()),
         },
         IpcReceivers {
             push_rx: Some(push_rx),

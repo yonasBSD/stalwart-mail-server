@@ -7,8 +7,8 @@
 use common::Server;
 use email::push::{Keys, PushSubscription, PushSubscriptions};
 use store::{
-    Serialize,
-    write::{Archiver, BatchBuilder, now},
+    Serialize, ValueKey,
+    write::{AlignedBytes, Archive, Archiver, BatchBuilder, now},
 };
 use trc::AddContext;
 use types::{
@@ -18,13 +18,14 @@ use types::{
 };
 use utils::map::bitmap::Bitmap;
 
+use crate::get_document_ids;
+
 pub(crate) async fn migrate_push_subscriptions_v013(
     server: &Server,
     account_id: u32,
 ) -> trc::Result<u64> {
     // Obtain email ids
-    let push_ids = server
-        .get_document_ids(account_id, Collection::PushSubscription)
+    let push_ids = get_document_ids(server, account_id, Collection::PushSubscription)
         .await
         .caused_by(trc::location!())?
         .unwrap_or_default();
@@ -78,10 +79,9 @@ pub(crate) async fn migrate_push_subscriptions_v013(
         // Delete archived and document ids
         batch
             .with_account_id(account_id)
-            .with_collection(Collection::PushSubscription)
-            .create_document(account_id);
+            .with_collection(Collection::PushSubscription);
         for subscription in &subscriptions {
-            batch.delete_document(subscription.id).clear(Field::ARCHIVE);
+            batch.with_document(subscription.id).clear(Field::ARCHIVE);
         }
 
         subscriptions.retain(|s| s.verified && s.expires > now);
@@ -89,8 +89,9 @@ pub(crate) async fn migrate_push_subscriptions_v013(
         if !subscriptions.is_empty() {
             batch
                 .with_account_id(u32::MAX)
-                .with_collection(Collection::PushSubscription)
-                .create_document(account_id)
+                .with_collection(Collection::Principal)
+                .with_document(account_id)
+                .tag(PrincipalField::PushSubscriptions)
                 .with_account_id(account_id)
                 .with_collection(Collection::Principal)
                 .with_document(0)

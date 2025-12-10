@@ -742,7 +742,7 @@ impl<T: SessionStream> Session<T> {
             size: 0,
             env_id: mail_from.dsn_info.map(|i| i.into_boxed_str()),
             blob_hash: Default::default(),
-            quota_keys: Vec::new(),
+            quota_keys: Default::default(),
             received_from_ip: self.data.remote_ip,
             received_via_port: self.data.local_port,
         };

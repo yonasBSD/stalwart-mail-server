@@ -4,55 +4,67 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-/*use crate::{
-    queue::{migrate_queue_v011, migrate_queue_v012},
+use crate::{
+    queue_v1::{migrate_queue_v011, migrate_queue_v012},
     v011::migrate_v0_11,
     v012::migrate_v0_12,
     v013::migrate_v0_13,
-};*/
+    v014::SUBSPACE_BITMAP_ID,
+};
 use common::{DATABASE_SCHEMA_VERSION, Server, manager::boot::DEFAULT_SETTINGS};
 use std::time::Duration;
 use store::{
     Deserialize, IterateParams, SUBSPACE_PROPERTY, SUBSPACE_QUEUE_MESSAGE, SUBSPACE_REPORT_IN,
     SUBSPACE_REPORT_OUT, SUBSPACE_SETTINGS, SerializeInfallible, U32_LEN, Value, ValueKey,
     dispatch::DocumentSet,
-    write::{AnyClass, AnyKey, BatchBuilder, ValueClass, key::DeserializeBigEndian},
+    roaring::RoaringBitmap,
+    write::{
+        AnyClass, AnyKey, BatchBuilder, ValueClass,
+        key::{DeserializeBigEndian, KeySerializer},
+    },
 };
 use trc::AddContext;
 use types::collection::Collection;
 
-/*pub mod addressbook_v2;
+pub mod addressbook_v2;
+pub mod blob;
 pub mod calendar_v2;
 pub mod changelog;
 pub mod contact_v2;
-pub mod email;
-pub mod encryption;
+pub mod email_v1;
+pub mod email_v2;
+pub mod encryption_v1;
+pub mod encryption_v2;
 pub mod event_v1;
 pub mod event_v2;
-pub mod identity;
+pub mod identity_v1;
+pub mod identity_v2;
 pub mod mailbox;
 pub mod object;
 pub mod principal_v1;
 pub mod principal_v2;
 pub mod push_v1;
 pub mod push_v2;
-pub mod queue;
+pub mod queue_v1;
+pub mod queue_v2;
 pub mod report;
 pub mod sieve_v1;
 pub mod sieve_v2;
 pub mod submission;
-pub mod tasks;
+pub mod tasks_v1;
+pub mod tasks_v2;
 pub mod threads;
 pub mod v011;
 pub mod v012;
-pub mod v013;*/
+pub mod v013;
+pub mod v014;
 
 const LOCK_WAIT_TIME_ACCOUNT: u64 = 3 * 60;
 const LOCK_WAIT_TIME_CORE: u64 = 5 * 60;
 const LOCK_RETRY_TIME: Duration = Duration::from_secs(30);
 
 pub async fn try_migrate(server: &Server) -> trc::Result<()> {
-    /*if let Some(version) = std::env::var("FORCE_MIGRATE_QUEUE")
+    if let Some(version) = std::env::var("FORCE_MIGRATE_QUEUE")
         .ok()
         .and_then(|s| s.parse::<u32>().ok())
     {
@@ -170,7 +182,7 @@ pub async fn try_migrate(server: &Server) -> trc::Result<()> {
         .store()
         .write(batch.build_all())
         .await
-        .caused_by(trc::location!())?;*/
+        .caused_by(trc::location!())?;
 
     Ok(())
 }
@@ -267,6 +279,62 @@ where
                 .id(property.to_string())
         })
         .map(|_| results)
+}
+
+pub async fn get_document_ids(
+    server: &Server,
+    account_id: u32,
+    collection: Collection,
+) -> trc::Result<Option<RoaringBitmap>> {
+    let collection: u8 = collection.into();
+    get_bitmap(
+        server,
+        AnyKey {
+            subspace: SUBSPACE_BITMAP_ID,
+            key: KeySerializer::new(U32_LEN + 1)
+                .write(account_id)
+                .write(collection)
+                .write(0u32)
+                .finalize(),
+        },
+        AnyKey {
+            subspace: SUBSPACE_BITMAP_ID,
+            key: KeySerializer::new(U32_LEN + 1)
+                .write(account_id)
+                .write(collection)
+                .write(u32::MAX)
+                .finalize(),
+        },
+    )
+    .await
+}
+
+pub async fn get_bitmap(
+    server: &Server,
+    from_key: AnyKey<Vec<u8>>,
+    to_key: AnyKey<Vec<u8>>,
+) -> trc::Result<Option<RoaringBitmap>> {
+    let mut results = RoaringBitmap::new();
+    server
+        .core
+        .storage
+        .data
+        .iterate(
+            IterateParams::new(from_key, to_key).no_values(),
+            |key, _| {
+                results.insert(key.deserialize_be_u32(key.len() - U32_LEN)?);
+                Ok(true)
+            },
+        )
+        .await
+        .caused_by(trc::location!())
+        .map(|_| {
+            if !results.is_empty() {
+                Some(results)
+            } else {
+                None
+            }
+        })
 }
 
 pub struct LegacyBincode<T: serde::de::DeserializeOwned> {

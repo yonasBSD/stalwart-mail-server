@@ -164,7 +164,7 @@ async fn strategies() {
         env_id: None,
         priority: 0,
         size: 978,
-        quota_keys: vec![],
+        quota_keys: Default::default(),
     };
 
     assert_eq!(

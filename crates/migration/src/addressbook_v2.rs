@@ -7,11 +7,13 @@
 use common::Server;
 use groupware::contact::{AddressBook, AddressBookPreferences};
 use store::{
-    Serialize,
-    write::{Archiver, BatchBuilder, serialize::rkyv_deserialize},
+    Serialize, ValueKey,
+    write::{AlignedBytes, Archive, Archiver, BatchBuilder, serialize::rkyv_deserialize},
 };
 use trc::AddContext;
 use types::{acl::AclGrant, collection::Collection, dead_property::DeadProperty, field::Field};
+
+use crate::get_document_ids;
 
 #[derive(
     rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
@@ -31,8 +33,7 @@ pub struct AddressBookV2 {
 }
 
 pub(crate) async fn migrate_addressbook_v013(server: &Server, account_id: u32) -> trc::Result<u64> {
-    let document_ids = server
-        .get_document_ids(account_id, Collection::AddressBook)
+    let document_ids = get_document_ids(server, account_id, Collection::AddressBook)
         .await
         .caused_by(trc::location!())?
         .unwrap_or_default();

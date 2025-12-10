@@ -96,6 +96,17 @@ impl SpamClassifier for Server {
             return Ok(());
         };
 
+        let _permit = self
+            .inner
+            .ipc
+            .train_task_controller
+            .try_run()
+            .ok_or_else(|| {
+                trc::EventType::Spam(SpamEvent::TrainCompleted)
+                    .reason("Spam training task is already running")
+                    .caused_by(trc::location!())
+            })?;
+
         let started = Instant::now();
         trc::event!(Spam(SpamEvent::TrainStarted));
 
@@ -279,7 +290,16 @@ impl SpamClassifier for Server {
         samples.shuffle(&mut StdRng::seed_from_u64(42));
 
         // Spawn training task
-        let task = trainer.trainer.spawn(config.num_epochs)?;
+        let epochs = match trainer.reservoir.ham.total_seen
+            + trainer.reservoir.spam.total_seen
+            + spam_count as u64
+            + ham_count as u64
+        {
+            0..=2500 => 3,       // Bootstrap
+            2_501..=10_000 => 2, // Refinement
+            _ => 1,              // Full online training
+        };
+        let task = trainer.trainer.spawn(epochs)?;
         let is_fh = matches!(task, TrainTask::Fh { .. });
 
         // Train
@@ -345,6 +365,17 @@ impl SpamClassifier for Server {
                             sample.is_spam,
                         ));
                     }
+                }
+
+                // Look for stop requests
+                if self.inner.ipc.train_task_controller.should_stop() {
+                    trc::event!(
+                        Spam(SpamEvent::TrainCompleted),
+                        Reason = "Training task was stopped",
+                        Total = fh_samples.len() + ccfh_samples.len(),
+                        Elapsed = started.elapsed()
+                    );
+                    return Ok(());
                 }
             }
 

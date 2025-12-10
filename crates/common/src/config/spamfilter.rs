@@ -82,7 +82,6 @@ pub enum SpamFilterAction<T> {
 pub struct ClassifierConfig {
     pub w_params: FtrlParameters,
     pub i_params: Option<FtrlParameters>,
-    pub num_epochs: usize,
     pub reservoir_capacity: usize,
     pub min_ham_samples: u64,
     pub min_spam_samples: u64,
@@ -474,9 +473,6 @@ impl ClassifierConfig {
         ClassifierConfig {
             w_params,
             i_params,
-            num_epochs: config
-                .property_or_default("spam-filter.classifier.training.epochs", "3")
-                .unwrap_or(3),
             reservoir_capacity: config
                 .property_or_default("spam-filter.classifier.reservoir-capacity", "1024")
                 .unwrap_or(1024),

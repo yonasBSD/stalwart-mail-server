@@ -47,7 +47,11 @@ impl MailboxFnc for Server {
                 SpecialUse::Drafts => DRAFTS_ID,
                 SpecialUse::Sent => SENT_ID,
                 SpecialUse::Archive => ARCHIVE_ID,
-                SpecialUse::None | SpecialUse::Important => {
+                SpecialUse::None
+                | SpecialUse::Important
+                | SpecialUse::Memos
+                | SpecialUse::Scheduled
+                | SpecialUse::Snoozed => {
                     last_document_id += 1;
                     last_document_id
                 }

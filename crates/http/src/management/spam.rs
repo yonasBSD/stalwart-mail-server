@@ -21,6 +21,7 @@ use serde_json::json;
 use spam_filter::{
     SpamFilterInput,
     analysis::{init::SpamFilterInit, score::SpamFilterAnalyzeScore},
+    modules::classifier::SpamClassifier,
 };
 use std::future::Future;
 use std::net::IpAddr;
@@ -137,14 +138,42 @@ impl ManageSpamHandler for Server {
                 }))
                 .into_http_response())
             }
-            (Some("train"), _, &Method::GET) => {
+            (Some("train"), request, &Method::GET) => {
                 // Validate the access token
                 access_token.assert_has_permission(Permission::SpamFilterTrain)?;
 
-                let todo = "implement";
+                let result = match request {
+                    Some("start") | Some("reset") => {
+                        if !self.inner.ipc.train_task_controller.is_running() {
+                            let reset = matches!(request, Some("reset"));
+                            let server = self.clone();
+                            tokio::spawn(async move {
+                                if let Err(err) = server.spam_train(reset).await {
+                                    trc::error!(err.caused_by(trc::location!()));
+                                }
+                            });
+
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    Some("stop") => {
+                        if self.inner.ipc.train_task_controller.is_running() {
+                            self.inner.ipc.train_task_controller.stop();
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    Some("status") => self.inner.ipc.train_task_controller.is_running(),
+                    _ => {
+                        return Err(trc::ResourceEvent::NotFound.into_err());
+                    }
+                };
 
                 Ok(JsonResponse::new(json!({
-                    "data": (),
+                    "data": result,
                 }))
                 .into_http_response())
             }

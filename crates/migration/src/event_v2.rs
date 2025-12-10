@@ -9,11 +9,13 @@ use groupware::calendar::{
     Alarm, CalendarEvent, CalendarEventData, CalendarEventNotification, ComponentTimeRange,
 };
 use store::{
-    Serialize,
-    write::{Archiver, BatchBuilder, serialize::rkyv_deserialize},
+    Serialize, ValueKey,
+    write::{AlignedBytes, Archive, Archiver, BatchBuilder, serialize::rkyv_deserialize},
 };
 use trc::AddContext;
 use types::{collection::Collection, dead_property::DeadProperty, field::Field};
+
+use crate::get_document_ids;
 
 #[derive(
     rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
@@ -67,8 +69,7 @@ pub(crate) async fn migrate_calendar_events_v013(
     server: &Server,
     account_id: u32,
 ) -> trc::Result<u64> {
-    let document_ids = server
-        .get_document_ids(account_id, Collection::CalendarEvent)
+    let document_ids = get_document_ids(server, account_id, Collection::CalendarEvent)
         .await
         .caused_by(trc::location!())?
         .unwrap_or_default();
@@ -146,8 +147,7 @@ pub(crate) async fn migrate_calendar_scheduling_v013(
     server: &Server,
     account_id: u32,
 ) -> trc::Result<u64> {
-    let document_ids = server
-        .get_document_ids(account_id, Collection::CalendarEventNotification)
+    let document_ids = get_document_ids(server, account_id, Collection::CalendarEventNotification)
         .await
         .caused_by(trc::location!())?
         .unwrap_or_default();

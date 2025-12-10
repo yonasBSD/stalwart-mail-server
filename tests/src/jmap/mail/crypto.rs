@@ -43,10 +43,12 @@ pub async fn test(params: &mut JMAPTest) {
                 EncryptionMethod::PGP => EncryptionType::PGP {
                     algo,
                     certs: certs.clone(),
+                    allow_spam_training: true,
                 },
                 EncryptionMethod::SMIME => EncryptionType::SMIME {
                     algo,
                     certs: certs.clone(),
+                    allow_spam_training: true,
                 },
             };
 

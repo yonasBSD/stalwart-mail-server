@@ -6,8 +6,12 @@
 
 use common::Server;
 use store::{
-    IterateParams, SUBSPACE_TASK_QUEUE, ValueKey,
-    write::{AnyClass, BatchBuilder, TaskQueueClass, ValueClass, key::DeserializeBigEndian, now},
+    IterateParams, SUBSPACE_TASK_QUEUE, U64_LEN, ValueKey,
+    write::{
+        AnyClass, BatchBuilder, ValueClass,
+        key::{DeserializeBigEndian, KeySerializer},
+        now,
+    },
 };
 use trc::AddContext;
 
@@ -16,13 +20,19 @@ pub(crate) async fn migrate_tasks_v011(server: &Server) -> trc::Result<()> {
         account_id: 0,
         collection: 0,
         document_id: 0,
-        class: ValueClass::TaskQueue(TaskQueueClass::IndexEmail { due: 0 }),
+        class: ValueClass::Any(AnyClass {
+            subspace: SUBSPACE_TASK_QUEUE,
+            key: KeySerializer::new(U64_LEN).write(0u64).finalize(),
+        }),
     };
     let to_key = ValueKey::<ValueClass> {
         account_id: u32::MAX,
         collection: u8::MAX,
         document_id: u32::MAX,
-        class: ValueClass::TaskQueue(TaskQueueClass::IndexEmail { due: u64::MAX }),
+        class: ValueClass::Any(AnyClass {
+            subspace: SUBSPACE_TASK_QUEUE,
+            key: KeySerializer::new(U64_LEN).write(u64::MAX).finalize(),
+        }),
     };
 
     let now = now();

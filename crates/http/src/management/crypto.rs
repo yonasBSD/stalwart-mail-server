@@ -7,8 +7,8 @@
 use common::{Server, auth::AccessToken};
 use directory::backend::internal::manage;
 use email::message::crypto::{
-    EncryptMessage, EncryptMessageError, EncryptionMethod, EncryptionParams, EncryptionType,
-    try_parse_certs,
+    ENCRYPT_TRAIN_SPAM_FILTER, EncryptMessage, EncryptMessageError, EncryptionMethod,
+    EncryptionParams, EncryptionType, try_parse_certs,
 };
 use http_proto::*;
 use mail_builder::encoders::base64::base64_encode_mime;
@@ -52,6 +52,7 @@ impl CryptoHandler for Server {
                 .caused_by(trc::location!())?;
             let algo = params.algo();
             let method = params.method();
+            let allow_spam_training = params.can_train_spam_filter();
             let mut certs = Vec::new();
             certs.extend_from_slice(b"-----STALWART CERTIFICATE-----\r\n");
             let _ = base64_encode_mime(&params_.into_inner(), &mut certs, false);
@@ -59,8 +60,16 @@ impl CryptoHandler for Server {
             let certs = String::from_utf8(certs).unwrap_or_default();
 
             match method {
-                EncryptionMethod::PGP => EncryptionType::PGP { algo, certs },
-                EncryptionMethod::SMIME => EncryptionType::SMIME { algo, certs },
+                EncryptionMethod::PGP => EncryptionType::PGP {
+                    algo,
+                    certs,
+                    allow_spam_training,
+                },
+                EncryptionMethod::SMIME => EncryptionType::SMIME {
+                    algo,
+                    certs,
+                    allow_spam_training,
+                },
             }
         } else {
             EncryptionType::Disabled
@@ -80,9 +89,17 @@ impl CryptoHandler for Server {
         let request = serde_json::from_slice::<EncryptionType>(body.as_deref().unwrap_or_default())
             .map_err(|err| trc::ResourceEvent::BadParameters.into_err().reason(err))?;
 
-        let (method, algo, mut certs) = match request {
-            EncryptionType::PGP { algo, certs } => (EncryptionMethod::PGP, algo, certs),
-            EncryptionType::SMIME { algo, certs } => (EncryptionMethod::SMIME, algo, certs),
+        let (method, algo, mut certs, allow_spam_training) = match request {
+            EncryptionType::PGP {
+                algo,
+                certs,
+                allow_spam_training,
+            } => (EncryptionMethod::PGP, algo, certs, allow_spam_training),
+            EncryptionType::SMIME {
+                algo,
+                certs,
+                allow_spam_training,
+            } => (EncryptionMethod::SMIME, algo, certs, allow_spam_training),
             EncryptionType::Disabled => {
                 // Disable encryption at rest
                 let mut batch = BatchBuilder::new();
@@ -110,12 +127,17 @@ impl CryptoHandler for Server {
         }
 
         // Parse certificates
-        let todo = "fetch privacy spam train";
         let certs = try_parse_certs(method, certs.into_bytes())
             .map_err(|err| manage::error(err, None::<u32>))?;
         let num_certs = certs.len();
         let params = Archiver::new(EncryptionParams {
-            flags: method.flags() | algo.flags(),
+            flags: method.flags()
+                | algo.flags()
+                | if allow_spam_training {
+                    ENCRYPT_TRAIN_SPAM_FILTER
+                } else {
+                    0
+                },
             certs,
         })
         .serialize()

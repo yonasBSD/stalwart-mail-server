@@ -13,13 +13,15 @@ use store::{
 use trc::AddContext;
 use types::{collection::Collection, field::PrincipalField};
 
-pub(crate) async fn migrate_encryption_params(
+use crate::encryption_v2::LegacyEncryptionParams;
+
+pub(crate) async fn migrate_encryption_params_v011(
     server: &Server,
     account_id: u32,
 ) -> trc::Result<u64> {
     match server
         .store()
-        .get_value::<LegacyEncryptionParams>(ValueKey {
+        .get_value::<VeryOldLegacyEncryptionParams>(ValueKey {
             account_id,
             collection: Collection::Principal.into(),
             document_id: 0,
@@ -35,7 +37,7 @@ pub(crate) async fn migrate_encryption_params(
                 .with_document(0)
                 .set(
                     PrincipalField::EncryptionKeys,
-                    Archiver::new(legacy.0)
+                    Archiver::new(EncryptionParams::from(legacy.0))
                         .serialize()
                         .caused_by(trc::location!())?,
                 );
@@ -67,16 +69,16 @@ pub(crate) async fn migrate_encryption_params(
     Ok(0)
 }
 
-struct LegacyEncryptionParams(EncryptionParams);
+struct VeryOldLegacyEncryptionParams(LegacyEncryptionParams);
 
-impl Deserialize for LegacyEncryptionParams {
+impl Deserialize for VeryOldLegacyEncryptionParams {
     fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
         let version = *bytes
             .first()
             .ok_or_else(|| trc::StoreEvent::DataCorruption.caused_by(trc::location!()))?;
         match version {
             1 if bytes.len() > 1 => bincode::deserialize(&bytes[1..])
-                .map(LegacyEncryptionParams)
+                .map(VeryOldLegacyEncryptionParams)
                 .map_err(|err| {
                     trc::EventType::Store(trc::StoreEvent::DeserializeError)
                         .reason(err)

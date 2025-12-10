@@ -7,8 +7,8 @@
 use common::Server;
 use email::sieve::{SieveScript, VacationResponse};
 use store::{
-    Serialize, SerializeInfallible,
-    write::{Archiver, BatchBuilder},
+    Serialize, SerializeInfallible, ValueKey,
+    write::{AlignedBytes, Archive, Archiver, BatchBuilder},
 };
 use trc::AddContext;
 use types::{
@@ -17,10 +17,11 @@ use types::{
     field::{Field, PrincipalField},
 };
 
+use crate::get_document_ids;
+
 pub(crate) async fn migrate_sieve_v013(server: &Server, account_id: u32) -> trc::Result<u64> {
     // Obtain email ids
-    let script_ids = server
-        .get_document_ids(account_id, Collection::SieveScript)
+    let script_ids = get_document_ids(server, account_id, Collection::SieveScript)
         .await
         .caused_by(trc::location!())?
         .unwrap_or_default();

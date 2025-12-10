@@ -329,6 +329,9 @@ fn attr_to_role(attr: Attribute) -> SpecialUse {
         Attribute::Sent => SpecialUse::Sent,
         Attribute::Trash => SpecialUse::Trash,
         Attribute::Important => SpecialUse::Important,
+        Attribute::Memos => SpecialUse::Memos,
+        Attribute::Scheduled => SpecialUse::Scheduled,
+        Attribute::Snoozed => SpecialUse::Snoozed,
         _ => SpecialUse::None,
     }
 }

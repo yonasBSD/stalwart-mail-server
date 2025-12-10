@@ -22,14 +22,14 @@ use crate::{
     calendar_v2::migrate_calendar_v013,
     contact_v2::migrate_contacts_v013,
     event_v2::{migrate_calendar_events_v013, migrate_calendar_scheduling_v013},
+    get_document_ids,
     push_v2::migrate_push_subscriptions_v013,
     sieve_v2::migrate_sieve_v013,
 };
 
 pub(crate) async fn migrate_principals_v0_13(server: &Server) -> trc::Result<RoaringBitmap> {
     // Obtain email ids
-    let principal_ids = server
-        .get_document_ids(u32::MAX, Collection::Principal)
+    let principal_ids = get_document_ids(server, u32::MAX, Collection::Principal)
         .await
         .caused_by(trc::location!())?
         .unwrap_or_default();

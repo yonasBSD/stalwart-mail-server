@@ -68,7 +68,7 @@ pub struct Message {
     pub priority: i16,
 
     pub size: u64,
-    pub quota_keys: Vec<QuotaKey>,
+    pub quota_keys: Box<[QuotaKey]>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -91,8 +91,8 @@ pub struct MessageWrapper {
     serde::Deserialize,
 )]
 pub enum QuotaKey {
-    Size { key: Vec<u8>, id: u64 },
-    Count { key: Vec<u8>, id: u64 },
+    Size { key: Box<[u8]>, id: u64 },
+    Count { key: Box<[u8]>, id: u64 },
 }
 
 #[derive(

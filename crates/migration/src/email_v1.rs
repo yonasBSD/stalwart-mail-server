@@ -5,28 +5,25 @@
  */
 
 use super::{LegacyBincode, get_properties};
+use crate::{email_v2::LegacyKeyword, get_bitmap, get_document_ids, v014::SUBSPACE_BITMAP_TAG};
 use common::Server;
 use email::{
     mailbox::UidMailbox,
-    message::{
-        index::{MAX_ID_LENGTH, VisitText},
-        metadata::{
-            MessageData, MessageMetadata, MessageMetadataContents, MessageMetadataPart,
-            MetadataPartType,
-        },
+    message::metadata::{
+        MESSAGE_HAS_ATTACHMENT, MESSAGE_RECEIVED_MASK, MessageDataBuilder, MessageMetadata,
+        MessageMetadataContents, MessageMetadataPart, MetadataHeader, MetadataPartType,
+        PART_ENCODING_BASE64, PART_ENCODING_PROBLEM, PART_ENCODING_QP, PART_SIZE_MASK,
     },
 };
 use mail_parser::{
-    Address, Attribute, ContentType, DateTime, Encoding, Header, HeaderName, HeaderValue, Received,
+    Address, Attribute, ContentType, DateTime, Encoding, HeaderName, HeaderValue, Received,
 };
 use std::{borrow::Cow, collections::VecDeque};
 use store::{
-    BitmapKey, Deserialize, SUBSPACE_BITMAP_TAG, SUBSPACE_INDEXES, SUBSPACE_PROPERTY, Serialize,
-    U64_LEN, ValueKey,
+    Deserialize, SUBSPACE_INDEXES, SUBSPACE_PROPERTY, Serialize, U32_LEN, U64_LEN, ValueKey,
     ahash::AHashMap,
     write::{
-        AlignedBytes, AnyKey, Archive, Archiver, BatchBuilder, BitmapClass, TagValue, ValueClass,
-        key::KeySerializer,
+        AlignedBytes, AnyKey, Archive, Archiver, BatchBuilder, ValueClass, key::KeySerializer,
     },
 };
 use trc::AddContext;
@@ -41,14 +38,13 @@ use utils::codec::leb128::Leb128Iterator;
 const FIELD_KEYWORDS: u8 = 4;
 const FIELD_THREAD_ID: u8 = 33;
 const FIELD_CID: u8 = 76;
-const FIELD_MAILBOX_IDS: u8 = 7;
+pub(crate) const FIELD_MAILBOX_IDS: u8 = 7;
 
 const BM_MARKER: u8 = 1 << 7;
 
-pub(crate) async fn migrate_emails(server: &Server, account_id: u32) -> trc::Result<u64> {
+pub(crate) async fn migrate_emails_v011(server: &Server, account_id: u32) -> trc::Result<u64> {
     // Obtain email ids
-    let mut message_ids = server
-        .get_document_ids(account_id, Collection::Email)
+    let mut message_ids = get_document_ids(server, account_id, Collection::Email)
         .await
         .caused_by(trc::location!())?
         .unwrap_or_default();
@@ -56,22 +52,33 @@ pub(crate) async fn migrate_emails(server: &Server, account_id: u32) -> trc::Res
     if num_emails == 0 {
         return Ok(0);
     }
-    let tombstoned_ids = server
-        .store()
-        .get_bitmap(BitmapKey {
-            account_id,
-            collection: Collection::Email.into(),
-            class: BitmapClass::Tag {
-                field: FIELD_MAILBOX_IDS,
-                value: TagValue::Id(u32::MAX - 1),
-            },
-            document_id: 0,
-        })
-        .await
-        .caused_by(trc::location!())?
-        .unwrap_or_default();
+    let tombstoned_ids = get_bitmap(
+        server,
+        AnyKey {
+            subspace: SUBSPACE_BITMAP_TAG,
+            key: KeySerializer::new(U64_LEN + U32_LEN + 1)
+                .write(account_id)
+                .write(u8::from(Collection::Email))
+                .write(FIELD_MAILBOX_IDS)
+                .write_leb128(u32::MAX - 1)
+                .finalize(),
+        },
+        AnyKey {
+            subspace: SUBSPACE_BITMAP_TAG,
+            key: KeySerializer::new(U64_LEN + U32_LEN + 1)
+                .write(account_id)
+                .write(u8::from(Collection::Email))
+                .write(FIELD_MAILBOX_IDS)
+                .write_leb128(u32::MAX - 1)
+                .finalize(),
+        },
+    )
+    .await
+    .caused_by(trc::location!())?
+    .unwrap_or_default();
 
-    let mut message_data: AHashMap<u32, MessageData> = AHashMap::with_capacity(num_emails as usize);
+    let mut message_data: AHashMap<u32, MessageDataBuilder> =
+        AHashMap::with_capacity(num_emails as usize);
     let mut did_migrate = false;
 
     // Obtain mailboxes
@@ -94,7 +101,8 @@ pub(crate) async fn migrate_emails(server: &Server, account_id: u32) -> trc::Res
             .await
             .caused_by(trc::location!())?
     {
-        message_data.entry(message_id).or_default().keywords = keywords.0;
+        message_data.entry(message_id).or_default().keywords =
+            keywords.0.into_iter().map(Into::into).collect();
     }
 
     // Obtain threadIds
@@ -104,36 +112,6 @@ pub(crate) async fn migrate_emails(server: &Server, account_id: u32) -> trc::Res
             .caused_by(trc::location!())?
     {
         message_data.entry(message_id).or_default().thread_id = thread_id;
-    }
-
-    // Write message data
-    for (message_id, data) in message_data {
-        if !tombstoned_ids.contains(message_id) {
-            message_ids.insert(message_id);
-            let mut batch = BatchBuilder::new();
-            batch
-                .with_account_id(account_id)
-                .with_collection(Collection::Email)
-                .with_document(message_id);
-
-            for mailbox in &data.mailboxes {
-                batch.untag(EmailField::MailboxIds, TagValue::Id(mailbox.mailbox_id));
-            }
-
-            did_migrate = true;
-
-            batch.set(
-                Field::ARCHIVE,
-                Archiver::new(data)
-                    .serialize()
-                    .caused_by(trc::location!())?,
-            );
-            server
-                .store()
-                .write(batch.build_all())
-                .await
-                .caused_by(trc::location!())?;
-        }
     }
 
     // Migrate message metadata
@@ -149,6 +127,9 @@ pub(crate) async fn migrate_emails(server: &Server, account_id: u32) -> trc::Res
             .await
         {
             Ok(Some(legacy_metadata)) => {
+                message_data.entry(message_id).or_default().size =
+                    legacy_metadata.inner.size as u32;
+
                 let metadata = MessageMetadata::from_legacy(legacy_metadata.inner);
 
                 let mut batch = BatchBuilder::new();
@@ -157,7 +138,8 @@ pub(crate) async fn migrate_emails(server: &Server, account_id: u32) -> trc::Res
                     .with_collection(Collection::Email)
                     .with_document(message_id);
 
-                for header in metadata.root_part().headers.iter().rev() {
+                let todo = "reindex";
+                /*for header in metadata.root_part().headers.iter().rev() {
                     if matches!(header.name, HeaderName::MessageId) {
                         header.value.visit_text(|id| {
                             if id.len() < MAX_ID_LENGTH {
@@ -165,7 +147,7 @@ pub(crate) async fn migrate_emails(server: &Server, account_id: u32) -> trc::Res
                             }
                         });
                     }
-                }
+                }*/
 
                 batch.set(
                     EmailField::Metadata,
@@ -201,6 +183,36 @@ pub(crate) async fn migrate_emails(server: &Server, account_id: u32) -> trc::Res
                         .caused_by(trc::location!()));
                 }
             }
+        }
+    }
+
+    // Write message data
+    for (message_id, data) in message_data {
+        if !tombstoned_ids.contains(message_id) {
+            message_ids.insert(message_id);
+            let mut batch = BatchBuilder::new();
+            batch
+                .with_account_id(account_id)
+                .with_collection(Collection::Email)
+                .with_document(message_id);
+
+            /*for mailbox in &data.mailboxes {
+                batch.untag(EmailField::MailboxIds, TagValue::Id(mailbox.mailbox_id));
+            }*/
+
+            did_migrate = true;
+
+            batch.set(
+                Field::ARCHIVE,
+                Archiver::new(data.seal())
+                    .serialize()
+                    .caused_by(trc::location!())?,
+            );
+            server
+                .store()
+                .write(batch.build_all())
+                .await
+                .caused_by(trc::location!())?;
         }
     }
 
@@ -312,26 +324,12 @@ pub trait FromLegacy {
 
 impl FromLegacy for MessageMetadata {
     fn from_legacy(legacy: LegacyMessageMetadata<'_>) -> Self {
-        let mut metadata = MessageMetadata {
-            contents: vec![],
-            blob_hash: legacy.blob_hash,
-            size: legacy.size as u32,
-            received_at: legacy.received_at,
-            preview: legacy.preview,
-            has_attachments: legacy.has_attachments,
-            raw_headers: legacy.raw_headers,
-        };
-
+        let mut contents = Vec::new();
         let mut messages = VecDeque::from([legacy.contents]);
         let mut message_id = 0;
 
         while let Some(message) = messages.pop_front() {
-            let mut contents = MessageMetadataContents {
-                html_body: message.html_body.into_iter().map(|c| c as u16).collect(),
-                text_body: message.text_body.into_iter().map(|c| c as u16).collect(),
-                attachments: message.attachments.into_iter().map(|c| c as u16).collect(),
-                parts: Vec::with_capacity(message.parts.len()),
-            };
+            let mut parts = Vec::new();
 
             for part in message.parts {
                 let body = match part.body {
@@ -349,36 +347,90 @@ impl FromLegacy for MessageMetadata {
                     }
                 };
 
-                contents.parts.push(MessageMetadataPart {
+                let flags = match part.encoding {
+                    Encoding::None => 0,
+                    Encoding::QuotedPrintable => PART_ENCODING_QP,
+                    Encoding::Base64 => PART_ENCODING_BASE64,
+                } | (if part.is_encoding_problem {
+                    PART_ENCODING_PROBLEM
+                } else {
+                    0
+                }) | (part.size as u32 & PART_SIZE_MASK);
+
+                parts.push(MessageMetadataPart {
                     headers: part
                         .headers
                         .into_iter()
-                        .map(|hdr| Header {
-                            name: hdr.name.into_owned(),
-                            value: hdr.value.into(),
-                            offset_field: hdr.offset_field as u32,
-                            offset_start: hdr.offset_start as u32,
-                            offset_end: hdr.offset_end as u32,
+                        .map(|hdr| MetadataHeader {
+                            value: if matches!(
+                                &hdr.name,
+                                HeaderName::Subject
+                                    | HeaderName::From
+                                    | HeaderName::To
+                                    | HeaderName::Cc
+                                    | HeaderName::Date
+                                    | HeaderName::Bcc
+                                    | HeaderName::ReplyTo
+                                    | HeaderName::Sender
+                                    | HeaderName::Comments
+                                    | HeaderName::InReplyTo
+                                    | HeaderName::Keywords
+                                    | HeaderName::MessageId
+                                    | HeaderName::References
+                                    | HeaderName::ResentMessageId
+                                    | HeaderName::ContentDescription
+                                    | HeaderName::ContentId
+                                    | HeaderName::ContentLanguage
+                                    | HeaderName::ContentLocation
+                                    | HeaderName::ContentTransferEncoding
+                                    | HeaderName::ContentType
+                                    | HeaderName::ContentDisposition
+                                    | HeaderName::ListId
+                            ) {
+                                HeaderValue::from(hdr.value)
+                            } else {
+                                HeaderValue::Empty
+                            }
+                            .into(),
+                            name: hdr.name.into(),
+                            base_offset: hdr.offset_field as u32,
+                            start: (hdr.offset_start - hdr.offset_field) as u16,
+                            end: (hdr.offset_end - hdr.offset_field) as u16,
                         })
                         .collect(),
-                    is_encoding_problem: part.is_encoding_problem,
-                    encoding: part.encoding,
+                    flags,
                     body,
-                    size: part.size as u32,
                     offset_header: part.offset_header as u32,
                     offset_body: part.offset_body as u32,
                     offset_end: part.offset_end as u32,
                 });
             }
-            metadata.contents.push(contents);
+
+            contents.push(MessageMetadataContents {
+                html_body: message.html_body.into_iter().map(|c| c as u16).collect(),
+                text_body: message.text_body.into_iter().map(|c| c as u16).collect(),
+                attachments: message.attachments.into_iter().map(|c| c as u16).collect(),
+                parts: parts.into_boxed_slice(),
+            });
         }
 
-        metadata
+        MessageMetadata {
+            blob_body_offset: contents.first().unwrap().root_part().offset_body,
+            contents: contents.into_boxed_slice(),
+            blob_hash: legacy.blob_hash,
+            preview: legacy.preview.into_boxed_str(),
+            raw_headers: legacy.raw_headers.into_boxed_slice(),
+            rcvd_attach: (if legacy.has_attachments {
+                MESSAGE_HAS_ATTACHMENT
+            } else {
+                0
+            }) | (legacy.received_at & MESSAGE_RECEIVED_MASK),
+        }
     }
 }
 
 pub struct Mailboxes(Vec<UidMailbox>);
-pub struct Keywords(Vec<Keyword>);
+pub struct Keywords(Vec<LegacyKeyword>);
 
 impl Deserialize for Mailboxes {
     fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
@@ -418,27 +470,27 @@ impl Deserialize for Keywords {
     }
 }
 
-fn deserialize_keyword(bytes: &mut std::slice::Iter<'_, u8>) -> Option<Keyword> {
+fn deserialize_keyword(bytes: &mut std::slice::Iter<'_, u8>) -> Option<LegacyKeyword> {
     match bytes.next_leb128::<usize>()? {
-        SEEN => Some(Keyword::Seen),
-        DRAFT => Some(Keyword::Draft),
-        FLAGGED => Some(Keyword::Flagged),
-        ANSWERED => Some(Keyword::Answered),
-        RECENT => Some(Keyword::Recent),
-        IMPORTANT => Some(Keyword::Important),
-        PHISHING => Some(Keyword::Phishing),
-        JUNK => Some(Keyword::Junk),
-        NOTJUNK => Some(Keyword::NotJunk),
-        DELETED => Some(Keyword::Deleted),
-        FORWARDED => Some(Keyword::Forwarded),
-        MDN_SENT => Some(Keyword::MdnSent),
+        SEEN => Some(LegacyKeyword::Seen),
+        DRAFT => Some(LegacyKeyword::Draft),
+        FLAGGED => Some(LegacyKeyword::Flagged),
+        ANSWERED => Some(LegacyKeyword::Answered),
+        RECENT => Some(LegacyKeyword::Recent),
+        IMPORTANT => Some(LegacyKeyword::Important),
+        PHISHING => Some(LegacyKeyword::Phishing),
+        JUNK => Some(LegacyKeyword::Junk),
+        NOTJUNK => Some(LegacyKeyword::NotJunk),
+        DELETED => Some(LegacyKeyword::Deleted),
+        FORWARDED => Some(LegacyKeyword::Forwarded),
+        MDN_SENT => Some(LegacyKeyword::MdnSent),
         other => {
             let len = other - OTHER;
             let mut keyword = Vec::with_capacity(len);
             for _ in 0..len {
                 keyword.push(*bytes.next()?);
             }
-            Some(Keyword::Other(String::from_utf8(keyword).ok()?))
+            Some(LegacyKeyword::Other(String::from_utf8(keyword).ok()?))
         }
     }
 }
@@ -559,9 +611,9 @@ impl From<LegacyHeaderValue<'_>> for HeaderValue<'static> {
     }
 }
 
-pub(crate) fn encode_message_id(message_id: &str) -> Vec<u8> {
+/*pub(crate) fn encode_message_id(message_id: &str) -> Vec<u8> {
     let mut msg_id = Vec::with_capacity(message_id.len() + 1);
     msg_id.extend_from_slice(message_id.as_bytes());
     msg_id.push(0);
     msg_id
-}
+}*/

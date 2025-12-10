@@ -104,10 +104,12 @@ pub enum EncryptionType {
     PGP {
         algo: Algorithm,
         certs: String,
+        allow_spam_training: bool,
     },
     SMIME {
         algo: Algorithm,
         certs: String,
+        allow_spam_training: bool,
     },
     #[default]
     Disabled,

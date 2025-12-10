@@ -72,7 +72,7 @@ pub mod enterprise;
 
 pub use psl;
 
-use crate::config::spamfilter::SpamClassifier;
+use crate::{config::spamfilter::SpamClassifier, ipc::TrainTaskController};
 
 pub static VERSION_PRIVATE: &str = env!("CARGO_PKG_VERSION");
 pub static VERSION_PUBLIC: &str = "1.0.0";
@@ -89,10 +89,11 @@ Schema history:
 2 - v0.12.4
 3 - v0.13.0
 4 - v0.14.0
+5 - v0.15.0
 
 */
 
-pub const DATABASE_SCHEMA_VERSION: u32 = 4;
+pub const DATABASE_SCHEMA_VERSION: u32 = 5;
 
 pub const LONG_1D_SLUMBER: Duration = Duration::from_secs(60 * 60 * 24);
 pub const LONG_1Y_SLUMBER: Duration = Duration::from_secs(60 * 60 * 24 * 365);
@@ -246,6 +247,7 @@ pub struct Ipc {
     pub queue_tx: mpsc::Sender<QueueEvent>,
     pub report_tx: mpsc::Sender<ReportingEvent>,
     pub broadcast_tx: Option<mpsc::Sender<BroadcastEvent>>,
+    pub train_task_controller: Arc<TrainTaskController>,
 }
 
 pub struct TlsConnectors {
@@ -504,6 +506,7 @@ impl Default for Ipc {
             queue_tx: mpsc::channel(IPC_CHANNEL_BUFFER).0,
             report_tx: mpsc::channel(IPC_CHANNEL_BUFFER).0,
             broadcast_tx: None,
+            train_task_controller: Arc::new(TrainTaskController::default()),
         }
     }
 }
