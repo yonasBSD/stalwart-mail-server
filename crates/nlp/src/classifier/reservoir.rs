@@ -38,6 +38,16 @@ impl<T: Clone + Eq> SampleReservoir<T> {
         }
     }
 
+    pub fn update_counts(&mut self, is_spam: bool) {
+        let class = if is_spam {
+            &mut self.spam
+        } else {
+            &mut self.ham
+        };
+
+        class.total_seen += 1;
+    }
+
     pub fn replay_samples(
         &mut self,
         count_needed: usize,

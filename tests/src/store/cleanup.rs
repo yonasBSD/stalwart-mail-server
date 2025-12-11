@@ -155,7 +155,9 @@ pub async fn store_blob_expire_all(store: &Store) {
                                 until,
                             }));
                         }
-                        _ => {}
+                        _ => {
+                            eprintln!("Unknown blob link type for key {key:?}: {value:?}",);
+                        }
                     }
 
                     batch.clear(ValueClass::Blob(BlobOp::Link {

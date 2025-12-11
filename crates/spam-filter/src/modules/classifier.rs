@@ -222,6 +222,8 @@ impl SpamClassifier for Server {
                             is_spam,
                             config.reservoir_capacity,
                         );
+                    } else {
+                        trainer.reservoir.update_counts(is_spam);
                     }
 
                     samples.push(TrainingTask {
@@ -255,6 +257,20 @@ impl SpamClassifier for Server {
             );
 
             return Ok(());
+        } else if (trainer.reservoir.ham.total_seen < config.min_ham_samples)
+            || (trainer.reservoir.spam.total_seen < config.min_spam_samples)
+        {
+            trc::event!(
+                Spam(SpamEvent::ModelNotReady),
+                Reason = "Not enough samples for training",
+                Details = vec![
+                    trc::Value::from(ham_count + trainer.reservoir.ham.total_seen),
+                    trc::Value::from(spam_count + trainer.reservoir.spam.total_seen)
+                ],
+                Elapsed = started.elapsed()
+            );
+
+            return Ok(());
         }
 
         // Balance classes if needed
@@ -263,7 +279,7 @@ impl SpamClassifier for Server {
             samples.extend(
                 trainer
                     .reservoir
-                    .replay_samples(spam_count - ham_count, false)
+                    .replay_samples((spam_count - ham_count) as usize, false)
                     .map(|sample| TrainingTask {
                         sample: sample.clone(),
                         is_spam: false,
@@ -276,7 +292,7 @@ impl SpamClassifier for Server {
             samples.extend(
                 trainer
                     .reservoir
-                    .replay_samples(ham_count - spam_count, true)
+                    .replay_samples((ham_count - spam_count) as usize, true)
                     .map(|sample| TrainingTask {
                         sample: sample.clone(),
                         is_spam: true,
@@ -290,11 +306,7 @@ impl SpamClassifier for Server {
         samples.shuffle(&mut StdRng::seed_from_u64(42));
 
         // Spawn training task
-        let epochs = match trainer.reservoir.ham.total_seen
-            + trainer.reservoir.spam.total_seen
-            + spam_count as u64
-            + ham_count as u64
-        {
+        let epochs = match trainer.reservoir.ham.total_seen + trainer.reservoir.spam.total_seen {
             0..=2500 => 3,       // Bootstrap
             2_501..=10_000 => 2, // Refinement
             _ => 1,              // Full online training

@@ -154,7 +154,7 @@ pub(crate) async fn migrate_blobs_v014(server: &Server) -> trc::Result<()> {
                             } else {
                                 OldType::Temp
                             }
-                        } else if value.len() == U64_LEN + U32_LEN {
+                        } else if value.len() == U64_LEN + U32_LEN + 1 {
                             let size = value.deserialize_be_u32(0)?;
                             let deleted_at = value.deserialize_be_u64(U32_LEN)?;
                             OldType::Undelete { deleted_at, size }

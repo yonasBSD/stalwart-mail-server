@@ -13,9 +13,10 @@ use std::{
     path::{Path, PathBuf},
 };
 use store::{
-    BlobStore, SUBSPACE_BLOBS, SUBSPACE_COUNTER, SUBSPACE_QUOTA, Store,
-    write::{AnyClass, BatchBuilder, ValueClass},
+    BlobStore, SUBSPACE_BLOBS, SUBSPACE_COUNTER, SUBSPACE_INDEXES, SUBSPACE_QUOTA, Store, U32_LEN,
+    write::{AnyClass, BatchBuilder, ValueClass, key::DeserializeBigEndian},
 };
+use types::{collection::Collection, field::Field};
 use utils::{UnwrapFailure, failed};
 
 impl Core {
@@ -73,6 +74,38 @@ async fn restore_file(store: Store, blob_store: BlobStore, path: &Path) {
                             .expect("Failed to deserialize counter/quota"),
                     ) as i64,
                 );
+                if batch.is_large_batch() {
+                    store
+                        .write(batch.build_all())
+                        .await
+                        .failed("Failed to write batch");
+                    batch = BatchBuilder::new();
+                }
+            }
+        }
+        SUBSPACE_INDEXES => {
+            while let Some((key, _)) = reader.next() {
+                let account_id = key
+                    .as_slice()
+                    .deserialize_be_u32(0)
+                    .failed("Failed to deserialize account ID");
+                let collection = *key.get(U32_LEN).failed("Missing collection byte");
+                let field = *key.get(U32_LEN + 1).failed("Missing field byte");
+                let value = key
+                    .get(U32_LEN + 2..key.len() - U32_LEN)
+                    .failed("Missing index key")
+                    .to_vec();
+                let document_id = key
+                    .as_slice()
+                    .deserialize_be_u32(key.len() - U32_LEN)
+                    .failed("Failed to deserialize document ID");
+
+                batch
+                    .with_account_id(account_id)
+                    .with_collection(Collection::from(collection))
+                    .with_document(document_id)
+                    .index(Field::new(field), value);
+
                 if batch.is_large_batch() {
                     store
                         .write(batch.build_all())

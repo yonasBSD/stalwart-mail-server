@@ -66,6 +66,9 @@ pub async fn imap_tests() {
     let delete = true;
     let handle = init_imap_tests(delete).await;
 
+    // Body structure tests
+    body_structure::test();
+
     // Connect to IMAP server
     let mut imap_check = ImapConnection::connect(b"_y ").await;
     let mut imap = ImapConnection::connect(b"_x ").await;

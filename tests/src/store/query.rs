@@ -179,7 +179,9 @@ pub async fn test(store: SearchStore, do_insert: bool) {
                             | EmailSearchField::Attachment => {
                                 document.index_text(
                                     FIELD_MAPPINGS[pos].clone(),
-                                    &field.to_lowercase(),
+                                    &field
+                                        .replace(|ch: char| !ch.is_alphanumeric(), " ")
+                                        .to_lowercase(),
                                     Language::English,
                                 );
                             }

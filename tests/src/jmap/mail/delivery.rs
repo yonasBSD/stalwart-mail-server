@@ -295,6 +295,8 @@ END:VCARD
     )
     .await;
 
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
     for (account, num_messages) in [(john, 6), (jane, 1), (bill, 1)] {
         assert_eq!(
             server

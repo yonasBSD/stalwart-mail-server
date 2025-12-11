@@ -8,22 +8,30 @@ use super::{LegacyBincode, get_properties};
 use crate::{email_v2::LegacyKeyword, get_bitmap, get_document_ids, v014::SUBSPACE_BITMAP_TAG};
 use common::Server;
 use email::{
-    mailbox::UidMailbox,
-    message::metadata::{
-        MESSAGE_HAS_ATTACHMENT, MESSAGE_RECEIVED_MASK, MessageDataBuilder, MessageMetadata,
-        MessageMetadataContents, MessageMetadataPart, MetadataHeader, MetadataPartType,
-        PART_ENCODING_BASE64, PART_ENCODING_PROBLEM, PART_ENCODING_QP, PART_SIZE_MASK,
+    mailbox::*,
+    message::{
+        index::extractors::VisitTextArchived,
+        ingest::ThreadInfo,
+        metadata::{
+            MESSAGE_HAS_ATTACHMENT, MESSAGE_RECEIVED_MASK, MessageDataBuilder, MessageMetadata,
+            MessageMetadataContents, MessageMetadataPart, MetadataHeader, MetadataHeaderName,
+            MetadataHeaderValue, MetadataPartType, PART_ENCODING_BASE64, PART_ENCODING_PROBLEM,
+            PART_ENCODING_QP, PART_SIZE_MASK,
+        },
     },
 };
 use mail_parser::{
     Address, Attribute, ContentType, DateTime, Encoding, HeaderName, HeaderValue, Received,
+    parsers::fields::thread::thread_name,
 };
 use std::{borrow::Cow, collections::VecDeque};
 use store::{
-    Deserialize, SUBSPACE_INDEXES, SUBSPACE_PROPERTY, Serialize, U32_LEN, U64_LEN, ValueKey,
+    Deserialize, SUBSPACE_INDEXES, SUBSPACE_PROPERTY, Serialize, SerializeInfallible, U32_LEN,
+    U64_LEN, ValueKey,
     ahash::AHashMap,
     write::{
-        AlignedBytes, AnyKey, Archive, Archiver, BatchBuilder, ValueClass, key::KeySerializer,
+        AlignedBytes, AnyKey, Archive, Archiver, BatchBuilder, IndexPropertyClass, ValueClass,
+        key::KeySerializer,
     },
 };
 use trc::AddContext;
@@ -33,7 +41,7 @@ use types::{
     field::{EmailField, Field},
     keyword::*,
 };
-use utils::codec::leb128::Leb128Iterator;
+use utils::{cheeky_hash::CheekyHash, codec::leb128::Leb128Iterator};
 
 const FIELD_KEYWORDS: u8 = 4;
 const FIELD_THREAD_ID: u8 = 33;
@@ -44,11 +52,11 @@ const BM_MARKER: u8 = 1 << 7;
 
 pub(crate) async fn migrate_emails_v011(server: &Server, account_id: u32) -> trc::Result<u64> {
     // Obtain email ids
-    let mut message_ids = get_document_ids(server, account_id, Collection::Email)
+    let mut document_ids = get_document_ids(server, account_id, Collection::Email)
         .await
         .caused_by(trc::location!())?
         .unwrap_or_default();
-    let num_emails = message_ids.len();
+    let num_emails = document_ids.len();
     if num_emails == 0 {
         return Ok(0);
     }
@@ -114,100 +122,126 @@ pub(crate) async fn migrate_emails_v011(server: &Server, account_id: u32) -> trc
         message_data.entry(message_id).or_default().thread_id = thread_id;
     }
 
-    // Migrate message metadata
-    for message_id in &message_ids {
-        match server
-            .store()
-            .get_value::<LegacyBincode<LegacyMessageMetadata>>(ValueKey {
-                account_id,
-                collection: Collection::Email.into(),
-                document_id: message_id,
-                class: ValueClass::Property(EmailField::Metadata.into()),
-            })
-            .await
-        {
-            Ok(Some(legacy_metadata)) => {
-                message_data.entry(message_id).or_default().size =
-                    legacy_metadata.inner.size as u32;
+    // Write message data
+    for (message_id, mut data) in message_data {
+        if !tombstoned_ids.contains(message_id) {
+            let (size, metadata) = match server
+                .store()
+                .get_value::<LegacyBincode<LegacyMessageMetadata>>(ValueKey {
+                    account_id,
+                    collection: Collection::Email.into(),
+                    document_id: message_id,
+                    class: ValueClass::Property(EmailField::Metadata.into()),
+                })
+                .await
+            {
+                Ok(Some(legacy_metadata)) => (
+                    legacy_metadata.inner.size as u32,
+                    MessageMetadata::from_legacy(legacy_metadata.inner),
+                ),
+                Ok(None) => {
+                    continue;
+                }
+                Err(err) => {
+                    match server
+                        .store()
+                        .get_value::<Archive<AlignedBytes>>(ValueKey {
+                            account_id,
+                            collection: Collection::Email.into(),
+                            document_id: message_id,
+                            class: ValueClass::Property(EmailField::Metadata.into()),
+                        })
+                        .await
+                    {
+                        Ok(Some(archive)) => {
+                            let metadata: MessageMetadata = archive
+                                .deserialize_untrusted()
+                                .caused_by(trc::location!())?;
+                            (metadata.root_part().offset_end, metadata)
+                        }
+                        _ => {
+                            return Err(err
+                                .account_id(account_id)
+                                .document_id(message_id)
+                                .caused_by(trc::location!()));
+                        }
+                    }
+                }
+            };
 
-                let metadata = MessageMetadata::from_legacy(legacy_metadata.inner);
+            did_migrate = true;
+            document_ids.insert(message_id);
 
-                let mut batch = BatchBuilder::new();
-                batch
-                    .with_account_id(account_id)
-                    .with_collection(Collection::Email)
-                    .with_document(message_id);
-
-                let todo = "reindex";
-                /*for header in metadata.root_part().headers.iter().rev() {
-                    if matches!(header.name, HeaderName::MessageId) {
+            let mut message_ids = Vec::new();
+            let mut subject = "";
+            for header in &metadata.contents[0].parts[0].headers {
+                match &header.name {
+                    MetadataHeaderName::MessageId => {
                         header.value.visit_text(|id| {
-                            if id.len() < MAX_ID_LENGTH {
-                                batch.index(EmailField::References, encode_message_id(id));
+                            if !id.is_empty() {
+                                message_ids.push(CheekyHash::new(id.as_bytes()));
                             }
                         });
                     }
-                }*/
-
-                batch.set(
-                    EmailField::Metadata,
-                    Archiver::new(metadata)
-                        .serialize()
-                        .caused_by(trc::location!())?,
-                );
-
-                did_migrate = true;
-
-                server
-                    .store()
-                    .write(batch.build_all())
-                    .await
-                    .caused_by(trc::location!())?;
-            }
-            Ok(None) => (),
-            Err(err) => {
-                if server
-                    .store()
-                    .get_value::<Archive<AlignedBytes>>(ValueKey {
-                        account_id,
-                        collection: Collection::Email.into(),
-                        document_id: message_id,
-                        class: ValueClass::Property(EmailField::Metadata.into()),
-                    })
-                    .await
-                    .is_err()
-                {
-                    return Err(err
-                        .account_id(account_id)
-                        .document_id(message_id)
-                        .caused_by(trc::location!()));
+                    MetadataHeaderName::InReplyTo
+                    | MetadataHeaderName::References
+                    | MetadataHeaderName::ResentMessageId => {
+                        header.value.visit_text(|id| {
+                            if !id.is_empty() {
+                                message_ids.push(CheekyHash::new(id.as_bytes()));
+                            }
+                        });
+                    }
+                    MetadataHeaderName::Subject if subject.is_empty() => {
+                        subject = thread_name(match &header.value {
+                            MetadataHeaderValue::Text(text) => text.as_ref(),
+                            MetadataHeaderValue::TextList(list) if !list.is_empty() => {
+                                list.first().unwrap().as_ref()
+                            }
+                            _ => "",
+                        });
+                    }
+                    _ => (),
                 }
             }
-        }
-    }
 
-    // Write message data
-    for (message_id, data) in message_data {
-        if !tombstoned_ids.contains(message_id) {
-            message_ids.insert(message_id);
             let mut batch = BatchBuilder::new();
             batch
                 .with_account_id(account_id)
                 .with_collection(Collection::Email)
                 .with_document(message_id);
 
-            /*for mailbox in &data.mailboxes {
-                batch.untag(EmailField::MailboxIds, TagValue::Id(mailbox.mailbox_id));
-            }*/
-
-            did_migrate = true;
-
-            batch.set(
-                Field::ARCHIVE,
-                Archiver::new(data.seal())
-                    .serialize()
-                    .caused_by(trc::location!())?,
-            );
+            if data
+                .mailboxes
+                .iter()
+                .any(|mailbox| mailbox.mailbox_id == TRASH_ID || mailbox.mailbox_id == JUNK_ID)
+            {
+                batch.set(
+                    ValueClass::Property(EmailField::DeletedAt.into()),
+                    (metadata.rcvd_attach & MESSAGE_RECEIVED_MASK).serialize(),
+                );
+            }
+            data.size = size;
+            batch
+                .set(
+                    ValueClass::IndexProperty(IndexPropertyClass::Hash {
+                        property: EmailField::Threading.into(),
+                        hash: CheekyHash::new(if !subject.is_empty() { subject } else { "!" }),
+                    }),
+                    ThreadInfo::serialize(data.thread_id, &message_ids),
+                )
+                .set(
+                    Field::ARCHIVE,
+                    Archiver::new(data.seal())
+                        .serialize()
+                        .caused_by(trc::location!())?,
+                )
+                .set(
+                    EmailField::Metadata,
+                    Archiver::new(metadata)
+                        .serialize()
+                        .caused_by(trc::location!())?,
+                );
             server
                 .store()
                 .write(batch.build_all())
@@ -308,7 +342,7 @@ pub(crate) async fn migrate_emails_v011(server: &Server, account_id: u32) -> trc
             .assign_document_ids(
                 account_id,
                 Collection::Email,
-                message_ids.max().map(|id| id as u64).unwrap_or(num_emails) + 1,
+                document_ids.max().map(|id| id as u64).unwrap_or(num_emails) + 1,
             )
             .await
             .caused_by(trc::location!())?;

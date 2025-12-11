@@ -195,27 +195,41 @@ pub async fn test(db: Store) {
         handles.push({
             let db = db.clone();
             tokio::spawn(async move {
-                let mut builder = BatchBuilder::new();
-                builder
-                    .with_account_id(0)
-                    .with_collection(Collection::Email)
-                    .with_document(0)
-                    .merge_fnc(
-                        ValueClass::Property(3),
-                        Params::with_capacity(0),
-                        |_, _, bytes| {
-                            if let Some(bytes) = bytes {
-                                Ok(MergeResult::Update(
-                                    (u64::from_be_bytes(bytes.try_into().unwrap()) + 1)
-                                        .to_be_bytes()
-                                        .to_vec(),
-                                ))
-                            } else {
-                                Ok(MergeResult::Update(0u64.to_be_bytes().to_vec()))
-                            }
-                        },
-                    );
-                db.write(builder.build_all()).await.unwrap()
+                for _ in 0..5 {
+                    let mut builder = BatchBuilder::new();
+                    builder
+                        .with_account_id(0)
+                        .with_collection(Collection::Email)
+                        .with_document(0)
+                        .merge_fnc(
+                            ValueClass::Property(3),
+                            Params::with_capacity(0),
+                            |_, _, bytes| {
+                                if let Some(bytes) = bytes {
+                                    Ok(MergeResult::Update(
+                                        (u64::from_be_bytes(bytes.try_into().unwrap()) + 1)
+                                            .to_be_bytes()
+                                            .to_vec(),
+                                    ))
+                                } else {
+                                    Ok(MergeResult::Update(0u64.to_be_bytes().to_vec()))
+                                }
+                            },
+                        );
+
+                    match db.write(builder.build_all()).await {
+                        Ok(_) => {
+                            break;
+                        }
+                        Err(e) if e.is_assertion_failure() => {
+                            // Retry on assertion failures
+                            continue;
+                        }
+                        Err(e) => {
+                            panic!("Merge failed: {:?}", e);
+                        }
+                    }
+                }
             })
         });
     }

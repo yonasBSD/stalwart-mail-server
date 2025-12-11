@@ -485,7 +485,8 @@ impl<T: SessionStream> SessionData<T> {
                             EmailSearchField::Headers,
                             op,
                             SearchValue::KeyValues(
-                                VecMap::with_capacity(1).with_append(header.into_string(), value),
+                                VecMap::with_capacity(1)
+                                    .with_append(header.as_str().to_lowercase(), value),
                             ),
                         ));
                     }

@@ -82,20 +82,26 @@ impl IndexDocument {
     pub fn insert_key_value(
         &mut self,
         field: impl Into<SearchField>,
-        key: impl Into<String>,
+        key: impl AsRef<str>,
         value: impl Into<String>,
     ) {
         let search_field = field.into();
+        let key = key.as_ref().to_lowercase();
 
         match self.fields.entry(search_field) {
             Entry::Occupied(mut entry) => {
                 if let SearchValue::KeyValues(existing_key_values) = entry.get_mut() {
-                    existing_key_values.append(key.into(), value.into());
+                    if let Some(existing_value) = existing_key_values.get_mut(&key) {
+                        existing_value.push(' ');
+                        existing_value.push_str(&value.into());
+                    } else {
+                        existing_key_values.append(key, value.into());
+                    }
                 }
             }
             Entry::Vacant(entry) => {
                 let mut new_key_values = VecMap::new();
-                new_key_values.append(key.into(), value.into());
+                new_key_values.append(key, value.into());
                 entry.insert(SearchValue::KeyValues(new_key_values));
             }
         }

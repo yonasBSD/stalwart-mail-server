@@ -55,7 +55,7 @@ pub async fn store_tests() {
 
 #[tokio::test(flavor = "multi_thread")]
 pub async fn search_tests() {
-    let insert = true;
+    let insert = std::env::var("NO_INSERT").is_err();
     let temp_dir = TempDir::new("search_store_tests", insert);
     let mut config = Config::new(build_store_config(&temp_dir.path.to_string_lossy()))
         .unwrap()
@@ -171,13 +171,13 @@ disable = {ELASTIC_ENABLED}
 username = "elastic"
 secret = "changeme"
 
-[store."s3"]
-type = "s3"
-access-key = "minioadmin"
-secret-key = "minioadmin"
-region = "eu-central-1"
-endpoint = "http://localhost:9000"
-bucket = "tmp"
+#[store."s3"]
+#type = "s3"
+#access-key = "minioadmin"
+#secret-key = "minioadmin"
+#region = "eu-central-1"
+#endpoint = "http://localhost:9000"
+#bucket = "tmp"
 
 [store."fs"]
 type = "fs"

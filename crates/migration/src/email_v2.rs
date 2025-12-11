@@ -7,7 +7,7 @@
 use crate::{email_v1::FIELD_MAILBOX_IDS, get_bitmap, v014::SUBSPACE_BITMAP_TAG};
 use common::Server;
 use email::{
-    mailbox::UidMailbox,
+    mailbox::{JUNK_ID, TRASH_ID, UidMailbox},
     message::{
         index::extractors::VisitTextArchived,
         ingest::ThreadInfo,
@@ -21,7 +21,8 @@ use email::{
 };
 use mail_parser::{Encoding, Header, parsers::fields::thread::thread_name};
 use store::{
-    SUBSPACE_INDEXES, Serialize, U32_LEN, U64_LEN, ValueKey,
+    Serialize, SerializeInfallible, U32_LEN, U64_LEN, ValueKey,
+    rand::{self, seq::SliceRandom},
     write::{
         AlignedBytes, AnyKey, Archive, Archiver, BatchBuilder, IndexPropertyClass, ValueClass,
         key::KeySerializer,
@@ -57,8 +58,6 @@ pub(crate) async fn migrate_emails_v014(server: &Server, account_id: u32) -> trc
     .caused_by(trc::location!())?
     .unwrap_or_default();
 
-    let todo = "delete indexes";
-
     let mut migrate = Vec::new();
 
     server
@@ -86,6 +85,8 @@ pub(crate) async fn migrate_emails_v014(server: &Server, account_id: u32) -> trc
         )
         .await
         .caused_by(trc::location!())?;
+
+    migrate.shuffle(&mut rand::rng());
 
     let num_emails = migrate.len();
     for (document_id, legacy_data) in migrate {
@@ -162,13 +163,24 @@ pub(crate) async fn migrate_emails_v014(server: &Server, account_id: u32) -> trc
                 }
             }
 
+            if data
+                .mailboxes
+                .iter()
+                .any(|mailbox| mailbox.mailbox_id == TRASH_ID || mailbox.mailbox_id == JUNK_ID)
+            {
+                batch.set(
+                    ValueClass::Property(EmailField::DeletedAt.into()),
+                    (metadata.rcvd_attach & MESSAGE_RECEIVED_MASK).serialize(),
+                );
+            }
+
             batch
                 .set(
                     ValueClass::IndexProperty(IndexPropertyClass::Hash {
                         property: EmailField::Threading.into(),
                         hash: CheekyHash::new(if !subject.is_empty() { subject } else { "!" }),
                     }),
-                    ThreadInfo::serialize(legacy_data.thread_id, &message_ids),
+                    ThreadInfo::serialize(data.thread_id, &message_ids),
                 )
                 .set(
                     EmailField::Archive,
@@ -189,48 +201,6 @@ pub(crate) async fn migrate_emails_v014(server: &Server, account_id: u32) -> trc
         server
             .store()
             .write(batch.build_all())
-            .await
-            .caused_by(trc::location!())?;
-    }
-
-    /*
-
-            EmailField::From => 87,
-            EmailField::To => 35,
-            EmailField::Cc => 74,
-            EmailField::Bcc => 69,
-            EmailField::Subject => 29,
-            EmailField::Size => 27,
-            EmailField::References => 20,
-            EmailField::MailboxIds => 7,
-            EmailField::ReceivedAt => 19,
-            EmailField::SentAt => 26,
-            EmailField::HasAttachment => 89,
-
-    */
-
-    for index in [87u8, 35, 74, 69, 29, 27, 20, 7, 19, 26, 89] {
-        server
-            .store()
-            .delete_range(
-                AnyKey {
-                    subspace: SUBSPACE_INDEXES,
-                    key: KeySerializer::new(U64_LEN * 3)
-                        .write(account_id)
-                        .write(u8::from(Collection::Email))
-                        .write(index)
-                        .finalize(),
-                },
-                AnyKey {
-                    subspace: SUBSPACE_INDEXES,
-                    key: KeySerializer::new(U64_LEN * 4)
-                        .write(account_id)
-                        .write(u8::from(Collection::Email))
-                        .write(index)
-                        .write(&[u8::MAX; 8][..])
-                        .finalize(),
-                },
-            )
             .await
             .caused_by(trc::location!())?;
     }

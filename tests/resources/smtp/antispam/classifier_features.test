@@ -11,10 +11,6 @@ I'm going to need those TPS reports ASAP. So, if you could do that, that'd be gr
   },
   {
     "type": "word",
-    "value": "_word"
-  },
-  {
-    "type": "word",
     "value": "asap"
   },
   {
@@ -88,10 +84,6 @@ This is the end of  MIME multipart.
 
 <!-- EXPECT -->
 [
-  {
-    "type": "word",
-    "value": "_word"
-  },
   {
     "type": "word",
     "value": "anoth"
@@ -180,10 +172,6 @@ Portal: <a href="https://www.localhost.de/example.php" target="_blank">IP-Sperre
 
 <!-- EXPECT -->
 [
-  {
-    "type": "word",
-    "value": "_word"
-  },
   {
     "type": "word",
     "value": "adress"
@@ -336,10 +324,6 @@ OteuCc4AZGN7L3Jzv953ptzc3Nzb3JvBpybfF9KgeQd5/2cN2nfX855TlqJbsKGAAIIIIAAAggg=
   {
     "type": "word",
     "value": "_null"
-  },
-  {
-    "type": "word",
-    "value": "_word"
   },
   {
     "type": "word",
@@ -586,10 +570,6 @@ e; CLICK AQU&Iacute; CLICK AQU&Iacute; CLICK AQU&Iacute; CLICK AQU&Iacute;"=
   {
     "type": "word",
     "value": "_null"
-  },
-  {
-    "type": "word",
-    "value": "_word"
   },
   {
     "type": "word",
@@ -1027,10 +1007,6 @@ vＥⓡ𝔂 𝔽𝕌Ňℕｙ ţ乇𝕏𝓣
 [
   {
     "type": "word",
-    "value": "_word"
-  },
-  {
-    "type": "word",
     "value": "email"
   },
   {
@@ -1210,10 +1186,6 @@ velsignet m=C3=A5ned med stor succes.<br>Hr. Charles Jackson Jr.</div></div=
 --=_bf54163b-f3b6-421f-bc9d-b64439167a39--
 <!-- EXPECT -->
 [
-  {
-    "type": "word",
-    "value": "_word"
-  },
   {
     "type": "word",
     "value": "anbefal"
@@ -1569,10 +1541,6 @@ Uniting UK is a unionist campaign opposite news reader that's memory dug nobody 
 [
   {
     "type": "word",
-    "value": "_word"
-  },
-  {
-    "type": "word",
     "value": "better"
   },
   {
@@ -1721,10 +1689,6 @@ enlarged prostate as well.</span></span><br />
   {
     "type": "word",
     "value": "_allcaps"
-  },
-  {
-    "type": "word",
-    "value": "_word"
   },
   {
     "type": "word",
@@ -2138,10 +2102,6 @@ important;">
 
 <!-- EXPECT -->
 [
-  {
-    "type": "word",
-    "value": "_word"
-  },
   {
     "type": "word",
     "value": "amplifi"
@@ -2636,10 +2596,6 @@ poHmsYINCg==
 
 <!-- EXPECT -->
 [
-  {
-    "type": "word",
-    "value": "_word"
-  },
   {
     "type": "word",
     "value": "ad"

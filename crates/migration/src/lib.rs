@@ -5,11 +5,13 @@
  */
 
 use crate::{
+    blob::migrate_blobs_v014,
     queue_v1::{migrate_queue_v011, migrate_queue_v012},
+    queue_v2::migrate_queue_v014,
     v011::migrate_v0_11,
     v012::migrate_v0_12,
     v013::migrate_v0_13,
-    v014::SUBSPACE_BITMAP_ID,
+    v014::{SUBSPACE_BITMAP_ID, migrate_principal_v0_14, migrate_v0_14},
 };
 use common::{DATABASE_SCHEMA_VERSION, Server, manager::boot::DEFAULT_SETTINGS};
 use std::time::Duration;
@@ -38,7 +40,6 @@ pub mod encryption_v2;
 pub mod event_v1;
 pub mod event_v2;
 pub mod identity_v1;
-pub mod identity_v2;
 pub mod mailbox;
 pub mod object;
 pub mod principal_v1;
@@ -64,45 +65,75 @@ const LOCK_WAIT_TIME_CORE: u64 = 5 * 60;
 const LOCK_RETRY_TIME: Duration = Duration::from_secs(30);
 
 pub async fn try_migrate(server: &Server) -> trc::Result<()> {
-    if let Some(version) = std::env::var("FORCE_MIGRATE_QUEUE")
-        .ok()
-        .and_then(|s| s.parse::<u32>().ok())
-    {
-        if version == 12 || version <= 2 {
-            migrate_queue_v012(server)
-                .await
-                .caused_by(trc::location!())?;
-        } else {
-            migrate_queue_v011(server)
-                .await
-                .caused_by(trc::location!())?;
-        }
-        return Ok(());
-    }
-    if let Some(version) = std::env::var("FORCE_MIGRATE")
-        .ok()
-        .and_then(|s| s.parse::<u32>().ok())
-    {
-        match version {
-            1 => {
-                migrate_v0_12(server, true)
+    for var in [
+        "FORCE_MIGRATE_QUEUE",
+        "FORCE_MIGRATE_BLOBS",
+        "FORCE_MIGRATE_ACCOUNT",
+        "FORCE_MIGRATE",
+    ] {
+        let Some(version) = std::env::var(var).ok().and_then(|s| s.parse::<u32>().ok()) else {
+            continue;
+        };
+        match var {
+            "FORCE_MIGRATE_QUEUE" => match version {
+                1 => {
+                    migrate_queue_v011(server)
+                        .await
+                        .caused_by(trc::location!())?;
+                }
+                2 => {
+                    migrate_queue_v012(server)
+                        .await
+                        .caused_by(trc::location!())?;
+                }
+                4 => {
+                    migrate_queue_v014(server)
+                        .await
+                        .caused_by(trc::location!())?;
+                }
+                _ => {
+                    panic!("Unknown migration queue version: {version}");
+                }
+            },
+            "FORCE_MIGRATE_BLOBS" => {
+                migrate_blobs_v014(server)
                     .await
                     .caused_by(trc::location!())?;
-                migrate_v0_13(server).await.caused_by(trc::location!())?;
             }
-            2 => {
-                migrate_v0_12(server, false)
+            "FORCE_MIGRATE" => match version {
+                1 => {
+                    migrate_v0_12(server, true)
+                        .await
+                        .caused_by(trc::location!())?;
+                    migrate_v0_13(server).await.caused_by(trc::location!())?;
+                    migrate_v0_14(server).await.caused_by(trc::location!())?;
+                }
+                2 => {
+                    migrate_v0_12(server, false)
+                        .await
+                        .caused_by(trc::location!())?;
+                    migrate_v0_13(server).await.caused_by(trc::location!())?;
+                    migrate_v0_14(server).await.caused_by(trc::location!())?;
+                }
+                3 => {
+                    migrate_v0_13(server).await.caused_by(trc::location!())?;
+                    migrate_v0_14(server).await.caused_by(trc::location!())?;
+                }
+                4 => {
+                    migrate_v0_14(server).await.caused_by(trc::location!())?;
+                }
+                _ => {
+                    panic!("Unknown migration version: {version}");
+                }
+            },
+            "FORCE_MIGRATE_ACCOUNT" => {
+                migrate_principal_v0_14(server, version)
                     .await
                     .caused_by(trc::location!())?;
-                migrate_v0_13(server).await.caused_by(trc::location!())?;
             }
-            3 => {
-                migrate_v0_13(server).await.caused_by(trc::location!())?;
-            }
-            _ => {
-                panic!("Unknown migration version: {version}");
-            }
+            _ => unreachable!(),
         }
+
         return Ok(());
     }
 
@@ -134,6 +165,10 @@ pub async fn try_migrate(server: &Server) -> trc::Result<()> {
         }
         Some(3) => {
             migrate_v0_13(server).await.caused_by(trc::location!())?;
+            false
+        }
+        Some(4) => {
+            migrate_v0_14(server).await.caused_by(trc::location!())?;
             false
         }
         Some(version) => {

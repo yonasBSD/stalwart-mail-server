@@ -149,7 +149,7 @@ impl EmailQuery for Server {
                                 EmailSearchField::Headers,
                                 op,
                                 SearchValue::KeyValues(VecMap::with_capacity(1).with_append(
-                                    header_name.into_string(),
+                                    header_name.as_str().to_lowercase(),
                                     value.unwrap_or_default(),
                                 )),
                             ));

@@ -161,10 +161,14 @@ pub async fn query(client: &Client, can_stem: bool) {
                 email::query::Comparator::subject(),
                 email::query::Comparator::sent_at(),
             ],
-            vec![
-                "T10330", "N01744", "N01743", "N04885", "N02688", "N02122", "A00059", "A00058",
-                "N02123", "T00651", "T09439", "N05001", "T05848", "T05508",
-            ],
+            if can_stem {
+                vec![
+                    "T10330", "N01744", "N01743", "N04885", "N02688", "N02122", "A00059", "A00058",
+                    "N02123", "T00651", "T09439", "N05001", "T05848", "T05508",
+                ]
+            } else {
+                vec!["T10330", "N02122", "N02123", "T09439"]
+            },
         ),
         (
             Filter::and(vec![

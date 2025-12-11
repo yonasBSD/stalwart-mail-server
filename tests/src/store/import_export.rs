@@ -230,6 +230,7 @@ pub async fn test(db: Store) {
 
     // Destroy store
     store_destroy(&db).await;
+    store_assert_is_empty(&db, db.clone().into(), true).await;
     temp_dir.delete();
 }
 

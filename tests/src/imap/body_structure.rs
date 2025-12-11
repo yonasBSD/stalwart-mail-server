@@ -4,8 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::fs;
-
+use super::resources_dir;
 use email::message::metadata::{MessageMetadata, build_metadata_contents};
 use imap::op::fetch::AsImapDataItem;
 use imap_proto::{
@@ -13,16 +12,14 @@ use imap_proto::{
     protocol::fetch::{BodyContents, DataItem, Section},
 };
 use mail_parser::MessageParser;
+use std::fs;
 use store::{
     Deserialize, Serialize,
     write::{Archive, Archiver},
 };
 use utils::chained_bytes::ChainedBytes;
 
-use super::resources_dir;
-
-#[test]
-fn imap_test_body_structure() {
+pub fn test() {
     println!("Running BODYSTRUCTURE...");
 
     for file_name in fs::read_dir(resources_dir()).unwrap() {

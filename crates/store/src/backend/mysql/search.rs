@@ -140,10 +140,9 @@ fn build_filter(query: &mut String, filters: &[SearchFilter]) -> Vec<Value> {
                 if field.is_text() && matches!(op, SearchOperator::Equal | SearchOperator::Contains)
                 {
                     let (value, mode) = match (value, op) {
-                        (SearchValue::Text { value, .. }, SearchOperator::Equal) => (
-                            Value::Bytes(format!("{value:?}").into_bytes()),
-                            "NATURAL LANGUAGE",
-                        ),
+                        (SearchValue::Text { value, .. }, SearchOperator::Equal) => {
+                            (Value::Bytes(format!("{value:?}").into_bytes()), "BOOLEAN")
+                        }
                         (SearchValue::Text { value, .. }, ..) => {
                             let mut text_query = String::with_capacity(value.len() + 1);
 
@@ -167,12 +166,12 @@ fn build_filter(query: &mut String, filters: &[SearchFilter]) -> Vec<Value> {
                 } else if let SearchValue::KeyValues(kv) = value {
                     let (key, value) = kv.iter().next().unwrap();
 
-                    values.push(Value::Bytes(format!("$.{key}").into_bytes()));
+                    values.push(Value::Bytes(format!("$.{key:?}").into_bytes()));
 
                     if !value.is_empty() {
                         if op == &SearchOperator::Equal {
                             let _ = write!(query, "JSON_EXTRACT({}, ?) = ?", field.column());
-                            values.push(Value::Bytes(format!("{value:?}").into_bytes()));
+                            values.push(Value::Bytes(value.as_bytes().to_vec()));
                         } else {
                             let _ = write!(query, "JSON_EXTRACT({}, ?) LIKE ?", field.column(),);
                             values.push(Value::Bytes(format!("%{value}%").into_bytes()));

@@ -18,7 +18,7 @@ use store::{
     Deserialize, IterateParams, Serialize, ValueKey,
     write::{
         AlignedBytes, Archive, Archiver, BatchBuilder, QueueClass, ValueClass,
-        key::DeserializeBigEndian, now,
+        key::DeserializeBigEndian,
     },
 };
 use trc::AddContext;
@@ -153,10 +153,8 @@ pub enum LegacyQuotaKey {
 
 pub(crate) async fn migrate_queue_v014(server: &Server) -> trc::Result<()> {
     let mut count = 0;
-    let now = now();
 
     let mut messages = Vec::new();
-
     server
         .store()
         .iterate(
@@ -184,7 +182,7 @@ pub(crate) async fn migrate_queue_v014(server: &Server) -> trc::Result<()> {
             },
         )
         .await
-        .caused_by(trc::location!());
+        .caused_by(trc::location!())?;
 
     let mut batch = BatchBuilder::new();
     for (queue_id, message) in messages {

@@ -48,6 +48,7 @@ impl PostgresStore {
                             Some(&SqlState::UNIQUE_VIOLATION) => {
                                 return Err(trc::StoreEvent::AssertValueFailed
                                     .into_err()
+                                    .reason("Unique violation")
                                     .caused_by(trc::location!()));
                             }
                             _ => return Err(into_error(err)),

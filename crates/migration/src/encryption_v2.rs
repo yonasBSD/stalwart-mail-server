@@ -10,7 +10,7 @@ use email::message::crypto::{
     EncryptionParams,
 };
 use store::{
-    Deserialize, Serialize, ValueKey,
+    Serialize, ValueKey,
     write::{AlignedBytes, Archive, Archiver, BatchBuilder, ValueClass},
 };
 use trc::AddContext;

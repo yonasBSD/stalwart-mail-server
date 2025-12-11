@@ -18,6 +18,10 @@ use store::{
 pub async fn test(params: &mut JMAPTest) {
     println!("Running Encryption-at-rest tests...");
 
+    // Check encryption
+    check_is_encrypted();
+    import_certs_and_encrypt().await;
+
     // Create test account
     let account = params.account("jdoe@example.com");
     let client = account.client();
@@ -157,7 +161,6 @@ pub async fn test(params: &mut JMAPTest) {
     }
 }
 
-#[tokio::test]
 pub async fn import_certs_and_encrypt() {
     for (name, method, expected_certs) in [
         ("cert_pgp.pem", EncryptionMethod::PGP, 1),
@@ -223,7 +226,6 @@ pub async fn import_certs_and_encrypt() {
     );
 }
 
-#[test]
 pub fn check_is_encrypted() {
     let messages = std::fs::read_to_string(
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
