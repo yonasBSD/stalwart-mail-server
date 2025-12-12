@@ -38,7 +38,10 @@ use jmap_proto::{
 use jmap_tools::{JsonPointerHandler, JsonPointerItem, Key, Map, Value};
 use std::{borrow::Cow, str::FromStr};
 use store::{
-    ValueKey, ahash::AHashSet, roaring::RoaringBitmap, write::{AlignedBytes, Archive, BatchBuilder, now, serialize::rkyv_deserialize}
+    ValueKey,
+    ahash::AHashSet,
+    roaring::RoaringBitmap,
+    write::{AlignedBytes, Archive, BatchBuilder, now, serialize::rkyv_deserialize},
 };
 use trc::AddContext;
 use types::{
@@ -801,6 +804,29 @@ fn update_calendar_event<'x>(
                 return Err(SetError::invalid_properties()
                     .with_property(property)
                     .with_description("Invalid value."));
+            }
+            (
+                property @ (JSCalendarProperty::Locations | JSCalendarProperty::Participants),
+                Value::Object(values),
+            ) => {
+                for (_, value) in values.iter() {
+                    if let Some(values) = value
+                        .as_object_and_get(&Key::Property(JSCalendarProperty::Links))
+                        .and_then(|v| v.as_object())
+                    {
+                        for (_, value) in values.iter() {
+                            if value.as_object().is_some_and(|v| {
+                                v.keys()
+                                    .any(|k| matches!(k, Key::Property(JSCalendarProperty::BlobId)))
+                            }) {
+                                return Err(SetError::invalid_properties()
+                                    .with_property(property)
+                                    .with_description("blobIds in links is not supported."));
+                            }
+                        }
+                    }
+                }
+                entries.insert(property, Value::Object(values));
             }
             (property, value) => {
                 if let (JSCalendarProperty::ShowWithoutTime, Value::Bool(set)) = (&property, &value)

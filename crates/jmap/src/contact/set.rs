@@ -17,7 +17,12 @@ use jmap_proto::{
     types::state::State,
 };
 use jmap_tools::{JsonPointerHandler, JsonPointerItem, Key, Value};
-use store::{ValueKey, ahash::AHashSet, roaring::RoaringBitmap, write::{AlignedBytes, Archive, BatchBuilder}};
+use store::{
+    ValueKey,
+    ahash::AHashSet,
+    roaring::RoaringBitmap,
+    write::{AlignedBytes, Archive, BatchBuilder},
+};
 use trc::AddContext;
 use types::{
     acl::Acl,
@@ -467,6 +472,19 @@ fn update_contact_card<'x>(
                         .with_description("Patch operation failed."));
                 }
                 entries = js_contact.0.as_object_mut().unwrap();
+            }
+            (JSContactProperty::Media, Value::Object(media)) => {
+                for (_, value) in media.iter() {
+                    if value.as_object().is_some_and(|v| {
+                        v.keys()
+                            .any(|k| matches!(k, Key::Property(JSContactProperty::BlobId)))
+                    }) {
+                        return Err(SetError::invalid_properties()
+                            .with_property(JSContactProperty::Media)
+                            .with_description("blobIds in media is not supported."));
+                    }
+                }
+                entries.insert(JSContactProperty::Media, Value::Object(media));
             }
             (property, value) => {
                 entries.insert(property, value);
