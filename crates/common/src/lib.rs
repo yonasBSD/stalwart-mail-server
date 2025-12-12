@@ -594,6 +594,19 @@ impl DavResources {
             })
     }
 
+    pub fn any_resource_path_by_id(&self, id: u32) -> Option<DavResourcePath<'_>> {
+        self.resources
+            .iter()
+            .enumerate()
+            .find(|(_, resource)| resource.document_id == id)
+            .and_then(|(idx, resource)| {
+                self.paths
+                    .iter()
+                    .find(|path| path.resource_idx == idx)
+                    .map(|path| DavResourcePath { path, resource })
+            })
+    }
+
     pub fn subtree(&self, search_path: &str) -> impl Iterator<Item = DavResourcePath<'_>> {
         let prefix = format!("{search_path}/");
         self.paths.iter().filter_map(move |path| {
