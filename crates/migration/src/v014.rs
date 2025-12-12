@@ -35,7 +35,7 @@ pub const SUBSPACE_BITMAP_TEXT: u8 = b'v';
 pub const SUBSPACE_FTS_INDEX: u8 = b'g';
 pub const SUBSPACE_TELEMETRY_INDEX: u8 = b'w';
 
-pub(crate) async fn migrate_v0_14(server: &Server) -> trc::Result<()> {
+pub async fn migrate_v0_14(server: &Server) -> trc::Result<()> {
     // Migrate global data
     let mut tasks = Vec::new();
     let _server = server.clone();
@@ -74,9 +74,10 @@ pub(crate) async fn migrate_v0_14(server: &Server) -> trc::Result<()> {
         std::env::var("NUM_THREADS")
             .ok()
             .and_then(|s| s.parse::<usize>().ok())
-            .unwrap_or(8),
+            .unwrap_or_else(|| num_cpus::get().min(2) * 2),
     ));
     let mut tasks = Vec::with_capacity(principal_ids.len());
+    let num_principals = principal_ids.len();
     for principal_id in principal_ids {
         let permit = semaphore.clone().acquire_owned().await.unwrap();
         let _server = server.clone();
@@ -96,6 +97,11 @@ pub(crate) async fn migrate_v0_14(server: &Server) -> trc::Result<()> {
                 .caused_by(trc::location!())
                 .details("Join Error")
         })??;
+
+    trc::event!(
+        Server(trc::ServerEvent::Startup),
+        Details = format!("Migrated {num_principals} accounts")
+    );
 
     // Delete old subspaces
     for subspace in [
@@ -121,16 +127,34 @@ pub(crate) async fn migrate_v0_14(server: &Server) -> trc::Result<()> {
             .caused_by(trc::location!())?;
     }
 
+    trc::event!(
+        Server(trc::ServerEvent::Startup),
+        Details = format!("Migration to v0.15 completed")
+    );
+
     Ok(())
 }
 
 pub(crate) async fn migrate_principal_v0_14(server: &Server, account_id: u32) -> trc::Result<()> {
-    migrate_emails_v014(server, account_id).await?;
-    migrate_encryption_params_v014(server, account_id).await?;
-    migrate_indexes(server, account_id).await
+    let emails = migrate_emails_v014(server, account_id).await?;
+    let params = migrate_encryption_params_v014(server, account_id).await?;
+    let (num_contacts, num_calendars, num_email_submissions, num_identities) =
+        migrate_indexes(server, account_id).await?;
+
+    trc::event!(
+        Server(trc::ServerEvent::Startup),
+        Details = format!(
+            "Migrated account {account_id}: {emails} emails, {params} encryption params, {num_contacts} contacts, {num_calendars} calendars, {num_email_submissions} submissions, and {num_identities} identities"
+        )
+    );
+
+    Ok(())
 }
 
-pub(crate) async fn migrate_indexes(server: &Server, account_id: u32) -> trc::Result<()> {
+pub(crate) async fn migrate_indexes(
+    server: &Server,
+    account_id: u32,
+) -> trc::Result<(usize, usize, usize, usize)> {
     /*
 
            EmailSubmissionField::UndoStatus => 41,
@@ -211,6 +235,10 @@ pub(crate) async fn migrate_indexes(server: &Server, account_id: u32) -> trc::Re
     }
 
     let mut indexes = Vec::new();
+    let mut num_contacts = 0;
+    let mut num_calendars = 0;
+    let mut num_email_submissions = 0;
+    let mut num_identities = 0;
     for collection in [
         Collection::ContactCard,
         Collection::CalendarEventNotification,
@@ -218,104 +246,101 @@ pub(crate) async fn migrate_indexes(server: &Server, account_id: u32) -> trc::Re
         Collection::Identity,
     ] {
         server
-            .archives(
-                account_id,
-                Collection::ContactCard,
-                &(),
-                |document_id, archive| {
-                    match collection {
-                        Collection::ContactCard => {
-                            let data = archive
-                                .unarchive_untrusted::<ContactCard>()
-                                .caused_by(trc::location!())?;
+            .archives(account_id, collection, &(), |document_id, archive| {
+                match collection {
+                    Collection::ContactCard => {
+                        let data = archive
+                            .unarchive_untrusted::<ContactCard>()
+                            .caused_by(trc::location!())?;
 
-                            if let Some(email) = data.emails().next() {
-                                indexes.push((
-                                    collection,
-                                    document_id,
-                                    Operation::Index {
-                                        field: ContactField::Email.into(),
-                                        key: email.into_bytes(),
-                                        set: true,
-                                    },
-                                ));
-                            }
-                            indexes.push((
-                                collection,
-                                document_id,
-                                Operation::Value {
-                                    class: ValueClass::IndexProperty(IndexPropertyClass::Integer {
-                                        property: ContactField::CreatedToUpdated.into(),
-                                        value: data.created.to_native() as u64,
-                                    }),
-                                    op: ValueOp::Set(
-                                        (data.modified.to_native() as u64).serialize(),
-                                    ),
-                                },
-                            ));
-                        }
-                        Collection::CalendarEventNotification => {
-                            let data = archive
-                                .unarchive_untrusted::<CalendarEventNotification>()
-                                .caused_by(trc::location!())?;
-                            indexes.push((
-                                collection,
-                                document_id,
-                                Operation::Value {
-                                    class: ValueClass::IndexProperty(IndexPropertyClass::Integer {
-                                        property: CalendarNotificationField::CreatedToId.into(),
-                                        value: data.created.to_native() as u64,
-                                    }),
-                                    op: ValueOp::Set(
-                                        data.event_id
-                                            .as_ref()
-                                            .map(|v| v.to_native())
-                                            .unwrap_or(u32::MAX)
-                                            .serialize(),
-                                    ),
-                                },
-                            ));
-                        }
-                        Collection::EmailSubmission => {
-                            let data = archive
-                                .unarchive_untrusted::<EmailSubmission>()
-                                .caused_by(trc::location!())?;
-                            indexes.push((
-                                collection,
-                                document_id,
-                                Operation::Value {
-                                    class: ValueClass::IndexProperty(IndexPropertyClass::Integer {
-                                        property: EmailSubmissionField::Metadata.into(),
-                                        value: data.send_at.to_native(),
-                                    }),
-                                    op: ValueOp::Set(
-                                        KeySerializer::new(U32_LEN * 3 + 1)
-                                            .write(data.email_id.to_native())
-                                            .write(data.thread_id.to_native())
-                                            .write(data.identity_id.to_native())
-                                            .write(data.undo_status.as_index())
-                                            .finalize(),
-                                    ),
-                                },
-                            ));
-                        }
-                        Collection::Identity => {
+                        if let Some(email) = data.emails().next() {
                             indexes.push((
                                 collection,
                                 document_id,
                                 Operation::Index {
-                                    field: IdentityField::DocumentId.into(),
-                                    key: vec![],
+                                    field: ContactField::Email.into(),
+                                    key: email.into_bytes(),
                                     set: true,
                                 },
                             ));
                         }
-                        _ => unreachable!(),
+                        num_contacts += 1;
+                        indexes.push((
+                            collection,
+                            document_id,
+                            Operation::Value {
+                                class: ValueClass::IndexProperty(IndexPropertyClass::Integer {
+                                    property: ContactField::CreatedToUpdated.into(),
+                                    value: data.created.to_native() as u64,
+                                }),
+                                op: ValueOp::Set((data.modified.to_native() as u64).serialize()),
+                            },
+                        ));
                     }
+                    Collection::CalendarEventNotification => {
+                        let data = archive
+                            .unarchive_untrusted::<CalendarEventNotification>()
+                            .caused_by(trc::location!())?;
+                        num_calendars += 1;
+                        indexes.push((
+                            collection,
+                            document_id,
+                            Operation::Value {
+                                class: ValueClass::IndexProperty(IndexPropertyClass::Integer {
+                                    property: CalendarNotificationField::CreatedToId.into(),
+                                    value: data.created.to_native() as u64,
+                                }),
+                                op: ValueOp::Set(
+                                    data.event_id
+                                        .as_ref()
+                                        .map(|v| v.to_native())
+                                        .unwrap_or(u32::MAX)
+                                        .serialize(),
+                                ),
+                            },
+                        ));
+                    }
+                    Collection::EmailSubmission => {
+                        let data = archive
+                            .unarchive_untrusted::<EmailSubmission>()
+                            .caused_by(trc::location!())?;
+                        num_email_submissions += 1;
+                        indexes.push((
+                            collection,
+                            document_id,
+                            Operation::Value {
+                                class: ValueClass::IndexProperty(IndexPropertyClass::Integer {
+                                    property: EmailSubmissionField::Metadata.into(),
+                                    value: data.send_at.to_native(),
+                                }),
+                                op: ValueOp::Set(
+                                    KeySerializer::new(U32_LEN * 3 + 1)
+                                        .write(data.email_id.to_native())
+                                        .write(data.thread_id.to_native())
+                                        .write(data.identity_id.to_native())
+                                        .write(data.undo_status.as_index())
+                                        .finalize(),
+                                ),
+                            },
+                        ));
+                    }
+                    Collection::Identity => {
+                        num_identities += 1;
+                        indexes.push((
+                            collection,
+                            document_id,
+                            Operation::Index {
+                                field: IdentityField::DocumentId.into(),
+                                key: vec![],
+                                set: true,
+                            },
+                        ));
+                    }
+                    _ => unreachable!(),
+                }
 
-                    Ok(true)
-                },
-            )
+                Ok(true)
+            })
             .await
             .caused_by(trc::location!())?;
     }
@@ -345,5 +370,10 @@ pub(crate) async fn migrate_indexes(server: &Server, account_id: u32) -> trc::Re
             .caused_by(trc::location!())?;
     }
 
-    Ok(())
+    Ok((
+        num_contacts,
+        num_calendars,
+        num_email_submissions,
+        num_identities,
+    ))
 }

@@ -4386,6 +4386,7 @@ dependencies = [
  "mail-auth",
  "mail-parser",
  "nlp",
+ "num_cpus",
  "proc_macros",
  "rkyv",
  "serde",

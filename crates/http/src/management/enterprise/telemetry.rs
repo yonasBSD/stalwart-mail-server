@@ -33,7 +33,7 @@ use serde_json::json;
 use std::future::Future;
 use store::{
     ahash::{AHashMap, AHashSet},
-    search::{SearchField, SearchFilter, SearchQuery, TracingSearchField},
+    search::{SearchComparator, SearchField, SearchFilter, SearchQuery, TracingSearchField},
     write::{SearchIndex, now},
 };
 use trc::{
@@ -165,7 +165,12 @@ impl TelemetryApi for Server {
                 let span_ids = self
                     .search_store()
                     .query_global(
-                        SearchQuery::new(SearchIndex::Tracing).with_filters(tracing_query),
+                        SearchQuery::new(SearchIndex::Tracing)
+                            .with_filters(tracing_query)
+                            .with_comparator(SearchComparator::Field {
+                                field: SearchField::Id,
+                                ascending: false,
+                            }),
                     )
                     .await?;
 

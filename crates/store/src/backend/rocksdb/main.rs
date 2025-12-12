@@ -4,16 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::path::PathBuf;
-
+use super::{CF_BLOBS, RocksDbStore};
+use crate::*;
 use rocksdb::{ColumnFamilyDescriptor, MergeOperands, OptimisticTransactionDB, Options};
-
+use std::path::PathBuf;
 use tokio::sync::oneshot;
 use utils::config::{Config, utils::AsKey};
-
-use crate::*;
-
-use super::{CF_BLOBS, RocksDbStore};
 
 impl RocksDbStore {
     pub async fn open(config: &mut Config, prefix: impl AsKey) -> Option<Self> {
@@ -75,6 +71,11 @@ impl RocksDbStore {
             SUBSPACE_TELEMETRY_SPAN,
             SUBSPACE_TELEMETRY_METRIC,
             SUBSPACE_SEARCH_INDEX,
+            LEGACY_SUBSPACE_BITMAP_ID,
+            LEGACY_SUBSPACE_BITMAP_TAG,
+            LEGACY_SUBSPACE_BITMAP_TEXT,
+            LEGACY_SUBSPACE_FTS_INDEX,
+            LEGACY_SUBSPACE_TELEMETRY_INDEX,
         ] {
             let cf_opts = Options::default();
             cfs.push(ColumnFamilyDescriptor::new(

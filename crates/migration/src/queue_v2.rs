@@ -152,8 +152,6 @@ pub enum LegacyQuotaKey {
 }
 
 pub(crate) async fn migrate_queue_v014(server: &Server) -> trc::Result<()> {
-    let mut count = 0;
-
     let mut messages = Vec::new();
     server
         .store()
@@ -176,8 +174,6 @@ pub(crate) async fn migrate_queue_v014(server: &Server) -> trc::Result<()> {
                     }
                 }
 
-                count += 1;
-
                 Ok(true)
             },
         )
@@ -185,6 +181,7 @@ pub(crate) async fn migrate_queue_v014(server: &Server) -> trc::Result<()> {
         .caused_by(trc::location!())?;
 
     let mut batch = BatchBuilder::new();
+    let count = messages.len();
     for (queue_id, message) in messages {
         batch.set(
             ValueClass::Queue(QueueClass::Message(queue_id)),
@@ -211,12 +208,10 @@ pub(crate) async fn migrate_queue_v014(server: &Server) -> trc::Result<()> {
             .caused_by(trc::location!())?;
     }
 
-    if count > 0 {
-        trc::event!(
-            Server(trc::ServerEvent::Startup),
-            Details = format!("Migrated {count} queued messages",)
-        );
-    }
+    trc::event!(
+        Server(trc::ServerEvent::Startup),
+        Details = format!("Migrated {count} queued messages",)
+    );
 
     Ok(())
 }

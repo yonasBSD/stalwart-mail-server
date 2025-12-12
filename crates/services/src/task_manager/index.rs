@@ -17,12 +17,13 @@ use email::{cache::MessageCacheFetch, message::metadata::MessageMetadata};
 use groupware::{cache::GroupwareCache, calendar::CalendarEvent, contact::ContactCard};
 use std::cmp::Ordering;
 use store::{
-    SerializeInfallible, ValueKey,
+    IterateParams, SerializeInfallible, ValueKey,
     ahash::AHashMap,
     roaring::RoaringBitmap,
     search::{IndexDocument, SearchField, SearchFilter, SearchQuery},
     write::{
-        AlignedBytes, Archive, BatchBuilder, SearchIndex, TaskEpoch, TaskQueueClass, ValueClass,
+        AlignedBytes, Archive, BatchBuilder, SearchIndex, TaskEpoch, TaskQueueClass,
+        TelemetryClass, ValueClass, key::DeserializeBigEndian,
     },
 };
 use trc::{AddContext, TaskQueueEvent};
@@ -384,7 +385,51 @@ impl ReindexIndexTask for Server {
                     }
                 }
             }
-            SearchIndex::File | SearchIndex::Tracing | SearchIndex::InMemory => (),
+            SearchIndex::Tracing => {
+                let mut spans = Vec::new();
+                self.store()
+                    .iterate(
+                        IterateParams::new(
+                            ValueKey::from(ValueClass::Telemetry(TelemetryClass::Span {
+                                span_id: 0,
+                            })),
+                            ValueKey::from(ValueClass::Telemetry(TelemetryClass::Span {
+                                span_id: u64::MAX,
+                            })),
+                        )
+                        .no_values(),
+                        |key, _| {
+                            spans.push(key.deserialize_be_u64(0)?);
+                            Ok(true)
+                        },
+                    )
+                    .await
+                    .caused_by(trc::location!())?;
+
+                let mut batch = BatchBuilder::new();
+                for span_id in spans {
+                    batch
+                        .with_account_id((span_id >> 32) as u32) // TODO: This is hacky, improve
+                        .with_document(span_id as u32)
+                        .set(
+                            ValueClass::TaskQueue(TaskQueueClass::UpdateIndex {
+                                due: TaskEpoch::now(),
+                                index: SearchIndex::Tracing,
+                                is_insert: true,
+                            }),
+                            vec![],
+                        );
+                    if batch.len() >= 2000 {
+                        self.core.storage.data.write(batch.build_all()).await?;
+                        batch = BatchBuilder::new();
+                    }
+                }
+
+                if !batch.is_empty() {
+                    self.core.storage.data.write(batch.build_all()).await?;
+                }
+            }
+            SearchIndex::File | SearchIndex::InMemory => (),
         }
 
         // Request indexing

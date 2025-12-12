@@ -217,7 +217,7 @@ impl ArchivedMessageMetadata {
 
                                 document.insert_key_value(
                                     EmailSearchField::Headers,
-                                    header.name.as_str().to_string(),
+                                    header.name.as_str(),
                                     value,
                                 );
                             }

@@ -393,6 +393,23 @@ impl Store {
             }
         }
 
-        Ok(state.bm.unwrap_or_default().into_iter().collect::<Vec<_>>())
+        if query.comparators.iter().all(|c| {
+            matches!(
+                c,
+                SearchComparator::Field {
+                    field: SearchField::Id,
+                    ascending: false
+                }
+            )
+        }) {
+            Ok(state
+                .bm
+                .unwrap_or_default()
+                .into_iter()
+                .rev()
+                .collect::<Vec<_>>())
+        } else {
+            Ok(state.bm.unwrap_or_default().into_iter().collect::<Vec<_>>())
+        }
     }
 }

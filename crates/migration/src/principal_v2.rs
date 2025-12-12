@@ -4,19 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::time::Instant;
-
-use common::Server;
-use directory::{Principal, PrincipalData, Type, backend::internal::SpecialSecrets};
-use proc_macros::EnumMethods;
-use store::{
-    Serialize, ValueKey,
-    roaring::RoaringBitmap,
-    write::{AlignedBytes, Archive, Archiver, BatchBuilder, DirectoryClass, ValueClass},
-};
-use trc::AddContext;
-use types::collection::Collection;
-
 use crate::{
     addressbook_v2::migrate_addressbook_v013,
     calendar_v2::migrate_calendar_v013,
@@ -26,6 +13,17 @@ use crate::{
     push_v2::migrate_push_subscriptions_v013,
     sieve_v2::migrate_sieve_v013,
 };
+use common::Server;
+use directory::{Principal, PrincipalData, Type, backend::internal::SpecialSecrets};
+use proc_macros::EnumMethods;
+use std::time::Instant;
+use store::{
+    Serialize, ValueKey,
+    roaring::RoaringBitmap,
+    write::{AlignedBytes, Archive, Archiver, BatchBuilder, DirectoryClass, ValueClass},
+};
+use trc::AddContext;
+use types::collection::Collection;
 
 pub(crate) async fn migrate_principals_v0_13(server: &Server) -> trc::Result<RoaringBitmap> {
     // Obtain email ids

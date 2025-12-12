@@ -9,13 +9,12 @@ use super::{
     read::{ChunkedValue, read_chunked_value},
 };
 use crate::{
-    IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_QUOTA,
-    WITH_SUBSPACE,
     backend::deserialize_i64_le,
     write::{
-        AssignedIds, Batch, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME, MergeResult, Operation,
-        ValueClass, ValueOp, key::KeySerializer,
+        AssignedIds, Batch, DirectoryClass, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME, MergeResult,
+        Operation, TaskQueueClass, TelemetryClass, ValueClass, ValueOp, key::KeySerializer,
     },
+    *,
 };
 use foundationdb::{
     FdbError, KeySelector, RangeOption, Transaction,
@@ -82,7 +81,6 @@ impl FdbStore {
                     Operation::Value { class, op } => {
                         let mut key =
                             class.serialize(account_id, collection, document_id, WITH_SUBSPACE);
-                        let do_chunk = !class.is_counter(collection);
 
                         match op {
                             ValueOp::Set(value) => {
@@ -168,7 +166,32 @@ impl FdbStore {
                                 result.push_counter_id(num);
                             }
                             ValueOp::Clear => {
-                                if do_chunk {
+                                if matches!(
+                                    key[0],
+                                    SUBSPACE_DIRECTORY
+                                        | SUBSPACE_TASK_QUEUE
+                                        | SUBSPACE_IN_MEMORY_VALUE
+                                        | SUBSPACE_PROPERTY
+                                        | SUBSPACE_QUEUE_MESSAGE
+                                        | SUBSPACE_REPORT_OUT
+                                        | SUBSPACE_REPORT_IN
+                                        | SUBSPACE_TELEMETRY_SPAN
+                                        | SUBSPACE_SEARCH_INDEX
+                                        | SUBSPACE_LOGS
+                                ) && matches!(
+                                    class,
+                                    ValueClass::Property(_)
+                                        | ValueClass::Queue(_)
+                                        | ValueClass::Report(_)
+                                        | ValueClass::Directory(DirectoryClass::Principal(_))
+                                        | ValueClass::ShareNotification { .. }
+                                        | ValueClass::Telemetry(TelemetryClass::Metric { .. })
+                                        | ValueClass::TaskQueue(TaskQueueClass::SendImip {
+                                            is_payload: true,
+                                            ..
+                                        })
+                                        | ValueClass::InMemory(_)
+                                ) {
                                     trx.clear_range(
                                         &key,
                                         &KeySerializer::new(key.len() + 1)

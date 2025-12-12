@@ -145,11 +145,11 @@ pub fn html_to_tokens(input: &str) -> Vec<HtmlToken> {
                         match iter.peek() {
                             Some(&(_, &b'/')) => {
                                 is_end_tag = true;
-                                pos += 1;
+                                //pos += 1;
                                 iter.next();
                             }
                             Some((_, ch)) if ch.is_ascii_whitespace() => {
-                                pos += 1;
+                                //pos += 1;
                                 iter.next();
                             }
                             _ => break,

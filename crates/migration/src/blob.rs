@@ -18,6 +18,7 @@ use types::blob_hash::{BLOB_HASH_LEN, BlobHash};
 const SUBSPACE_BLOB_RESERVE: u8 = b'j';
 
 pub(crate) async fn migrate_blobs_v014(server: &Server) -> trc::Result<()> {
+    let mut num_blobs = 0;
     for byte in 0..=u8::MAX {
         // Validate linked blobs
         let mut from_hash = BlobHash::default();
@@ -78,6 +79,7 @@ pub(crate) async fn migrate_blobs_v014(server: &Server) -> trc::Result<()> {
             .caused_by(trc::location!())?;
 
         let mut batch = BatchBuilder::new();
+        num_blobs += keys.len();
         for (key, op) in keys {
             batch
                 .clear(ValueClass::Any(AnyClass {
@@ -103,6 +105,11 @@ pub(crate) async fn migrate_blobs_v014(server: &Server) -> trc::Result<()> {
                 .caused_by(trc::location!())?;
         }
     }
+
+    trc::event!(
+        Server(trc::ServerEvent::Startup),
+        Details = format!("Migrated {num_blobs} blob links")
+    );
 
     enum OldType {
         Quota { size: u32 },
@@ -181,6 +188,7 @@ pub(crate) async fn migrate_blobs_v014(server: &Server) -> trc::Result<()> {
         .caused_by(trc::location!())?;
 
     let mut batch = BatchBuilder::new();
+    let num_entries = entries.len();
     for entry in entries {
         batch
             .clear(ValueClass::Any(AnyClass {
@@ -258,6 +266,11 @@ pub(crate) async fn migrate_blobs_v014(server: &Server) -> trc::Result<()> {
             batch = BatchBuilder::new();
         }
     }
+
+    trc::event!(
+        Server(trc::ServerEvent::Startup),
+        Details = format!("Migrated {num_entries} temporary blob links")
+    );
 
     if !batch.is_empty() {
         server
