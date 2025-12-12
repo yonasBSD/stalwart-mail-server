@@ -632,7 +632,7 @@ END:VCALENDAR
     "timeZone": "Etc/UTC",
     "start": "1996-09-18T14:30:00",
     "status": "confirmed",
-    "iCalComponent": {
+    "iCalendar": {
       "convertedProperties": {
         "duration": {
           "name": "dtend"

@@ -624,7 +624,7 @@ fn test_jscontact_1() -> Value {
             "pref": true
           },
           "features": {
-            "cell": true,
+            "mobile": true,
             "voice": true
           }
         },
@@ -745,7 +745,7 @@ fn test_jscontact_2() -> Value {
             "pref": true
           },
           "features": {
-            "cell": true,
+            "mobile": true,
             "voice": true
           }
         },
