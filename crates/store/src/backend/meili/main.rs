@@ -10,7 +10,6 @@ use crate::{
         CalendarSearchField, ContactSearchField, EmailSearchField, SearchableField,
         TracingSearchField,
     },
-    write::SearchIndex,
 };
 use reqwest::{Error, Response, Url};
 use serde_json::{Value, json};
@@ -148,6 +147,8 @@ impl MeiliSearchStore {
 
     #[cfg(feature = "test_mode")]
     pub async fn drop_indexes(&self) -> trc::Result<()> {
+        use crate::write::SearchIndex;
+
         for index in &[
             SearchIndex::Email,
             SearchIndex::Calendar,

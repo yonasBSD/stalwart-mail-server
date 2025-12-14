@@ -451,21 +451,24 @@ impl PyzorConfig {
 
 impl ClassifierConfig {
     pub fn parse(config: &mut Config) -> Option<Self> {
-        if !config
-            .property_or_default("spam-filter.classifier.enable", "true")
-            .unwrap_or(true)
-        {
-            return None;
-        }
+        let ccfh = match config.value("spam-filter.classifier.model") {
+            Some("ftrl-fh") | None => false,
+            Some("ftrl-ccfh") => true,
+            Some("disabled") => return None,
+            Some(other) => {
+                config.new_build_error(
+                    "spam-filter.classifier.model",
+                    format!("Invalid model type: {}", other),
+                );
+                return None;
+            }
+        };
 
         let w_params = FtrlParameters::parse(config, "spam-filter.classifier.parameters", 20);
-        let i_params = if config
-            .property_or_default("spam-filter.classifier.ccfh.enable", "false")
-            .unwrap_or(false)
-        {
+        let i_params = if ccfh {
             Some(FtrlParameters::parse(
                 config,
-                "spam-filter.classifier.ccfh.parameters",
+                "spam-filter.classifier.parameters.ccfh",
                 w_params.feature_hash_size - 2,
             ))
         } else {
