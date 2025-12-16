@@ -12,7 +12,7 @@ on:
         default: false
         type: boolean
   push:
-     tags: ["v*.*.*"]
+    tags: ["v*.*.*"]
 
 env:
   SCCACHE_GHA_ENABLED: true
@@ -113,36 +113,36 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             platform: linux/amd64
-            suffix: ''
-            build_env: ''
+            suffix: ""
+            build_env: ""
           - target: x86_64-unknown-linux-musl
             platform: linux/amd64
-            suffix: '-alpine'
-            build_env: ''
+            suffix: "-alpine"
+            build_env: ""
           - target: aarch64-unknown-linux-gnu
             platform: linux/arm64
-            suffix: ''
-            build_env: 'JEMALLOC_SYS_WITH_LG_PAGE=16 '
+            suffix: ""
+            build_env: "JEMALLOC_SYS_WITH_LG_PAGE=16 "
           - target: aarch64-unknown-linux-musl
             platform: linux/arm64
-            suffix: '-alpine'
-            build_env: 'JEMALLOC_SYS_WITH_LG_PAGE=16 '
+            suffix: "-alpine"
+            build_env: "JEMALLOC_SYS_WITH_LG_PAGE=16 "
           - target: armv7-unknown-linux-gnueabihf
             platform: linux/arm/v7
-            suffix: ''
-            build_env: 'JEMALLOC_SYS_WITH_LG_PAGE=16 '
+            suffix: ""
+            build_env: "JEMALLOC_SYS_WITH_LG_PAGE=16 "
           - target: armv7-unknown-linux-musleabihf
             platform: linux/arm/v7
-            suffix: '-alpine'
-            build_env: 'JEMALLOC_SYS_WITH_LG_PAGE=16 '
+            suffix: "-alpine"
+            build_env: "JEMALLOC_SYS_WITH_LG_PAGE=16 "
           - target: arm-unknown-linux-gnueabihf
             platform: linux/arm/v6
-            suffix: ''
-            build_env: ''
+            suffix: ""
+            build_env: ""
           - target: arm-unknown-linux-musleabihf
             platform: linux/arm/v6
-            suffix: '-alpine'
-            build_env: ''
+            suffix: "-alpine"
+            build_env: ""
     name: Build / ${{matrix.target}}
     runs-on: ubuntu-latest
     steps:
@@ -296,7 +296,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-        #   - target: aarch64-pc-windows-msvc
+          #   - target: aarch64-pc-windows-msvc
           - target: x86_64-pc-windows-msvc
 
     steps:
@@ -331,7 +331,7 @@ jobs:
       matrix:
         include:
           - target: aarch64-apple-darwin
-          - target: x86_64-apple-darwin
+          #- target: x86_64-apple-darwin
     steps:
       - name: Checkout
         uses: actions/checkout@v6.0.1
