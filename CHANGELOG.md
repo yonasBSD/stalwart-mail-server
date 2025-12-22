@@ -16,7 +16,7 @@ If you are upgrading from v0.15.x, replace the binary and update the webadmin.
 ## Fixed
 - mySQL search: Use `MEDIUMTEXT` field type for email body and attachments (#2544).
 - PostgreSQL search: Truncate large text fields.
-- ElasticSearch: Implement pagination (#2552).
+- ElasticSearch: Implement pagination (#2551).
 - Antispam: Fix `NO_SPACE_IN_FROM` spam tag detection logic (#2372).
 - IMAP: Fix shared folder double nesting (test suite credits to @ochnygosch) (#2358).
 - JMAP: Use latest `Received` header in JMAP `Email/import` (credits to @apexskier) (#2374).
