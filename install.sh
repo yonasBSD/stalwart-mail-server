@@ -182,8 +182,8 @@ create_service_linux_initd() {
 # Required-Stop:     $network
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6
-# Short-Description: Stalwart Mail Server
-# Description:       Starts and stops the Stalwart Mail Server
+# Short-Description: Stalwart Server
+# Description:       Starts and stops the Stalwart Server
 # Conflicts:         postfix sendmail
 ### END INIT INFO
 
@@ -245,7 +245,7 @@ do_stop()
 
 case "$1" in
   start)
-    [ "$VERBOSE" != no ] && log_daemon_msg "Starting Stalwart Mail Server" "stalwart"
+    [ "$VERBOSE" != no ] && log_daemon_msg "Starting Stalwart Server" "stalwart"
     do_start
     case "$?" in
         0|1) [ "$VERBOSE" != no ] && log_end_msg 0 ;;
@@ -253,7 +253,7 @@ case "$1" in
     esac
     ;;
   stop)
-    [ "$VERBOSE" != no ] && log_daemon_msg "Stopping Stalwart Mail Server" "stalwart"
+    [ "$VERBOSE" != no ] && log_daemon_msg "Stopping Stalwart Server" "stalwart"
     do_stop
     case "$?" in
         0|1) [ "$VERBOSE" != no ] && log_end_msg 0 ;;
@@ -264,7 +264,7 @@ case "$1" in
     status_of_proc "$DAEMON" "stalwart" && exit 0 || exit $?
     ;;
   restart)
-    log_daemon_msg "Restarting Stalwart Mail Server" "stalwart"
+    log_daemon_msg "Restarting Stalwart Server" "stalwart"
     do_stop
     case "$?" in
       0|1)
