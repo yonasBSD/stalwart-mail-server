@@ -9,7 +9,7 @@ body:
         > [!IMPORTANT]
         > This template is **only** for issues that have already been discussed and confirmed as bugs in the [Discussions](https://github.com/stalwartlabs/stalwart/discussions) section.
         >
-        > If you haven't had your issue confirmed yet, please [start a Discussion](https://github.com/stalwartlabs/stalwart/discussions/new?category=q-a) first.
+        > If you haven't had your issue confirmed yet, please [start a Discussion](https://github.com/stalwartlabs/stalwart/discussions/new?category=issue-triage) first.
   - type: input
     attributes:
       label: Discussion Link
