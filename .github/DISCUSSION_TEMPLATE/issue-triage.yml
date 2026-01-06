@@ -14,17 +14,7 @@ body:
     attributes:
       label: Issue Description
       description: |
-        Provide a detailed description of the issue. Include relevant information, such as:
-        - The feature or configuration you encounter the issue with.
-        - Screenshots, logs, or other supporting information.
-        - If this is a regression of an existing issue that was closed or resolved, please include the previous reference (Discussion, Issue, PR, commit).
-
-        > [!TIP]
-        > **Not sure what information to include?**
-        > - **Authentication issues:** Include the authentication method (LDAP, OIDC, SQL, internal), relevant sanitized config snippets, and error messages from logs.
-        > - **Email delivery issues:** Include relevant SMTP logs (with `trace` level if possible), sender/recipient domains, and any bounce messages.
-        > - **IMAP/JMAP issues:** Include the client being used, the specific operation failing, and relevant protocol logs.
-        > - **Performance issues:** Include server specs, number of accounts/messages, and resource usage metrics.
+        Provide a detailed description of the issue. Include relevant context such as your configuration, environment, and any recent changes that might have led to the issue.
       placeholder: |
         When trying to send an email via SMTP, the connection is accepted but the message is rejected with error 550.
     validations:
@@ -57,7 +47,7 @@ body:
         2. Attempt to send an email from user@example.com to external@domain.com.
         3. Observe the 550 error in the SMTP session.
     validations:
-      required: true
+      required: false
   - type: textarea
     attributes:
       label: Relevant Log Output
@@ -100,7 +90,7 @@ body:
         - MySQL
         - SQLite
     validations:
-      required: false
+      required: true
   - type: dropdown
     attributes:
       label: Blob Storage
@@ -115,7 +105,19 @@ body:
         - S3-compatible
         - Azure
     validations:
-      required: false
+      required: true
+  - type: dropdown
+    attributes:
+      label: Search Engine
+      description: What search engine are you using?
+      options:
+        - Internal
+        - Meilisearch
+        - Elasticsearch
+        - PostgreSQL
+        - MySQL
+    validations:
+      required: true
   - type: dropdown
     attributes:
       label: Directory Backend
@@ -126,7 +128,7 @@ body:
         - LDAP
         - OIDC
     validations:
-      required: false
+      required: true
   - type: textarea
     attributes:
       label: Additional Context
