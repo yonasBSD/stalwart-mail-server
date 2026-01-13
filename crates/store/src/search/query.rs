@@ -54,7 +54,6 @@ impl Store {
         }
 
         let mut results;
-
         if query.filters.len() > 1 {
             let mut filters = query.filters.into_iter().peekable();
             while let Some(filter) = filters.next() {
