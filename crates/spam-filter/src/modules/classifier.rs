@@ -11,9 +11,9 @@ use crate::analysis::url::SpamFilterAnalyzeUrl;
 use crate::modules::html::{A, ALT, HREF, HtmlToken, IMG, SRC, TITLE};
 use crate::{Email, SpamFilterContext, TextPart};
 use crate::{Hostname, SpamFilterInput};
-use common::config::spamfilter;
+use common::config::mailstore::spamfilter;
 use common::manager::{SPAM_CLASSIFIER_KEY, SPAM_TRAINER_KEY};
-use common::{Server, config::spamfilter::Location, ipc::BroadcastEvent};
+use common::{Server, config::mailstore::spamfilter::Location, ipc::BroadcastEvent};
 use mail_auth::DmarcResult;
 use mail_parser::{MessageParser, MimeHeaders};
 use nlp::classifier::feature::{
@@ -25,6 +25,7 @@ use nlp::classifier::reservoir::SampleReservoir;
 use nlp::classifier::train::{CcfhTrainer, FhTrainer};
 use nlp::tokenizers::types::TypesTokenizer;
 use nlp::tokenizers::{stream::WordStemTokenizer, types::TokenType};
+use registry::schema::prelude::Object;
 use std::time::Instant;
 use std::{
     borrow::Cow,
@@ -505,6 +506,7 @@ impl SpamClassifier for Server {
                 &Archiver::new(trainer)
                     .serialize()
                     .caused_by(trc::location!())?,
+                self.core.storage.compression,
             )
             .await
             .caused_by(trc::location!())?;
@@ -512,6 +514,7 @@ impl SpamClassifier for Server {
             .put_blob(
                 SPAM_CLASSIFIER_KEY,
                 &classifier.serialize().caused_by(trc::location!())?,
+                self.core.storage.compression,
             )
             .await
             .caused_by(trc::location!())?;
@@ -520,7 +523,7 @@ impl SpamClassifier for Server {
             .data
             .spam_classifier
             .store(Arc::new(classifier.inner));
-        self.cluster_broadcast(BroadcastEvent::ReloadSpamFilter)
+        self.cluster_broadcast(BroadcastEvent::reload(Object::SpamClassifier))
             .await;
 
         trc::event!(
@@ -583,11 +586,8 @@ impl SpamClassifier for Server {
                 }
 
                 for rcpt in &ctx.input.env_rcpt_to {
-                    let prediction = if let Some(account_id) = self
-                        .directory()
-                        .email_to_id(rcpt)
-                        .await
-                        .caused_by(trc::location!())?
+                    let prediction = if let Some(account_id) =
+                        self.account_id(rcpt).await.caused_by(trc::location!())?
                     {
                         has_prediction = true;
                         classifier
@@ -626,11 +626,8 @@ impl SpamClassifier for Server {
                 }
 
                 for rcpt in &ctx.input.env_rcpt_to {
-                    let prediction = if let Some(account_id) = self
-                        .directory()
-                        .email_to_id(rcpt)
-                        .await
-                        .caused_by(trc::location!())?
+                    let prediction = if let Some(account_id) =
+                        self.account_id(rcpt).await.caused_by(trc::location!())?
                     {
                         has_prediction = true;
                         classifier
