@@ -586,8 +586,10 @@ impl SpamClassifier for Server {
                 }
 
                 for rcpt in &ctx.input.env_rcpt_to {
-                    let prediction = if let Some(account_id) =
-                        self.account_id(rcpt).await.caused_by(trc::location!())?
+                    let prediction = if let Some(account_id) = self
+                        .account_id_from_email(rcpt, true)
+                        .await
+                        .caused_by(trc::location!())?
                     {
                         has_prediction = true;
                         classifier
@@ -626,8 +628,10 @@ impl SpamClassifier for Server {
                 }
 
                 for rcpt in &ctx.input.env_rcpt_to {
-                    let prediction = if let Some(account_id) =
-                        self.account_id(rcpt).await.caused_by(trc::location!())?
+                    let prediction = if let Some(account_id) = self
+                        .account_id_from_email(rcpt, true)
+                        .await
+                        .caused_by(trc::location!())?
                     {
                         has_prediction = true;
                         classifier
