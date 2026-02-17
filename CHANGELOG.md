@@ -12,13 +12,12 @@ If you are upgrading from v0.15.x, replace the binary and update the webadmin.
 ## Changed
 
 ## Fixed
-- IMAP/JMAP: OOM when `mail-parser` returns cyclical MIME structures.
+- IMAP/JMAP: OOM when `mail-parser` returns cyclical MIME structures [CVE-2026-26312](https://github.com/stalwartlabs/stalwart/security/advisories/GHSA-jm95-876q-c9gw).
 - Tracing: Fix tracing indexing when using separate stores.
 - JMAP: Fix `upToId` computation in `*/queryChanges`.
 - JMAP: Include createdIds when the property is present.
 - JMAP: Respect query arguments in `Email/queryChanges`.
 - JMAP: Return the correct container/item change id when there are no changes.
-
 
 ## [0.15.4] - 2026-01-19
 
