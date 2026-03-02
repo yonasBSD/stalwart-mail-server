@@ -170,7 +170,9 @@ impl Enterprise {
         // Build the enterprise configuration
         let mut enterprise = Enterprise {
             license,
-            undelete_retention: dr.hold_deleted_for.map(|retention| retention.into_inner()),
+            undelete_retention: dr
+                .archive_deleted_items_for
+                .map(|retention| retention.into_inner()),
             logo_url,
             metrics_alerts: Default::default(),
             spam_filter_llm: SpamFilterLlmConfig::parse(bp, &ai_apis_ids).await,

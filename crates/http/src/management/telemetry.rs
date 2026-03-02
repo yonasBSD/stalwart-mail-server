@@ -238,8 +238,8 @@ impl TelemetryApi for Server {
                     if metric_types.contains(&metric_type) {
                         let value = match metric_type {
                             MetricType::QueueCount => self.total_queued_messages().await?,
-                            MetricType::UserCount => self.total_accounts().await?,
-                            MetricType::DomainCount => self.total_domains().await?,
+                            MetricType::UserCount => self.total_accounts().await? as u64,
+                            MetricType::DomainCount => self.total_domains().await? as u64,
                             _ => unreachable!(),
                         };
                         Collector::update_gauge(metric_type, value);

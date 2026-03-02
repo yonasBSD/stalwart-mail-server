@@ -8,6 +8,7 @@ use crate::schema::prelude::Roles;
 use types::id::Id;
 
 pub mod account;
+pub mod archived_item;
 pub mod cron;
 pub mod http;
 pub mod report;

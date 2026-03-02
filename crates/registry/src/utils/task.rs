@@ -18,6 +18,7 @@ impl Task {
             Task::MergeThreads(task) => task.status = status,
             Task::DmarcReport(task) => task.status = status,
             Task::TlsReport(task) => task.status = status,
+            Task::RestoreArchivedItem(task) => task.status = status,
         }
     }
 
@@ -32,6 +33,7 @@ impl Task {
             Task::MergeThreads(task) => &task.status,
             Task::DmarcReport(task) => &task.status,
             Task::TlsReport(task) => &task.status,
+            Task::RestoreArchivedItem(task) => &task.status,
         }
     }
 

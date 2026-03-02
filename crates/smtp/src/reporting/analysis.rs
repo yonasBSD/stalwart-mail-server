@@ -4,31 +4,27 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashSet;
 use common::{Server, psl};
 use mail_auth::{
     flate2::read::GzDecoder,
-    report::{ActionDisposition, DmarcResult, Feedback, Report, tlsrpt::TlsReport},
+    report::{Feedback, Report, tlsrpt::TlsReport},
     zip,
 };
 use mail_parser::{Message, MimeHeaders, PartType};
 use registry::{
-    pickle::Pickle,
-    schema::{
-        prelude::ObjectType,
-        structs::{ArfExternalReport, DmarcExternalReport, TlsExternalReport},
-    },
-    types::{EnumImpl, datetime::UTCDateTime, index::IndexBuilder},
-    utils::report::ReportIndex,
+    schema::structs::{ArfExternalReport, DmarcExternalReport, TlsExternalReport},
+    types::datetime::UTCDateTime,
 };
 use std::{
     borrow::Cow,
-    collections::hash_map::Entry,
     io::{Cursor, Read},
 };
-use store::write::{BatchBuilder, RegistryClass, ValueClass, now};
+use store::write::{BatchBuilder, now};
 use trc::IncomingReportEvent;
 use types::id::Id;
+
+use crate::reporting::{inbound::LogReport, index::ExternalReportIndex};
 
 enum Compression {
     None,
@@ -276,7 +272,6 @@ impl AnalyzeReport for Server {
 
                     match report {
                         Format::Dmarc(report) => {
-                            let object_id = ObjectType::DmarcExternalReport.to_id();
                             let mut report = DmarcExternalReport {
                                 from,
                                 to,
@@ -294,20 +289,9 @@ impl AnalyzeReport for Server {
                                     .collect::<AHashSet<_>>(),
                             )
                             .await;
-                            let mut index_builder = IndexBuilder::default();
-                            report.build_search_index(&mut index_builder);
-                            batch
-                                .registry_index(object_id, item_id, index_builder.keys.iter(), true)
-                                .set(
-                                    ValueClass::Registry(RegistryClass::Item {
-                                        object_id,
-                                        item_id,
-                                    }),
-                                    report.to_pickled_vec(),
-                                );
+                            report.write_ops(&mut batch, item_id, true);
                         }
                         Format::Tls(report) => {
-                            let object_id = ObjectType::TlsExternalReport.to_id();
                             let mut report = TlsExternalReport {
                                 from,
                                 to,
@@ -325,20 +309,9 @@ impl AnalyzeReport for Server {
                                     .collect::<AHashSet<_>>(),
                             )
                             .await;
-                            let mut index_builder = IndexBuilder::default();
-                            report.build_search_index(&mut index_builder);
-                            batch
-                                .registry_index(object_id, item_id, index_builder.keys.iter(), true)
-                                .set(
-                                    ValueClass::Registry(RegistryClass::Item {
-                                        object_id,
-                                        item_id,
-                                    }),
-                                    report.to_pickled_vec(),
-                                );
+                            report.write_ops(&mut batch, item_id, true);
                         }
                         Format::Arf(report) => {
-                            let object_id = ObjectType::ArfExternalReport.to_id();
                             let mut report = ArfExternalReport {
                                 from,
                                 to,
@@ -356,17 +329,7 @@ impl AnalyzeReport for Server {
                                     .collect::<AHashSet<_>>(),
                             )
                             .await;
-                            let mut index_builder = IndexBuilder::default();
-                            report.build_search_index(&mut index_builder);
-                            batch
-                                .registry_index(object_id, item_id, index_builder.keys.iter(), true)
-                                .set(
-                                    ValueClass::Registry(RegistryClass::Item {
-                                        object_id,
-                                        item_id,
-                                    }),
-                                    report.to_pickled_vec(),
-                                );
+                            report.write_ops(&mut batch, item_id, true);
                         }
                     }
 
@@ -409,167 +372,5 @@ async fn tenant_ids(server: &Server, domains: AHashSet<&str>) -> Option<Id> {
         tenant_ids.into_iter().next()
     } else {
         None
-    }
-}
-
-trait LogReport {
-    fn log(&self);
-}
-
-impl LogReport for Report {
-    fn log(&self) {
-        let mut dmarc_pass = 0;
-        let mut dmarc_quarantine = 0;
-        let mut dmarc_reject = 0;
-        let mut dmarc_none = 0;
-        let mut dkim_pass = 0;
-        let mut dkim_fail = 0;
-        let mut dkim_none = 0;
-        let mut spf_pass = 0;
-        let mut spf_fail = 0;
-        let mut spf_none = 0;
-
-        for record in self.records() {
-            let count = std::cmp::min(record.count(), 1);
-
-            match record.action_disposition() {
-                ActionDisposition::Pass => {
-                    dmarc_pass += count;
-                }
-                ActionDisposition::Quarantine => {
-                    dmarc_quarantine += count;
-                }
-                ActionDisposition::Reject => {
-                    dmarc_reject += count;
-                }
-                ActionDisposition::None | ActionDisposition::Unspecified => {
-                    dmarc_none += count;
-                }
-            }
-            match record.dmarc_dkim_result() {
-                DmarcResult::Pass => {
-                    dkim_pass += count;
-                }
-                DmarcResult::Fail => {
-                    dkim_fail += count;
-                }
-                DmarcResult::Unspecified => {
-                    dkim_none += count;
-                }
-            }
-            match record.dmarc_spf_result() {
-                DmarcResult::Pass => {
-                    spf_pass += count;
-                }
-                DmarcResult::Fail => {
-                    spf_fail += count;
-                }
-                DmarcResult::Unspecified => {
-                    spf_none += count;
-                }
-            }
-        }
-
-        trc::event!(
-            IncomingReport(
-                if (dmarc_reject + dmarc_quarantine + dkim_fail + spf_fail) > 0 {
-                    IncomingReportEvent::DmarcReportWithWarnings
-                } else {
-                    IncomingReportEvent::DmarcReport
-                }
-            ),
-            RangeFrom = trc::Value::Timestamp(self.date_range_begin()),
-            RangeTo = trc::Value::Timestamp(self.date_range_end()),
-            Domain = self.domain().to_string(),
-            From = self.email().to_string(),
-            Id = self.report_id().to_string(),
-            DmarcPass = dmarc_pass,
-            DmarcQuarantine = dmarc_quarantine,
-            DmarcReject = dmarc_reject,
-            DmarcNone = dmarc_none,
-            DkimPass = dkim_pass,
-            DkimFail = dkim_fail,
-            DkimNone = dkim_none,
-            SpfPass = spf_pass,
-            SpfFail = spf_fail,
-            SpfNone = spf_none,
-        );
-    }
-}
-
-impl LogReport for TlsReport {
-    fn log(&self) {
-        for policy in self.policies.iter().take(5) {
-            let mut details = AHashMap::with_capacity(policy.failure_details.len());
-            for failure in &policy.failure_details {
-                let num_failures = std::cmp::min(1, failure.failed_session_count);
-                match details.entry(failure.result_type) {
-                    Entry::Occupied(mut e) => {
-                        *e.get_mut() += num_failures;
-                    }
-                    Entry::Vacant(e) => {
-                        e.insert(num_failures);
-                    }
-                }
-            }
-
-            trc::event!(
-                IncomingReport(if policy.summary.total_failure > 0 {
-                    IncomingReportEvent::TlsReportWithWarnings
-                } else {
-                    IncomingReportEvent::TlsReport
-                }),
-                RangeFrom =
-                    trc::Value::Timestamp(self.date_range.start_datetime.to_timestamp() as u64),
-                RangeTo = trc::Value::Timestamp(self.date_range.end_datetime.to_timestamp() as u64),
-                Domain = policy.policy.policy_domain.clone(),
-                From = self.contact_info.as_deref().unwrap_or_default().to_string(),
-                Id = self.report_id.clone(),
-                Policy = format!("{:?}", policy.policy.policy_type),
-                TotalSuccesses = policy.summary.total_success,
-                TotalFailures = policy.summary.total_failure,
-                Details = format!("{details:?}"),
-            );
-        }
-    }
-}
-
-impl LogReport for Feedback<'_> {
-    fn log(&self) {
-        trc::event!(
-            IncomingReport(match self.feedback_type() {
-                mail_auth::report::FeedbackType::Abuse => IncomingReportEvent::AbuseReport,
-                mail_auth::report::FeedbackType::AuthFailure =>
-                    IncomingReportEvent::AuthFailureReport,
-                mail_auth::report::FeedbackType::Fraud => IncomingReportEvent::FraudReport,
-                mail_auth::report::FeedbackType::NotSpam => IncomingReportEvent::NotSpamReport,
-                mail_auth::report::FeedbackType::Other => IncomingReportEvent::OtherReport,
-                mail_auth::report::FeedbackType::Virus => IncomingReportEvent::VirusReport,
-            }),
-            RangeFrom = trc::Value::Timestamp(
-                self.arrival_date()
-                    .map(|d| d as u64)
-                    .unwrap_or_else(|| { now() })
-            ),
-            Domain = self
-                .reported_domain()
-                .iter()
-                .map(|d| trc::Value::String(d.as_ref().into()))
-                .collect::<Vec<_>>(),
-            Hostname = self.reporting_mta().map(|d| trc::Value::String(d.into())),
-            Url = self
-                .reported_uri()
-                .iter()
-                .map(|d| trc::Value::String(d.as_ref().into()))
-                .collect::<Vec<_>>(),
-            RemoteIp = self.source_ip(),
-            Total = self.incidents(),
-            Result = format!("{:?}", self.delivery_result()),
-            Details = self
-                .authentication_results()
-                .iter()
-                .map(|d| trc::Value::String(d.as_ref().into()))
-                .collect::<Vec<_>>(),
-        );
     }
 }

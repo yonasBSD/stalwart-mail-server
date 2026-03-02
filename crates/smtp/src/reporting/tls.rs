@@ -5,7 +5,10 @@
  */
 
 use super::AggregateTimestamp;
-use crate::{queue::RecipientDomain, reporting::SmtpReporting};
+use crate::{
+    queue::RecipientDomain,
+    reporting::{index::InternalReportIndex, send::MtaReportSend},
+};
 use common::{
     Server, USER_AGENT,
     config::smtp::{
@@ -24,12 +27,9 @@ use registry::{
     schema::{
         enums::TlsPolicyType,
         prelude::{ObjectType, Property},
-        structs::{
-            Task, TaskStatus, TaskTlsReport, TlsFailureDetails, TlsInternalReport, TlsReport,
-            TlsReportPolicy,
-        },
+        structs::{TlsFailureDetails, TlsInternalReport, TlsReport, TlsReportPolicy},
     },
-    types::{EnumImpl, datetime::UTCDateTime, id::ObjectId},
+    types::{EnumImpl, datetime::UTCDateTime},
 };
 use reqwest::header::CONTENT_TYPE;
 use std::fmt::Write;
@@ -300,59 +300,43 @@ impl TlsReporting for Server {
                 (object_id_v.object_id.id().id(), report)
             } else {
                 let item_id = self.inner.data.queue_id_gen.generate();
-                let deliver_at = (event.interval.to_timestamp() + event.interval.as_secs()) as i64;
-
-                batch
-                    .assert_value(pk.clone(), ())
-                    .set(
-                        pk.clone(),
-                        ObjectIdVersioned {
-                            object_id: ObjectId::new(ObjectType::TlsInternalReport, item_id.into()),
-                            version: 0,
-                        }
-                        .serialize(),
-                    )
-                    .schedule_task_with_id(
-                        item_id,
-                        Task::TlsReport(TaskTlsReport {
-                            report_id: item_id.into(),
-                            status: TaskStatus::at(deliver_at),
-                        }),
-                    );
-
                 let created_at = UTCDateTime::now();
-                let deliver_at = UTCDateTime::from_timestamp(deliver_at);
-                (
-                    item_id,
-                    TlsInternalReport {
-                        created_at,
-                        deliver_at,
-                        domain: event.domain.clone(),
-                        report: TlsReport {
-                            report_id: format!("{}_{policy_hash}", created_at.timestamp()),
-                            organization_name: self
-                                .eval_if::<String, _>(
-                                    &config.org_name,
-                                    &RecipientDomain::new(&event.domain),
-                                    event.span_id,
-                                )
-                                .await
-                                .clone(),
-                            contact_info: self
-                                .eval_if::<String, _>(
-                                    &config.contact_info,
-                                    &RecipientDomain::new(&event.domain),
-                                    event.span_id,
-                                )
-                                .await
-                                .clone(),
-                            date_range_end: deliver_at,
-                            date_range_start: created_at,
-                            policies: vec![],
-                        },
-                        ..Default::default()
+                let deliver_at = UTCDateTime::from_timestamp(
+                    (event.interval.to_timestamp() + event.interval.as_secs()) as i64,
+                );
+
+                let report = TlsInternalReport {
+                    created_at,
+                    deliver_at,
+                    domain: event.domain.clone(),
+                    report: TlsReport {
+                        report_id: format!("{}_{policy_hash}", created_at.timestamp()),
+                        organization_name: self
+                            .eval_if::<String, _>(
+                                &config.org_name,
+                                &RecipientDomain::new(&event.domain),
+                                event.span_id,
+                            )
+                            .await
+                            .clone(),
+                        contact_info: self
+                            .eval_if::<String, _>(
+                                &config.contact_info,
+                                &RecipientDomain::new(&event.domain),
+                                event.span_id,
+                            )
+                            .await
+                            .clone(),
+                        date_range_end: deliver_at,
+                        date_range_start: created_at,
+                        policies: vec![],
                     },
-                )
+                    ..Default::default()
+                };
+
+                report.write_ops(&mut batch, item_id, true);
+
+                (item_id, report)
             };
 
             let policy = if let Some(policy) = report

@@ -5,7 +5,11 @@
  */
 
 use super::AggregateTimestamp;
-use crate::{core::Session, queue::RecipientDomain, reporting::SmtpReporting};
+use crate::{
+    core::Session,
+    queue::RecipientDomain,
+    reporting::{index::InternalReportIndex, send::MtaReportSend},
+};
 use common::{
     Server,
     config::smtp::report::AggregateFrequency,
@@ -25,12 +29,9 @@ use registry::{
     schema::{
         enums::FailureReportingOption,
         prelude::{ObjectType, Property},
-        structs::{
-            DmarcInternalReport, DmarcReport, DmarcReportRecord, Rate, Task, TaskDmarcReport,
-            TaskStatus,
-        },
+        structs::{DmarcInternalReport, DmarcReport, DmarcReportRecord, Rate},
     },
-    types::{EnumImpl, datetime::UTCDateTime, id::ObjectId},
+    types::{EnumImpl, datetime::UTCDateTime},
 };
 use std::future::Future;
 use store::{
@@ -337,9 +338,7 @@ impl DmarcReporting for Server {
                 .write(report.policy_identifier)
                 .finalize(),
         });
-        self.core
-            .storage
-            .data
+        self.store()
             .write(batch.build_all())
             .await
             .caused_by(trc::location!())?;
@@ -523,95 +522,76 @@ impl DmarcReporting for Server {
                 (object_id_v.object_id.id().id(), report)
             } else {
                 let item_id = self.inner.data.queue_id_gen.generate();
-                let deliver_at = (event.interval.to_timestamp() + event.interval.as_secs()) as i64;
-
-                batch
-                    .assert_value(pk.clone(), ())
-                    .set(
-                        pk.clone(),
-                        ObjectIdVersioned {
-                            object_id: ObjectId::new(
-                                ObjectType::DmarcInternalReport,
-                                item_id.into(),
-                            ),
-                            version: 0,
-                        }
-                        .serialize(),
-                    )
-                    .schedule_task_with_id(
-                        item_id,
-                        Task::DmarcReport(TaskDmarcReport {
-                            report_id: item_id.into(),
-                            status: TaskStatus::at(deliver_at),
-                        }),
-                    );
-
                 let created_at = UTCDateTime::now();
-                let deliver_at = UTCDateTime::from_timestamp(deliver_at);
+                let deliver_at = UTCDateTime::from_timestamp(
+                    (event.interval.to_timestamp() + event.interval.as_secs()) as i64,
+                );
                 let policy =
                     PolicyPublished::from_record(event.domain.clone(), &event.dmarc_record);
-                (
-                    item_id,
-                    DmarcInternalReport {
-                        created_at,
-                        deliver_at,
-                        domain: event.domain.clone(),
-                        report: DmarcReport {
-                            report_id: format!("{}_{policy_hash}", created_at.timestamp()),
-                            date_range_begin: created_at,
-                            date_range_end: deliver_at,
-                            email: self
-                                .eval_if(
-                                    &config.address,
-                                    &RecipientDomain::new(event.domain.as_str()),
-                                    event.span_id,
-                                )
-                                .await
-                                .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_string()),
-                            extra_contact_info: self
-                                .eval_if::<String, _>(
-                                    &config.contact_info,
-                                    &RecipientDomain::new(event.domain.as_str()),
-                                    event.span_id,
-                                )
-                                .await,
-                            org_name: self
-                                .eval_if::<String, _>(
-                                    &config.org_name,
-                                    &RecipientDomain::new(event.domain.as_str()),
-                                    event.span_id,
-                                )
-                                .await
-                                .unwrap_or_default(),
-                            policy_adkim: policy.adkim.into(),
-                            policy_aspf: policy.aspf.into(),
-                            policy_disposition: policy.p.into(),
-                            policy_domain: policy.domain,
-                            policy_failure_reporting_options: match event.dmarc_record.fo {
-                                dmarc::Report::All => vec![FailureReportingOption::All],
-                                dmarc::Report::Any => vec![FailureReportingOption::Any],
-                                dmarc::Report::Dkim => vec![FailureReportingOption::DkimFailure],
-                                dmarc::Report::Spf => vec![FailureReportingOption::SpfFailure],
-                                dmarc::Report::DkimSpf => vec![
-                                    FailureReportingOption::DkimFailure,
-                                    FailureReportingOption::SpfFailure,
-                                ],
-                            },
-                            policy_subdomain_disposition: policy.sp.into(),
-                            policy_testing_mode: policy.testing,
-                            policy_version: None,
-                            version: 1.0.into(),
-                            ..Default::default()
+
+                let report = DmarcInternalReport {
+                    created_at,
+                    deliver_at,
+                    domain: event.domain.clone(),
+                    report: DmarcReport {
+                        report_id: format!("{}_{policy_hash}", created_at.timestamp()),
+                        date_range_begin: created_at,
+                        date_range_end: deliver_at,
+                        email: self
+                            .eval_if(
+                                &config.address,
+                                &RecipientDomain::new(event.domain.as_str()),
+                                event.span_id,
+                            )
+                            .await
+                            .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_string()),
+                        extra_contact_info: self
+                            .eval_if::<String, _>(
+                                &config.contact_info,
+                                &RecipientDomain::new(event.domain.as_str()),
+                                event.span_id,
+                            )
+                            .await,
+                        org_name: self
+                            .eval_if::<String, _>(
+                                &config.org_name,
+                                &RecipientDomain::new(event.domain.as_str()),
+                                event.span_id,
+                            )
+                            .await
+                            .unwrap_or_default(),
+                        policy_adkim: policy.adkim.into(),
+                        policy_aspf: policy.aspf.into(),
+                        policy_disposition: policy.p.into(),
+                        policy_domain: policy.domain,
+                        policy_failure_reporting_options: match event.dmarc_record.fo {
+                            dmarc::Report::All => vec![FailureReportingOption::All],
+                            dmarc::Report::Any => vec![FailureReportingOption::Any],
+                            dmarc::Report::Dkim => vec![FailureReportingOption::DkimFailure],
+                            dmarc::Report::Spf => vec![FailureReportingOption::SpfFailure],
+                            dmarc::Report::DkimSpf => vec![
+                                FailureReportingOption::DkimFailure,
+                                FailureReportingOption::SpfFailure,
+                            ],
                         },
-                        policy_identifier: policy_hash,
-                        rua: event
-                            .dmarc_record
-                            .rua()
-                            .iter()
-                            .map(|u| u.uri.clone())
-                            .collect(),
+                        policy_subdomain_disposition: policy.sp.into(),
+                        policy_testing_mode: policy.testing,
+                        policy_version: None,
+                        version: 1.0.into(),
+                        ..Default::default()
                     },
-                )
+                    policy_identifier: policy_hash,
+                    rua: event
+                        .dmarc_record
+                        .rua()
+                        .iter()
+                        .map(|u| u.uri.clone())
+                        .collect(),
+                };
+
+                report.write_ops(&mut batch, item_id, true);
+
+                (item_id, report)
             };
 
             // Add record

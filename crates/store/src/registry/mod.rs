@@ -19,7 +19,7 @@ use registry::{
     schema::{
         prelude::{Object, ObjectInner, ObjectType, Property},
         structs::{
-            DeletedItem, DmarcInternalReport, SpamTrainingSample, Task, TlsInternalReport, Trace,
+            ArchivedItem, DmarcInternalReport, SpamTrainingSample, Task, TlsInternalReport, Trace,
         },
     },
     types::{EnumImpl, ObjectImpl, id::ObjectId},
@@ -109,10 +109,10 @@ impl Deserialize for SpamTrainingSample {
     }
 }
 
-impl Deserialize for DeletedItem {
+impl Deserialize for ArchivedItem {
     fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
         let mut stream = PickledStream::new(bytes);
-        DeletedItem::unpickle(&mut stream).ok_or_else(|| {
+        ArchivedItem::unpickle(&mut stream).ok_or_else(|| {
             trc::EventType::Registry(trc::RegistryEvent::DeserializationError)
                 .into_err()
                 .caused_by(trc::location!())

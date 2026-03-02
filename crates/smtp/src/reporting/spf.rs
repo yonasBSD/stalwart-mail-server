@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{core::Session, reporting::SmtpReporting};
+use crate::{core::Session, reporting::send::MtaReportSend};
 use common::network::SessionStream;
 use mail_auth::{AuthenticationResults, SpfOutput, report::AuthFailureType};
 use registry::schema::structs::Rate;

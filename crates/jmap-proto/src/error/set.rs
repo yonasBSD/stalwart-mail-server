@@ -220,6 +220,10 @@ impl<T: Property> SetError<T> {
         Self::new(SetErrorType::InvalidProperties)
     }
 
+    pub fn invalid_patch() -> Self {
+        Self::new(SetErrorType::InvalidPatch)
+    }
+
     pub fn forbidden() -> Self {
         Self::new(SetErrorType::Forbidden)
     }

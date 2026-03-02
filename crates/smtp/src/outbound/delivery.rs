@@ -20,7 +20,7 @@ use crate::queue::throttle::IsAllowed;
 use crate::queue::{
     Error, FROM_REPORT, HostResponse, MessageWrapper, QueueEnvelope, QueuedMessage, Status,
 };
-use crate::reporting::SmtpReporting;
+use crate::reporting::send::MtaReportSend;
 use crate::{queue::ErrorDetails, reporting::tls::TlsRptOptions};
 use ahash::AHashMap;
 use common::Server;

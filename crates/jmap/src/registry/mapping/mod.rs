@@ -20,7 +20,7 @@ use types::id::Id;
 use utils::map::vec_map::VecMap;
 
 pub mod account;
-pub mod deleted_item;
+pub mod archived_item;
 pub mod log;
 pub mod masked_email;
 pub mod principal;

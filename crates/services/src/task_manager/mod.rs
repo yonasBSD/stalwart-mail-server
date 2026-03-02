@@ -9,6 +9,7 @@ use crate::task_manager::index::SearchIndexTask;
 use crate::task_manager::lock::TaskLockManager;
 use crate::task_manager::merge_threads::MergeThreadsTask;
 use crate::task_manager::report::SubmitReportTask;
+use crate::task_manager::restore_item::RestoreItemTask;
 use alarm::SendAlarmTask;
 use common::config::server::ServerProtocol;
 use common::network::limiter::ConcurrencyLimiter;
@@ -45,6 +46,7 @@ pub mod index;
 pub mod lock;
 pub mod merge_threads;
 pub mod report;
+pub mod restore_item;
 
 const QUEUE_REFRESH_INTERVAL: u64 = 60 * 5; // 5 minutes
 const DEFAULT_LOCK_EXPIRY: u64 = 60 * 5; // 5 minutes
@@ -219,6 +221,7 @@ pub fn spawn_task_manager(inner: Arc<Inner>) {
                                         .submit_report(report::ReportId::Tls(task.report_id.id()))
                                         .await
                                 }
+                                Task::RestoreArchivedItem(task) => server.restore_item(task).await,
                                 Task::IndexDocument(_)
                                 | Task::UnindexDocument(_)
                                 | Task::IndexTrace(_) => unreachable!(),
@@ -397,7 +400,7 @@ impl TaskQueueManager for Server {
                 TaskType::MergeThreads => roles
                     .merge_threads
                     .is_enabled_for_integer(task_job.id as u32),
-                TaskType::DmarcReport | TaskType::TlsReport => true,
+                TaskType::DmarcReport | TaskType::TlsReport | TaskType::RestoreArchivedItem => true,
             };
 
             if enabled {
@@ -584,6 +587,7 @@ impl TaskInfo for Task {
             Task::MergeThreads(_) => "MergeThreads",
             Task::DmarcReport(_) => "DmarcReport",
             Task::TlsReport(_) => "TlsReport",
+            Task::RestoreArchivedItem(_) => "RestoreArchivedItem",
         }
     }
 }

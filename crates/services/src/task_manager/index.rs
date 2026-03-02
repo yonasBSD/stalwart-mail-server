@@ -621,7 +621,7 @@ async fn delete_email_metadata(
                     use email::message::metadata::MESSAGE_RECEIVED_MASK;
                     use registry::{
                         pickle::Pickle,
-                        schema::structs::{DeletedEmail, DeletedItem},
+                        schema::structs::{ArchivedEmail, ArchivedItem},
                         types::{datetime::UTCDateTime, id::ObjectId},
                     };
                     use store::{
@@ -660,11 +660,11 @@ async fn delete_email_metadata(
                     let until = now + undelete_retention.as_secs();
                     let blob_hash = BlobHash::from(&metadata.blob_hash);
 
-                    let item = DeletedItem::Email(DeletedEmail {
+                    let item = ArchivedItem::Email(ArchivedEmail {
                         account_id: account_id.into(),
                         blob_id: BlobId::new(blob_hash.clone(), Default::default()),
-                        cleanup_at: UTCDateTime::from_timestamp(until as i64),
-                        deleted_at: UTCDateTime::now(),
+                        archived_until: UTCDateTime::from_timestamp(until as i64),
+                        archived_at: UTCDateTime::now(),
                         from: from.unwrap_or_default(),
                         received_at: UTCDateTime::from_timestamp(
                             (metadata.rcvd_attach.to_native() & MESSAGE_RECEIVED_MASK) as i64,
@@ -673,7 +673,7 @@ async fn delete_email_metadata(
                         size: root_part.offset_end.to_native() as u64,
                     })
                     .to_pickled_vec();
-                    let object_id = ObjectType::DeletedItem.to_id();
+                    let object_id = ObjectType::ArchivedItem.to_id();
                     let item_id = SnowflakeIdGenerator::from_sequence_id(
                         xxhash_rust::xxh3::xxh3_64(item.as_slice()),
                     )
@@ -685,7 +685,7 @@ async fn delete_email_metadata(
                                 hash: blob_hash,
                                 to: BlobLink::Temporary { until },
                             },
-                            ObjectId::new(ObjectType::DeletedItem, item_id.into()).serialize(),
+                            ObjectId::new(ObjectType::ArchivedItem, item_id.into()).serialize(),
                         )
                         .set(
                             ValueClass::Registry(RegistryClass::Index {

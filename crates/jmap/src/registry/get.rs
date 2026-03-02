@@ -7,7 +7,7 @@
 use crate::registry::mapping::{
     RegistryGetResponse,
     account::account_get,
-    deleted_item::deleted_item_get,
+    archived_item::archived_item_get,
     log::log_get,
     queued_message::queued_message_get,
     report::report_get,
@@ -268,7 +268,7 @@ impl RegistryGet for Server {
             | ObjectType::DmarcInternalReport
             | ObjectType::TlsInternalReport => report_get(get).await.map(|get| get.into_response()),
 
-            ObjectType::DeletedItem => deleted_item_get(get).await.map(|get| get.into_response()),
+            ObjectType::ArchivedItem => archived_item_get(get).await.map(|get| get.into_response()),
             ObjectType::SpamTrainingSample => {
                 spam_sample_get(get).await.map(|get| get.into_response())
             }

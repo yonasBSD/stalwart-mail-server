@@ -16,7 +16,7 @@ use registry::{
         structs::MaskedEmail,
     },
 };
-use store::{ahash::AHashSet, registry::RegistryQuery, write::now};
+use store::{registry::RegistryQuery, write::now};
 use utils::{DomainPart, map::vec_map::VecMap};
 
 pub(crate) async fn validate_masked_email(

@@ -465,7 +465,7 @@ impl<T: AsRef<[u8]> + Sync + Send + Clone> Key for AnyKey<T> {
 
 const MAILBOX_COLLECTION: u8 = Collection::Mailbox as u8;
 const MAILBOX_COUNTER_FIELD: u8 = MailboxField::UidCounter as u8;
-const REG_DELETED_ITEM: u16 = ObjectType::DeletedItem as u16;
+const REG_ARCHIVED_ITEM: u16 = ObjectType::ArchivedItem as u16;
 const REG_SPAM_SAMPLE: u16 = ObjectType::SpamTrainingSample as u16;
 const REG_ACCOUNT: u16 = ObjectType::Account as u16;
 const REG_DOMAIN: u16 = ObjectType::Domain as u16;
@@ -558,7 +558,7 @@ impl ValueClass {
                 RegistryClass::Item { object_id, .. } => match *object_id {
                     REG_ACCOUNT | REG_DOMAIN | REG_TENANT | REG_ROLE | REG_OAUTH_CLIENT
                     | REG_MAILING_LIST | REG_MASKED_EMAIL | REG_PUBLIC_KEY => SUBSPACE_DIRECTORY,
-                    REG_DELETED_ITEM => SUBSPACE_DELETED_ITEMS,
+                    REG_ARCHIVED_ITEM => SUBSPACE_DELETED_ITEMS,
                     REG_SPAM_SAMPLE => SUBSPACE_SPAM_SAMPLES,
                     REG_TRACE => SUBSPACE_TELEMETRY_SPAN,
                     REG_METRIC => SUBSPACE_TELEMETRY_METRIC,

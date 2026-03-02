@@ -4,11 +4,16 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::borrow::Cow;
+
 use crate::registry::mapping::{
     ObjectResponse, RegistrySetResponse,
+    archived_item::archived_item_set,
     masked_email::validate_masked_email,
     principal::{validate_account, validate_role, validate_tenant_quota},
     public_key::validate_public_key,
+    report::report_set,
+    spam_sample::spam_sample_set,
 };
 use common::{Server, auth::AccessToken, cache::invalidate::CacheInvalidationBuilder};
 use jmap_proto::{
@@ -494,21 +499,40 @@ impl RegistrySet for Server {
 
                 // Finalize cache invalidation
                 self.invalidate_caches(cache_invalidator).await?;
+
+                Ok(set.into_response())
             }
-            ObjectType::QueuedMessage => {}
-            ObjectType::Task => {}
-            ObjectType::ArfExternalReport => {}
-            ObjectType::DmarcExternalReport => {}
-            ObjectType::TlsExternalReport => {}
-            ObjectType::DeletedItem => {}
-            ObjectType::Metric => {}
-            ObjectType::Trace => {}
-            ObjectType::SpamTrainingSample => {}
-            ObjectType::DmarcInternalReport => {}
-            ObjectType::TlsInternalReport => {}
-            ObjectType::Log => {}
-            ObjectType::AccountSettings => {}
-            ObjectType::Credential => {}
+            ObjectType::ArfExternalReport
+            | ObjectType::DmarcExternalReport
+            | ObjectType::TlsExternalReport
+            | ObjectType::DmarcInternalReport
+            | ObjectType::TlsInternalReport => report_set(set).await.map(|set| set.into_response()),
+
+            ObjectType::ArchivedItem => archived_item_set(set).await.map(|set| set.into_response()),
+
+            ObjectType::SpamTrainingSample => {
+                spam_sample_set(set).await.map(|set| set.into_response())
+            }
+
+            ObjectType::AccountSettings => {
+                todo!()
+            }
+            ObjectType::Credential => {
+                todo!()
+            }
+
+            ObjectType::QueuedMessage => {
+                todo!()
+            }
+            ObjectType::Task => {
+                todo!()
+            }
+            ObjectType::Log | ObjectType::Metric | ObjectType::Trace => {
+                set.fail_all_create("Telemetry objects cannot be created");
+                set.fail_all_update("Telemetry objects cannot be modified");
+                set.fail_all_destroy("Telemetry objects cannot be deleted");
+                Ok(set.into_response())
+            }
         }
 
         // Schedule account and tenant deletions
@@ -519,8 +543,7 @@ impl RegistrySet for Server {
         // Domain = trigger DNIM stuff
         // Validate expressions
         // Fallback admin password from env or files
-
-        Ok(set.into_response())
+        // Individual permissions for each object + create/update/destroy
     }
 }
 
@@ -567,6 +590,34 @@ impl RegistrySetResponse<'_> {
             err => {
                 self.response.not_updated.append(id, map_write_error(err));
             }
+        }
+    }
+
+    pub fn fail_all_create(&mut self, error: impl Into<Cow<'static, str>>) {
+        let error = error.into();
+        for (client_id, _) in self.create.drain() {
+            self.response.not_created.append(
+                client_id,
+                SetError::forbidden().with_description(error.clone()),
+            );
+        }
+    }
+
+    pub fn fail_all_update(&mut self, error: impl Into<Cow<'static, str>>) {
+        let error = error.into();
+        for (id, _) in self.update.drain(..) {
+            self.response
+                .not_updated
+                .append(id, SetError::forbidden().with_description(error.clone()));
+        }
+    }
+
+    pub fn fail_all_destroy(&mut self, error: impl Into<Cow<'static, str>>) {
+        let error = error.into();
+        for id in self.destroy.drain(..) {
+            self.response
+                .not_destroyed
+                .append(id, SetError::forbidden().with_description(error.clone()));
         }
     }
 

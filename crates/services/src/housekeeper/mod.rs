@@ -10,7 +10,7 @@ use common::{
     ipc::{BroadcastEvent, HousekeeperEvent, PurgeType},
 };
 use email::message::delete::EmailDeletion;
-use smtp::reporting::SmtpReporting;
+use smtp::reporting::send::MtaReportSend;
 use spam_filter::modules::classifier::SpamClassifier;
 use std::{
     collections::BinaryHeap,
