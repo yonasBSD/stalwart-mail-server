@@ -35,6 +35,7 @@ impl Authenticator for Server {
                     let access_token = AccessToken::renew(
                         self.access_token(http_cache.account_id).await?,
                         http_cache.credential_id,
+                        session.remote_ip,
                     )?;
 
                     if access_token.revision() == http_cache.revision {

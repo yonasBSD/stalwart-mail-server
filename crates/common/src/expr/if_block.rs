@@ -38,13 +38,13 @@ impl IfBlock {
     pub fn new_default(id: ObjectId, expr_ctx: ExpressionContext<'_>) -> Self {
         let token_map = TokenMap::default();
 
-        if let Some(default) = &expr_ctx.default {
+        if let Some(default) = expr_ctx.default {
             Self {
                 id,
                 property: expr_ctx.property,
                 if_then: default
                     .match_
-                    .iter()
+                    .into_iter()
                     .map(|match_| IfThen {
                         expr: Expression::parse(&token_map, &match_.if_),
                         then: Expression::parse(&token_map, &match_.then),

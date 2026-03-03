@@ -125,7 +125,7 @@ impl ContactForm {
         }
 
         Some(ContactForm {
-            rcpt_to: form.deliver_to,
+            rcpt_to: form.deliver_to.into_inner(),
             max_size: form.max_size as usize,
             validate_domain: form.validate_domain,
             from_email: FieldOrDefault {
@@ -222,7 +222,7 @@ impl Network {
                         roles.set_role(
                             role_obj
                                 .node_ranges
-                                .iter()
+                                .values()
                                 .any(|range| range.contains(node_id)),
                         )
                     }
@@ -276,7 +276,7 @@ impl Network {
                     if shard
                         .object
                         .node_ranges
-                        .iter()
+                        .values()
                         .any(|range| range.contains(node_id))
                     {
                         if matches!(roles, ClusterRole::Enabled) {
@@ -397,8 +397,8 @@ impl AsnGeoLookupConfig {
                         )
                     })
                     .ok()?,
-                asn_resources: asn.asn_urls,
-                geo_resources: asn.geo_urls,
+                asn_resources: asn.asn_urls.into_inner(),
+                geo_resources: asn.geo_urls.into_inner(),
             }),
             Asn::Dns(asn) => Some(AsnGeoLookupConfig::Dns {
                 zone_ipv4: asn.zone_ip_v4,

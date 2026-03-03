@@ -18,7 +18,7 @@ use registry::{
         TraceValueIpAddr, TraceValueList, TraceValueString, TraceValueUTCDateTime,
         TraceValueUnsignedInt,
     },
-    types::{datetime::UTCDateTime, ipaddr::IpAddr},
+    types::{datetime::UTCDateTime, ipaddr::IpAddr, list::List},
 };
 use std::{collections::HashSet, future::Future, time::Duration};
 use store::{
@@ -106,11 +106,13 @@ fn map_events<'x>(
         events.push(TraceEvent {
             event: event.inner.typ,
             timestamp: UTCDateTime::from_timestamp(event.inner.timestamp as i64),
-            key_values,
+            key_values: key_values.into(),
         });
     }
 
-    Trace { events }
+    Trace {
+        events: events.into(),
+    }
 }
 
 fn map_value(value: &Value) -> TraceValue {
@@ -149,7 +151,7 @@ fn map_value(value: &Value) -> TraceValue {
             event: event.event_type(),
         }),
         Value::Array(values) => TraceValue::List(TraceValueList {
-            value: values.iter().map(map_value).collect::<Vec<_>>(),
+            value: List::from_iter(values.iter().map(map_value)),
         }),
         Value::None => TraceValue::Null,
     }

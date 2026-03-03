@@ -9,7 +9,7 @@ use crate::{
     Server,
     auth::{
         AccessScope, AccessTo, AccessTokenInner, AccountTenantIds, FALLBACK_ADMIN_ID, Permissions,
-        PermissionsGroup, permissions::build_permissions_list,
+        permissions::{BuildPermissions, build_permissions_list},
     },
     network::limiter::{ConcurrencyLimiter, LimiterResult},
 };
@@ -23,6 +23,7 @@ use registry::{
 };
 use std::{
     hash::{Hash, Hasher},
+    net::IpAddr,
     sync::Arc,
 };
 use store::{query::acl::AclQuery, rand, write::now};
@@ -110,41 +111,63 @@ impl Server {
                 }
 
                 let now = now();
-                let permissions = permissions.finalize();
-                let credential_scopes = account
-                    .credentials
-                    .into_iter()
-                    .filter_map(|(credential_id, credential)| {
-                        let credential = credential.unwrap_properties();
-                        let expires_at = credential
-                            .expires_at
-                            .map(|v| v.timestamp() as u64)
-                            .unwrap_or(u64::MAX);
-                        if expires_at > now {
-                            let permissions = match credential.permissions {
-                                structs::Permissions::Inherit => permissions.clone(),
-                                structs::Permissions::Merge(merge) => {
-                                    let mut permissions = permissions.clone();
-                                    permissions.clear_many(&PermissionsGroup::from(merge).disabled);
-                                    permissions
-                                }
-                                structs::Permissions::Replace(replace) => {
-                                    let mut replace_permissions =
-                                        PermissionsGroup::from(replace).finalize();
-                                    replace_permissions.intersection(&permissions);
-                                    replace_permissions
-                                }
-                            };
-                            Some(AccessScope {
-                                credential_id,
-                                permissions,
-                                expires_at,
-                            })
-                        } else {
-                            None
+                let mut credential_scopes = Vec::with_capacity(account.credentials.len());
+
+                credential_scopes.push(AccessScope::new(permissions.finalize(), u32::MAX));
+
+                for credential in account.credentials {
+                    match credential {
+                        structs::Credential::Password(credential) => {
+                            if credential.expires_at.is_some() || !credential.allowed_ips.is_empty()
+                            {
+                                let credential_scope = &mut credential_scopes[0];
+                                credential_scope.expires_at = credential
+                                    .expires_at
+                                    .map(|v| v.timestamp() as u64)
+                                    .unwrap_or(u64::MAX);
+                                credential_scope.allowed_ips =
+                                    credential.allowed_ips.into_inner().into_boxed_slice();
+                            }
                         }
-                    })
-                    .collect::<Vec<_>>();
+                        structs::Credential::ApiKey(credential)
+                        | structs::Credential::AppPassword(credential) => {
+                            let credential_id = credential.credential_id.document_id();
+                            let expires_at = credential
+                                .expires_at
+                                .map(|v| v.timestamp() as u64)
+                                .unwrap_or(u64::MAX);
+                            if expires_at > now {
+                                let permissions = &credential_scopes[0].permissions;
+                                let permissions = match credential.permissions {
+                                    structs::CredentialPermissions::Inherit => permissions.clone(),
+                                    structs::CredentialPermissions::Disable(list) => {
+                                        let mut permissions = permissions.clone();
+                                        permissions.clear_many(&Permissions::from_permission(
+                                            list.permissions.as_slice(),
+                                        ));
+                                        permissions
+                                    }
+                                    structs::CredentialPermissions::Replace(list) => {
+                                        let mut replace_permissions = Permissions::from_permission(
+                                            list.permissions.as_slice(),
+                                        );
+                                        replace_permissions.intersection(permissions);
+                                        replace_permissions
+                                    }
+                                };
+                                credential_scopes.push(AccessScope {
+                                    credential_id,
+                                    permissions,
+                                    expires_at,
+                                    allowed_ips: credential
+                                        .allowed_ips
+                                        .into_inner()
+                                        .into_boxed_slice(),
+                                })
+                            }
+                        }
+                    }
+                }
 
                 Ok(AccessTokenInner {
                     concurrent_imap_requests: self
@@ -169,7 +192,7 @@ impl Server {
                     tenant_id,
                     member_of,
                     access_to: access_to.into_boxed_slice(),
-                    scopes: [AccessScope::new(permissions, u32::MAX)]
+                    scopes: []
                         .into_iter()
                         .chain(credential_scopes)
                         .collect::<Box<[AccessScope]>>(),
@@ -306,7 +329,11 @@ impl AccessToken {
         }
     }
 
-    pub fn scoped(inner: Arc<AccessTokenInner>, credential_id: u32) -> trc::Result<Self> {
+    pub fn scoped(
+        inner: Arc<AccessTokenInner>,
+        credential_id: u32,
+        remote_ip: IpAddr,
+    ) -> trc::Result<Self> {
         inner
             .scopes
             .iter()
@@ -319,12 +346,16 @@ impl AccessToken {
                     .reason("Credential expired or removed.")
             })
             .map(|scope_idx| AccessToken { scope_idx, inner })
-            .and_then(|token| token.assert_is_valid())
+            .and_then(|token| token.assert_is_valid(remote_ip))
     }
 
-    pub fn renew(inner: Arc<AccessTokenInner>, credential_id: Option<u32>) -> trc::Result<Self> {
+    pub fn renew(
+        inner: Arc<AccessTokenInner>,
+        credential_id: Option<u32>,
+        remote_ip: IpAddr,
+    ) -> trc::Result<Self> {
         if let Some(credential_id) = credential_id {
-            Self::scoped(inner, credential_id)
+            Self::scoped(inner, credential_id, remote_ip)
         } else {
             Ok(AccessToken {
                 scope_idx: 0,
@@ -402,14 +433,26 @@ impl AccessToken {
             .is_some_and(|scope| scope.permissions.get(permission as usize))
     }
 
-    pub fn assert_is_valid(self) -> trc::Result<Self> {
-        if self
+    pub fn assert_is_valid(self, remote_ip: IpAddr) -> trc::Result<Self> {
+        if let Some(scope) = self
             .inner
             .scopes
             .get(self.scope_idx)
-            .is_some_and(|scope| scope.expires_at > now())
+            .filter(|scope| scope.expires_at > now())
         {
-            Ok(self)
+            if scope.allowed_ips.is_empty()
+                || scope
+                    .allowed_ips
+                    .iter()
+                    .any(|ip_mask| ip_mask.matches(&remote_ip))
+            {
+                Ok(self)
+            } else {
+                Err(trc::SecurityEvent::Unauthorized
+                    .into_err()
+                    .ctx(trc::Key::AccountId, self.inner.account_id)
+                    .reason("IP address not allowed."))
+            }
         } else {
             Err(trc::SecurityEvent::Unauthorized
                 .into_err()
@@ -631,6 +674,7 @@ impl AccessScope {
             permissions,
             credential_id,
             expires_at: u64::MAX,
+            allowed_ips: Default::default(),
         }
     }
 }
@@ -644,15 +688,18 @@ fn hash_account(account: &Account) -> u64 {
             match &account.roles {
                 Roles::Default => {}
                 Roles::Custom(custom_roles) => {
-                    custom_roles.role_ids.hash(&mut s);
+                    custom_roles.role_ids.as_slice().hash(&mut s);
                 }
             }
             hash_permissions(&mut s, &account.permissions);
-            for (credential_id, credential) in &account.credentials {
-                let credential = credential.as_properties();
-                credential_id.hash(&mut s);
+            for credential in account
+                .credentials
+                .iter()
+                .filter_map(|credential| credential.as_secondary_credential())
+            {
+                credential.credential_id.hash(&mut s);
                 credential.expires_at.hash(&mut s);
-                hash_permissions(&mut s, &credential.permissions);
+                hash_credential_permissions(&mut s, &credential.permissions);
             }
         }
         Account::Group(account) => {
@@ -660,7 +707,7 @@ fn hash_account(account: &Account) -> u64 {
             match &account.roles {
                 Roles::Default => {}
                 Roles::Custom(custom_roles) => {
-                    custom_roles.role_ids.hash(&mut s);
+                    custom_roles.role_ids.as_slice().hash(&mut s);
                 }
             }
             hash_permissions(&mut s, &account.permissions);
@@ -677,19 +724,29 @@ fn hash_permissions(hasher: &mut AHasher, permissions: &structs::Permissions) {
         }
         structs::Permissions::Merge(permissions) => {
             2u8.hash(hasher);
-            for (perm, enabled) in permissions.permissions.iter() {
-                if *enabled {
-                    perm.hash(hasher);
-                }
-            }
+            permissions.enabled_permissions.as_slice().hash(hasher);
+            permissions.disabled_permissions.as_slice().hash(hasher);
         }
         structs::Permissions::Replace(permissions) => {
             3u8.hash(hasher);
-            for (perm, enabled) in permissions.permissions.iter() {
-                if *enabled {
-                    perm.hash(hasher);
-                }
-            }
+            permissions.enabled_permissions.as_slice().hash(hasher);
+            permissions.disabled_permissions.as_slice().hash(hasher);
+        }
+    }
+}
+
+fn hash_credential_permissions(hasher: &mut AHasher, permissions: &structs::CredentialPermissions) {
+    match permissions {
+        structs::CredentialPermissions::Inherit => {
+            0u8.hash(hasher);
+        }
+        structs::CredentialPermissions::Disable(permissions) => {
+            2u8.hash(hasher);
+            permissions.permissions.as_slice().hash(hasher);
+        }
+        structs::CredentialPermissions::Replace(permissions) => {
+            3u8.hash(hasher);
+            permissions.permissions.as_slice().hash(hasher);
         }
     }
 }

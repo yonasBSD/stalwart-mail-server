@@ -221,7 +221,7 @@ impl JmapConfig {
                 max_redirects: sieve.max_redirects,
                 extensions,
                 notification_methods: if !sieve.allowed_notify_uris.is_empty() {
-                    sieve.allowed_notify_uris.into()
+                    sieve.allowed_notify_uris.into_inner().into()
                 } else {
                     None
                 },

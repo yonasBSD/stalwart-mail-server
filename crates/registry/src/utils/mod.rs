@@ -19,7 +19,7 @@ impl Roles {
     pub fn role_ids(&self) -> Option<&[Id]> {
         match self {
             Roles::Default => None,
-            Roles::Custom(custom_roles) => Some(&custom_roles.role_ids),
+            Roles::Custom(custom_roles) => Some(custom_roles.role_ids.as_slice()),
         }
     }
 }

@@ -43,9 +43,7 @@ impl CacheInvalidationBuilder {
                     current.locale != new.locale || current.description != new.description;
                 let groups_changed = current.member_group_ids != new.member_group_ids;
                 let aliases_changed = current.aliases != new.aliases;
-                let credentials_changed = current.credentials != new.credentials
-                    || current.secret != new.secret
-                    || current.otp_auth != new.otp_auth;
+                let credentials_changed = current.credentials != new.credentials;
 
                 if was_renamed
                     || aliases_changed
@@ -138,7 +136,8 @@ impl CacheInvalidationBuilder {
             }
 
             (ObjectInner::Role(current), ObjectInner::Role(new)) => {
-                if (current.permissions != new.permissions)
+                if (current.enabled_permissions != new.enabled_permissions)
+                    || (current.disabled_permissions != new.disabled_permissions)
                     || (current.member_tenant_id != new.member_tenant_id)
                     || (current.role_ids != new.role_ids)
                 {

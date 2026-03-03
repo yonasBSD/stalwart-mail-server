@@ -338,7 +338,9 @@ fn build_dkim1_sealer<T: SigningKey<Hasher = Sha256>>(
         .iter()
         .any(|h| h.eq_ignore_ascii_case("DKIM-Signature"))
     {
-        signature.headers.push("DKIM-Signature".to_string());
+        signature
+            .headers
+            .push_unchecked("DKIM-Signature".to_string());
     }
 
     let mut sealer = mail_auth::arc::ArcSealer::from_key(key)

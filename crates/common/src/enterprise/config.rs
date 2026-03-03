@@ -199,7 +199,7 @@ impl Enterprise {
                 method.push(AlertMethod::Email {
                     from_name: alert.from_name,
                     from_addr: alert.from_address,
-                    to: alert.to,
+                    to: alert.to.into_inner(),
                     subject: AlertContent::new(&alert.subject),
                     body: AlertContent::new(&alert.body),
                 });

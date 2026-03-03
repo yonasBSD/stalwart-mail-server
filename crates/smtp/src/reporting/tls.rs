@@ -128,7 +128,7 @@ impl TlsReporting for Server {
         };
 
         // Try delivering report over HTTP
-        for uri in &report.http_rua {
+        for uri in report.http_rua.as_slice() {
             if let Ok(client) = reqwest::Client::builder()
                 .user_agent(USER_AGENT)
                 .timeout(Duration::from_secs(2 * 60))
@@ -329,7 +329,7 @@ impl TlsReporting for Server {
                             .clone(),
                         date_range_end: deliver_at,
                         date_range_start: created_at,
-                        policies: vec![],
+                        policies: Default::default(),
                     },
                     ..Default::default()
                 };
@@ -341,11 +341,12 @@ impl TlsReporting for Server {
 
             let policy = if let Some(policy) = report
                 .policy_identifiers
+                .as_slice()
                 .iter()
                 .position(|id| *id == policy_hash)
-                .and_then(|idx| report.report.policies.get_mut(idx))
+                .and_then(|idx| report.report.policies.0.inner.get_mut(idx))
             {
-                policy
+                &mut policy.value
             } else {
                 // Create policy
                 let mut policy = TlsReportPolicy {
@@ -406,27 +407,31 @@ impl TlsReporting for Server {
                 for rua in &event.tls_record.rua {
                     match rua {
                         ReportUri::Mail(mail) => {
-                            if !report.mail_rua.contains(mail) {
-                                report.mail_rua.push(mail.clone());
-                            }
+                            report.mail_rua.push(mail.clone());
                         }
                         ReportUri::Http(uri) => {
-                            if !report.http_rua.contains(uri) {
-                                report.http_rua.push(uri.clone());
-                            }
+                            report.http_rua.push(uri.clone());
                         }
                     }
                 }
 
                 report.policy_identifiers.push(policy_hash);
                 report.report.policies.push(policy);
-                report.report.policies.last_mut().unwrap()
+                &mut report.report.policies.0.inner.last_mut().unwrap().value
             };
 
             // Add failure details
             if let Some(failure) = event.failure.clone().map(TlsFailureDetails::from) {
-                if let Some(idx) = policy.failure_details.iter().position(|d| d == &failure) {
-                    policy.failure_details[idx].failed_session_count += 1;
+                if let Some(idx) = policy
+                    .failure_details
+                    .0
+                    .inner
+                    .iter()
+                    .position(|d| d.value == failure)
+                {
+                    policy.failure_details.0.inner[idx]
+                        .value
+                        .failed_session_count += 1;
                 } else {
                     policy.failure_details.push(failure);
                 }

@@ -49,7 +49,7 @@ impl NatsPubSub {
                 .map_err(|err| format!("Failed to parse Nats credentials: {}", err))?;
         }
 
-        async_nats::connect_with_options(config.addresses, opts)
+        async_nats::connect_with_options(config.addresses.into_inner(), opts)
             .await
             .map(|client| Coordinator::Nats(Arc::new(NatsPubSub { client })))
             .map_err(|err| format!("Failed to connect to Nats: {}", err))

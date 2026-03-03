@@ -39,6 +39,7 @@ impl<T: SessionStream> SessionData<T> {
             session_id: session.session_id,
             mailboxes: Mutex::new(vec![]),
             state: access_token.state().into(),
+            remote_addr: session.remote_addr,
             access_token,
             in_flight,
         };

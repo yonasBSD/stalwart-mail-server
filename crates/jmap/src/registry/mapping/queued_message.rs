@@ -15,7 +15,7 @@ use registry::{
             QueuedRecipient, RecipientStatus, ServerResponse,
         },
     },
-    types::{datetime::UTCDateTime, ipaddr::IpAddr},
+    types::{datetime::UTCDateTime, ipaddr::IpAddr, list::List, map::Map},
 };
 use smtp::queue::{spool::SmtpSpool, *};
 use store::{
@@ -68,11 +68,11 @@ fn map_message(message_in: &ArchivedMessage) -> QueuedMessage {
         blob_id: BlobId::new(BlobHash::from(&message_in.blob_hash), Default::default()),
         created_at: UTCDateTime::from_timestamp(message_in.created.to_native() as i64),
         env_id: message_in.env_id.as_ref().map(|v| v.to_string()),
-        flags: Vec::with_capacity(1),
+        flags: Map::with_capacity(1),
         priority: message_in.priority.to_native() as i64,
         received_from_ip: IpAddr(message_in.received_from_ip.as_ipaddr()),
         received_via_port: message_in.received_via_port.to_native() as u64,
-        recipients: Vec::with_capacity(message_in.recipients.len()),
+        recipients: List::with_capacity(message_in.recipients.len()),
         return_path: message_in.return_path.to_string(),
         size: message_in.size.to_native(),
     };
@@ -109,7 +109,7 @@ fn map_message(message_in: &ArchivedMessage) -> QueuedMessage {
                     })
                 }
             },
-            flags: vec![],
+            flags: Default::default(),
             notify_count: rcpt_in.notify.inner.to_native() as u64,
             notify_due: UTCDateTime::from_timestamp(rcpt_in.notify.due.to_native() as i64),
             orcpt: rcpt_in.orcpt.as_ref().map(|v| v.to_string()),

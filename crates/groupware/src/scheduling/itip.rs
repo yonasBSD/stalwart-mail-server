@@ -279,7 +279,7 @@ impl ItipMessages {
                     i_calendar_data: m.message.to_string(),
                     is_from_organizer: m.from_organizer,
                     summary: serde_json::to_string(&m.summary).unwrap_or_default(),
-                    to: m.to,
+                    to: m.to.into(),
                 })
                 .collect(),
         }
@@ -289,7 +289,7 @@ impl ItipMessages {
         batch.schedule_task(Task::CalendarItipMessage(TaskCalendarItipMessage {
             account_id: batch.last_account_id().unwrap().into(),
             document_id: batch.last_document_id().unwrap().into(),
-            messages: self.messages,
+            messages: self.messages.into(),
             status: TaskStatus::now(),
         }));
 

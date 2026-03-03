@@ -34,7 +34,7 @@ impl OpenIdDirectory {
                     claim_email: config.claim_email,
                     claim_name: config.claim_name,
                     require_aud: config.require_audience,
-                    require_scopes: config.require_scopes,
+                    require_scopes: config.require_scopes.into_inner(),
                 }
             }
             structs::OidcDirectory::Jwt(config) => OpenIdDirectory::Jwt {

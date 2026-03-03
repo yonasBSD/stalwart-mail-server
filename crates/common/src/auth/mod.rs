@@ -14,7 +14,7 @@ use directory::Credentials;
 use quick_cache::Equivalent;
 use registry::{
     schema::enums::{Locale, Permission},
-    types::EnumImpl,
+    types::{EnumImpl, ipmask::IpAddrOrMask},
 };
 use std::{
     hash::{Hash, Hasher},
@@ -136,6 +136,7 @@ pub(crate) struct AccessScope {
     pub permissions: Permissions,
     pub credential_id: u32,
     pub expires_at: u64,
+    pub allowed_ips: Box<[IpAddrOrMask]>,
 }
 
 #[derive(Debug, Default, Hash, PartialEq, Eq)]

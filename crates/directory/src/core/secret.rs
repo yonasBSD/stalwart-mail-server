@@ -61,6 +61,29 @@ pub async fn verify_mfa_secret_hash(
     }
 }
 
+pub fn verify_otp_auth(otp_auth: Option<&str>, otp_code: Option<&str>) -> trc::Result<bool> {
+    if let Some(otp_auth) = otp_auth {
+        if let Some(otp_code) = otp_code {
+            TOTP::from_url(otp_auth)
+                .map_err(|err| {
+                    trc::AuthEvent::Error
+                        .reason(err)
+                        .details(otp_auth.to_string())
+                })?
+                .check_current(otp_code)
+                .map_err(|err| {
+                    trc::AuthEvent::Error
+                        .reason(err)
+                        .details("TOTP verification failed")
+                })
+        } else {
+            Ok(false)
+        }
+    } else {
+        Ok(true)
+    }
+}
+
 async fn verify_hash_prefix(hashed_secret: &str, secret: &[u8]) -> trc::Result<bool> {
     if hashed_secret.starts_with("$argon2")
         || hashed_secret.starts_with("$pbkdf2")

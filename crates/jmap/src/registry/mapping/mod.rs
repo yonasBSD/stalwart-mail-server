@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::net::IpAddr;
+
 use common::{Server, auth::AccessToken};
 use jmap_proto::{
     error::set::SetError,
@@ -46,6 +48,7 @@ pub(crate) struct RegistryGetResponse<'x> {
 
 pub(crate) struct RegistrySetResponse<'x> {
     pub server: &'x Server,
+    pub remote_ip: IpAddr,
     pub access_token: &'x AccessToken,
     pub account_id: u32,
     pub create: VecMap<String, JmapValue<'x>>,

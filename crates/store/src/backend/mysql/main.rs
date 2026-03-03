@@ -13,7 +13,7 @@ use crate::{
     },
     *,
 };
-use ::registry::schema::structs;
+use ::registry::{schema::structs, utils::OrderedMap};
 use mysql_async::{
     Conn, OptsBuilder, Pool, PoolConstraints, PoolOpts, SslOpts, prelude::Queryable,
 };

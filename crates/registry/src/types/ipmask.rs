@@ -17,7 +17,7 @@ use std::{
     str::FromStr,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum IpAddrOrMask {
     V4 { addr: Ipv4Addr, mask: u32 },
     V6 { addr: Ipv6Addr, mask: u128 },

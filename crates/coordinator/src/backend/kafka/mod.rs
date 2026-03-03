@@ -30,7 +30,7 @@ impl KafkaPubSub {
             return Err("No Kafka brokers specified".to_string());
         }
 
-        let brokers = config.brokers.join(",");
+        let brokers = config.brokers.into_inner().join(",");
         let mut consumer_builder = ClientConfig::new();
 
         consumer_builder

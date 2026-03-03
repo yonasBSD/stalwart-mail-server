@@ -6,7 +6,7 @@
 
 use crate::{
     schema::{enums, prelude::UTCDateTime, structs},
-    types::ipaddr::IpAddr,
+    types::{ipaddr::IpAddr, list::List},
 };
 use mail_auth::report::{tlsrpt::*, *};
 use std::borrow::Cow;
@@ -318,24 +318,20 @@ impl From<Record> for structs::DmarcReportRecord {
             evaluated_disposition: value.row.policy_evaluated.disposition.into(),
             evaluated_dkim: value.row.policy_evaluated.dkim.into(),
             evaluated_spf: value.row.policy_evaluated.spf.into(),
-            policy_override_reasons: value
-                .row
-                .policy_evaluated
-                .reason
-                .into_iter()
-                .map(Into::into)
-                .collect(),
+            policy_override_reasons: List::from_iter(
+                value
+                    .row
+                    .policy_evaluated
+                    .reason
+                    .into_iter()
+                    .map(Into::into),
+            ),
             envelope_to: value.identifiers.envelope_to,
             envelope_from: value.identifiers.envelope_from,
             header_from: value.identifiers.header_from,
-            dkim_results: value
-                .auth_results
-                .dkim
-                .into_iter()
-                .map(Into::into)
-                .collect(),
-            spf_results: value.auth_results.spf.into_iter().map(Into::into).collect(),
-            extensions: value.extensions.into_iter().map(Into::into).collect(),
+            dkim_results: List::from_iter(value.auth_results.dkim.into_iter().map(Into::into)),
+            spf_results: List::from_iter(value.auth_results.spf.into_iter().map(Into::into)),
+            extensions: List::from_iter(value.extensions.into_iter().map(Into::into)),
         }
     }
 }
@@ -353,7 +349,7 @@ impl From<structs::DmarcReport> for Report {
                     begin: value.date_range_begin.timestamp() as u64,
                     end: value.date_range_end.timestamp() as u64,
                 },
-                error: value.errors,
+                error: value.errors.into_inner(),
             },
             policy_published: PolicyPublished {
                 domain: value.policy_domain,
@@ -363,7 +359,9 @@ impl From<structs::DmarcReport> for Report {
                 p: value.policy_disposition.into(),
                 sp: value.policy_subdomain_disposition.into(),
                 testing: value.policy_testing_mode,
-                fo: failure_reporting_options_to_fo(&value.policy_failure_reporting_options),
+                fo: failure_reporting_options_to_fo(
+                    value.policy_failure_reporting_options.as_slice(),
+                ),
             },
             record: value.records.into_iter().map(Into::into).collect(),
             extensions: value.extensions.into_iter().map(Into::into).collect(),
@@ -382,8 +380,8 @@ impl From<Report> for structs::DmarcReport {
                 value.report_metadata.date_range.end as i64,
             ),
             email: value.report_metadata.email,
-            errors: value.report_metadata.error,
-            extensions: value.extensions.into_iter().map(Into::into).collect(),
+            errors: value.report_metadata.error.into(),
+            extensions: List::from_iter(value.extensions.into_iter().map(Into::into)),
             extra_contact_info: value.report_metadata.extra_contact_info,
             org_name: value.report_metadata.org_name,
             policy_adkim: value.policy_published.adkim.into(),
@@ -392,14 +390,15 @@ impl From<Report> for structs::DmarcReport {
             policy_domain: value.policy_published.domain,
             policy_failure_reporting_options: fo_to_failure_reporting_options(
                 &value.policy_published.fo,
-            ),
+            )
+            .into(),
             policy_subdomain_disposition: value.policy_published.sp.into(),
             policy_testing_mode: value.policy_published.testing,
             policy_version: value
                 .policy_published
                 .version_published
                 .map(|v| v.to_string()),
-            records: value.record.into_iter().map(Into::into).collect(),
+            records: List::from_iter(value.record.into_iter().map(Into::into)),
             report_id: value.report_metadata.report_id,
         }
     }
@@ -516,6 +515,7 @@ impl From<structs::ArfFeedbackReport> for Feedback<'static> {
             arrival_date: value.arrival_date.map(|d| d.timestamp()),
             authentication_results: value
                 .authentication_results
+                .into_inner()
                 .into_iter()
                 .map(Cow::Owned)
                 .collect(),
@@ -523,8 +523,18 @@ impl From<structs::ArfFeedbackReport> for Feedback<'static> {
             original_envelope_id: value.original_envelope_id.map(Cow::Owned),
             original_mail_from: value.original_mail_from.map(Cow::Owned),
             original_rcpt_to: value.original_rcpt_to.map(Cow::Owned),
-            reported_domain: value.reported_domains.into_iter().map(Cow::Owned).collect(),
-            reported_uri: value.reported_uris.into_iter().map(Cow::Owned).collect(),
+            reported_domain: value
+                .reported_domains
+                .into_inner()
+                .into_iter()
+                .map(Cow::Owned)
+                .collect(),
+            reported_uri: value
+                .reported_uris
+                .into_inner()
+                .into_iter()
+                .map(Cow::Owned)
+                .collect(),
             reporting_mta: value.reporting_mta.map(Cow::Owned),
             source_ip: value.source_ip.map(|ip| ip.into_inner()),
             user_agent: value.user_agent.map(Cow::Owned),
@@ -557,7 +567,8 @@ impl From<Feedback<'_>> for structs::ArfFeedbackReport {
                 .authentication_results
                 .into_iter()
                 .map(|s| s.into_owned())
-                .collect(),
+                .collect::<Vec<_>>()
+                .into(),
             delivery_result: value.delivery_result.into(),
             dkim_adsp_dns: value.dkim_adsp_dns.map(|s| s.into_owned()),
             dkim_canonicalized_body: value.dkim_canonicalized_body.map(|s| s.into_owned()),
@@ -578,12 +589,14 @@ impl From<Feedback<'_>> for structs::ArfFeedbackReport {
                 .reported_domain
                 .into_iter()
                 .map(|s| s.into_owned())
-                .collect(),
+                .collect::<Vec<_>>()
+                .into(),
             reported_uris: value
                 .reported_uri
                 .into_iter()
                 .map(|s| s.into_owned())
-                .collect(),
+                .collect::<Vec<_>>()
+                .into(),
             reporting_mta: value.reporting_mta.map(|s| s.into_owned()),
             source_ip: value.source_ip.map(IpAddr),
             source_port: if port == 0 || port > 65535 {
@@ -693,9 +706,9 @@ impl From<structs::TlsReportPolicy> for Policy {
         Policy {
             policy: PolicyDetails {
                 policy_type: value.policy_type.into(),
-                policy_string: value.policy_strings,
+                policy_string: value.policy_strings.into_inner(),
                 policy_domain: value.policy_domain,
-                mx_host: value.mx_hosts,
+                mx_host: value.mx_hosts.into_inner(),
             },
             summary: Summary {
                 total_success: value.total_successful_sessions as u32,
@@ -710,12 +723,12 @@ impl From<Policy> for structs::TlsReportPolicy {
     fn from(value: Policy) -> Self {
         structs::TlsReportPolicy {
             policy_type: value.policy.policy_type.into(),
-            policy_strings: value.policy.policy_string,
+            policy_strings: value.policy.policy_string.into(),
             policy_domain: value.policy.policy_domain,
-            mx_hosts: value.policy.mx_host,
+            mx_hosts: value.policy.mx_host.into(),
             total_successful_sessions: value.summary.total_success as u64,
             total_failed_sessions: value.summary.total_failure as u64,
-            failure_details: value.failure_details.into_iter().map(Into::into).collect(),
+            failure_details: List::from_iter(value.failure_details.into_iter().map(Into::into)),
         }
     }
 }
@@ -747,7 +760,7 @@ impl From<TlsReport> for structs::TlsReport {
             ),
             contact_info: value.contact_info,
             report_id: value.report_id,
-            policies: value.policies.into_iter().map(Into::into).collect(),
+            policies: List::from_iter(value.policies.into_iter().map(Into::into)),
         }
     }
 }

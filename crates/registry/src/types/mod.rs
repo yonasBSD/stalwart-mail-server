@@ -20,6 +20,8 @@ pub mod id;
 pub mod index;
 pub mod ipaddr;
 pub mod ipmask;
+pub mod list;
+pub mod map;
 pub mod socketaddr;
 pub mod string;
 

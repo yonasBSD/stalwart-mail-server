@@ -5,20 +5,23 @@
  */
 
 use crate::registry::mapping::{ObjectResponse, RegistrySetResponse, ValidationResult};
-use common::auth::PermissionsGroup;
+use common::{
+    Server,
+    auth::{Permissions, PermissionsGroup, permissions::BuildPermissions},
+};
 use directory::core::secret::hash_secret;
 use jmap_proto::error::set::SetError;
-use rand::{Rng, distr::Alphanumeric};
 use registry::{
     schema::{
         enums::{AccountType, Permission, TenantStorageQuota},
         prelude::{MASKED_PASSWORD, ObjectType, Property},
-        structs::{Account, Role},
+        structs::{Account, Credential, Role},
     },
     types::EnumImpl,
 };
 use store::registry::RegistryQuery;
 use trc::AddContext;
+use types::id::Id;
 
 pub(crate) async fn validate_account(
     set: &RegistrySetResponse<'_>,
@@ -54,43 +57,114 @@ pub(crate) async fn validate_account(
 
     let validate_permissions = match (&mut account, old_account) {
         (Account::User(account), Some(Account::User(old_account))) => {
-            // Reset the original password if the client accidentally sent the masked password
-            if account.secret == MASKED_PASSWORD {
-                account.secret = old_account.secret.clone();
-            }
-            if account
-                .otp_auth
-                .as_ref()
-                .is_some_and(|otp_auth| otp_auth == MASKED_PASSWORD)
-            {
-                account.otp_auth = old_account.otp_auth.clone();
-            }
+            // Validate credentials
+            let has_password = account.credentials.values().any(|credential| {
+                matches!(credential, Credential::Password(credential) if credential.credential_id.is_valid())
+            });
+            let mut max_credential_id = 0;
+            let mut has_new_credentials = false;
+            for credential in account.credentials.values_mut() {
+                let credential_id = credential.credential_id();
 
-            // Hash secret if it was changed and not using external auth
-            if account.secret != old_account.secret {
-                if is_external_directory {
-                    return Ok(Err(SetError::forbidden().with_description(
-                        "Cannot change password for accounts in an external directory.",
-                    )));
+                if credential_id.is_valid() && credential_id.id() > max_credential_id {
+                    max_credential_id = credential_id.id();
                 }
-                if !account.secret.is_empty() {
-                    account.secret = hash_secret(
-                        set.server.core.network.security.password_hash_algorithm,
-                        std::mem::take(&mut account.secret),
-                    )
-                    .await
-                    .caused_by(trc::location!())?;
+
+                if let Some(old_credential) = old_account
+                    .credentials
+                    .values()
+                    .find(|c| c.credential_id() == credential_id)
+                {
+                    if credential != old_credential {
+                        match (credential, old_credential) {
+                            (
+                                Credential::Password(credential),
+                                Credential::Password(old_credential),
+                            ) => {
+                                if is_external_directory {
+                                    return Ok(Err(SetError::forbidden().with_description(
+                                        "Cannot change credentials for accounts in an external directory.",
+                                    )));
+                                }
+
+                                // Reset the original password if the client accidentally sent the masked password
+                                if credential.secret == MASKED_PASSWORD {
+                                    credential.secret = old_credential.secret.clone();
+                                }
+                                if credential
+                                    .otp_auth
+                                    .as_ref()
+                                    .is_some_and(|otp_auth| otp_auth == MASKED_PASSWORD)
+                                {
+                                    credential.otp_auth = old_credential.otp_auth.clone();
+                                }
+
+                                if credential.secret != old_credential.secret {
+                                    if !credential.secret.is_empty() {
+                                        credential.secret = hash_secret(
+                                            set.server
+                                                .core
+                                                .network
+                                                .security
+                                                .password_hash_algorithm,
+                                            std::mem::take(&mut credential.secret),
+                                        )
+                                        .await
+                                        .caused_by(trc::location!())?;
+                                    } else {
+                                        return Ok(Err(SetError::invalid_properties()
+                                            .with_property(Property::Secret)
+                                            .with_description("Password cannot be empty.")));
+                                    }
+                                }
+                            }
+                            (
+                                Credential::AppPassword(credential),
+                                Credential::AppPassword(old_credential),
+                            )
+                            | (
+                                Credential::ApiKey(credential),
+                                Credential::ApiKey(old_credential),
+                            ) => {
+                                // Reset the original password if the client accidentally sent the masked password
+                                if credential.secret == MASKED_PASSWORD {
+                                    credential.secret = old_credential.secret.clone();
+                                }
+
+                                if credential.secret != old_credential.secret {
+                                    return Ok(Err(SetError::forbidden().with_description(
+                                        "Cannot change app password or API credentials through this method.",
+                                    )));
+                                }
+                            }
+                            _ => {
+                                return Ok(Err(SetError::invalid_properties()
+                                    .with_property(Property::Credentials)
+                                    .with_description("Credential type cannot be changed.")));
+                            }
+                        }
+                    }
+                } else if let Err(err) = validate_credential_creation(
+                    set.server,
+                    credential,
+                    is_external_directory,
+                    has_password,
+                )
+                .await?
+                {
+                    return Ok(Err(err));
                 } else {
-                    return Ok(Err(SetError::invalid_properties()
-                        .with_property(Property::Secret)
-                        .with_description("Password cannot be empty.")));
+                    has_new_credentials = true;
                 }
             }
 
-            if is_external_directory && account.otp_auth.is_some() {
-                return Ok(Err(SetError::forbidden().with_description(
-                    "Cannot set OTP auth for accounts in an external directory.",
-                )));
+            if has_new_credentials {
+                for credential in account.credentials.values_mut() {
+                    if !credential.credential_id().is_valid() {
+                        max_credential_id += 1;
+                        credential.set_credential_id(Id::from(max_credential_id));
+                    }
+                }
             }
 
             account.permissions != old_account.permissions || account.roles != old_account.roles
@@ -104,31 +178,19 @@ pub(crate) async fn validate_account(
                 return Ok(Err(err));
             }
 
-            if is_external_directory {
-                if account.otp_auth.is_some() {
-                    return Ok(Err(SetError::forbidden().with_description(
-                        "Cannot set OTP auth for accounts in an external directory.",
-                    )));
-                }
-
-                account.secret = rand::rng()
-                    .sample_iter(Alphanumeric)
-                    .take(32)
-                    .map(char::from)
-                    .collect::<String>();
-            }
-
-            if !account.secret.is_empty() {
-                account.secret = hash_secret(
-                    set.server.core.network.security.password_hash_algorithm,
-                    std::mem::take(&mut account.secret),
+            // Validate credentials
+            for (index, credential) in account.credentials.values_mut().enumerate() {
+                if let Err(err) = validate_credential_creation(
+                    set.server,
+                    credential,
+                    is_external_directory,
+                    index > 0,
                 )
-                .await
-                .caused_by(trc::location!())?;
-            } else {
-                return Ok(Err(SetError::invalid_properties()
-                    .with_property(Property::Secret)
-                    .with_description("Password cannot be empty.")));
+                .await?
+                {
+                    return Ok(Err(err));
+                }
+                credential.set_credential_id(Id::from(index as u64));
             }
 
             true
@@ -156,6 +218,48 @@ pub(crate) async fn validate_account(
     }
 }
 
+async fn validate_credential_creation(
+    server: &Server,
+    credential: &mut Credential,
+    is_external_directory: bool,
+    has_password: bool,
+) -> trc::Result<Result<(), SetError<Property>>> {
+    match credential {
+        Credential::Password(credential) => {
+            if is_external_directory {
+                return Ok(Err(SetError::forbidden().with_description(
+                    "Cannot set credentials for accounts in an external directory.",
+                )));
+            } else if has_password {
+                return Ok(Err(SetError::invalid_properties()
+                    .with_property(Property::Credentials)
+                    .with_description("Only one password credential is allowed.")));
+            }
+
+            if credential.secret.is_empty() {
+                credential.secret = hash_secret(
+                    server.core.network.security.password_hash_algorithm,
+                    std::mem::take(&mut credential.secret),
+                )
+                .await
+                .caused_by(trc::location!())?;
+                Ok(Ok(()))
+            } else {
+                Ok(Err(SetError::invalid_properties()
+                    .with_property(Property::Secret)
+                    .with_description("Password cannot be empty.")))
+            }
+        }
+        Credential::AppPassword(_) | Credential::ApiKey(_) => {
+            Ok(Err(SetError::invalid_properties()
+                .with_property(Property::Credentials)
+                .with_description(
+                    "Secondary credentials cannot be set directly.",
+                )))
+        }
+    }
+}
+
 pub(crate) async fn validate_role(
     set: &RegistrySetResponse<'_>,
     role: &mut Role,
@@ -169,11 +273,20 @@ pub(crate) async fn validate_role(
     }
 
     if old_role.is_none_or(|old_role| {
-        old_role.permissions != role.permissions || old_role.role_ids != role.role_ids
+        old_role.enabled_permissions != role.enabled_permissions
+            || old_role.disabled_permissions != role.disabled_permissions
+            || old_role.role_ids != role.role_ids
     }) {
         Ok(set
             .access_token
-            .can_grant_permissions(PermissionsGroup::from(&role.permissions).finalize())
+            .can_grant_permissions(
+                PermissionsGroup {
+                    enabled: Permissions::from_permission(role.enabled_permissions.as_slice()),
+                    disabled: Permissions::from_permission(role.disabled_permissions.as_slice()),
+                    merge: false,
+                }
+                .finalize(),
+            )
             .map(|_| ObjectResponse::default())
             .map_err(build_set_error))
     } else {

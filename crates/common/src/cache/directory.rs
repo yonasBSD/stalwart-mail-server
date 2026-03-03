@@ -10,9 +10,11 @@ use crate::{Server, auth::DomainCache};
 use registry::{
     schema::{
         prelude::{Object, ObjectType},
-        structs::{Account, EmailAlias, GroupAccount, Roles, UserAccount},
+        structs::{
+            Account, Credential, EmailAlias, GroupAccount, PasswordCredential, Roles, UserAccount,
+        },
     },
-    types::{datetime::UTCDateTime, id::ObjectId},
+    types::{datetime::UTCDateTime, id::ObjectId, list::List},
 };
 use store::registry::write::{RegistryWrite, RegistryWriteResult};
 use trc::AddContext;
@@ -60,10 +62,10 @@ impl Server {
                     })?;
                 let mut has_changes = false;
                 if let Some(secret) = account.secret
-                    && secret != updated_account.secret
+                    && secret != updated_account.password().unwrap_or_default()
                 {
                     has_changes = true;
-                    updated_account.secret = secret;
+                    updated_account.set_password(secret);
                 }
                 if account.description.is_some()
                     && account.description != updated_account.description
@@ -107,7 +109,7 @@ impl Server {
                             .iter()
                             .all(|id| member_group_ids.contains(id)))
                 {
-                    updated_account.member_group_ids = member_group_ids;
+                    updated_account.member_group_ids = member_group_ids.into();
                     has_changes = true;
                 }
 
@@ -173,13 +175,16 @@ impl Server {
                 let account = Object::from(Account::User(UserAccount {
                     name: local.to_string(),
                     domain_id: Id::from(domain.id),
-                    aliases,
+                    aliases: aliases.into(),
                     created_at: UTCDateTime::now(),
                     description: account.description,
-                    member_group_ids,
+                    member_group_ids: member_group_ids.into(),
                     member_tenant_id: domain.id_tenant.map(Id::from),
                     roles: Roles::Default,
-                    secret: account.secret.unwrap_or_default(),
+                    credentials: List::from_iter([Credential::Password(PasswordCredential {
+                        secret: account.secret.unwrap_or_default(),
+                        ..Default::default()
+                    })]),
                     ..Default::default()
                 }));
 
@@ -313,7 +318,7 @@ impl Server {
                 let account = Object::from(Account::Group(GroupAccount {
                     name: local.to_string(),
                     domain_id: Id::from(domain.id),
-                    aliases,
+                    aliases: aliases.into(),
                     created_at: UTCDateTime::now(),
                     description: group.description,
                     member_tenant_id: domain.id_tenant.map(Id::from),

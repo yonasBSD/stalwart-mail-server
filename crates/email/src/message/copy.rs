@@ -20,9 +20,12 @@ use crate::{
 };
 use common::{Server, storage::index::ObjectIndexBuilder};
 use mail_parser::parsers::fields::thread::thread_name;
-use registry::schema::{
-    enums::IndexDocumentType,
-    structs::{Task, TaskIndexDocument, TaskMergeThreads, TaskStatus},
+use registry::{
+    schema::{
+        enums::IndexDocumentType,
+        structs::{Task, TaskIndexDocument, TaskMergeThreads, TaskStatus},
+    },
+    types::map::Map,
 };
 use store::write::{BatchBuilder, IndexPropertyClass, ValueClass};
 use store::{
@@ -218,11 +221,13 @@ impl EmailCopy for Server {
                 account_id: to_account_id.into(),
                 document_id: document_id.into(),
                 status: TaskStatus::now(),
-                thread_ids: thread_result
-                    .merge_ids
-                    .into_iter()
-                    .map(|id| id.into())
-                    .collect(),
+                thread_ids: Map::new(
+                    thread_result
+                        .merge_ids
+                        .into_iter()
+                        .map(|id| id.into())
+                        .collect(),
+                ),
                 thread_hash: thread_result.thread_hash.to_string(),
             }));
         }

@@ -20,8 +20,8 @@ use registry::schema::{
     prelude::ObjectType,
     structs::{
         DsnReportSettings, MtaConnectionStrategy, MtaDeliveryExpiration, MtaDeliverySchedule,
-        MtaInboundThrottle, MtaOutboundStrategy, MtaOutboundThrottle, MtaQueueQuota, MtaRoute,
-        MtaTlsStrategy, MtaVirtualQueue,
+        MtaDeliveryScheduleIntervalsOrDefault, MtaInboundThrottle, MtaOutboundStrategy,
+        MtaOutboundThrottle, MtaQueueQuota, MtaRoute, MtaTlsStrategy, MtaVirtualQueue,
     },
 };
 use std::{
@@ -260,21 +260,36 @@ impl QueueConfig {
                 );
                 continue;
             };
+
             queue.queue_strategy.insert(
                 obj.object.name,
                 QueueStrategy {
-                    retry: obj
-                        .object
-                        .retry
-                        .into_iter()
-                        .map(|d| d.into_inner().as_secs())
-                        .collect(),
-                    notify: obj
-                        .object
-                        .notify
-                        .into_iter()
-                        .map(|d| d.into_inner().as_secs())
-                        .collect(),
+                    retry: match obj.object.retry {
+                        MtaDeliveryScheduleIntervalsOrDefault::Default => vec![
+                            2 * 60,
+                            5 * 60,
+                            10 * 60,
+                            15 * 60,
+                            30 * 60,
+                            60 * 60,
+                            2 * 60 * 60,
+                        ],
+                        MtaDeliveryScheduleIntervalsOrDefault::Custom(intervals) => intervals
+                            .intervals
+                            .into_iter()
+                            .map(|d| d.duration.as_secs())
+                            .collect(),
+                    },
+                    notify: match obj.object.notify {
+                        MtaDeliveryScheduleIntervalsOrDefault::Default => {
+                            vec![24 * 60 * 60, 3 * 24 * 60 * 60]
+                        }
+                        MtaDeliveryScheduleIntervalsOrDefault::Custom(intervals) => intervals
+                            .intervals
+                            .into_iter()
+                            .map(|d| d.duration.as_secs())
+                            .collect(),
+                    },
                     expiry: match obj.object.expiry {
                         MtaDeliveryExpiration::Ttl(exp) => {
                             QueueExpiry::Ttl(exp.expire.into_inner().as_secs())

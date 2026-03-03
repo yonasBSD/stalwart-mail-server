@@ -375,7 +375,8 @@ impl<T: SessionStream> Session<T> {
             // Invalidate ACLs
             data.server
                 .invalidate_caches(CacheInvalidation::AccessToken(acl_account_id).into())
-                .await;
+                .await
+                .imap_ctx(&arguments.tag, trc::location!())?;
 
             trc::event!(
                 Imap(trc::ImapEvent::SetAcl),

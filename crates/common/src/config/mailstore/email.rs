@@ -149,7 +149,7 @@ impl EmailConfig {
             };
             default_folders.push(DefaultFolder {
                 name: folder.name,
-                aliases: folder.aliases,
+                aliases: folder.aliases.into_inner(),
                 special_use,
                 subscribe: folder.subscribe,
                 create: folder.create

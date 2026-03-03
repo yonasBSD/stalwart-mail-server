@@ -143,9 +143,9 @@ impl Security {
                 .map(|pattern| MatchType::Matches(GlobPattern::compile(pattern, true)))
                 .collect(),
             scanner_fail_rate: security.scan_ban_rate,
-            default_role_ids_user: auth.default_user_role_ids,
-            default_role_ids_group: auth.default_group_role_ids,
-            default_role_ids_tenant: auth.default_tenant_role_ids,
+            default_role_ids_user: auth.default_user_role_ids.into_inner(),
+            default_role_ids_group: auth.default_group_role_ids.into_inner(),
+            default_role_ids_tenant: auth.default_tenant_role_ids.into_inner(),
             password_hash_algorithm: auth.password_hash_algorithm,
         }
     }

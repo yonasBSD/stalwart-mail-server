@@ -54,7 +54,7 @@ impl Autoconfig for Server {
         );
         for listener in listeners {
             let listener = listener.object;
-            let Some(port) = listener.bind.first().map(|l| l.0.port()) else {
+            let Some(port) = listener.bind.as_slice().first().map(|l| l.0.port()) else {
                 continue;
             };
             let (protocol, tag) = match listener.protocol {
@@ -161,7 +161,7 @@ impl Autoconfig for Server {
         let _ = writeln!(&mut config, "\t\t\t<Action>settings</Action>");
         for listener in listeners {
             let listener = listener.object;
-            let Some(port) = listener.bind.first().map(|l| l.0.port()) else {
+            let Some(port) = listener.bind.as_slice().first().map(|l| l.0.port()) else {
                 continue;
             };
 

@@ -593,6 +593,18 @@ impl RegistrySetResponse<'_> {
         }
     }
 
+    pub fn fail_all(&mut self, error: SetError<Property>) {
+        for (client_id, _) in self.create.drain() {
+            self.response.not_created.append(client_id, error.clone());
+        }
+        for (id, _) in self.update.drain(..) {
+            self.response.not_updated.append(id, error.clone());
+        }
+        for id in self.destroy.drain(..) {
+            self.response.not_destroyed.append(id, error.clone());
+        }
+    }
+
     pub fn fail_all_create(&mut self, error: impl Into<Cow<'static, str>>) {
         let error = error.into();
         for (client_id, _) in self.create.drain() {
@@ -658,7 +670,7 @@ impl Modification {
     }
 }
 
-fn map_write_error(err: RegistryWriteResult) -> SetError<Property> {
+pub(crate) fn map_write_error(err: RegistryWriteResult) -> SetError<Property> {
     match err {
         RegistryWriteResult::CannotDeleteLinked {
             object_id,

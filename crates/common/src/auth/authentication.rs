@@ -128,6 +128,7 @@ impl Server {
                             account_id,
                             app_pass.credential_id,
                             app_pass.secret.as_ref(),
+                            req.remote_ip,
                             req.session_id,
                         )
                         .await
@@ -160,15 +161,30 @@ impl Server {
                         .await?
                         .and_then(|account| account.into_user())
                     {
-                        if verify_mfa_secret_hash(
-                            account.otp_auth.as_deref(),
-                            account.secret.as_str(),
-                            secret,
-                        )
-                        .await?
+                        if let Some(credential) = account.password_credential()
+                            && verify_mfa_secret_hash(
+                                credential.otp_auth.as_deref(),
+                                credential.secret.as_str(),
+                                secret,
+                            )
+                            .await?
                         {
-                            is_alias_login = account.name != auth_as_address;
-                            self.access_token(account_id).await.map(AccessToken::new)
+                            if credential
+                                .expires_at
+                                .as_ref()
+                                .is_none_or(|exp| exp.timestamp() > now() as i64)
+                            {
+                                is_alias_login = account.name != auth_as_address;
+                                self.access_token(account_id).await.map(AccessToken::new)
+                            } else {
+                                Err(trc::AuthEvent::Failed
+                                    .into_err()
+                                    .ctx(trc::Key::AccountName, account.name.to_string())
+                                    .ctx(trc::Key::AccountId, account_id)
+                                    .ctx(trc::Key::Id, credential.credential_id.id())
+                                    .ctx(trc::Key::SpanId, req.session_id)
+                                    .reason("Password credential has expired"))
+                            }
                         } else {
                             Err(trc::AuthEvent::Failed
                                 .into_err()
@@ -245,6 +261,7 @@ impl Server {
                             key.account_id,
                             key.credential_id,
                             key.secret.as_ref(),
+                            req.remote_ip,
                             req.session_id,
                         )
                         .await;
@@ -296,6 +313,7 @@ impl Server {
         account_id: u32,
         credential_id: u32,
         secret: &[u8],
+        remote_ip: IpAddr,
         span_id: u64,
     ) -> trc::Result<AccessToken> {
         if let Some(account) = self
@@ -305,10 +323,15 @@ impl Server {
             .and_then(|account| account.into_user())
         {
             // Find credential by credential_id
-            for (id, credential_) in &account.credentials {
-                let credential = credential_.as_properties();
-
-                if *id == credential_id {
+            let mut authenticated = false;
+            for (credential, credential_type) in
+                account.credentials.iter().filter_map(|credential| {
+                    credential
+                        .as_secondary_credential()
+                        .map(|secondary_credential| (secondary_credential, credential))
+                })
+            {
+                if credential.credential_id.document_id() == credential_id {
                     if !verify_secret_hash(&credential.secret, secret).await? {
                         return Err(trc::AuthEvent::Failed
                             .into_err()
@@ -339,27 +362,33 @@ impl Server {
                         AccountId = account_id,
                         Id = credential_id,
                         SpanId = span_id,
-                        Details = match credential_ {
+                        Details = match credential_type {
                             Credential::AppPassword(_) => "Authenticated with app password",
                             Credential::ApiKey(_) => "Authenticated with API key",
+                            _ => "Authenticated with credential",
                         }
                     );
 
-                    let token = self
-                        .access_token_from_account(account_id, structs::Account::User(account))
-                        .await?;
-
-                    return AccessToken::scoped(token, credential_id)
-                        .add_context(|ctx| ctx.span_id(span_id));
+                    authenticated = true;
+                    break;
                 }
             }
 
-            Err(trc::AuthEvent::Failed
-                .into_err()
-                .ctx(trc::Key::AccountId, account_id)
-                .ctx(trc::Key::Id, credential_id)
-                .ctx(trc::Key::SpanId, span_id)
-                .reason("Credential not found for account"))
+            if authenticated {
+                let token = self
+                    .access_token_from_account(account_id, structs::Account::User(account))
+                    .await?;
+
+                AccessToken::scoped(token, credential_id, remote_ip)
+                    .add_context(|ctx| ctx.span_id(span_id))
+            } else {
+                Err(trc::AuthEvent::Failed
+                    .into_err()
+                    .ctx(trc::Key::AccountId, account_id)
+                    .ctx(trc::Key::Id, credential_id)
+                    .ctx(trc::Key::SpanId, span_id)
+                    .reason("Credential not found for account"))
+            }
         } else {
             Err(trc::AuthEvent::Failed
                 .into_err()

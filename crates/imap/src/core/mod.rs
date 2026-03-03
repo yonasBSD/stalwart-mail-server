@@ -67,6 +67,7 @@ pub struct SessionData<T: SessionStream> {
     pub mailboxes: parking_lot::Mutex<Vec<Account>>,
     pub stream_tx: Arc<tokio::sync::Mutex<WriteHalf<T>>>,
     pub state: AtomicU32,
+    pub remote_addr: IpAddr,
     pub in_flight: Option<InFlight>,
 }
 
@@ -194,7 +195,9 @@ impl<T: SessionStream> SessionData<T> {
         self.server
             .access_token(self.account_id)
             .await
-            .and_then(|inner| AccessToken::renew(inner, self.access_token.credential_id()))
+            .and_then(|inner| {
+                AccessToken::renew(inner, self.access_token.credential_id(), self.remote_addr)
+            })
             .caused_by(trc::location!())
     }
 
@@ -211,6 +214,7 @@ impl<T: SessionStream> SessionData<T> {
             state: self.state,
             in_flight: self.in_flight,
             access_token: self.access_token,
+            remote_addr: self.remote_addr,
         }
     }
 }

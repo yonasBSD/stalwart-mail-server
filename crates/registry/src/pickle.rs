@@ -167,27 +167,6 @@ where
     }
 }
 
-impl<T> Pickle for Vec<T>
-where
-    T: Pickle,
-{
-    fn pickle(&self, out: &mut Vec<u8>) {
-        (self.len() as u32).pickle(out);
-        for item in self {
-            item.pickle(out);
-        }
-    }
-
-    fn unpickle(stream: &mut PickledStream<'_>) -> Option<Self> {
-        let len = u32::unpickle(stream)? as usize;
-        let mut vec = Vec::with_capacity(len);
-        for _ in 0..len {
-            vec.push(T::unpickle(stream)?);
-        }
-        Some(vec)
-    }
-}
-
 impl<K, V, S> Pickle for HashMap<K, V, S>
 where
     K: Pickle + std::hash::Hash + Eq,

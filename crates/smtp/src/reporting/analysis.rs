@@ -274,7 +274,7 @@ impl AnalyzeReport for Server {
                         Format::Dmarc(report) => {
                             let mut report = DmarcExternalReport {
                                 from,
-                                to,
+                                to: to.into(),
                                 subject,
                                 member_tenant_id: None,
                                 expires_at: UTCDateTime::from_timestamp(expires as i64),
@@ -294,7 +294,7 @@ impl AnalyzeReport for Server {
                         Format::Tls(report) => {
                             let mut report = TlsExternalReport {
                                 from,
-                                to,
+                                to: to.into(),
                                 subject,
                                 member_tenant_id: None,
                                 expires_at: UTCDateTime::from_timestamp(expires as i64),
@@ -314,7 +314,7 @@ impl AnalyzeReport for Server {
                         Format::Arf(report) => {
                             let mut report = ArfExternalReport {
                                 from,
-                                to,
+                                to: to.into(),
                                 subject,
                                 member_tenant_id: None,
                                 expires_at: UTCDateTime::from_timestamp(expires as i64),

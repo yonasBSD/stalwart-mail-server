@@ -30,7 +30,7 @@ use registry::{
         prelude::{ObjectType, Permission, Property},
         structs::{SpamTrainingSample, Task, TaskIndexDocument, TaskMergeThreads, TaskStatus},
     },
-    types::{EnumImpl, datetime::UTCDateTime, id::ObjectId},
+    types::{EnumImpl, datetime::UTCDateTime, id::ObjectId, map::Map},
 };
 use std::future::Future;
 use std::{borrow::Cow, cmp::Ordering, fmt::Write, time::Instant};
@@ -676,11 +676,13 @@ impl EmailIngest for Server {
                 account_id: account_id.into(),
                 document_id: document_id.into(),
                 status: TaskStatus::now(),
-                thread_ids: thread_result
-                    .merge_ids
-                    .into_iter()
-                    .map(|id| id.into())
-                    .collect(),
+                thread_ids: Map::new(
+                    thread_result
+                        .merge_ids
+                        .into_iter()
+                        .map(|id| id.into())
+                        .collect(),
+                ),
                 thread_hash: thread_result.thread_hash.to_string(),
             }));
         }

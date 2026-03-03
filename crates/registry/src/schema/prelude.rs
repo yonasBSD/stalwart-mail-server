@@ -7,9 +7,9 @@ pub use crate::jmap::IntoValue;
 pub use crate::jmap::JmapValue;
 pub use crate::jmap::MaybeUnpatched;
 pub use crate::jmap::PatchResult;
+pub use crate::jmap::RegistryJsonEnumPatch;
 pub use crate::jmap::{
-    JsonPointerPatch, RegistryJsonEnumPatch, RegistryJsonPatch, RegistryJsonPropertyPatch,
-    patch::object_type,
+    JsonPointerPatch, RegistryJsonPatch, RegistryJsonPropertyPatch, patch::object_type,
 };
 pub use crate::pickle::Pickle;
 pub use crate::schema::enums::*;
@@ -24,6 +24,8 @@ pub use crate::types::float::Float;
 pub use crate::types::index::IndexBuilder;
 pub use crate::types::ipaddr::IpAddr;
 pub use crate::types::ipmask::IpAddrOrMask;
+pub use crate::types::list::List;
+pub use crate::types::map::Map;
 pub use crate::types::socketaddr::SocketAddr;
 pub use crate::types::string::StringValidator;
 pub use serde::{Deserialize, Serialize};

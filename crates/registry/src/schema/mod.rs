@@ -7,7 +7,7 @@
 use crate::{
     schema::{
         enums::{TracingLevel, TracingLevelOpt},
-        prelude::{Credential, CredentialProperties, NodeRange, Object, ObjectInner, Property},
+        prelude::{NodeRange, Object, ObjectInner, Property},
     },
     types::EnumImpl,
 };
@@ -31,22 +31,6 @@ pub mod structs_impl;
 impl NodeRange {
     pub fn contains(&self, node_id: u64) -> bool {
         node_id >= self.from_node_id && node_id <= self.to_node_id
-    }
-}
-
-impl Credential {
-    pub fn unwrap_properties(self) -> CredentialProperties {
-        match self {
-            Credential::AppPassword(credential_properties) => credential_properties,
-            Credential::ApiKey(credential_properties) => credential_properties,
-        }
-    }
-
-    pub fn as_properties(&self) -> &CredentialProperties {
-        match self {
-            Credential::AppPassword(credential_properties) => credential_properties,
-            Credential::ApiKey(credential_properties) => credential_properties,
-        }
     }
 }
 
@@ -145,5 +129,9 @@ impl<T: Into<ObjectInner>> From<T> for Object {
 impl Object {
     pub fn new(inner: ObjectInner) -> Self {
         Object { inner, revision: 0 }
+    }
+
+    pub fn with_revision(inner: ObjectInner, revision: u64) -> Self {
+        Object { inner, revision }
     }
 }

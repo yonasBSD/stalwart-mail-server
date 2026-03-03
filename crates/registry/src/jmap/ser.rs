@@ -84,17 +84,6 @@ impl<K: MapKey, V: IntoValue> IntoValue for VecMap<K, V> {
     }
 }
 
-impl<V: IntoValue> IntoValue for Vec<V> {
-    fn into_value(self) -> JmapValue<'static> {
-        let mut array = Vec::with_capacity(self.len());
-        for v in self {
-            array.push(v.into_value());
-        }
-
-        JmapValue::Array(array)
-    }
-}
-
 impl IntoValue for trc::Key {
     fn into_value(self) -> JmapValue<'static> {
         JmapValue::Str(self.name().into())

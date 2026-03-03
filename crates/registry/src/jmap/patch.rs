@@ -13,11 +13,11 @@ use crate::{
     types::{
         EnumImpl,
         error::PatchError,
+        map::MapItem,
         string::{StringValidator, StringValidatorResult},
     },
 };
 use jmap_tools::{JsonPointer, JsonPointerItem, Key, Value};
-use std::fmt::Debug;
 use utils::map::vec_map::VecMap;
 
 impl<'x> JsonPointerPatch<'x> {
@@ -93,6 +93,13 @@ impl<'x> JsonPointerPatch<'x> {
                 "Cannot modify read-only property",
             ))
         }
+    }
+
+    pub fn assert_server_set(self) -> PatchResult<'static> {
+        Err(PatchError::new(
+            self.cloned(),
+            "Cannot modify server-set property",
+        ))
     }
 }
 
@@ -249,80 +256,6 @@ impl<T: EnumImpl> RegistryJsonEnumPatch for T {
     }
 }
 
-impl<T: RegistryJsonPatch> RegistryJsonPatch for Vec<T> {
-    fn patch<'x>(
-        &mut self,
-        mut pointer: JsonPointerPatch<'_>,
-        value: JmapValue<'x>,
-    ) -> PatchResult<'x> {
-        match (pointer.next(), value) {
-            (Some(JsonPointerItem::Number(idx)), Value::Null) => {
-                if *idx < self.len() as u64 {
-                    self.remove(*idx as usize);
-                    return Ok(MaybeUnpatched::Patched);
-                }
-            }
-            (Some(JsonPointerItem::Number(idx)), value) => {
-                if let Some(inner) = self.get_mut(*idx as usize) {
-                    return inner.patch(pointer, value);
-                } else if *idx == self.len() as u64 {
-                    let mut inner = T::default();
-                    return inner.patch(pointer, value).inspect(|_| self.push(inner));
-                }
-            }
-            (None, Value::Array(items)) => {
-                self.clear();
-                for item in items {
-                    let mut inner = T::default();
-                    inner.patch(pointer.clone(), item)?;
-                    self.push(inner);
-                }
-                return Ok(MaybeUnpatched::Patched);
-            }
-            _ => {}
-        }
-
-        Err(PatchError::new(pointer, "Invalid value for array property"))
-    }
-}
-
-impl<T: RegistryJsonEnumPatch + Default> RegistryJsonEnumPatch for Vec<T> {
-    fn patch<'x>(
-        &mut self,
-        mut pointer: JsonPointerPatch<'_>,
-        value: JmapValue<'x>,
-    ) -> PatchResult<'x> {
-        match (pointer.next(), value) {
-            (Some(JsonPointerItem::Number(idx)), Value::Null) => {
-                if *idx < self.len() as u64 {
-                    self.remove(*idx as usize);
-                    return Ok(MaybeUnpatched::Patched);
-                }
-            }
-            (Some(JsonPointerItem::Number(idx)), value) => {
-                if let Some(inner) = self.get_mut(*idx as usize) {
-                    return inner.patch(pointer, value);
-                } else if *idx == self.len() as u64 {
-                    let mut inner = T::default();
-                    return inner.patch(pointer, value).inspect(|_| self.push(inner));
-                }
-            }
-            (None, Value::Array(items)) => {
-                self.clear();
-                for item in items {
-                    let mut inner = T::default();
-                    inner.patch(pointer.clone(), item)?;
-                    self.push(inner);
-                }
-                return Ok(MaybeUnpatched::Patched);
-            }
-            _ => {}
-        }
-
-        Err(PatchError::new(pointer, "Invalid value for array property"))
-    }
-}
-
 impl<K: MapItem, V: RegistryJsonPatch> RegistryJsonPatch for VecMap<K, V> {
     fn patch<'x>(
         &mut self,
@@ -423,46 +356,6 @@ impl<T: RegistryJsonPropertyPatch> RegistryJsonPatch for T {
         } else {
             Err(PatchError::new(pointer, "Invalid value type for object"))
         }
-    }
-}
-
-trait MapItem: Sized + PartialEq + Eq + Debug {
-    fn try_from_string(value: &str) -> Option<Self>;
-    fn try_from_integer(value: u64) -> Option<Self>;
-}
-
-impl MapItem for String {
-    fn try_from_string(value: &str) -> Option<Self> {
-        let value = value.trim();
-        if !value.is_empty() {
-            Some(value.to_string())
-        } else {
-            None
-        }
-    }
-
-    fn try_from_integer(value: u64) -> Option<Self> {
-        Some(value.to_string())
-    }
-}
-
-impl MapItem for u32 {
-    fn try_from_string(value: &str) -> Option<Self> {
-        value.parse().ok()
-    }
-
-    fn try_from_integer(value: u64) -> Option<Self> {
-        value.try_into().ok()
-    }
-}
-
-impl<T: EnumImpl> MapItem for T {
-    fn try_from_string(value: &str) -> Option<Self> {
-        Self::parse(value)
-    }
-
-    fn try_from_integer(_: u64) -> Option<Self> {
-        None
     }
 }
 

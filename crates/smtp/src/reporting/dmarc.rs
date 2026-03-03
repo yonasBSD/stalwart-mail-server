@@ -31,7 +31,7 @@ use registry::{
         prelude::{ObjectType, Property},
         structs::{DmarcInternalReport, DmarcReport, DmarcReportRecord, Rate},
     },
-    types::{EnumImpl, datetime::UTCDateTime},
+    types::{EnumImpl, datetime::UTCDateTime, map::Map},
 };
 use std::future::Future;
 use store::{
@@ -364,7 +364,7 @@ impl DmarcReporting for Server {
             .dns
             .verify_dmarc_report_address(
                 &report.domain,
-                &report.rua,
+                report.rua.as_slice(),
                 Some(&self.inner.cache.dns_txt),
             )
             .await
@@ -573,7 +573,8 @@ impl DmarcReporting for Server {
                                 FailureReportingOption::DkimFailure,
                                 FailureReportingOption::SpfFailure,
                             ],
-                        },
+                        }
+                        .into(),
                         policy_subdomain_disposition: policy.sp.into(),
                         policy_testing_mode: policy.testing,
                         policy_version: None,
@@ -581,12 +582,14 @@ impl DmarcReporting for Server {
                         ..Default::default()
                     },
                     policy_identifier: policy_hash,
-                    rua: event
-                        .dmarc_record
-                        .rua()
-                        .iter()
-                        .map(|u| u.uri.clone())
-                        .collect(),
+                    rua: Map::new(
+                        event
+                            .dmarc_record
+                            .rua()
+                            .iter()
+                            .map(|u| u.uri.clone())
+                            .collect(),
+                    ),
                 };
 
                 report.write_ops(&mut batch, item_id, true);
@@ -596,8 +599,15 @@ impl DmarcReporting for Server {
 
             // Add record
             let mut record = DmarcReportRecord::from(event.report_record.clone());
-            if let Some(idx) = report.report.records.iter().position(|d| d == &record) {
-                report.report.records[idx].count += 1;
+            if let Some(idx) = report
+                .report
+                .records
+                .0
+                .inner
+                .iter()
+                .position(|d| d.value == record)
+            {
+                report.report.records.0.inner[idx].value.count += 1;
             } else {
                 record.count = 1;
                 report.report.records.push(record);

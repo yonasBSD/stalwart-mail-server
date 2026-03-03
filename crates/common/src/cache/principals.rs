@@ -9,7 +9,7 @@ use crate::{
     auth::{
         AccountCache, AccountInfo, AccountTenantIds, DOMAIN_FLAG_RELAY, DOMAIN_FLAG_SUB_ADDRESSING,
         DomainCache, EmailAddress, EmailAddressRef, EmailCache, MailingListCache, PermissionsGroup,
-        RoleCache, TenantCache,
+        RoleCache, TenantCache, permissions::BuildPermissions,
     },
     config::smtp::auth::DkimSigner,
     expr::if_block::BootstrapExprExt,
@@ -23,8 +23,8 @@ use registry::{
         enums::{Locale, StorageQuota, TenantStorageQuota},
         prelude::{ObjectType, Property},
         structs::{
-            Account, DkimSignature, Domain, MailingList, MaskedEmail, Permissions, PermissionsList,
-            Role, SubAddressing, Tenant,
+            Account, DkimSignature, Domain, MailingList, MaskedEmail, Permissions, Role,
+            SubAddressing, Tenant,
         },
     },
     types::{EnumImpl, id::ObjectId},
@@ -502,9 +502,15 @@ impl Server {
                         .into_iter()
                         .map(|id| id.document_id())
                         .collect(),
-                    permissions: PermissionsGroup::from(PermissionsList {
-                        permissions: role.permissions,
-                    }),
+                    permissions: PermissionsGroup {
+                        enabled: crate::auth::Permissions::from_permission(
+                            role.enabled_permissions.as_slice(),
+                        ),
+                        disabled: crate::auth::Permissions::from_permission(
+                            role.disabled_permissions.as_slice(),
+                        ),
+                        merge: false,
+                    },
                 });
 
                 let _ = guard.insert(cache.clone());

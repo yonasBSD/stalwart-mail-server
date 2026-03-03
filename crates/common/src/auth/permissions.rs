@@ -388,13 +388,17 @@ impl PermissionsGroup {
 
 impl From<PermissionsList> for PermissionsGroup {
     fn from(value: PermissionsList) -> Self {
-        PermissionsGroup::from(&value.permissions)
+        Self::from(&value)
     }
 }
 
 impl From<&PermissionsList> for PermissionsGroup {
     fn from(value: &PermissionsList) -> Self {
-        PermissionsGroup::from(&value.permissions)
+        PermissionsGroup {
+            enabled: Permissions::from_permission(value.enabled_permissions.as_slice()),
+            disabled: Permissions::from_permission(value.disabled_permissions.as_slice()),
+            merge: false,
+        }
     }
 }
 
@@ -409,5 +413,19 @@ impl From<&VecMap<Permission, bool>> for PermissionsGroup {
             }
         }
         permissions
+    }
+}
+
+pub trait BuildPermissions {
+    fn from_permission(list: &[Permission]) -> Permissions;
+}
+
+impl BuildPermissions for Permissions {
+    fn from_permission(list: &[Permission]) -> Permissions {
+        let mut permission = Permissions::default();
+        for p in list {
+            permission.set(*p as usize);
+        }
+        permission
     }
 }

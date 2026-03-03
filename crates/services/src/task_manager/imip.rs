@@ -79,7 +79,8 @@ async fn send_imip(
 
     let sender_domain = imip
         .messages
-        .first()
+        .iter()
+        .next()
         .and_then(|msg| msg.from.rsplit('@').next())
         .unwrap_or("localhost");
 

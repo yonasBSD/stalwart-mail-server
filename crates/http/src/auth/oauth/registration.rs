@@ -86,9 +86,9 @@ impl ClientRegistrationHandler for Server {
                     client_id: client_id.clone(),
                     created_at: UTCDateTime::now(),
                     description: request.client_name.clone(),
-                    contacts: request.contacts.clone(),
+                    contacts: request.contacts.clone().into(),
                     member_tenant_id: tenant_id.map(|id| Id::new(id as u64)),
-                    redirect_uris: request.redirect_uris.clone(),
+                    redirect_uris: request.redirect_uris.clone().into(),
                     logo: request.logo_uri.clone(),
                     ..Default::default()
                 }

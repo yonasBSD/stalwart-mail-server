@@ -41,7 +41,7 @@ impl Listeners {
                 || listener
                     .object
                     .enable_for_nodes
-                    .iter()
+                    .values()
                     .any(|n| n.contains(node_id))
             {
                 servers.parse_server(bp, listener);
@@ -67,7 +67,7 @@ impl Listeners {
 
         // Build listeners
         let mut listeners = Vec::new();
-        for addr in &listener.bind {
+        for addr in listener.bind.iter() {
             // Parse bind address and build socket
             let addr = addr.0;
             let socket = match if addr.is_ipv4() {
@@ -131,9 +131,9 @@ impl Listeners {
             protocol,
             listeners,
             proxy_networks: if !listener.override_proxy_trusted_networks.is_empty() {
-                listener.override_proxy_trusted_networks.clone()
+                listener.override_proxy_trusted_networks.as_slice().to_vec()
             } else {
-                bp.node.proxy_trusted_networks.clone()
+                bp.node.proxy_trusted_networks.as_slice().to_vec()
             },
             span_id_gen,
         });
