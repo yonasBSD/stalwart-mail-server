@@ -132,10 +132,11 @@ impl WebApplicationManager {
         // Update routes
         self.routes.store(routes.into());
 
-        trc::event!(
+        let todo = "use new event";
+        /*trc::event!(
             Resource(trc::ResourceEvent::WebadminUnpacked),
             Path = self.bundle_path.path.to_string_lossy().into_owned(),
-        );
+        );*/
 
         Ok(())
     }

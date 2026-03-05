@@ -9,13 +9,12 @@ use common::{
     Inner,
     manager::boot::{BootManager, IpcReceivers},
 };
-use housekeeper::spawn_housekeeper;
 use state_manager::manager::spawn_push_router;
 use std::sync::Arc;
-use task_manager::spawn_task_manager;
+
+use crate::task_manager::{manager::spawn_task_manager, scheduler::spawn_task_scheduler};
 
 pub mod broadcast;
-pub mod housekeeper;
 pub mod state_manager;
 pub mod task_manager;
 
@@ -53,9 +52,6 @@ impl SpawnServices for IpcReceivers {
         // Spawn push manager
         spawn_push_router(inner.clone(), self.push_rx.take().unwrap());
 
-        // Spawn housekeeper
-        spawn_housekeeper(inner.clone(), self.housekeeper_rx.take().unwrap());
-
         // Spawn broadcast publisher
         if let Some(event_rx) = self.broadcast_rx.take() {
             // Spawn broadcast publisher
@@ -63,6 +59,9 @@ impl SpawnServices for IpcReceivers {
         }
 
         // Spawn task manager
-        spawn_task_manager(inner);
+        spawn_task_manager(inner.clone());
+
+        // Spawn task scheduler
+        spawn_task_scheduler(inner);
     }
 }

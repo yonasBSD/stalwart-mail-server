@@ -68,6 +68,8 @@ impl Queue {
     }
 
     pub async fn start(&mut self) {
+        trc::event!(Queue(trc::QueueEvent::Started));
+
         loop {
             let mut refresh_queue;
 

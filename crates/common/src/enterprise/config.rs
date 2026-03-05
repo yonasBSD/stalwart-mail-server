@@ -170,8 +170,11 @@ impl Enterprise {
         // Build the enterprise configuration
         let mut enterprise = Enterprise {
             license,
-            undelete_retention: dr
+            deleted_items_retention: dr
                 .archive_deleted_items_for
+                .map(|retention| retention.into_inner()),
+            deleted_accounts_retention: dr
+                .archive_deleted_accounts_for
                 .map(|retention| retention.into_inner()),
             logo_url,
             metrics_alerts: Default::default(),

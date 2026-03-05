@@ -21,15 +21,13 @@ use store::{
     IterateParams, ValueKey,
     ahash::AHashMap,
     rand::{self, Rng},
-    registry::RegistryQuery,
-    roaring::RoaringBitmap,
     search::{IndexDocument, SearchField, SearchFilter, SearchQuery},
     write::{
         AlignedBytes, Archive, BatchBuilder, SearchIndex, TelemetryClass, ValueClass,
         key::DeserializeBigEndian, now,
     },
 };
-use trc::{AddContext, TaskQueueEvent};
+use trc::{AddContext, TaskManagerEvent};
 use types::{
     blob_hash::BlobHash,
     collection::{Collection, SyncCollection},
@@ -38,15 +36,6 @@ use types::{
 
 pub(crate) trait SearchIndexTask: Sync + Send {
     fn index(&self, tasks: &[TaskDetails]) -> impl Future<Output = Vec<IndexTaskResult>> + Send;
-}
-
-pub trait ReindexIndexTask: Sync + Send {
-    fn reindex(
-        &self,
-        index: SearchIndex,
-        account_id: Option<u32>,
-        tenant_id: Option<u32>,
-    ) -> impl Future<Output = trc::Result<()>> + Send;
 }
 
 const NUM_INDEXES: usize = 5;
@@ -112,7 +101,7 @@ impl SearchIndexTask for Server {
                         }
                         _ => {
                             trc::event!(
-                                TaskQueue(TaskQueueEvent::TaskIgnored),
+                                TaskManager(TaskManagerEvent::TaskIgnored),
                                 Collection = task.document_type.as_str(),
                                 Reason = "Nothing to index",
                                 AccountId = account_id,
@@ -145,7 +134,7 @@ impl SearchIndexTask for Server {
                         }
                         _ => {
                             trc::event!(
-                                TaskQueue(TaskQueueEvent::TaskIgnored),
+                                TaskManager(TaskManagerEvent::TaskIgnored),
                                 Reason = "Nothing to index",
                                 Id = task.trace_id.id(),
                             );
@@ -301,135 +290,108 @@ impl SearchIndexTask for Server {
     }
 }
 
-impl ReindexIndexTask for Server {
-    async fn reindex(
-        &self,
-        index: SearchIndex,
-        account_id: Option<u32>,
-        tenant_id: Option<u32>,
-    ) -> trc::Result<()> {
-        let accounts = if let Some(account_id) = account_id {
-            RoaringBitmap::from_sorted_iter([account_id]).unwrap()
-        } else {
-            self.registry()
-                .query(
-                    RegistryQuery::new(ObjectType::Account)
-                        .equal_opt(Property::MemberTenantId, tenant_id),
-                )
-                .await
-                .caused_by(trc::location!())?
-        };
+pub(crate) async fn reindex_telemetry(server: &Server) -> trc::Result<()> {
+    let mut spans = Vec::new();
+    server
+        .store()
+        .iterate(
+            IterateParams::new(
+                ValueKey::from(ValueClass::Telemetry(TelemetryClass::Span(0))),
+                ValueKey::from(ValueClass::Telemetry(TelemetryClass::Span(u64::MAX))),
+            )
+            .no_values(),
+            |key, _| {
+                spans.push(key.deserialize_be_u64(0)?);
+                Ok(true)
+            },
+        )
+        .await
+        .caused_by(trc::location!())?;
 
-        let now = now() as i64;
-        match index {
-            SearchIndex::Email => {
-                for account_id in accounts {
-                    let mut batch = BatchBuilder::new();
-
-                    for document_id in self
-                        .get_cached_messages(account_id)
-                        .await
-                        .caused_by(trc::location!())?
-                        .emails
-                        .items
-                        .iter()
-                        .map(|v| v.document_id)
-                    {
-                        batch.schedule_task(Task::IndexDocument(TaskIndexDocument {
-                            account_id: account_id.into(),
-                            document_id: document_id.into(),
-                            document_type: IndexDocumentType::Email,
-                            status: TaskStatus::at(now + rand::rng().random_range(0..=300)),
-                        }));
-
-                        if batch.len() >= 2000 {
-                            self.core.storage.data.write(batch.build_all()).await?;
-                            batch = BatchBuilder::new();
-                        }
-                    }
-
-                    if !batch.is_empty() {
-                        self.core.storage.data.write(batch.build_all()).await?;
-                    }
-                }
-            }
-            SearchIndex::Calendar | SearchIndex::Contacts => {
-                for account_id in accounts {
-                    let cache = self
-                        .fetch_dav_resources(
-                            account_id,
-                            account_id,
-                            if index == SearchIndex::Calendar {
-                                SyncCollection::Calendar
-                            } else {
-                                SyncCollection::AddressBook
-                            },
-                        )
-                        .await
-                        .caused_by(trc::location!())?;
-                    let mut batch = BatchBuilder::new();
-
-                    for document_id in cache.document_ids(false) {
-                        batch.schedule_task(Task::IndexDocument(TaskIndexDocument {
-                            account_id: account_id.into(),
-                            document_id: document_id.into(),
-                            document_type: if index == SearchIndex::Calendar {
-                                IndexDocumentType::Calendar
-                            } else {
-                                IndexDocumentType::Contacts
-                            },
-                            status: TaskStatus::at(now + rand::rng().random_range(0..=300)),
-                        }));
-
-                        if batch.len() >= 2000 {
-                            self.core.storage.data.write(batch.build_all()).await?;
-                            batch = BatchBuilder::new();
-                        }
-                    }
-
-                    if !batch.is_empty() {
-                        self.core.storage.data.write(batch.build_all()).await?;
-                    }
-                }
-            }
-            SearchIndex::Tracing => {
-                let mut spans = Vec::new();
-                self.store()
-                    .iterate(
-                        IterateParams::new(
-                            ValueKey::from(ValueClass::Telemetry(TelemetryClass::Span(0))),
-                            ValueKey::from(ValueClass::Telemetry(TelemetryClass::Span(u64::MAX))),
-                        )
-                        .no_values(),
-                        |key, _| {
-                            spans.push(key.deserialize_be_u64(0)?);
-                            Ok(true)
-                        },
-                    )
-                    .await
-                    .caused_by(trc::location!())?;
-
-                let mut batch = BatchBuilder::new();
-                for span_id in spans {
-                    batch.schedule_task(Task::IndexTrace(TaskIndexTrace {
-                        trace_id: span_id.into(),
-                        status: TaskStatus::at(now + rand::rng().random_range(0..=300)),
-                    }));
-                    if batch.len() >= 2000 {
-                        self.core.storage.data.write(batch.build_all()).await?;
-                    }
-                }
-
-                // SPDX-SnippetEnd
-            }
-            SearchIndex::File | SearchIndex::InMemory => (),
+    let mut batch = BatchBuilder::new();
+    let now = now() as i64;
+    for span_id in spans {
+        batch.schedule_task(Task::IndexTrace(TaskIndexTrace {
+            trace_id: span_id.into(),
+            status: TaskStatus::at(now + rand::rng().random_range(0..=300)),
+        }));
+        if batch.is_large_batch() {
+            server.core.storage.data.write(batch.build_all()).await?;
+            batch = BatchBuilder::new();
         }
-
-        // Request indexing
-        self.notify_task_queue();
-
-        Ok(())
     }
+
+    if !batch.is_empty() {
+        server.core.storage.data.write(batch.build_all()).await?;
+    }
+    Ok(())
+}
+
+pub(crate) async fn reindex_account(server: &Server, account_id: u32) -> trc::Result<()> {
+    let now = now() as i64;
+
+    let mut batch = BatchBuilder::new();
+
+    for document_id in server
+        .get_cached_messages(account_id)
+        .await
+        .caused_by(trc::location!())?
+        .emails
+        .items
+        .iter()
+        .map(|v| v.document_id)
+    {
+        batch.schedule_task(Task::IndexDocument(TaskIndexDocument {
+            account_id: account_id.into(),
+            document_id: document_id.into(),
+            document_type: IndexDocumentType::Email,
+            status: TaskStatus::at(now + rand::rng().random_range(0..=300)),
+        }));
+
+        if batch.is_large_batch() {
+            server.core.storage.data.write(batch.build_all()).await?;
+            batch = BatchBuilder::new();
+        }
+    }
+
+    for document_type in [IndexDocumentType::Calendar, IndexDocumentType::Contacts] {
+        let cache = server
+            .fetch_dav_resources(
+                account_id,
+                account_id,
+                if document_type == IndexDocumentType::Calendar {
+                    SyncCollection::Calendar
+                } else {
+                    SyncCollection::AddressBook
+                },
+            )
+            .await
+            .caused_by(trc::location!())?;
+        let mut batch = BatchBuilder::new();
+
+        for document_id in cache.document_ids(false) {
+            batch.schedule_task(Task::IndexDocument(TaskIndexDocument {
+                account_id: account_id.into(),
+                document_id: document_id.into(),
+                document_type,
+                status: TaskStatus::at(now + rand::rng().random_range(0..=300)),
+            }));
+
+            if batch.len() >= 2000 {
+                server.core.storage.data.write(batch.build_all()).await?;
+                batch = BatchBuilder::new();
+            }
+        }
+    }
+
+    if !batch.is_empty() {
+        server.core.storage.data.write(batch.build_all()).await?;
+    }
+
+    // Request indexing
+    server.notify_task_queue();
+
+    Ok(())
 }
 
 async fn build_email_document(
@@ -616,7 +578,7 @@ async fn delete_email_metadata(
                     .core
                     .enterprise
                     .as_ref()
-                    .and_then(|e| e.undelete_retention.as_ref())
+                    .and_then(|e| e.deleted_items_retention.as_ref())
                 {
                     use email::message::metadata::MESSAGE_RECEIVED_MASK;
                     use registry::{
@@ -707,7 +669,7 @@ async fn delete_email_metadata(
         }
         None => {
             trc::event!(
-                TaskQueue(TaskQueueEvent::MetadataNotFound),
+                TaskManager(TaskManagerEvent::MetadataNotFound),
                 Details = "E-mail metadata not found",
                 AccountId = account_id,
                 DocumentId = document_id,

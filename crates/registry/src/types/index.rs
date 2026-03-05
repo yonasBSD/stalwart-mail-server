@@ -129,6 +129,10 @@ impl<'x> IndexBuilder<'x> {
             });
         }
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.keys.is_empty()
+    }
 }
 
 impl From<u64> for IndexValue<'_> {

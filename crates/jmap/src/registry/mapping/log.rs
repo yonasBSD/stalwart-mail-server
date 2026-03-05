@@ -51,7 +51,7 @@ pub(crate) async fn log_get(
                     .caused_by(trc::location!())
             })?
             .map_err(|err| {
-                trc::ManageEvent::Error
+                trc::EventType::Telemetry(trc::TelemetryEvent::LogError)
                     .reason(err)
                     .details("Failed to read log files")
                     .caused_by(trc::location!())

@@ -38,7 +38,7 @@ use store::{
     ValueKey,
     write::{AlignedBytes, Archive, now},
 };
-use trc::{AddContext, TaskQueueEvent};
+use trc::{AddContext, TaskManagerEvent};
 use types::collection::Collection;
 use utils::{sanitize_email, template::Variables};
 
@@ -145,7 +145,7 @@ async fn send_email_alarm(
         .caused_by(trc::location!())?
     else {
         trc::event!(
-            TaskQueue(TaskQueueEvent::MetadataNotFound),
+            TaskManager(TaskManagerEvent::MetadataNotFound),
             Details = "Calendar Event metadata not found",
             AccountId = account_id,
             DocumentId = document_id,
@@ -329,7 +329,7 @@ async fn send_display_alarm(
         .caused_by(trc::location!())?
     else {
         trc::event!(
-            TaskQueue(TaskQueueEvent::MetadataNotFound),
+            TaskManager(TaskManagerEvent::MetadataNotFound),
             Details = "Calendar Event metadata not found",
             AccountId = account_id,
             DocumentId = document_id,
@@ -435,7 +435,7 @@ async fn build_template(
         event.data.event.components.get(alarm.alarm_id as usize),
     ) else {
         trc::event!(
-            TaskQueue(TaskQueueEvent::MetadataNotFound),
+            TaskManager(TaskManagerEvent::MetadataNotFound),
             Details = "Calendar Alarm component not found",
             AccountId = account_id,
             DocumentId = document_id,

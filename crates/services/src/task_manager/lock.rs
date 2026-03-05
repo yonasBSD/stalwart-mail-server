@@ -6,7 +6,7 @@
 
 use crate::task_manager::*;
 
-pub(crate) trait TaskLockManager: Sync + Send {
+pub trait TaskLockManager: Sync + Send {
     fn try_lock_task(&self, task: u64) -> impl Future<Output = bool> + Send;
     fn remove_index_lock(&self, id: u64) -> impl Future<Output = ()> + Send;
 }
@@ -21,7 +21,7 @@ impl TaskLockManager for Server {
             Ok(result) => {
                 if !result {
                     trc::event!(
-                        TaskQueue(TaskQueueEvent::TaskLocked),
+                        TaskManager(TaskManagerEvent::TaskLocked),
                         Id = id,
                         Details = "Task details not available",
                         Expires = trc::Value::Timestamp(now() + DEFAULT_LOCK_EXPIRY),

@@ -19,6 +19,10 @@ impl Task {
             Task::DmarcReport(task) => task.status = status,
             Task::TlsReport(task) => task.status = status,
             Task::RestoreArchivedItem(task) => task.status = status,
+            Task::DestroyAccount(task) => task.status = status,
+            Task::AccountMaintenance(task) => task.status = status,
+            Task::StoreMaintenance(task) => task.status = status,
+            Task::SpamFilterMaintenance(task) => task.status = status,
         }
     }
 
@@ -34,6 +38,10 @@ impl Task {
             Task::DmarcReport(task) => &task.status,
             Task::TlsReport(task) => &task.status,
             Task::RestoreArchivedItem(task) => &task.status,
+            Task::DestroyAccount(task) => &task.status,
+            Task::AccountMaintenance(task) => &task.status,
+            Task::StoreMaintenance(task) => &task.status,
+            Task::SpamFilterMaintenance(task) => &task.status,
         }
     }
 

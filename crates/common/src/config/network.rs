@@ -57,18 +57,20 @@ pub struct ContactForm {
 
 #[derive(Clone, Default)]
 pub struct ClusterRoles {
-    pub purge_stores: ClusterRole,
-    pub purge_accounts: ClusterRole,
+    pub store_maintenance: ClusterRole,
+    pub account_maintenance: ClusterRole,
     pub push_notifications: ClusterRole,
-    pub fts_indexing: ClusterRole,
+    pub search_indexing: ClusterRole,
     pub spam_training: ClusterRole,
     pub imip_processing: ClusterRole,
     pub merge_threads: ClusterRole,
     pub calendar_alerts: ClusterRole,
-    pub renew_acme: ClusterRole,
+    pub dns_acme: ClusterRole,
     pub calculate_metrics: ClusterRole,
     pub push_metrics: ClusterRole,
     pub outbound_mta: ClusterRole,
+    pub task_scheduler: ClusterRole,
+    pub task_manager: ClusterRole,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -171,40 +173,46 @@ impl Network {
                 let is_success = match &range.object {
                     NodeRole::CalculateMetrics(_)
                     | NodeRole::PushMetrics(_)
-                    | NodeRole::TrainSpamClassifier(_) => {
+                    | NodeRole::SpamClassifierTraining(_)
+                    | NodeRole::TaskScheduler(_) => {
                         let (roles, role_obj) = match &range.object {
                             NodeRole::CalculateMetrics(role) => {
                                 (&mut network.roles.calculate_metrics, role)
                             }
                             NodeRole::PushMetrics(role) => (&mut network.roles.push_metrics, role),
-                            NodeRole::TrainSpamClassifier(role) => {
+                            NodeRole::SpamClassifierTraining(role) => {
                                 (&mut network.roles.spam_training, role)
+                            }
+                            NodeRole::TaskScheduler(role) => {
+                                (&mut network.roles.task_scheduler, role)
                             }
                             _ => unreachable!(),
                         };
 
                         roles.set_role(role_obj.node_id == node_id)
                     }
-                    NodeRole::PurgeStores(_)
-                    | NodeRole::PurgeAccounts(_)
-                    | NodeRole::AcmeRenew(_)
+                    NodeRole::StoreMaintenance(_)
+                    | NodeRole::AccountMaintenance(_)
                     | NodeRole::PushNotifications(_)
                     | NodeRole::SearchIndexing(_)
                     | NodeRole::ImipProcessing(_)
                     | NodeRole::CalendarAlerts(_)
                     | NodeRole::MergeThreads(_)
-                    | NodeRole::OutboundMta(_) => {
+                    | NodeRole::DnsAndAcme(_)
+                    | NodeRole::OutboundMta(_)
+                    | NodeRole::TaskQueueProcessing(_) => {
                         let (roles, role_obj) = match &range.object {
-                            NodeRole::PurgeStores(role) => (&mut network.roles.purge_stores, role),
-                            NodeRole::PurgeAccounts(role) => {
-                                (&mut network.roles.purge_accounts, role)
+                            NodeRole::StoreMaintenance(role) => {
+                                (&mut network.roles.store_maintenance, role)
                             }
-                            NodeRole::AcmeRenew(role) => (&mut network.roles.renew_acme, role),
+                            NodeRole::AccountMaintenance(role) => {
+                                (&mut network.roles.account_maintenance, role)
+                            }
                             NodeRole::PushNotifications(role) => {
                                 (&mut network.roles.push_notifications, role)
                             }
                             NodeRole::SearchIndexing(role) => {
-                                (&mut network.roles.fts_indexing, role)
+                                (&mut network.roles.search_indexing, role)
                             }
                             NodeRole::ImipProcessing(role) => {
                                 (&mut network.roles.imip_processing, role)
@@ -216,6 +224,10 @@ impl Network {
                                 (&mut network.roles.merge_threads, role)
                             }
                             NodeRole::OutboundMta(role) => (&mut network.roles.outbound_mta, role),
+                            NodeRole::DnsAndAcme(role) => (&mut network.roles.dns_acme, role),
+                            NodeRole::TaskQueueProcessing(role) => {
+                                (&mut network.roles.task_manager, role)
+                            }
                             _ => unreachable!(),
                         };
 
@@ -258,11 +270,11 @@ impl Network {
                 }
 
                 let roles = match shard_type {
-                    NodeShardType::PurgeStores => &mut network.roles.purge_stores,
-                    NodeShardType::PurgeAccounts => &mut network.roles.purge_accounts,
-                    NodeShardType::AcmeRenew => &mut network.roles.renew_acme,
+                    NodeShardType::StoreMaintenance => &mut network.roles.store_maintenance,
+                    NodeShardType::AccountMaintenance => &mut network.roles.account_maintenance,
+                    NodeShardType::DnsAndAcme => &mut network.roles.dns_acme,
                     NodeShardType::PushNotifications => &mut network.roles.push_notifications,
-                    NodeShardType::SearchIndexing => &mut network.roles.fts_indexing,
+                    NodeShardType::SearchIndexing => &mut network.roles.search_indexing,
                     NodeShardType::ImipProcessing => &mut network.roles.imip_processing,
                     NodeShardType::CalendarAlerts => &mut network.roles.calendar_alerts,
                     NodeShardType::MergeThreads => &mut network.roles.merge_threads,
@@ -419,7 +431,7 @@ impl ClusterRole {
         matches!(self, ClusterRole::Enabled | ClusterRole::Sharded { .. })
     }
 
-    pub fn is_enabled_for_integer(&self, value: u32) -> bool {
+    pub fn is_enabled_for_integer(&self, value: u64) -> bool {
         debug_assert!(!self.is_uninit() && !self.is_seen_role());
         match self {
             ClusterRole::Enabled => true,
@@ -427,7 +439,7 @@ impl ClusterRole {
             ClusterRole::Sharded {
                 shard_id,
                 total_shards,
-            } => (value % total_shards) == *shard_id,
+            } => (value as u32 % total_shards) == *shard_id,
         }
     }
 
@@ -440,7 +452,7 @@ impl ClusterRole {
                 shard_id,
                 total_shards,
             } => {
-                let mut hasher = Xxh3Builder::new().with_seed(191179).build();
+                let mut hasher = Xxh3Builder::new().with_seed(201179).build();
                 item.hash(&mut hasher);
                 hasher.finish() % (*total_shards as u64) == *shard_id as u64
             }
@@ -496,17 +508,20 @@ impl ClusterRole {
 impl ClusterRoles {
     fn all_mut(&mut self) -> impl Iterator<Item = &mut ClusterRole> {
         [
-            &mut self.purge_stores,
-            &mut self.purge_accounts,
+            &mut self.store_maintenance,
+            &mut self.account_maintenance,
             &mut self.push_notifications,
-            &mut self.fts_indexing,
+            &mut self.search_indexing,
             &mut self.spam_training,
             &mut self.imip_processing,
             &mut self.merge_threads,
             &mut self.calendar_alerts,
-            &mut self.renew_acme,
+            &mut self.dns_acme,
+            &mut self.outbound_mta,
             &mut self.calculate_metrics,
             &mut self.push_metrics,
+            &mut self.task_manager,
+            &mut self.task_scheduler,
         ]
         .into_iter()
     }

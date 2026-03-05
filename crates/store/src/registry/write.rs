@@ -65,6 +65,7 @@ pub enum RegistryWrite<'x> {
     Delete {
         object_id: ObjectId,
         object: Option<&'x Object>,
+        force: bool,
     },
 }
 
@@ -137,9 +138,13 @@ impl RegistryStore {
                     AssertValue::Hash(old_object.revision),
                 );
             }
-            RegistryWrite::Delete { object_id, object } => {
+            RegistryWrite::Delete {
+                object_id,
+                object,
+                force,
+            } => {
                 return if object_id.object().flags() & OBJ_SINGLETON == 0 {
-                    self.delete(object_id, object).await
+                    self.delete(object_id, object, force).await
                 } else {
                     Ok(RegistryWriteResult::CannotDeleteSingleton)
                 };
@@ -171,7 +176,11 @@ impl RegistryStore {
 
         // Validate foreign keys
         let tenant_id = object.inner.member_tenant_id().map(|id| id.id());
-        let account_id = object.inner.account_id().map(|id| id.id());
+        let account_id = object
+            .inner
+            .account_id()
+            .map(|id| id.id())
+            .or_else(|| (object_type == ObjectType::Account).then_some(item_id));
         for key in &set_index.keys {
             match key {
                 IndexKey::ForeignKey {
@@ -222,8 +231,8 @@ impl RegistryStore {
                         return Ok(RegistryWriteResult::InvalidForeignKey {
                             object_id: *foreign_id,
                         });
-                    } else if let Some(account_id) = account_id
-                        && (object_flags & OBJ_FILTER_ACCOUNT) != 0
+                    } else if (object_flags & OBJ_FILTER_ACCOUNT) != 0
+                        && let Some(account_id) = account_id
                         && self
                             .0
                             .store
@@ -314,6 +323,7 @@ impl RegistryStore {
         &self,
         object_id: ObjectId,
         object: Option<&Object>,
+        force: bool,
     ) -> trc::Result<RegistryWriteResult> {
         let object_type = object_id.object();
         let object_type_id = object_type.to_id();
@@ -347,12 +357,14 @@ impl RegistryStore {
         object.index(&mut clear_index);
 
         // Validate relationships
-        let linked = self.linked_objects(object_id).await?;
-        if !linked.is_empty() {
-            return Ok(RegistryWriteResult::CannotDeleteLinked {
-                object_id: ObjectId::new(object_type, id),
-                linked_objects: linked,
-            });
+        if !force {
+            let linked = self.linked_objects(object_id).await?;
+            if !linked.is_empty() {
+                return Ok(RegistryWriteResult::CannotDeleteLinked {
+                    object_id: ObjectId::new(object_type, id),
+                    linked_objects: linked,
+                });
+            }
         }
 
         // Build deletion batch
@@ -545,6 +557,7 @@ impl<'x> RegistryWrite<'x> {
         RegistryWrite::Delete {
             object_id,
             object: None,
+            force: false,
         }
     }
 
@@ -552,6 +565,7 @@ impl<'x> RegistryWrite<'x> {
         RegistryWrite::Delete {
             object_id,
             object: Some(object),
+            force: false,
         }
     }
 }

@@ -15,7 +15,7 @@ use registry::{
     types::{EnumImpl, id::ObjectId},
 };
 use std::time::Instant;
-use trc::{AddContext, PurgeEvent};
+use trc::{AddContext, StoreEvent};
 use types::{
     blob::BlobClass,
     blob_hash::{BLOB_HASH_LEN, BlobHash},
@@ -190,7 +190,7 @@ impl Store {
         }
 
         trc::event!(
-            Purge(PurgeEvent::BlobCleanup),
+            Store(StoreEvent::BlobStorePurged),
             Expires = total_deleted,
             Total = total_active,
             Elapsed = started.elapsed()

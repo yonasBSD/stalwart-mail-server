@@ -67,6 +67,10 @@ impl<T: MapItem> Map<T> {
     pub fn push_unchecked(&mut self, item: T) {
         self.0.push(item);
     }
+
+    pub fn clear(&mut self) {
+        self.0.clear();
+    }
 }
 
 impl<T> Pickle for Map<T>

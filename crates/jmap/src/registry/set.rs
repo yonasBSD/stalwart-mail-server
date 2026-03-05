@@ -8,14 +8,20 @@ use std::borrow::Cow;
 
 use crate::registry::mapping::{
     ObjectResponse, RegistrySetResponse,
+    account::account_set,
     archived_item::archived_item_set,
     masked_email::validate_masked_email,
-    principal::{validate_account, validate_role, validate_tenant_quota},
+    principal::{
+        schedule_account_destruction, validate_account, validate_role, validate_tenant_quota,
+    },
     public_key::validate_public_key,
+    queued_message::queued_message_set,
     report::report_set,
     spam_sample::spam_sample_set,
+    task::task_set,
 };
 use common::{Server, auth::AccessToken, cache::invalidate::CacheInvalidationBuilder};
+use http_proto::HttpSessionData;
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
     method::set::{SetRequest, SetResponse},
@@ -46,6 +52,7 @@ pub trait RegistrySet: Sync + Send {
         object_type: ObjectType,
         request: SetRequest<'_, Registry>,
         access_token: &AccessToken,
+        session: &HttpSessionData,
     ) -> impl Future<Output = trc::Result<SetResponse<Registry>>> + Send;
 }
 
@@ -61,6 +68,7 @@ impl RegistrySet for Server {
         object_type: ObjectType,
         mut request: SetRequest<'_, Registry>,
         access_token: &AccessToken,
+        session: &HttpSessionData,
     ) -> trc::Result<SetResponse<Registry>> {
         let object_flags = object_type.flags();
         let is_singleton = (object_flags & OBJ_SINGLETON) != 0;
@@ -113,6 +121,7 @@ impl RegistrySet for Server {
         let mut set = RegistrySetResponse {
             access_token,
             server: self,
+            remote_ip: session.remote_ip,
             account_id: request.account_id.document_id(),
             object_type,
             response,
@@ -481,10 +490,16 @@ impl RegistrySet for Server {
                             .write(RegistryWrite::Delete {
                                 object_id,
                                 object: Some(&object),
+                                force: object_type == ObjectType::Account, // Force delete accounts to allow recovery, but not other objects
                             })
                             .await?
                         {
                             RegistryWriteResult::Success(_) => {
+                                // Schedule account deletion
+                                if let ObjectInner::Account(account) = &object.inner {
+                                    schedule_account_destruction(set.server, id, account).await?;
+                                }
+
                                 cache_invalidator.process_delete(id, &object);
                                 set.response.destroyed.push(id);
                             }
@@ -514,19 +529,21 @@ impl RegistrySet for Server {
                 spam_sample_set(set).await.map(|set| set.into_response())
             }
 
-            ObjectType::AccountSettings => {
-                todo!()
-            }
-            ObjectType::Credential => {
-                todo!()
+            ObjectType::AccountSettings | ObjectType::Credential => {
+                account_set(set).await.map(|set| set.into_response())
             }
 
             ObjectType::QueuedMessage => {
+                queued_message_set(set).await.map(|set| set.into_response())
+            }
+
+            ObjectType::Task => task_set(set).await.map(|set| set.into_response()),
+
+            ObjectType::Action => {
+                let todo = "actions";
                 todo!()
             }
-            ObjectType::Task => {
-                todo!()
-            }
+
             ObjectType::Log | ObjectType::Metric | ObjectType::Trace => {
                 set.fail_all_create("Telemetry objects cannot be created");
                 set.fail_all_update("Telemetry objects cannot be modified");
@@ -535,8 +552,7 @@ impl RegistrySet for Server {
             }
         }
 
-        // Schedule account and tenant deletions
-
+        //  locks for expensive tasks should be longer or renewed
         // management objects for actions (reload, etc)";
         // DkimSignature = Generate keys + Enforce count?
         // PublicKey = Validate PK? Store decoded? Enforce count? Update ingest

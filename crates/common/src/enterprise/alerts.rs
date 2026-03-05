@@ -60,6 +60,17 @@ impl Server {
                         subject,
                         body,
                     } => {
+                        let subject = subject.build();
+                        trc::event!(
+                            Telemetry(TelemetryEvent::AlertMessage),
+                            Id = alert.id.id().id(),
+                            To = to
+                                .iter()
+                                .map(|t| trc::Value::from(t.to_string()))
+                                .collect::<Vec<_>>(),
+                            Details = subject.clone()
+                        );
+
                         messages.push(AlertMessage {
                             from: from_addr.clone(),
                             to: to.clone(),
@@ -82,7 +93,7 @@ impl Server {
                                     )),
                                 )
                                 .header("Auto-Submitted", HeaderType::Text("auto-generated".into()))
-                                .subject(subject.build())
+                                .subject(subject)
                                 .text_body(body.build())
                                 .write_to_vec()
                                 .unwrap_or_default(),
@@ -90,14 +101,14 @@ impl Server {
                     }
                     AlertMethod::Event { message } => {
                         trc::event!(
-                            Telemetry(TelemetryEvent::Alert),
+                            Telemetry(TelemetryEvent::AlertEvent),
                             Id = alert.id.id().id(),
                             Details = message.as_ref().map(|m| m.build())
                         );
 
                         #[cfg(feature = "test_mode")]
                         Collector::update_event_counter(
-                            trc::EventType::Telemetry(TelemetryEvent::Alert),
+                            trc::EventType::Telemetry(TelemetryEvent::AlertEvent),
                             1,
                         );
                     }

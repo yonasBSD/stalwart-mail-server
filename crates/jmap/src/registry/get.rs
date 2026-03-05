@@ -234,6 +234,7 @@ impl RegistryGet for Server {
                         continue;
                     };
 
+                    let todo = "include account quota if requested";
                     match &object.inner {
                         ObjectInner::DkimSignature(obj)
                             if get.properties.is_empty()
@@ -277,6 +278,10 @@ impl RegistryGet for Server {
             ObjectType::Log => log_get(get).await.map(|get| get.into_response()),
             ObjectType::AccountSettings | ObjectType::Credential => {
                 account_get(get).await.map(|get| get.into_response())
+            }
+            ObjectType::Action => {
+                let todo = "actions";
+                todo!()
             }
         }
     }

@@ -38,7 +38,7 @@ use config::{
     storage::Storage,
     telemetry::Metrics,
 };
-use ipc::{BroadcastEvent, HousekeeperEvent, PushEvent, QueueEvent, ReportingEvent};
+use ipc::{BroadcastEvent, PushEvent, QueueEvent, ReportingEvent};
 use mail_auth::{MX, Txt};
 use manager::application::{Resource, WebApplicationManager};
 use parking_lot::{Mutex, RwLock};
@@ -122,10 +122,8 @@ pub const KV_RATE_LIMIT_HTTP_ANONYMOUS: u8 = 9;
 pub const KV_RATE_LIMIT_IMAP: u8 = 10;
 pub const KV_QUOTA_BLOB: u8 = 11;
 pub const KV_GREYLIST: u8 = 16;
-pub const KV_LOCK_PURGE_ACCOUNT: u8 = 20;
 pub const KV_LOCK_QUEUE_MESSAGE: u8 = 21;
 pub const KV_LOCK_TASK: u8 = 23;
-pub const KV_LOCK_HOUSEKEEPER: u8 = 24;
 pub const KV_LOCK_DAV: u8 = 25;
 pub const KV_SIEVE_ID: u8 = 26;
 
@@ -272,7 +270,6 @@ pub struct HttpAuthCache {
 
 pub struct Ipc {
     pub push_tx: mpsc::Sender<PushEvent>,
-    pub housekeeper_tx: mpsc::Sender<HousekeeperEvent>,
     pub task_tx: Arc<Notify>,
     pub queue_tx: mpsc::Sender<QueueEvent>,
     pub report_tx: mpsc::Sender<ReportingEvent>,

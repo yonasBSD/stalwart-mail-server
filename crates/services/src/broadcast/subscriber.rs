@@ -7,7 +7,7 @@
 use crate::broadcast::{BROADCAST_TOPIC, BroadcastBatch};
 use common::{
     BuildServer, Inner,
-    ipc::{BroadcastEvent, HousekeeperEvent, PushEvent, PushNotification, RegistryChange},
+    ipc::{BroadcastEvent, PushEvent, PushNotification, RegistryChange},
 };
 use registry::types::EnumImpl;
 use std::{sync::Arc, time::Duration};
@@ -146,20 +146,6 @@ pub fn spawn_broadcast_subscriber(inner: Arc<Inner>, mut shutdown_rx: watch::Rec
                                                         if let Some(new_core) = result.new_core {
                                                             // Update core
                                                             inner.shared_core.store(new_core.into());
-
-                                                            if inner
-                                                                .ipc
-                                                                .housekeeper_tx
-                                                                .send(HousekeeperEvent::ReloadSettings)
-                                                                .await
-                                                                .is_err()
-                                                            {
-                                                                trc::event!(
-                                                                    Server(trc::ServerEvent::ThreadError),
-                                                                    Details = "Failed to send setting reload event to housekeeper",
-                                                                    CausedBy = trc::location!(),
-                                                                );
-                                                            }
                                                         }
                                                     }
                                                     Err(err) => {

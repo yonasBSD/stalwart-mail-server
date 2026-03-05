@@ -16,38 +16,13 @@ use mail_auth::{
     report::{Record, tlsrpt::FailureDetails},
 };
 use registry::{schema::prelude::ObjectType, types::id::ObjectId};
-use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-    time::Instant,
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
 };
 use tokio::sync::{Semaphore, SemaphorePermit, mpsc};
 use types::type_state::{DataType, StateChange};
 use utils::map::bitmap::Bitmap;
-
-pub enum HousekeeperEvent {
-    AcmeReschedule {
-        provider_id: String,
-        renew_at: Instant,
-    },
-    Purge(PurgeType),
-    ReloadSettings,
-    Exit,
-}
-
-pub enum PurgeType {
-    Data,
-    Blob,
-    Lookup {
-        prefix: Option<Vec<u8>>,
-    },
-    Account {
-        account_id: Option<u32>,
-        use_roles: bool,
-    },
-}
 
 #[derive(Debug)]
 pub enum PushEvent {

@@ -129,7 +129,7 @@ impl ItipAutoExpunge for Server {
         }
 
         trc::event!(
-            Purge(trc::PurgeEvent::AutoExpunge),
+            Store(trc::StoreEvent::AutoExpunge),
             AccountId = account_id,
             Collection = Collection::CalendarEventNotification.as_str(),
             Total = destroy_ids.len(),

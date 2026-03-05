@@ -85,14 +85,14 @@ impl OAuthApiHandler for Server {
             } => {
                 // Validate clientId
                 if client_id.len() > CLIENT_ID_MAX_LEN {
-                    return Err(trc::ManageEvent::Error
+                    return Err(trc::AuthEvent::Error
                         .into_err()
                         .details("Client ID is invalid."));
                 } else if redirect_uri
                     .as_ref()
                     .is_some_and(|uri| uri.starts_with("http://"))
                 {
-                    return Err(trc::ManageEvent::Error
+                    return Err(trc::AuthEvent::Error
                         .into_err()
                         .details("Redirect URI must be HTTPS."));
                 }

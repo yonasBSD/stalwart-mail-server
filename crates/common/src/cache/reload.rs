@@ -11,7 +11,7 @@ use crate::{
         storage::Storage,
         telemetry::Telemetry,
     },
-    ipc::RegistryChange,
+    ipc::{QueueEvent, RegistryChange},
 };
 use ahash::AHashMap;
 use directory::Directories;
@@ -141,5 +141,17 @@ impl Server {
         }
 
         Ok(result)
+    }
+
+    pub async fn reload_core(&self, new_core: Core) {
+        self.inner.shared_core.store(new_core.into());
+
+        // Reload queue settings
+        self.inner
+            .ipc
+            .queue_tx
+            .send(QueueEvent::ReloadSettings)
+            .await
+            .ok();
     }
 }

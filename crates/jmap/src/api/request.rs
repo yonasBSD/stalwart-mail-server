@@ -536,9 +536,14 @@ impl RequestHandler for Server {
                     set_account_id_if_missing(&mut req.account_id, access_token);
                     access_token.assert_is_member(req.account_id)?;
 
-                    self.registry_set(method_name.obj.unwrap_registry(), req, access_token)
-                        .await?
-                        .into()
+                    self.registry_set(
+                        method_name.obj.unwrap_registry(),
+                        req,
+                        access_token,
+                        session,
+                    )
+                    .await?
+                    .into()
                 }
             },
             RequestMethod::Changes(mut req) => {

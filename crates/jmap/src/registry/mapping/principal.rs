@@ -11,15 +11,16 @@ use common::{
 };
 use directory::core::secret::hash_secret;
 use jmap_proto::error::set::SetError;
+use registry::schema::structs::TaskStatus;
 use registry::{
     schema::{
         enums::{AccountType, Permission, TenantStorageQuota},
         prelude::{MASKED_PASSWORD, ObjectType, Property},
-        structs::{Account, Credential, Role},
+        structs::{Account, Credential, Role, Task, TaskDestroyAccount},
     },
     types::EnumImpl,
 };
-use store::registry::RegistryQuery;
+use store::{registry::RegistryQuery, write::BatchBuilder};
 use trc::AddContext;
 use types::id::Id;
 
@@ -340,7 +341,60 @@ pub(crate) async fn validate_tenant_quota(
     Ok(Ok(ObjectResponse::default()))
 }
 
-fn build_set_error(permissions: Vec<Permission>) -> SetError<Property> {
+pub(crate) async fn schedule_account_destruction(
+    server: &Server,
+    account_id: Id,
+    account: &Account,
+) -> trc::Result<()> {
+    // SPDX-SnippetBegin
+    // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
+    // SPDX-License-Identifier: LicenseRef-SEL
+    #[cfg(feature = "enterprise")]
+    let status = server
+        .core
+        .enterprise
+        .as_ref()
+        .and_then(|e| e.deleted_accounts_retention.as_ref())
+        .map(|retention| TaskStatus::at(store::write::now() as i64 + retention.as_secs() as i64))
+        .unwrap_or_else(TaskStatus::now);
+    // SPDX-SnippetEnd
+
+    #[cfg(not(feature = "enterprise"))]
+    let status = TaskStatus::now();
+
+    let account_domain_id;
+    let account_name;
+    let account_type;
+
+    match account {
+        Account::User(account) => {
+            account_domain_id = account.domain_id;
+            account_name = account.name.clone();
+            account_type = AccountType::User;
+        }
+        Account::Group(account) => {
+            account_domain_id = account.domain_id;
+            account_name = account.name.clone();
+            account_type = AccountType::Group;
+        }
+    }
+
+    let mut batch = BatchBuilder::new();
+    batch.schedule_task(Task::DestroyAccount(TaskDestroyAccount {
+        account_domain_id,
+        account_id,
+        account_name,
+        account_type,
+        status,
+    }));
+
+    server.store().write(batch.build_all()).await?;
+    server.notify_task_queue();
+
+    Ok(())
+}
+
+pub(crate) fn build_set_error(permissions: Vec<Permission>) -> SetError<Property> {
     let mut missing_permissions = String::with_capacity(16);
     let mut total_missing = permissions.len();
     for permission in permissions.into_iter().take(5) {

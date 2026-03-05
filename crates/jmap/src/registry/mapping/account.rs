@@ -5,17 +5,29 @@
  */
 
 use crate::registry::{
-    mapping::{RegistryGetResponse, RegistrySetResponse},
+    mapping::{RegistryGetResponse, RegistrySetResponse, principal::build_set_error},
     set::map_write_error,
+};
+use common::{
+    auth::{
+        AccessToken, Permissions, PermissionsGroup,
+        credential::{ApiKey, AppPassword},
+        permissions::BuildPermissions,
+    },
+    cache::invalidate::CacheInvalidationBuilder,
+    ipc::CacheInvalidation,
 };
 use directory::core::secret::{hash_secret, verify_otp_auth, verify_secret_hash};
 use jmap_proto::error::set::SetError;
-use jmap_tools::{JsonPointer, JsonPointerItem, Key};
+use jmap_tools::{JsonPointer, JsonPointerItem, Key, Map, Value};
 use registry::{
-    jmap::{IntoValue, JsonPointerPatch, MaybeUnpatched, RegistryJsonPatch},
+    jmap::{IntoValue, JsonPointerPatch, MaybeUnpatched, RegistryJsonPatch, RegistryValue},
     schema::{
+        enums::StorageQuota,
         prelude::{MASKED_PASSWORD, Object, ObjectInner, ObjectType, Property},
-        structs::{Account, AccountSettings, Credential},
+        structs::{
+            Account, AccountSettings, Credential, CredentialPermissions, SecondaryCredential,
+        },
     },
     types::id::ObjectId,
 };
@@ -77,12 +89,185 @@ pub(crate) async fn account_set(
                     }
                 }
             }
-
-            if account.encryption_at_rest != old_account.encryption_at_rest {
-                let todo = "validate pk";
-            }
         }
         ObjectType::Credential => {
+            // Process creations
+            if !set.create.is_empty() {
+                let account_cache = set.server.account(set.account_id).await?;
+                let app_pass_quota = set
+                    .server
+                    .object_quota(account_cache.object_quotas(), StorageQuota::MaxAppPasswords);
+                let api_key_quota = set
+                    .server
+                    .object_quota(account_cache.object_quotas(), StorageQuota::MaxApiKeys);
+                let mut last_credential_id = 0;
+                let mut app_pass_total = 0;
+                let mut api_key_total = 0;
+
+                for credential in account.credentials.values() {
+                    match credential {
+                        Credential::Password(c) => {
+                            let credential_id = c.credential_id.id();
+                            if credential_id > last_credential_id {
+                                last_credential_id = credential_id;
+                            }
+                        }
+                        Credential::AppPassword(c) => {
+                            let credential_id = c.credential_id.id();
+                            if credential_id > last_credential_id {
+                                last_credential_id = credential_id;
+                            }
+                            app_pass_total += 1;
+                        }
+                        Credential::ApiKey(c) => {
+                            let credential_id = c.credential_id.id();
+                            if credential_id > last_credential_id {
+                                last_credential_id = credential_id;
+                            }
+                            api_key_total += 1;
+                        }
+                    }
+                }
+
+                'outer: for (id, value) in set.create.drain() {
+                    let mut credential = Credential::default();
+
+                    for (key, value) in value.into_expanded_object() {
+                        let Key::Property(prop) = key else {
+                            set.response.not_created.append(
+                                id,
+                                SetError::invalid_properties().with_property(key.into_owned()),
+                            );
+                            continue 'outer;
+                        };
+                        let ptr = JsonPointer::new(vec![JsonPointerItem::Key(Key::Property(prop))]);
+
+                        // Patch object
+                        match credential.patch(JsonPointerPatch::new(&ptr).with_create(true), value)
+                        {
+                            Ok(MaybeUnpatched::Patched) => {}
+                            Ok(
+                                MaybeUnpatched::Unpatched { .. }
+                                | MaybeUnpatched::UnpatchedMany { .. },
+                            ) => {
+                                set.response.not_created.append(
+                                    id,
+                                    SetError::invalid_properties()
+                                        .with_property(prop)
+                                        .with_description("Cannot set property during creation."),
+                                );
+                                continue 'outer;
+                            }
+                            Err(err) => {
+                                set.response.not_created.append(id, err.into());
+                                continue 'outer;
+                            }
+                        }
+                    }
+
+                    // Validate credential
+                    match &mut credential {
+                        Credential::AppPassword(credential) => {
+                            if app_pass_total >= app_pass_quota {
+                                set.response.not_created.append(
+                                    id,
+                                    SetError::over_quota().with_description(format!(
+                                        "You have exceeded your quota of {} app passwords.",
+                                        app_pass_quota
+                                    )),
+                                );
+                                continue 'outer;
+                            }
+                            if let Err(err) =
+                                validate_credential_permissions(set.access_token, credential)
+                            {
+                                set.response.not_created.append(id, err);
+                                continue 'outer;
+                            }
+
+                            // Assign id
+                            last_credential_id += 1;
+                            app_pass_total += 1;
+                            credential.credential_id = last_credential_id.into();
+
+                            // Generate App password and hash secret
+                            let app_ass = AppPassword::new(last_credential_id as u32).build();
+                            credential.secret = hash_secret(
+                                set.server.core.network.security.password_hash_algorithm,
+                                app_ass.clone(),
+                            )
+                            .await
+                            .caused_by(trc::location!())?;
+                            set.response.created.insert(
+                                id,
+                                Value::Object(Map::from(vec![
+                                    (
+                                        Key::Property(Property::Secret),
+                                        Value::Element(RegistryValue::Id(
+                                            last_credential_id.into(),
+                                        )),
+                                    ),
+                                    (Key::Property(Property::Secret), Value::Str(app_ass.into())),
+                                ])),
+                            );
+                        }
+                        Credential::ApiKey(credential) => {
+                            if api_key_total >= api_key_quota {
+                                set.response.not_created.append(
+                                    id,
+                                    SetError::over_quota().with_description(format!(
+                                        "You have exceeded your quota of {} API keys.",
+                                        api_key_quota
+                                    )),
+                                );
+                                continue 'outer;
+                            }
+                            if let Err(err) =
+                                validate_credential_permissions(set.access_token, credential)
+                            {
+                                set.response.not_created.append(id, err);
+                                continue 'outer;
+                            }
+
+                            // Assign id
+                            last_credential_id += 1;
+                            api_key_total += 1;
+                            credential.credential_id = last_credential_id.into();
+
+                            // Generate API key and hash secret
+                            let api_key =
+                                ApiKey::new(set.account_id, last_credential_id as u32).build();
+                            credential.secret = hash_secret(
+                                set.server.core.network.security.password_hash_algorithm,
+                                api_key.clone(),
+                            )
+                            .await
+                            .caused_by(trc::location!())?;
+                            set.response.created.insert(
+                                id,
+                                Value::Object(Map::from(vec![
+                                    (
+                                        Key::Property(Property::Secret),
+                                        Value::Element(RegistryValue::Id(
+                                            last_credential_id.into(),
+                                        )),
+                                    ),
+                                    (Key::Property(Property::Secret), Value::Str(api_key.into())),
+                                ])),
+                            );
+                        }
+                        Credential::Password(_) => {
+                            set.response.not_created.append(
+                                id,
+                                SetError::forbidden()
+                                    .with_description("Cannot create a password credential."),
+                            );
+                        }
+                    }
+                }
+            }
+
+            // Process updates
             'outer: for (id, value) in set.update.drain(..) {
                 if let Some(credential) = account
                     .credentials
@@ -145,6 +330,20 @@ pub(crate) async fn account_set(
                                 credential.otp_auth = old_credential.otp_auth.clone();
                             }
 
+                            // Users cannot modify their allowedIps or expiration
+                            if credential.allowed_ips != old_credential.allowed_ips
+                                || credential.expires_at != old_credential.expires_at
+                            {
+                                set.response.not_updated.append(
+                                    id,
+                                    SetError::forbidden().with_description(
+                                        "Modifying allowed IPs or expiration is not allowed.",
+                                    ),
+                                );
+                                continue 'outer;
+                            }
+
+                            // Password changes are not supported when using external directories
                             if (credential.secret != old_credential.secret
                                 || credential.otp_auth != old_credential.otp_auth)
                                 && set
@@ -289,6 +488,7 @@ pub(crate) async fn account_set(
                 }
             }
 
+            // Process deletions
             for id in set.destroy.drain(..) {
                 if let Some(idx) = account.credentials.0.inner.iter_mut().position(|c| {
                     c.value.credential_id() == id && !matches!(c.value, Credential::Password(_))
@@ -304,6 +504,17 @@ pub(crate) async fn account_set(
     }
 
     if account != old_account {
+        let mut cache_invalidator = CacheInvalidationBuilder::default();
+        if account.encryption_at_rest != old_account.encryption_at_rest
+            || account.description != old_account.description
+            || account.locale != old_account.locale
+        {
+            cache_invalidator.invalidate(CacheInvalidation::Account(set.account_id));
+        }
+        if account.credentials != old_account.credentials {
+            cache_invalidator.invalidate(CacheInvalidation::AccessToken(set.account_id));
+        }
+
         let object = Object::new(ObjectInner::Account(Account::User(account)));
         let old_object = Object::with_revision(
             ObjectInner::Account(Account::User(old_account.clone())),
@@ -320,7 +531,10 @@ pub(crate) async fn account_set(
             })
             .await?
         {
-            RegistryWriteResult::Success(_) => {}
+            RegistryWriteResult::Success(_) => {
+                // Invalidate caches
+                set.server.invalidate_caches(cache_invalidator).await?;
+            }
             err => {
                 let err = map_write_error(err);
                 let failed_create = set
@@ -405,8 +619,19 @@ pub(crate) async fn account_get(
                     .collect::<Vec<_>>()
             };
 
-            for credential in account.credentials {
-                let id = credential.credential_id();
+            for mut credential in account.credentials {
+                let id = match &mut credential {
+                    Credential::Password(credential) => {
+                        credential.allowed_ips.clear();
+                        credential.credential_id
+                    }
+                    Credential::AppPassword(credential_properties) => {
+                        credential_properties.credential_id
+                    }
+                    Credential::ApiKey(credential_properties) => {
+                        credential_properties.credential_id
+                    }
+                };
                 if ids.contains(&id) {
                     get.insert(id, credential.into_value());
                     ids.retain(|i| i != &id);
@@ -421,4 +646,23 @@ pub(crate) async fn account_get(
     }
 
     Ok(get)
+}
+
+fn validate_credential_permissions(
+    access_token: &AccessToken,
+    credential: &SecondaryCredential,
+) -> Result<(), SetError<Property>> {
+    match &credential.permissions {
+        CredentialPermissions::Inherit | CredentialPermissions::Disable(_) => Ok(()),
+        CredentialPermissions::Replace(permissions) => access_token
+            .can_grant_permissions(
+                PermissionsGroup {
+                    enabled: Permissions::from_permission(permissions.permissions.as_slice()),
+                    disabled: Default::default(),
+                    merge: false,
+                }
+                .finalize(),
+            )
+            .map_err(build_set_error),
+    }
 }

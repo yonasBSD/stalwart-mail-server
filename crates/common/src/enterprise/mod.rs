@@ -33,7 +33,8 @@ use utils::{HttpLimitResponse, cron::SimpleCron, template::Template};
 pub struct Enterprise {
     pub license: LicenseKey,
     pub logo_url: Option<String>,
-    pub undelete_retention: Option<Duration>,
+    pub deleted_items_retention: Option<Duration>,
+    pub deleted_accounts_retention: Option<Duration>,
     pub trace_retention: Option<Duration>,
     pub metrics_retention: Option<Duration>,
     pub metrics_interval: SimpleCron,
