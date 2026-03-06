@@ -19,7 +19,7 @@ use registry::schema::{
     prelude::{ObjectType, Property},
     structs::{
         self, AiModel, Alert, CalendarAlarm, CalendarScheduling, DataRetention, SecretKeyOptional,
-        SecretKeyValue, SpamLlm,
+        SecretKeyValue, SpamLlm, SystemSettings,
     },
 };
 use std::sync::Arc;
@@ -32,7 +32,10 @@ use utils::template::Template;
 
 impl Enterprise {
     pub async fn parse(bp: &mut Bootstrap) -> Option<Self> {
-        let server_hostname = bp.hostname().to_string();
+        let server_hostname = bp
+            .setting_infallible::<SystemSettings>()
+            .await
+            .default_hostname;
         let mut update_license = None;
 
         let mut enterprise = bp.setting_infallible::<structs::Enterprise>().await;

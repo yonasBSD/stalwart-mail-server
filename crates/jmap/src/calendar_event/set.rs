@@ -15,7 +15,10 @@ use calcard::{
     jscalendar::{JSCalendar, JSCalendarDateTime, JSCalendarProperty, JSCalendarValue},
 };
 use chrono::DateTime;
-use common::{DavName, DavResources, Server, auth::AccessToken};
+use common::{
+    DavName, DavResources, Server,
+    auth::{AccessToken, AccountInfo},
+};
 use groupware::{
     DestroyArchive,
     cache::GroupwareCache,
@@ -66,7 +69,7 @@ pub trait CalendarEventSet: Sync + Send {
         batch: &mut BatchBuilder,
         access_token: &AccessToken,
         account_id: u32,
-        account_emails: &[String],
+        account_info: &AccountInfo,
         send_scheduling_messages: bool,
         can_add_calendars: &Option<RoaringBitmap>,
         js_calendar_event: JSCalendar<'_, Id, BlobId>,
@@ -124,7 +127,7 @@ impl CalendarEventSet for Server {
                     &mut batch,
                     access_token,
                     account_id,
-                    account_info.addresses(),
+                    &account_info,
                     send_scheduling_messages,
                     &can_add_calendars,
                     JSCalendar::default(),
@@ -388,7 +391,10 @@ impl CalendarEventSet for Server {
             let extra_bytes = (new_calendar_event.size as u64)
                 .saturating_sub(u32::from(calendar_event.inner.size) as u64);
             if extra_bytes > 0 {
-                match self.has_available_quota(account_id, extra_bytes).await {
+                match self
+                    .has_available_quota(account_info.account(), extra_bytes)
+                    .await
+                {
                     Ok(_) => {}
                     Err(err) if err.matches(trc::EventType::Limit(trc::LimitEvent::Quota)) => {
                         response.not_updated.append(id, SetError::over_quota());
@@ -512,7 +518,7 @@ impl CalendarEventSet for Server {
         batch: &mut BatchBuilder,
         access_token: &AccessToken,
         account_id: u32,
-        account_emails: &[String],
+        account_info: &AccountInfo,
         send_scheduling_messages: bool,
         can_add_calendars: &Option<RoaringBitmap>,
         mut js_calendar_group: JSCalendar<'_, Id, BlobId>,
@@ -619,11 +625,11 @@ impl CalendarEventSet for Server {
         let mut itip_messages = None;
         if send_scheduling_messages
             && self.core.groupware.itip_enabled
-            && !account_emails.is_empty()
+            && !account_info.addresses().is_empty()
             && access_token.has_permission(Permission::CalendarSchedulingSend)
             && event.data.event_range_end() > now() as i64
         {
-            match itip_create(&mut event.data.event, account_emails) {
+            match itip_create(&mut event.data.event, account_info.addresses()) {
                 Ok(messages) => {
                     if messages.iter().map(|r| r.to.len()).sum::<usize>()
                         < self.core.groupware.itip_outbound_max_recipients
@@ -650,7 +656,10 @@ impl CalendarEventSet for Server {
         }
 
         // Validate quota
-        match self.has_available_quota(account_id, size as u64).await {
+        match self
+            .has_available_quota(account_info.account(), size as u64)
+            .await
+        {
             Ok(_) => {}
             Err(err) if err.matches(trc::EventType::Limit(trc::LimitEvent::Quota)) => {
                 return Ok(Err(SetError::over_quota()));

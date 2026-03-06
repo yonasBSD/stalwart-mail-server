@@ -75,7 +75,7 @@ pub(crate) async fn account_set(
                         let ptr =
                             JsonPointer::new(vec![JsonPointerItem::Key(Key::Property(property))]);
                         if let Err(err) =
-                            account.patch(JsonPointerPatch::new(&ptr).with_create(true), value)
+                            account.patch(JsonPointerPatch::new(&ptr).with_create(false), value)
                         {
                             set.response.not_updated.append(id, err.into());
                             break 'outer;

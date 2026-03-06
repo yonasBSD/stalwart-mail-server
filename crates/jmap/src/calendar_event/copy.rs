@@ -169,7 +169,7 @@ impl JmapCalendarEventCopy for Server {
                     &mut batch,
                     access_token,
                     account_id,
-                    account_info.addresses(),
+                    &account_info,
                     false,
                     &can_add_calendars,
                     calendar_event.data.event.into_jscalendar(),

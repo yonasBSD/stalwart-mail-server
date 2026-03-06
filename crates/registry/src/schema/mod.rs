@@ -7,7 +7,7 @@
 use crate::{
     schema::{
         enums::{TracingLevel, TracingLevelOpt},
-        prelude::{NodeRange, Object, ObjectInner, Property},
+        prelude::{Object, ObjectInner, Property},
     },
     types::EnumImpl,
 };
@@ -27,12 +27,6 @@ pub mod structs;
 #[allow(clippy::collapsible_if)]
 #[allow(clippy::derivable_impls)]
 pub mod structs_impl;
-
-impl NodeRange {
-    pub fn contains(&self, node_id: u64) -> bool {
-        node_id >= self.from_node_id && node_id <= self.to_node_id
-    }
-}
 
 impl Display for Property {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

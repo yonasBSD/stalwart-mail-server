@@ -9,7 +9,9 @@ use std::borrow::Cow;
 use crate::registry::mapping::{
     ObjectResponse, RegistrySetResponse,
     account::account_set,
+    action::action_set,
     archived_item::archived_item_set,
+    dkim::validate_dkim_signature,
     masked_email::validate_masked_email,
     principal::{
         schedule_account_destruction, validate_account, validate_role, validate_tenant_quota,
@@ -37,7 +39,7 @@ use registry::{
             OBJ_FILTER_ACCOUNT, OBJ_FILTER_TENANT, OBJ_SINGLETON, Object, ObjectInner, ObjectType,
             Property,
         },
-        structs::{Account, PublicKey, Role},
+        structs::{Account, DkimSignature, PublicKey, Role},
     },
     types::id::ObjectId,
 };
@@ -70,6 +72,11 @@ impl RegistrySet for Server {
         access_token: &AccessToken,
         session: &HttpSessionData,
     ) -> trc::Result<SetResponse<Registry>> {
+        let todo = "list";
+        //  locks for expensive tasks should be longer or renewed
+        // Validate expressions
+        // Fallback admin password from env or files
+        // Individual permissions for each object + create/update/destroy
         let object_flags = object_type.flags();
         let is_singleton = (object_flags & OBJ_SINGLETON) != 0;
         let has_account_id = (object_flags & OBJ_FILTER_ACCOUNT) != 0;
@@ -390,13 +397,11 @@ impl RegistrySet for Server {
                             .await?
                         }
                         ObjectInner::PublicKey(key) => {
-                            validate_public_key(
-                                &set,
-                                key,
-                                modification.as_public_key(),
-                                unpatched_properties,
-                            )
-                            .await?
+                            validate_public_key(&set, key, modification.as_public_key()).await?
+                        }
+                        ObjectInner::DkimSignature(key) => {
+                            validate_dkim_signature(&set, key, modification.as_dkim_signature())
+                                .await?
                         }
                         ObjectInner::Domain(_) if is_create => {
                             validate_tenant_quota(&set, TenantStorageQuota::MaxDomains).await?
@@ -539,10 +544,7 @@ impl RegistrySet for Server {
 
             ObjectType::Task => task_set(set).await.map(|set| set.into_response()),
 
-            ObjectType::Action => {
-                let todo = "actions";
-                todo!()
-            }
+            ObjectType::Action => action_set(set).await.map(|set| set.into_response()),
 
             ObjectType::Log | ObjectType::Metric | ObjectType::Trace => {
                 set.fail_all_create("Telemetry objects cannot be created");
@@ -551,15 +553,6 @@ impl RegistrySet for Server {
                 Ok(set.into_response())
             }
         }
-
-        //  locks for expensive tasks should be longer or renewed
-        // management objects for actions (reload, etc)";
-        // DkimSignature = Generate keys + Enforce count?
-        // PublicKey = Validate PK? Store decoded? Enforce count? Update ingest
-        // Domain = trigger DNIM stuff
-        // Validate expressions
-        // Fallback admin password from env or files
-        // Individual permissions for each object + create/update/destroy
     }
 }
 
@@ -680,6 +673,16 @@ impl Modification {
             Modification::Create(_) => None,
             Modification::Update { object, .. } => match &object.inner {
                 ObjectInner::PublicKey(key) => Some(key),
+                _ => None,
+            },
+        }
+    }
+
+    fn as_dkim_signature(&self) -> Option<&DkimSignature> {
+        match self {
+            Modification::Create(_) => None,
+            Modification::Update { object, .. } => match &object.inner {
+                ObjectInner::DkimSignature(key) => Some(key),
                 _ => None,
             },
         }

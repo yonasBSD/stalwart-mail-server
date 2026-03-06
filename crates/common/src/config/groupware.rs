@@ -6,7 +6,7 @@
 
 use registry::schema::structs::{
     AddressBook, Calendar, CalendarAlarm, CalendarScheduling, DataRetention, FileStorage, Sharing,
-    WebDav,
+    SystemSettings, WebDav,
 };
 use std::str::FromStr;
 use store::registry::bootstrap::Bootstrap;
@@ -90,6 +90,7 @@ impl GroupwareConfig {
         let file = bp.setting_infallible::<FileStorage>().await;
         let share = bp.setting_infallible::<Sharing>().await;
         let dr = bp.setting_infallible::<DataRetention>().await;
+        let system = bp.setting_infallible::<SystemSettings>().await;
 
         GroupwareConfig {
             max_request_size: dav.request_max_size as usize,
@@ -134,7 +135,7 @@ impl GroupwareConfig {
                 {
                     Some(url.to_string())
                 } else {
-                    Some(format!("https://{}/calendar/rsvp", bp.hostname()))
+                    Some(format!("https://{}/calendar/rsvp", system.default_hostname))
                 }
             } else {
                 None

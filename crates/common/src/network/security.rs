@@ -121,7 +121,6 @@ impl Security {
         }
 
         let security = bp.setting_infallible::<structs::Security>().await;
-        let local = bp.setting_infallible::<structs::LocalSettings>().await;
         let auth = bp.setting_infallible::<structs::Authentication>().await;
         Security {
             fallback_admin: local.fallback_admin_user.as_ref().and_then(|user| {

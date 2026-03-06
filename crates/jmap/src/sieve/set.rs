@@ -5,7 +5,11 @@
  */
 
 use crate::{blob::download::BlobDownload, changes::state::StateManager};
-use common::{Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
+use common::{
+    Server,
+    auth::{AccessToken, AccountCache},
+    storage::index::ObjectIndexBuilder,
+};
 use email::sieve::{
     ArchivedSieveScript, SieveScript, delete::SieveScriptDelete, ingest::SieveScriptIngest,
 };
@@ -39,6 +43,7 @@ use types::{
 pub struct SetContext<'x> {
     account_id: u32,
     access_token: &'x AccessToken,
+    account_cache: &'x AccountCache,
     response: SetResponse<Sieve>,
 }
 
@@ -81,9 +86,11 @@ impl SieveScriptSet for Server {
         let sieve_ids = self
             .document_ids(account_id, Collection::SieveScript, SieveField::Name)
             .await?;
+        let account = self.account(account_id).await.caused_by(trc::location!())?;
         let mut ctx = SetContext {
             account_id,
             access_token,
+            account_cache: &account,
             response: SetResponse::from_request(&request, self.core.jmap.set_max_objects)?
                 .with_state(
                     self.assert_state(
@@ -104,7 +111,6 @@ impl SieveScriptSet for Server {
         }
 
         // Process creates
-        let account = self.account(account_id).await.caused_by(trc::location!())?;
         let mut batch = BatchBuilder::new();
         for (id, object) in request.unwrap_create() {
             if sieve_ids.len()
@@ -471,7 +477,7 @@ impl SieveScriptSet for Server {
                 if let Some(mut bytes) = self.blob_download(&blob_id, ctx.access_token).await? {
                     // Check quota
                     match self
-                        .has_available_quota(ctx.account_id, bytes.len() as u64)
+                        .has_available_quota(ctx.account_cache, bytes.len() as u64)
                         .await
                     {
                         Ok(_) => (),

@@ -7,6 +7,9 @@
 use crate::{
     Server,
     auth::{
+        ACCOUNT_FLAG_ENCRYPT_ALGO_AES128, ACCOUNT_FLAG_ENCRYPT_ALGO_AES256,
+        ACCOUNT_FLAG_ENCRYPT_APPEND, ACCOUNT_FLAG_ENCRYPT_METHOD_PGP,
+        ACCOUNT_FLAG_ENCRYPT_METHOD_SMIME, ACCOUNT_FLAG_ENCRYPT_TRAIN_SPAM_FILTER, ACCOUNT_IS_USER,
         AccountCache, AccountInfo, AccountTenantIds, DOMAIN_FLAG_RELAY, DOMAIN_FLAG_SUB_ADDRESSING,
         DomainCache, EmailAddress, EmailAddressRef, EmailCache, MailingListCache, PermissionsGroup,
         RoleCache, TenantCache, permissions::BuildPermissions,
@@ -14,7 +17,10 @@ use crate::{
     config::smtp::auth::DkimSigner,
     expr::if_block::BootstrapExprExt,
     network::{masked::MaskedAddress, mta::AddressResolver},
-    storage::{ObjectQuota, TenantQuota},
+    storage::{
+        ObjectQuota, TenantQuota,
+        encryption::{EncryptionMethod, parse_public_key},
+    },
 };
 use ahash::AHashSet;
 use arcstr::ArcStr;
@@ -23,8 +29,8 @@ use registry::{
         enums::{Locale, StorageQuota, TenantStorageQuota},
         prelude::{ObjectType, Property},
         structs::{
-            Account, DkimSignature, Domain, MailingList, MaskedEmail, Permissions, Role,
-            SubAddressing, Tenant,
+            Account, DkimSignature, Domain, EncryptionAtRest, MailingList, MaskedEmail,
+            Permissions, PublicKey, Role, SubAddressing, Tenant,
         },
     },
     types::{EnumImpl, id::ObjectId},
@@ -274,6 +280,51 @@ impl Server {
                             }
                         }
 
+                        let mut flags = ACCOUNT_IS_USER;
+                        let encryption_settings = match account.encryption_at_rest {
+                            EncryptionAtRest::Disabled => None,
+                            EncryptionAtRest::Aes256(settings) => {
+                                flags |= ACCOUNT_FLAG_ENCRYPT_ALGO_AES256;
+                                settings.into()
+                            }
+                            EncryptionAtRest::Aes128(settings) => {
+                                flags |= ACCOUNT_FLAG_ENCRYPT_ALGO_AES128;
+                                settings.into()
+                            }
+                        };
+                        let encryption_key = if let Some(settings) = encryption_settings {
+                            if settings.allow_spam_training {
+                                flags |= ACCOUNT_FLAG_ENCRYPT_TRAIN_SPAM_FILTER;
+                            }
+                            if settings.encrypt_on_append {
+                                flags |= ACCOUNT_FLAG_ENCRYPT_APPEND;
+                            }
+                            if let Some(public_key) = self
+                                .registry()
+                                .object::<PublicKey>(settings.public_key)
+                                .await
+                                .caused_by(trc::location!())?
+                            {
+                                parse_public_key(&public_key)
+                                    .unwrap_or_default()
+                                    .map(|params| {
+                                        match params.method {
+                                            EncryptionMethod::PGP => {
+                                                flags |= ACCOUNT_FLAG_ENCRYPT_METHOD_PGP
+                                            }
+                                            EncryptionMethod::SMIME => {
+                                                flags |= ACCOUNT_FLAG_ENCRYPT_METHOD_SMIME
+                                            }
+                                        }
+                                        params.certs
+                                    })
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        };
+
                         AccountCache {
                             id: account_id,
                             name: name.into_boxed_str(),
@@ -297,7 +348,8 @@ impl Server {
                             quota_objects: quota_objects.map(Box::new),
                             description: account.description.map(Into::into),
                             locale: account.locale,
-                            is_user: true,
+                            encryption_key,
+                            flags,
                         }
                     }
                     Account::Group(account) => {
@@ -348,8 +400,9 @@ impl Server {
                             quota_disk,
                             quota_objects: quota_objects.map(Box::new),
                             description: account.description.map(Into::into),
+                            encryption_key: None,
                             locale: account.locale,
-                            is_user: false,
+                            flags: 0,
                         }
                     }
                 });
@@ -445,6 +498,10 @@ impl Server {
 
     pub async fn account_info(&self, id: u32) -> trc::Result<AccountInfo> {
         let account = self.account(id).await?;
+        self.build_account_info(account).await
+    }
+
+    pub async fn build_account_info(&self, account: Arc<AccountCache>) -> trc::Result<AccountInfo> {
         let mut addresses =
             Vec::with_capacity(account.id_member_of.len() + account.addresses.len());
         for address in account.addresses.iter() {
@@ -477,7 +534,7 @@ impl Server {
         }
 
         Ok(AccountInfo {
-            account_id: id,
+            account_id: account.id,
             account,
             addresses,
         })
@@ -617,7 +674,7 @@ impl Server {
                     if let Some(signature) =
                         self.registry().object::<DkimSignature>(id.into()).await?
                     {
-                        match DkimSigner::new(domain.names[0].to_string(), signature) {
+                        match DkimSigner::new(domain.names[0].to_string(), signature).await {
                             Ok(signer) => signatures.push(signer),
                             Err(err) => {
                                 trc::error!(err.ctx(trc::Key::Id, id).caused_by(trc::location!()));
@@ -672,7 +729,7 @@ impl AccountInfo {
 
     #[inline(always)]
     pub fn is_user_account(&self) -> bool {
-        self.account.is_user
+        self.account.flags & ACCOUNT_IS_USER != 0
     }
 
     #[inline(always)]
@@ -683,6 +740,11 @@ impl AccountInfo {
     #[inline(always)]
     pub fn object_quotas(&self) -> Option<&ObjectQuota> {
         self.account.quota_objects.as_deref()
+    }
+
+    #[inline(always)]
+    pub fn account(&self) -> &AccountCache {
+        &self.account
     }
 }
 
@@ -709,7 +771,7 @@ impl AccountCache {
 
     #[inline(always)]
     pub fn is_user_account(&self) -> bool {
-        self.is_user
+        self.flags & ACCOUNT_IS_USER != 0
     }
 
     #[inline(always)]

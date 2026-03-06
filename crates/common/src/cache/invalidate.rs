@@ -44,6 +44,7 @@ impl CacheInvalidationBuilder {
                 let groups_changed = current.member_group_ids != new.member_group_ids;
                 let aliases_changed = current.aliases != new.aliases;
                 let credentials_changed = current.credentials != new.credentials;
+                let encryption_changed = current.encryption_at_rest != new.encryption_at_rest;
 
                 if was_renamed
                     || aliases_changed
@@ -51,6 +52,7 @@ impl CacheInvalidationBuilder {
                     || groups_changed
                     || quota_changed
                     || details_changed
+                    || encryption_changed
                 {
                     self.invalidate(CacheInvalidation::Account(id));
                 }
@@ -253,9 +255,28 @@ impl Server {
 
         let changes = changes.into_iter().collect::<Vec<_>>();
         self.invalidate_local_caches(&changes).await;
-        self.cluster_broadcast(BroadcastEvent::CacheInvalidation(changes))
+        self.cluster_broadcast(BroadcastEvent::CacheInvalidate(changes))
             .await;
         Ok(())
+    }
+
+    pub fn invalidate_all_local_caches(&self) {
+        self.inner.cache.access_tokens.clear();
+        self.inner.cache.domains.clear();
+        self.inner.cache.domain_names.clear();
+        self.inner.cache.domain_names_negative.clear();
+        self.inner.cache.emails.clear();
+        self.inner.cache.emails_negative.clear();
+        self.inner.cache.tenants.clear();
+        self.inner.cache.files.clear();
+        self.inner.cache.contacts.clear();
+        self.inner.cache.events.clear();
+        self.inner.cache.scheduling.clear();
+        self.inner.cache.dkim_signers.clear();
+        self.inner.cache.accounts.clear();
+        self.inner.cache.roles.clear();
+        self.inner.cache.lists.clear();
+        self.inner.data.logos.lock().clear();
     }
 
     pub async fn invalidate_local_caches(&self, changes: &[CacheInvalidation]) {

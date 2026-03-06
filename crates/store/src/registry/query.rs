@@ -35,20 +35,6 @@ impl RegistryStore {
                     .into_err()
                     .details("Singletons do not support searching"));
             }
-        } else if self.0.local_objects.contains(&query.object_type) {
-            if !query.filters.is_empty() {
-                trc::event!(
-                    Registry(trc::RegistryEvent::NotSupported),
-                    Details = "Filtering is not supported for local registry"
-                );
-            }
-            let mut results = T::default();
-            for id in self.0.local_registry.read().keys() {
-                if id.object() == query.object_type {
-                    results.push(id.id().id());
-                }
-            }
-            return Ok(results);
         } else if query.filters.is_empty() {
             return all_ids::<T>(&self.0.store, query.object_type).await;
         }

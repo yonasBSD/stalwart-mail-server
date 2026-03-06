@@ -4,7 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{jmap::JsonPointerPatch, schema::prelude::Property, types::id::ObjectId};
+use crate::{
+    jmap::JsonPointerPatch,
+    schema::prelude::Property,
+    types::{EnumImpl, id::ObjectId},
+};
 use std::{borrow::Cow, fmt::Display};
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -101,6 +105,58 @@ impl Warning {
             object_id,
             property: Some(property),
             message: message.to_string(),
+        }
+    }
+
+    pub fn log(&self) {
+        trc::event!(
+            Registry(trc::RegistryEvent::BuildWarning),
+            Source = self.object_id.object().as_str(),
+            Id = self.object_id.id().id(),
+            Key = self.property.map(|key| key.as_str()),
+            Reason = self.message.clone(),
+        );
+    }
+}
+
+impl Error {
+    pub fn log(&self) {
+        match self {
+            Error::Validation { object_id, errors } => {
+                trc::event!(
+                    Registry(trc::RegistryEvent::ValidationError),
+                    Source = object_id.object().as_str(),
+                    Id = object_id.id().id(),
+                    Reason = errors
+                        .iter()
+                        .map(|err| trc::Value::from(err.to_string()))
+                        .collect::<Vec<_>>(),
+                );
+            }
+            Error::Build { object_id, message } => {
+                trc::event!(
+                    Registry(trc::RegistryEvent::BuildError),
+                    Source = object_id.object().as_str(),
+                    Id = object_id.id().id(),
+                    Reason = message.clone(),
+                );
+            }
+            Error::Internal { object_id, error } => {
+                trc::event!(
+                    Registry(trc::RegistryEvent::ReadError),
+                    Source = object_id.as_ref().map(|id| id.object().as_str()),
+                    Id = object_id.as_ref().map(|id| id.id().id()),
+                    CausedBy = error.clone(),
+                );
+            }
+            Error::NotFound { object_id } => {
+                trc::event!(
+                    Registry(trc::RegistryEvent::BuildError),
+                    Source = object_id.object().as_str(),
+                    Id = object_id.id().id(),
+                    Reason = "Object not found",
+                );
+            }
         }
     }
 }

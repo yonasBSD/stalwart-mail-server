@@ -79,9 +79,20 @@ pub struct AccountCache {
     pub quota_disk: u64,
     pub quota_objects: Option<Box<ObjectQuota>>,
     pub description: Option<Box<str>>,
+    pub encryption_key: Option<EncryptionKeys>,
     pub locale: Locale,
-    pub is_user: bool,
+    pub flags: u64,
 }
+
+pub type EncryptionKeys = Box<[Box<[u8]>]>;
+
+pub const ACCOUNT_IS_USER: u64 = 1;
+pub const ACCOUNT_FLAG_ENCRYPT_TRAIN_SPAM_FILTER: u64 = 1 << 1;
+pub const ACCOUNT_FLAG_ENCRYPT_METHOD_SMIME: u64 = 1 << 2;
+pub const ACCOUNT_FLAG_ENCRYPT_METHOD_PGP: u64 = 1 << 3;
+pub const ACCOUNT_FLAG_ENCRYPT_ALGO_AES256: u64 = 1 << 4;
+pub const ACCOUNT_FLAG_ENCRYPT_ALGO_AES128: u64 = 1 << 5;
+pub const ACCOUNT_FLAG_ENCRYPT_APPEND: u64 = 1 << 6;
 
 #[derive(Debug, Clone)]
 pub struct RoleCache {

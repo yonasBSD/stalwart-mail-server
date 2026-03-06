@@ -8,6 +8,7 @@ use crate::registry::mapping::{
     RegistryGetResponse,
     account::account_get,
     archived_item::archived_item_get,
+    dkim::generate_dkim_public_key,
     log::log_get,
     queued_message::queued_message_get,
     report::report_get,
@@ -35,6 +36,7 @@ use registry::{
 use store::{ahash::AHashSet, registry::RegistryQuery};
 use trc::AddContext;
 use types::id::Id;
+use utils::map::vec_map::VecMap;
 
 pub trait RegistryGet: Sync + Send {
     fn registry_get(
@@ -234,14 +236,32 @@ impl RegistryGet for Server {
                         continue;
                     };
 
-                    let todo = "include account quota if requested";
+                    let mut extra_properties = VecMap::new();
                     match &object.inner {
                         ObjectInner::DkimSignature(obj)
                             if get.properties.is_empty()
                                 || get.properties.contains(&Property::PublicKey) =>
                         {
-                            let todo = "dkim public key";
-                            todo!()
+                            if let Ok(public_key) = generate_dkim_public_key(obj).await {
+                                extra_properties
+                                    .append(Property::PublicKey, JmapValue::Str(public_key.into()));
+                            }
+                        }
+                        ObjectInner::Account(obj)
+                            if get.properties.is_empty()
+                                || get.properties.contains(&Property::UsedDiskQuota) =>
+                        {
+                            let quota = self.get_used_quota_account(id.document_id()).await?;
+                            extra_properties
+                                .append(Property::UsedDiskQuota, JmapValue::Number(quota.into()));
+                        }
+                        ObjectInner::Tenant(obj)
+                            if get.properties.is_empty()
+                                || get.properties.contains(&Property::UsedDiskQuota) =>
+                        {
+                            let quota = self.get_used_quota_tenant(id.document_id()).await?;
+                            extra_properties
+                                .append(Property::UsedDiskQuota, JmapValue::Number(quota.into()));
                         }
                         ObjectInner::Domain(obj)
                             if get.properties.is_empty()
@@ -279,10 +299,7 @@ impl RegistryGet for Server {
             ObjectType::AccountSettings | ObjectType::Credential => {
                 account_get(get).await.map(|get| get.into_response())
             }
-            ObjectType::Action => {
-                let todo = "actions";
-                todo!()
-            }
+            ObjectType::Action => Ok(get.not_found_any().into_response()),
         }
     }
 }

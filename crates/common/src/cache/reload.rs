@@ -12,23 +12,26 @@ use crate::{
         telemetry::Telemetry,
     },
     ipc::{QueueEvent, RegistryChange},
+    network::security::BlockedIps,
 };
 use ahash::AHashMap;
 use directory::Directories;
-use registry::schema::{prelude::ObjectType, structs::BlockedIp};
+use registry::{
+    schema::{prelude::ObjectType, structs::BlockedIp},
+    types::error::{Error, Warning},
+};
 use std::sync::Arc;
-use store::{InMemoryStore, LookupStores, registry::bootstrap::Bootstrap, write::now};
+use store::{LookupStores, registry::bootstrap::Bootstrap, write::now};
 
 pub struct ReloadResult {
-    pub bootstrap: Bootstrap,
-    pub new_core: Option<Core>,
-    pub tracers: Option<Telemetry>,
+    pub errors: Vec<Error>,
+    pub warnings: Vec<Warning>,
+    pub replaced_core: bool,
 }
 
 impl Server {
     pub async fn reload_registry(&self, change: RegistryChange) -> trc::Result<ReloadResult> {
-        let todo = "check the different events triggering this, spam filter reload, etc. make sure all are used";
-        let mut bootstrap = Bootstrap::init(self.registry().clone()).await;
+        let mut bootstrap = Bootstrap::new(self.registry().clone());
         let object = match change {
             RegistryChange::Insert(id) => {
                 if matches!(id.object(), ObjectType::BlockedIp) {
@@ -42,11 +45,7 @@ impl Server {
                             ips.blocked_ip_networks.push(ip.address);
                         }
                     }
-                    return Ok(ReloadResult {
-                        bootstrap,
-                        new_core: None,
-                        tracers: None,
-                    });
+                    return Ok(bootstrap.into());
                 } else {
                     id.object()
                 }
@@ -55,56 +54,36 @@ impl Server {
             RegistryChange::Reload(object) => object,
         };
 
-        let mut result = ReloadResult {
-            bootstrap,
-            new_core: None,
-            tracers: None,
-        };
-
         match object {
             ObjectType::Certificate => {
                 let mut certificates = AHashMap::new();
-                parse_certificates(
-                    &mut result.bootstrap,
-                    &mut certificates,
-                    &mut Default::default(),
-                )
-                .await;
+                parse_certificates(&mut bootstrap, &mut certificates, &mut Default::default())
+                    .await;
                 self.inner
                     .data
                     .tls_certificates
                     .store(Arc::new(certificates));
             }
-            ObjectType::MemoryLookupKey | ObjectType::MemoryLookupKeyValue => {
-                let mut lookup = LookupStores {
-                    stores: self.inner.data.lookup_stores.load().as_ref().clone(),
-                };
-                lookup
-                    .stores
-                    .retain(|_, store| !matches!(store, InMemoryStore::Static(_)));
-                lookup.parse_static(&mut result.bootstrap).await;
+            ObjectType::MemoryLookupKey
+            | ObjectType::MemoryLookupKeyValue
+            | ObjectType::HttpLookup
+            | ObjectType::StoreLookup => {
+                let lookup = LookupStores::build(&mut bootstrap).await;
+
+                if bootstrap.errors.is_empty() {
+                    self.inner.data.lookup_stores.store(Arc::new(lookup.stores));
+                }
             }
-            ObjectType::HttpLookup => {
-                let mut lookup = LookupStores {
-                    stores: self.inner.data.lookup_stores.load().as_ref().clone(),
-                };
-                lookup
-                    .stores
-                    .retain(|_, store| !matches!(store, InMemoryStore::Http(_)));
-                lookup.parse_http(&mut result.bootstrap).await;
-            }
-            ObjectType::StoreLookup => {
-                let mut lookup = LookupStores {
-                    stores: self.inner.data.lookup_stores.load().as_ref().clone(),
-                };
-                lookup.stores.retain(|_, store| {
-                    matches!(store, InMemoryStore::Static(_) | InMemoryStore::Http(_))
-                });
-                lookup.parse_stores(&mut result.bootstrap).await;
+
+            ObjectType::BlockedIp => {
+                let blocked_ips = BlockedIps::parse(&mut bootstrap).await;
+                if bootstrap.errors.is_empty() {
+                    *self.inner.data.blocked_ips.write() = blocked_ips;
+                }
             }
             _ => {
                 // Load stores
-                let directory = Directories::build(&mut result.bootstrap).await;
+                let directory = Directories::build(&mut bootstrap).await;
                 let storage = &self.core.storage;
                 let storage = Storage {
                     registry: storage.registry.clone(),
@@ -120,38 +99,76 @@ impl Server {
                 };
 
                 // Parse tracers
-                let tracers = Telemetry::parse(&mut result.bootstrap, &storage).await;
+                let tracers = Telemetry::parse(&mut bootstrap, &storage).await;
 
-                if result.bootstrap.errors.is_empty() {
-                    let core = Box::pin(Core::parse(&mut result.bootstrap, storage)).await;
+                if bootstrap.errors.is_empty() {
+                    let core = Box::pin(Core::parse(&mut bootstrap, storage)).await;
 
-                    if result.bootstrap.errors.is_empty() {
-                        let mut servers = Listeners::parse(&mut result.bootstrap).await;
+                    if bootstrap.errors.is_empty() {
+                        let mut servers = Listeners::parse(&mut bootstrap).await;
                         servers
-                            .parse_tcp_acceptors(&mut result.bootstrap, self.inner.clone())
+                            .parse_tcp_acceptors(&mut bootstrap, self.inner.clone())
                             .await;
 
-                        if result.bootstrap.errors.is_empty() {
-                            result.new_core = Some(core);
-                            result.tracers = Some(tracers);
+                        if bootstrap.errors.is_empty() {
+                            // Update core
+                            self.inner.shared_core.store(core.into());
+
+                            // Update tracers
+
+                            // SPDX-SnippetBegin
+                            // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
+                            // SPDX-License-Identifier: LicenseRef-SEL
+                            #[cfg(feature = "enterprise")]
+                            tracers.update(self.inner.shared_core.load().is_enterprise_edition());
+                            // SPDX-SnippetEnd
+                            #[cfg(not(feature = "enterprise"))]
+                            tracers.update(false);
+
+                            // Reload queue settings
+                            self.inner
+                                .ipc
+                                .queue_tx
+                                .send(QueueEvent::ReloadSettings)
+                                .await
+                                .ok();
+
+                            return Ok(ReloadResult {
+                                errors: bootstrap.errors,
+                                warnings: bootstrap.warnings,
+                                replaced_core: true,
+                            });
                         }
                     }
                 }
             }
         }
 
-        Ok(result)
+        Ok(bootstrap.into())
+    }
+}
+
+impl ReloadResult {
+    pub fn has_errors(&self) -> bool {
+        !self.errors.is_empty()
     }
 
-    pub async fn reload_core(&self, new_core: Core) {
-        self.inner.shared_core.store(new_core.into());
+    pub fn log(&self) {
+        for error in &self.errors {
+            error.log();
+        }
+        for warning in &self.warnings {
+            warning.log();
+        }
+    }
+}
 
-        // Reload queue settings
-        self.inner
-            .ipc
-            .queue_tx
-            .send(QueueEvent::ReloadSettings)
-            .await
-            .ok();
+impl From<Bootstrap> for ReloadResult {
+    fn from(bootstrap: Bootstrap) -> Self {
+        Self {
+            errors: bootstrap.errors,
+            warnings: bootstrap.warnings,
+            replaced_core: false,
+        }
     }
 }

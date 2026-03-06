@@ -287,7 +287,8 @@ impl CalendarUpdateRequestHandler for Server {
             let extra_bytes =
                 (bytes.len() as u64).saturating_sub(u32::from(event.inner.size) as u64);
             if extra_bytes > 0 {
-                self.has_available_quota(account_id, extra_bytes).await?;
+                self.has_available_quota(self.account(account_id).await?.as_ref(), extra_bytes)
+                    .await?;
             }
 
             // Prepare write batch
@@ -418,8 +419,11 @@ impl CalendarUpdateRequestHandler for Server {
 
             // Validate quota
             if !bytes.is_empty() {
-                self.has_available_quota(account_id, bytes.len() as u64)
-                    .await?;
+                self.has_available_quota(
+                    self.account(account_id).await?.as_ref(),
+                    bytes.len() as u64,
+                )
+                .await?;
             }
 
             // Prepare write batch

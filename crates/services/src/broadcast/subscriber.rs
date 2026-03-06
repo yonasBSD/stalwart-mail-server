@@ -7,7 +7,7 @@
 use crate::broadcast::{BROADCAST_TOPIC, BroadcastBatch};
 use common::{
     BuildServer, Inner,
-    ipc::{BroadcastEvent, PushEvent, PushNotification, RegistryChange},
+    ipc::{BroadcastEvent, PushEvent, PushNotification, QueueEvent, RegistryChange},
 };
 use registry::types::EnumImpl;
 use std::{sync::Arc, time::Duration};
@@ -136,17 +136,24 @@ pub fn spawn_broadcast_subscriber(inner: Arc<Inner>, mut shutdown_rx: watch::Rec
                                                     );
                                                 }
                                             }
-                                            BroadcastEvent::CacheInvalidation(changes) => {
+                                            BroadcastEvent::CacheInvalidate(changes) => {
                                                 inner.build_server().invalidate_local_caches(&changes).await;
 
                                             }
+                                            BroadcastEvent::CacheInvalidateAll => {
+                                                inner.build_server().invalidate_all_local_caches();
+                                            }
+                                            BroadcastEvent::MtaQueueStatus { is_running } => {
+                                                let _ = inner
+                                                        .ipc
+                                                        .queue_tx
+                                                        .send(QueueEvent::Paused(!is_running))
+                                                        .await;
+                                            }
                                             BroadcastEvent::RegistryChange(change) => {
-                                                match inner.build_server().reload_registry(change).await {
+                                                match Box::pin(inner.build_server().reload_registry(change)).await {
                                                     Ok(result) => {
-                                                        if let Some(new_core) = result.new_core {
-                                                            // Update core
-                                                            inner.shared_core.store(new_core.into());
-                                                        }
+                                                        result.log();
                                                     }
                                                     Err(err) => {
                                                         trc::error!(
@@ -228,13 +235,21 @@ fn log_event(event: &BroadcastEvent) -> trc::Value {
                 trc::Value::Array(vec!["RegistryReload".into(), object.as_str().into()])
             }
         },
-        BroadcastEvent::CacheInvalidation(items) => {
+        BroadcastEvent::CacheInvalidate(items) => {
             let mut array = Vec::with_capacity(items.len() + 1);
             array.push("CacheInvalidation".into());
             for item in items {
                 array.push(format!("{:?}", item).into());
             }
             trc::Value::Array(array)
+        }
+        BroadcastEvent::CacheInvalidateAll => "CacheInvalidateAll".into(),
+        BroadcastEvent::MtaQueueStatus { is_running } => {
+            if *is_running {
+                "MtaQueueRunning".into()
+            } else {
+                "MtaQueuePaused".into()
+            }
         }
     }
 }

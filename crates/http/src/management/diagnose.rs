@@ -4,129 +4,32 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{
-    future::Future,
-    net::{IpAddr, SocketAddr},
-    time::{Duration, Instant},
-};
-
 use common::{
     Server,
-    auth::{AccessToken, oauth::GrantType},
     config::smtp::{
         queue::MxConfig,
         resolver::{Policy, Tlsa},
     },
-    psl,
 };
-use http_body_util::{StreamBody, combinators::BoxBody};
-use hyper::{
-    Method, StatusCode,
-    body::{Bytes, Frame},
-};
-use mail_auth::{
-    AuthenticatedMessage, DkimResult, DmarcResult, IpLookupStrategy, IprevOutput, IprevResult,
-    SpfOutput, SpfResult,
-    dmarc::{self, verify::DmarcParameters},
-    mta_sts::TlsRpt,
-    spf::verify::SpfParameters,
-};
+use hyper::body::{Bytes, Frame};
+use mail_auth::{IpLookupStrategy, mta_sts::TlsRpt};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use smtp::outbound::{
     client::{SmtpClient, StartTlsResult},
     dane::{dnssec::TlsaLookup, verify::TlsaVerify},
     lookup::{DnsLookup, ToNextHop},
     mta_sts::{lookup::MtaStsLookup, verify::VerifyPolicy},
 };
+use std::{
+    net::{IpAddr, SocketAddr},
+    time::{Duration, Instant},
+};
 use tokio::{io::AsyncWriteExt, sync::mpsc};
-use utils::url_params::UrlParams;
-
-use http_proto::{request::decode_path_element, *};
-
-pub trait TroubleshootApi: Sync + Send {
-    fn handle_diagnose_api_request(
-        &self,
-        req: &HttpRequest,
-        path: Vec<&str>,
-        access_token: &AccessToken,
-        body: Option<Vec<u8>>,
-    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
-}
-
-impl TroubleshootApi for Server {
-    async fn handle_diagnose_api_request(
-        &self,
-        req: &HttpRequest,
-        path: Vec<&str>,
-        access_token: &AccessToken,
-        body: Option<Vec<u8>>,
-    ) -> trc::Result<HttpResponse> {
-        let params = UrlParams::new(req.uri().query());
-        let account_id = access_token.account_id();
-
-        match (
-            path.get(1).copied().unwrap_or_default(),
-            path.get(2).copied(),
-            req.method(),
-        ) {
-            ("token", None, &Method::GET) => {
-                // Issue a live telemetry token valid for 60 seconds
-                Ok(JsonResponse::new(json!({
-                    "data": self.encode_access_token(GrantType::Diagnose, account_id,  "web", 60).await?,
-            }))
-            .into_http_response())
-            }
-            ("delivery", Some(target), &Method::GET) => {
-                let timeout = Duration::from_secs(
-                    params
-                        .parse::<u64>("timeout")
-                        .filter(|interval| *interval >= 1)
-                        .unwrap_or(30),
-                );
-
-                let mut rx = spawn_delivery_diagnose(
-                    self.clone(),
-                    decode_path_element(target).to_lowercase(),
-                    timeout,
-                );
-
-                Ok(HttpResponse::new(StatusCode::OK)
-                    .with_content_type("text/event-stream")
-                    .with_cache_control("no-store")
-                    .with_stream_body(BoxBody::new(StreamBody::new(async_stream::stream! {
-                        while let Some(stage) = rx.recv().await {
-                            yield Ok(stage.to_frame());
-                        }
-                        yield Ok(DeliveryStage::Completed.to_frame());
-                    }))))
-            }
-            ("dmarc", None, &Method::POST) => {
-                let request = serde_json::from_slice::<DmarcTroubleshootRequest>(
-                    body.as_deref().unwrap_or_default(),
-                )
-                .map_err(|err| {
-                    trc::EventType::Resource(trc::ResourceEvent::BadParameters).from_json_error(err)
-                })?;
-                let response = dmarc_diagnose(self, request).await.ok_or_else(|| {
-                    trc::EventType::Resource(trc::ResourceEvent::BadParameters)
-                        .reason("Failed to parse message body")
-                })?;
-
-                Ok(JsonResponse::new(json!({
-                        "data": response,
-                }))
-                .into_http_response())
-            }
-            _ => Err(trc::ResourceEvent::NotFound.into_err()),
-        }
-    }
-}
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(tag = "type")]
-enum DeliveryStage {
+pub(crate) enum DeliveryStage {
     MxLookupStart {
         domain: String,
     },
@@ -253,7 +156,7 @@ enum DeliveryStage {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct MX {
+pub(crate) struct MX {
     pub exchanges: Vec<String>,
     pub preference: u16,
 }
@@ -267,7 +170,7 @@ pub enum ReportUri {
 }
 
 impl DeliveryStage {
-    fn to_frame(&self) -> Frame<Bytes> {
+    pub fn to_frame(&self) -> Frame<Bytes> {
         let payload = format!(
             "event: event\ndata: [{}]\n\n",
             serde_json::to_string(self).unwrap_or_default()
@@ -285,7 +188,7 @@ impl ElapsedMs for Instant {
         self.elapsed().as_millis() as u64
     }
 }
-fn spawn_delivery_diagnose(
+pub(crate) fn spawn_delivery_diagnose(
     server: Server,
     domain_or_email: String,
     timeout: Duration,
@@ -815,389 +718,4 @@ async fn delivery_diagnose(
     }
 
     Ok(())
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct DmarcTroubleshootRequest {
-    #[serde(rename = "remoteIp")]
-    remote_ip: IpAddr,
-    #[serde(rename = "ehloDomain")]
-    ehlo_domain: String,
-    #[serde(rename = "mailFrom")]
-    mail_from: String,
-    body: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct DmarcTroubleshootResponse {
-    #[serde(rename = "spfEhloDomain")]
-    spf_ehlo_domain: String,
-    #[serde(rename = "spfEhloResult")]
-    spf_ehlo_result: AuthResult,
-    #[serde(rename = "spfMailFromDomain")]
-    spf_mail_from_domain: String,
-    #[serde(rename = "spfMailFromResult")]
-    spf_mail_from_result: AuthResult,
-    #[serde(rename = "ipRevResult")]
-    ip_rev_result: AuthResult,
-    #[serde(rename = "ipRevPtr")]
-    ip_rev_ptr: Vec<String>,
-    #[serde(rename = "dkimResults")]
-    dkim_results: Vec<AuthResult>,
-    #[serde(rename = "dkimPass")]
-    dkim_pass: bool,
-    #[serde(rename = "arcResult")]
-    arc_result: AuthResult,
-    #[serde(rename = "dmarcResult")]
-    dmarc_result: AuthResult,
-    #[serde(rename = "dmarcPass")]
-    dmarc_pass: bool,
-    #[serde(rename = "dmarcPolicy")]
-    dmarc_policy: DmarcPolicy,
-    elapsed: u64,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[serde(tag = "type")]
-pub enum AuthResult {
-    Pass,
-    Fail { details: Option<String> },
-    SoftFail { details: Option<String> },
-    TempError { details: Option<String> },
-    PermError { details: Option<String> },
-    Neutral { details: Option<String> },
-    None,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum DmarcPolicy {
-    None,
-    Quarantine,
-    Reject,
-    Unspecified,
-}
-
-async fn dmarc_diagnose(
-    server: &Server,
-    request: DmarcTroubleshootRequest,
-) -> Option<DmarcTroubleshootResponse> {
-    let remote_ip = request.remote_ip;
-    let ehlo_domain = request.ehlo_domain.to_lowercase();
-    let mail_from = request.mail_from.to_lowercase();
-    let mail_from_domain = mail_from.rsplit_once('@').map(|(_, domain)| domain);
-
-    let local_host = &server.core.network.server_name;
-
-    let now = Instant::now();
-    let ehlo_spf_output = server
-        .core
-        .smtp
-        .resolvers
-        .dns
-        .verify_spf(
-            server
-                .inner
-                .cache
-                .build_auth_parameters(SpfParameters::verify_ehlo(
-                    remote_ip,
-                    &ehlo_domain,
-                    local_host,
-                )),
-        )
-        .await;
-
-    let iprev = server
-        .core
-        .smtp
-        .resolvers
-        .dns
-        .verify_iprev(server.inner.cache.build_auth_parameters(remote_ip))
-        .await;
-    let mail_spf_output = if let Some(mail_from_domain) = mail_from_domain {
-        server
-            .core
-            .smtp
-            .resolvers
-            .dns
-            .check_host(server.inner.cache.build_auth_parameters(SpfParameters::new(
-                remote_ip,
-                mail_from_domain,
-                &ehlo_domain,
-                local_host,
-                &mail_from,
-            )))
-            .await
-    } else {
-        server
-            .core
-            .smtp
-            .resolvers
-            .dns
-            .check_host(server.inner.cache.build_auth_parameters(SpfParameters::new(
-                remote_ip,
-                &ehlo_domain,
-                &ehlo_domain,
-                local_host,
-                &format!("postmaster@{ehlo_domain}"),
-            )))
-            .await
-    };
-
-    let body = request
-        .body
-        .unwrap_or_else(|| format!("From: {mail_from}\r\nSubject: test\r\n\r\ntest"));
-    let auth_message = AuthenticatedMessage::parse_with_opts(body.as_bytes(), true)?;
-
-    let dkim_output = server
-        .core
-        .smtp
-        .resolvers
-        .dns
-        .verify_dkim(server.inner.cache.build_auth_parameters(&auth_message))
-        .await;
-    let dkim_pass = dkim_output
-        .iter()
-        .any(|d| matches!(d.result(), DkimResult::Pass));
-
-    let arc_output = server
-        .core
-        .smtp
-        .resolvers
-        .dns
-        .verify_arc(server.inner.cache.build_auth_parameters(&auth_message))
-        .await;
-
-    let dmarc_output = server
-        .core
-        .smtp
-        .resolvers
-        .dns
-        .verify_dmarc(server.inner.cache.build_auth_parameters(DmarcParameters {
-            message: &auth_message,
-            dkim_output: &dkim_output,
-            rfc5321_mail_from_domain: mail_from_domain.unwrap_or(ehlo_domain.as_str()),
-            spf_output: &mail_spf_output,
-            domain_suffix_fn: |domain| psl::domain_str(domain).unwrap_or(domain),
-        }))
-        .await;
-    let dmarc_pass = matches!(dmarc_output.spf_result(), DmarcResult::Pass)
-        || matches!(dmarc_output.dkim_result(), DmarcResult::Pass);
-    let dmarc_result = if dmarc_pass {
-        DmarcResult::Pass
-    } else if dmarc_output.spf_result() != &DmarcResult::None {
-        dmarc_output.spf_result().clone()
-    } else if dmarc_output.dkim_result() != &DmarcResult::None {
-        dmarc_output.dkim_result().clone()
-    } else {
-        DmarcResult::None
-    };
-
-    Some(DmarcTroubleshootResponse {
-        spf_ehlo_domain: ehlo_spf_output.domain().to_string(),
-        spf_ehlo_result: (&ehlo_spf_output).into(),
-        spf_mail_from_domain: mail_spf_output.domain().to_string(),
-        spf_mail_from_result: (&mail_spf_output).into(),
-        ip_rev_ptr: iprev
-            .ptr
-            .as_ref()
-            .map(|ptr| ptr.iter().map(|s| s.to_string()).collect())
-            .unwrap_or_default(),
-        ip_rev_result: (&iprev).into(),
-        dkim_pass,
-        dkim_results: dkim_output
-            .iter()
-            .map(|result| result.result().into())
-            .collect(),
-        arc_result: arc_output.result().into(),
-        dmarc_result: (&dmarc_result).into(),
-        dmarc_policy: (&dmarc_output.policy()).into(),
-        dmarc_pass,
-        elapsed: now.elapsed_ms(),
-    })
-}
-
-impl From<&SpfOutput> for AuthResult {
-    fn from(value: &SpfOutput) -> Self {
-        match value.result() {
-            SpfResult::Pass => AuthResult::Pass,
-            SpfResult::Fail => AuthResult::Fail {
-                details: value.explanation().map(|e| e.to_string()),
-            },
-            SpfResult::SoftFail => AuthResult::SoftFail {
-                details: value.explanation().map(|e| e.to_string()),
-            },
-            SpfResult::Neutral => AuthResult::Neutral {
-                details: value.explanation().map(|e| e.to_string()),
-            },
-            SpfResult::TempError => AuthResult::TempError {
-                details: value.explanation().map(|e| e.to_string()),
-            },
-            SpfResult::PermError => AuthResult::PermError {
-                details: value.explanation().map(|e| e.to_string()),
-            },
-            SpfResult::None => AuthResult::None,
-        }
-    }
-}
-
-impl From<AuthResult> for SpfOutput {
-    fn from(value: AuthResult) -> Self {
-        match value {
-            AuthResult::Pass => SpfOutput::new(String::new()).with_result(SpfResult::Pass),
-            AuthResult::Fail { .. } => SpfOutput::new(String::new()).with_result(SpfResult::Fail),
-            AuthResult::SoftFail { .. } => {
-                SpfOutput::new(String::new()).with_result(SpfResult::SoftFail)
-            }
-            AuthResult::Neutral { .. } => {
-                SpfOutput::new(String::new()).with_result(SpfResult::Neutral)
-            }
-            AuthResult::TempError { .. } => {
-                SpfOutput::new(String::new()).with_result(SpfResult::TempError)
-            }
-            AuthResult::PermError { .. } => {
-                SpfOutput::new(String::new()).with_result(SpfResult::PermError)
-            }
-            AuthResult::None => SpfOutput::new(String::new()).with_result(SpfResult::None),
-        }
-    }
-}
-
-impl From<&IprevOutput> for AuthResult {
-    fn from(value: &IprevOutput) -> Self {
-        match &value.result {
-            IprevResult::Pass => AuthResult::Pass,
-            IprevResult::Fail(error) => AuthResult::Fail {
-                details: error.to_string().into(),
-            },
-            IprevResult::TempError(error) => AuthResult::TempError {
-                details: error.to_string().into(),
-            },
-            IprevResult::PermError(error) => AuthResult::PermError {
-                details: error.to_string().into(),
-            },
-            IprevResult::None => AuthResult::None,
-        }
-    }
-}
-
-impl From<AuthResult> for IprevResult {
-    fn from(value: AuthResult) -> Self {
-        match value {
-            AuthResult::Pass => IprevResult::Pass,
-            AuthResult::Fail { details } => {
-                IprevResult::Fail(mail_auth::Error::Io(details.unwrap_or_default()))
-            }
-            AuthResult::TempError { details } => {
-                IprevResult::TempError(mail_auth::Error::Io(details.unwrap_or_default()))
-            }
-            AuthResult::PermError { details } => {
-                IprevResult::PermError(mail_auth::Error::Io(details.unwrap_or_default()))
-            }
-            AuthResult::None => IprevResult::None,
-            _ => IprevResult::None,
-        }
-    }
-}
-
-impl From<&DkimResult> for AuthResult {
-    fn from(value: &DkimResult) -> Self {
-        match value {
-            DkimResult::Pass => AuthResult::Pass,
-            DkimResult::Neutral(error) => AuthResult::Neutral {
-                details: error.to_string().into(),
-            },
-            DkimResult::Fail(error) => AuthResult::Fail {
-                details: error.to_string().into(),
-            },
-            DkimResult::PermError(error) => AuthResult::PermError {
-                details: error.to_string().into(),
-            },
-            DkimResult::TempError(error) => AuthResult::TempError {
-                details: error.to_string().into(),
-            },
-            DkimResult::None => AuthResult::None,
-        }
-    }
-}
-
-impl From<AuthResult> for DkimResult {
-    fn from(value: AuthResult) -> Self {
-        match value {
-            AuthResult::Pass => DkimResult::Pass,
-            AuthResult::Neutral { details } => {
-                DkimResult::Neutral(mail_auth::Error::Io(details.unwrap_or_default()))
-            }
-            AuthResult::Fail { details } => {
-                DkimResult::Fail(mail_auth::Error::Io(details.unwrap_or_default()))
-            }
-            AuthResult::PermError { details } => {
-                DkimResult::PermError(mail_auth::Error::Io(details.unwrap_or_default()))
-            }
-            AuthResult::TempError { details } => {
-                DkimResult::TempError(mail_auth::Error::Io(details.unwrap_or_default()))
-            }
-            _ => DkimResult::None,
-        }
-    }
-}
-
-impl From<&DmarcResult> for AuthResult {
-    fn from(value: &DmarcResult) -> Self {
-        match value {
-            DmarcResult::Pass => AuthResult::Pass,
-            DmarcResult::Fail(error) => AuthResult::Fail {
-                details: error.to_string().into(),
-            },
-            DmarcResult::TempError(error) => AuthResult::TempError {
-                details: error.to_string().into(),
-            },
-            DmarcResult::PermError(error) => AuthResult::PermError {
-                details: error.to_string().into(),
-            },
-            DmarcResult::None => AuthResult::None,
-        }
-    }
-}
-
-impl From<AuthResult> for DmarcResult {
-    fn from(value: AuthResult) -> Self {
-        match value {
-            AuthResult::Pass => DmarcResult::Pass,
-            AuthResult::Fail { details } => {
-                DmarcResult::Fail(mail_auth::Error::Io(details.unwrap_or_default()))
-            }
-            AuthResult::TempError { details } => {
-                DmarcResult::TempError(mail_auth::Error::Io(details.unwrap_or_default()))
-            }
-            AuthResult::PermError { details } => {
-                DmarcResult::PermError(mail_auth::Error::Io(details.unwrap_or_default()))
-            }
-            AuthResult::None => DmarcResult::None,
-            _ => DmarcResult::None,
-        }
-    }
-}
-
-impl From<&dmarc::Policy> for DmarcPolicy {
-    fn from(value: &dmarc::Policy) -> Self {
-        match value {
-            dmarc::Policy::None => DmarcPolicy::None,
-            dmarc::Policy::Quarantine => DmarcPolicy::Quarantine,
-            dmarc::Policy::Reject => DmarcPolicy::Reject,
-            dmarc::Policy::Unspecified => DmarcPolicy::Unspecified,
-        }
-    }
-}
-
-impl From<DmarcPolicy> for dmarc::Policy {
-    fn from(value: DmarcPolicy) -> Self {
-        match value {
-            DmarcPolicy::None => dmarc::Policy::None,
-            DmarcPolicy::Quarantine => dmarc::Policy::Quarantine,
-            DmarcPolicy::Reject => dmarc::Policy::Reject,
-            DmarcPolicy::Unspecified => dmarc::Policy::Unspecified,
-        }
-    }
 }

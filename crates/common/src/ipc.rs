@@ -74,7 +74,9 @@ pub enum BroadcastEvent {
     PushNotification(PushNotification),
     PushServerUpdate(u32),
     RegistryChange(RegistryChange),
-    CacheInvalidation(Vec<CacheInvalidation>),
+    CacheInvalidate(Vec<CacheInvalidation>),
+    CacheInvalidateAll,
+    MtaQueueStatus { is_running: bool },
 }
 
 #[derive(Debug)]

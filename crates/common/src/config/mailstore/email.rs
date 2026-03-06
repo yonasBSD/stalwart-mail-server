@@ -15,7 +15,7 @@ use registry::{
         prelude::ObjectType,
         structs::{
             AddressBook, Authentication, Calendar, DataRetention, Domain, Email, Jmap, Search,
-            SieveUserInterpreter,
+            SieveUserInterpreter, SystemSettings,
         },
     },
     types::EnumImpl,
@@ -85,11 +85,12 @@ impl EmailConfig {
         let jmap = bp.setting_infallible::<Jmap>().await;
         let calendar = bp.setting_infallible::<Calendar>().await;
         let address_book = bp.setting_infallible::<AddressBook>().await;
+        let system = bp.setting_infallible::<SystemSettings>().await;
         let auth = bp.setting_infallible::<Authentication>().await;
 
         // Obtain default domain name
         let default_domain_name = if let Some(default_domain) =
-            bp.get_infallible::<Domain>(auth.default_domain_id).await
+            bp.get_infallible::<Domain>(system.default_domain_id).await
         {
             default_domain.name
         } else {
@@ -97,7 +98,7 @@ impl EmailConfig {
                 ObjectType::Authentication.singleton(),
                 format!(
                     "Default domain with ID {} not found",
-                    auth.default_domain_id
+                    system.default_domain_id
                 ),
             );
             "localhost.local".to_string()
@@ -274,7 +275,7 @@ impl EmailConfig {
             data_purge_frequency: dr.data_cleanup_schedule.into(),
             blob_purge_frequency: dr.blob_cleanup_schedule.into(),
             compression: email.compression_algorithm,
-            default_domain_id: auth.default_domain_id.id() as u32,
+            default_domain_id: system.default_domain_id.id() as u32,
             default_domain_name,
         }
     }

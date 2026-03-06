@@ -50,7 +50,7 @@ impl<T: SessionStream> Session<T> {
         let account_id = access_token.account_id();
         let account = self.server.account(account_id).await?;
         self.server
-            .has_available_quota(account_id, script_bytes.len() as u64)
+            .has_available_quota(&account, script_bytes.len() as u64)
             .await
             .caused_by(trc::location!())?;
 

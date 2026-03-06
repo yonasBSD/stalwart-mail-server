@@ -12,9 +12,8 @@ use crate::{
 use ahash::AHashMap;
 use registry::{
     schema::{
-        enums::NodeShardType,
         prelude::ObjectType,
-        structs::{self, Asn, HttpForm, NodeRole, NodeShard, Rate, TaskManager},
+        structs::{self, Asn, HttpForm, Rate, SystemSettings, TaskManager},
     },
     types::EnumImpl,
 };
@@ -150,9 +149,11 @@ impl ContactForm {
 
 impl Network {
     pub async fn parse(bp: &mut Bootstrap) -> Self {
+        let system = bp.setting_infallible::<SystemSettings>().await;
+
         let mut network = Network {
             node_id: bp.node_id(),
-            server_name: bp.hostname().to_string(),
+            server_name: system.default_hostname,
             security: Security::parse(bp).await,
             contact_form: ContactForm::parse(bp).await,
             asn_geo_lookup: AsnGeoLookupConfig::parse(bp).await.unwrap_or_default(),

@@ -201,6 +201,11 @@ impl<T: Property> SetError<T> {
         self
     }
 
+    pub fn with_object_id_opt(mut self, object_id: Option<ObjectId>) -> Self {
+        self.0.object_id = object_id;
+        self
+    }
+
     pub fn with_linked_objects(mut self, linked_objects: Vec<ObjectId>) -> Self {
         self.0.linked_objects = linked_objects;
         self

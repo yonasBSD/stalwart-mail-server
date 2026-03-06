@@ -14,15 +14,13 @@ use registry::{
     types::EnumImpl,
 };
 use std::sync::Arc;
-use store::{
-    BlobStore, InMemoryStore, RegistryStore, SearchStore, Store, registry::RegistryQuery,
-    roaring::RoaringBitmap,
-};
+use store::{BlobStore, InMemoryStore, RegistryStore, SearchStore, Store, registry::RegistryQuery};
 
 pub mod archive;
 pub mod blob;
 pub mod dav;
 pub mod document;
+pub mod encryption;
 pub mod index;
 pub mod quota;
 pub mod state;

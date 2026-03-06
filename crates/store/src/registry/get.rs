@@ -11,7 +11,7 @@ use crate::{
 };
 use registry::{
     pickle::PickledStream,
-    schema::prelude::Object,
+    schema::prelude::{Object, ObjectType},
     types::{EnumImpl, ObjectImpl, id::ObjectId},
 };
 use trc::AddContext;
@@ -20,9 +20,7 @@ use utils::codec::leb128::Leb128Reader;
 
 impl RegistryStore {
     pub async fn get(&self, object_id: ObjectId) -> trc::Result<Option<Object>> {
-        if self.0.local_objects.contains(&object_id.object()) {
-            Ok(self.0.local_registry.read().get(&object_id).cloned())
-        } else {
+        if object_id.object() != ObjectType::DataStore {
             self.0
                 .store
                 .get_value::<Object>(ValueKey::from(ValueClass::Registry(RegistryClass::Item {
@@ -30,6 +28,22 @@ impl RegistryStore {
                     item_id: object_id.id().id(),
                 })))
                 .await
+        } else {
+            self.0
+                .read_data_store()
+                .await
+                .map(|data_store| {
+                    Some(Object {
+                        inner: data_store.into(),
+                        revision: 0,
+                    })
+                })
+                .map_err(|err| {
+                    trc::EventType::Registry(trc::RegistryEvent::LocalReadError)
+                        .into_err()
+                        .caused_by(trc::location!())
+                        .reason(err)
+                })
         }
     }
 
@@ -42,77 +56,61 @@ impl RegistryStore {
     pub async fn list<T: ObjectImpl + From<Object>>(&self) -> trc::Result<Vec<RegistryObject<T>>> {
         let object_type = T::OBJECT;
 
-        if self.0.local_objects.contains(&object_type) {
-            let mut results = Vec::new();
-
-            for (id, item) in self.0.local_registry.read().iter() {
-                if id.object() == object_type {
-                    results.push(RegistryObject {
-                        id: *id,
-                        object: T::from(item.clone()),
-                        revision: 0,
-                    });
-                }
-            }
-
-            Ok(results)
-        } else {
-            let mut results = Vec::new();
-            self.0
-                .store
-                .iterate(
-                    IterateParams::new(
-                        ValueKey::from(ValueClass::Any(AnyClass {
-                            subspace: SUBSPACE_REGISTRY,
-                            key: KeySerializer::new(U16_LEN + 1)
-                                .write(0u8)
-                                .write(object_type.to_id())
-                                .finalize(),
-                        })),
-                        ValueKey::from(ValueClass::Any(AnyClass {
-                            subspace: SUBSPACE_REGISTRY,
-                            key: KeySerializer::new(U16_LEN + U64_LEN + 1)
-                                .write(0u8)
-                                .write(object_type.to_id())
-                                .write(u64::MAX)
-                                .finalize(),
-                        })),
-                    ),
-                    |key, value| {
-                        let id = key
-                            .get(U16_LEN + 1..)
-                            .and_then(|key| key.read_leb128::<u64>())
-                            .map(|r| r.0)
-                            .ok_or_else(|| {
-                                trc::EventType::Registry(trc::RegistryEvent::DeserializationError)
-                                    .into_err()
-                                    .caused_by(trc::location!())
-                                    .details(object_type.as_str())
-                                    .ctx(trc::Key::Key, key)
-                            })?;
-                        let mut stream = PickledStream::new(value);
-                        let object = T::unpickle(&mut stream).ok_or_else(|| {
+        let mut results = Vec::new();
+        self.0
+            .store
+            .iterate(
+                IterateParams::new(
+                    ValueKey::from(ValueClass::Any(AnyClass {
+                        subspace: SUBSPACE_REGISTRY,
+                        key: KeySerializer::new(U16_LEN + 1)
+                            .write(0u8)
+                            .write(object_type.to_id())
+                            .finalize(),
+                    })),
+                    ValueKey::from(ValueClass::Any(AnyClass {
+                        subspace: SUBSPACE_REGISTRY,
+                        key: KeySerializer::new(U16_LEN + U64_LEN + 1)
+                            .write(0u8)
+                            .write(object_type.to_id())
+                            .write(u64::MAX)
+                            .finalize(),
+                    })),
+                ),
+                |key, value| {
+                    let id = key
+                        .get(U16_LEN + 1..)
+                        .and_then(|key| key.read_leb128::<u64>())
+                        .map(|r| r.0)
+                        .ok_or_else(|| {
                             trc::EventType::Registry(trc::RegistryEvent::DeserializationError)
                                 .into_err()
                                 .caused_by(trc::location!())
-                                .id(id)
                                 .details(object_type.as_str())
-                                .ctx(trc::Key::Value, value)
+                                .ctx(trc::Key::Key, key)
                         })?;
+                    let mut stream = PickledStream::new(value);
+                    let object = T::unpickle(&mut stream).ok_or_else(|| {
+                        trc::EventType::Registry(trc::RegistryEvent::DeserializationError)
+                            .into_err()
+                            .caused_by(trc::location!())
+                            .id(id)
+                            .details(object_type.as_str())
+                            .ctx(trc::Key::Value, value)
+                    })?;
 
-                        results.push(RegistryObject {
-                            id: ObjectId::new(object_type, Id::new(id)),
-                            object,
-                            revision: xxhash_rust::xxh3::xxh3_64(value),
-                        });
+                    results.push(RegistryObject {
+                        id: ObjectId::new(object_type, Id::new(id)),
+                        object,
+                        revision: xxhash_rust::xxh3::xxh3_64(value),
+                    });
 
-                        Ok(true)
-                    },
-                )
-                .await
-                .caused_by(trc::location!())?;
+                    Ok(true)
+                },
+            )
+            .await
+            .caused_by(trc::location!())?;
 
-            Ok(results)
-        }
+        Ok(results)
     }
 }

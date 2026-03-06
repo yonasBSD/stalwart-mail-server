@@ -8,19 +8,15 @@
  *
  */
 
-use common::{
-    Server,
-    auth::{AccessToken, oauth::GrantType},
-};
+use common::{Server, auth::AccessToken};
 use http_body_util::{StreamBody, combinators::BoxBody};
 use http_proto::*;
 use hyper::{
-    Method, StatusCode,
+    StatusCode,
     body::{Bytes, Frame},
 };
 use mail_parser::DateTime;
 use registry::schema::enums::Permission;
-use serde_json::json;
 use std::future::Future;
 use std::{
     fmt::Write,
@@ -38,7 +34,7 @@ pub trait TelemetryApi: Sync + Send {
     fn handle_telemetry_api_request(
         &self,
         req: &HttpRequest,
-        path: Vec<&str>,
+        is_tracing: bool,
         access_token: &AccessToken,
     ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
 }
@@ -47,48 +43,40 @@ impl TelemetryApi for Server {
     async fn handle_telemetry_api_request(
         &self,
         req: &HttpRequest,
-        path: Vec<&str>,
+        is_tracing: bool,
         access_token: &AccessToken,
     ) -> trc::Result<HttpResponse> {
         let params = UrlParams::new(req.uri().query());
-        let account_id = access_token.account_id();
-        let todo = "use same format as in JMAP API";
+        if is_tracing {
+            // Validate the access token
+            access_token.enforce_permission(Permission::TracingLive)?;
 
-        match (
-            path.get(1).copied().unwrap_or_default(),
-            path.get(2).copied(),
-            req.method(),
-        ) {
-            ("traces", Some("live"), &Method::GET) => {
-                // Validate the access token
-                access_token.enforce_permission(Permission::TracingLive)?;
+            let mut key_filters = AHashMap::new();
+            let mut filter = None;
 
-                let mut key_filters = AHashMap::new();
-                let mut filter = None;
-
-                for (key, value) in params.into_inner() {
-                    if key == "filter" {
-                        filter = value.into_owned().into();
-                    } else if let Some(key) = Key::try_parse(key.to_ascii_lowercase().as_str()) {
-                        key_filters.insert(key, value.into_owned());
-                    }
+            for (key, value) in params.into_inner() {
+                if key == "filter" {
+                    filter = value.into_owned().into();
+                } else if let Some(key) = Key::try_parse(key.to_ascii_lowercase().as_str()) {
+                    key_filters.insert(key, value.into_owned());
                 }
+            }
 
-                let (_, mut rx) = SubscriberBuilder::new("live-tracer".to_string())
-                    .with_interests(Box::new(Bitset::all()))
-                    .with_lossy(false)
-                    .register();
-                let throttle = Duration::from_secs(1);
-                let ping_interval = Duration::from_secs(30);
-                let ping_payload = Bytes::from(format!(
-                    "event: ping\ndata: {{\"interval\": {}}}\n\n",
-                    ping_interval.as_millis()
-                ));
-                let mut last_ping = Instant::now();
-                let mut events = Vec::new();
-                let mut active_span_ids = AHashSet::new();
+            let (_, mut rx) = SubscriberBuilder::new("live-tracer".to_string())
+                .with_interests(Box::new(Bitset::all()))
+                .with_lossy(false)
+                .register();
+            let throttle = Duration::from_secs(1);
+            let ping_interval = Duration::from_secs(30);
+            let ping_payload = Bytes::from(format!(
+                "event: ping\ndata: {{\"interval\": {}}}\n\n",
+                ping_interval.as_millis()
+            ));
+            let mut last_ping = Instant::now();
+            let mut events = Vec::new();
+            let mut active_span_ids = AHashSet::new();
 
-                Ok(HttpResponse::new(StatusCode::OK)
+            Ok(HttpResponse::new(StatusCode::OK)
                 .with_content_type("text/event-stream")
                 .with_cache_control("no-store")
                 .with_stream_body(BoxBody::new(StreamBody::new(
@@ -185,68 +173,47 @@ impl TelemetryApi for Server {
                         }
                     },
                 ))))
-            }
-            ("live", Some("tracing-token"), &Method::GET) => {
-                // Validate the access token
-                access_token.enforce_permission(Permission::TracingLive)?;
+        } else {
+            // Validate the access token
+            access_token.enforce_permission(Permission::MetricsLive)?;
 
-                // Issue a live telemetry token valid for 60 seconds
-                Ok(JsonResponse::new(json!({
-                    "data": self.encode_access_token(GrantType::LiveTracing, account_id,  "web", 60).await?,
-            }))
-            .into_http_response())
-            }
-            ("live", Some("metrics-token"), &Method::GET) => {
-                // Validate the access token
-                access_token.enforce_permission(Permission::MetricsLive)?;
-
-                // Issue a live telemetry token valid for 60 seconds
-                Ok(JsonResponse::new(json!({
-                    "data": self.encode_access_token(GrantType::LiveMetrics, account_id, "web", 60).await?,
-            }))
-            .into_http_response())
-            }
-            ("metrics", Some("live"), &Method::GET) => {
-                // Validate the access token
-                access_token.enforce_permission(Permission::MetricsLive)?;
-
-                let interval = Duration::from_secs(
-                    params
-                        .parse::<u64>("interval")
-                        .filter(|interval| *interval >= 1)
-                        .unwrap_or(30),
-                );
-                let mut event_types = AHashSet::new();
-                let mut metric_types = AHashSet::new();
-                for metric_name in params.get("metrics").unwrap_or_default().split(',') {
-                    let metric_name = metric_name.trim();
-                    if !metric_name.is_empty() {
-                        if let Some(event_type) = EventType::parse(metric_name) {
-                            event_types.insert(event_type);
-                        } else if let Some(metric_type) = MetricType::parse(metric_name) {
-                            metric_types.insert(metric_type);
-                        }
+            let interval = Duration::from_secs(
+                params
+                    .parse::<u64>("interval")
+                    .filter(|interval| *interval >= 1)
+                    .unwrap_or(30),
+            );
+            let mut event_types = AHashSet::new();
+            let mut metric_types = AHashSet::new();
+            for metric_name in params.get("metrics").unwrap_or_default().split(',') {
+                let metric_name = metric_name.trim();
+                if !metric_name.is_empty() {
+                    if let Some(event_type) = EventType::parse(metric_name) {
+                        event_types.insert(event_type);
+                    } else if let Some(metric_type) = MetricType::parse(metric_name) {
+                        metric_types.insert(metric_type);
                     }
                 }
+            }
 
-                // Refresh expensive metrics
-                for metric_type in [
-                    MetricType::QueueCount,
-                    MetricType::UserCount,
-                    MetricType::DomainCount,
-                ] {
-                    if metric_types.contains(&metric_type) {
-                        let value = match metric_type {
-                            MetricType::QueueCount => self.total_queued_messages().await?,
-                            MetricType::UserCount => self.total_accounts().await? as u64,
-                            MetricType::DomainCount => self.total_domains().await? as u64,
-                            _ => unreachable!(),
-                        };
-                        Collector::update_gauge(metric_type, value);
-                    }
+            // Refresh expensive metrics
+            for metric_type in [
+                MetricType::QueueCount,
+                MetricType::UserCount,
+                MetricType::DomainCount,
+            ] {
+                if metric_types.contains(&metric_type) {
+                    let value = match metric_type {
+                        MetricType::QueueCount => self.total_queued_messages().await?,
+                        MetricType::UserCount => self.total_accounts().await? as u64,
+                        MetricType::DomainCount => self.total_domains().await? as u64,
+                        _ => unreachable!(),
+                    };
+                    Collector::update_gauge(metric_type, value);
                 }
+            }
 
-                Ok(HttpResponse::new(StatusCode::OK)
+            Ok(HttpResponse::new(StatusCode::OK)
                 .with_content_type("text/event-stream")
                 .with_cache_control("no-store")
                 .with_stream_body(BoxBody::new(StreamBody::new(
@@ -309,8 +276,6 @@ impl TelemetryApi for Server {
                         }
                     },
                 ))))
-            }
-            _ => Err(trc::ResourceEvent::NotFound.into_err()),
         }
     }
 }

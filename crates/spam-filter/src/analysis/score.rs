@@ -46,6 +46,7 @@ pub struct SpamFilterScore {
     pub headers: String,
     pub train_spam: Option<bool>,
     pub score: f32,
+    pub is_spam: bool,
 }
 
 impl SpamFilterAnalyzeScore for Server {
@@ -184,6 +185,7 @@ impl SpamFilterAnalyzeScore for Server {
                 headers,
                 train_spam,
                 score: final_score,
+                is_spam,
             })
         }
     }

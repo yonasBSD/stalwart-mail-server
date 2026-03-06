@@ -5,29 +5,27 @@
  */
 
 use crate::registry::mapping::{ObjectResponse, RegistrySetResponse, ValidationResult};
+use common::storage::encryption::parse_public_key;
 use jmap_proto::error::set::SetError;
-use registry::{
-    jmap::JmapValue,
-    schema::{
-        enums::StorageQuota,
-        prelude::{ObjectType, Property},
-        structs::PublicKey,
-    },
+use registry::schema::{
+    enums::StorageQuota,
+    prelude::{ObjectType, Property},
+    structs::PublicKey,
 };
-use store::{ahash::AHashSet, registry::RegistryQuery};
-use utils::map::vec_map::VecMap;
+use store::registry::RegistryQuery;
 
 pub(crate) async fn validate_public_key(
     set: &RegistrySetResponse<'_>,
     key: &mut PublicKey,
     old_key: Option<&PublicKey>,
-    unpatched_properties: VecMap<Property, JmapValue<'_>>,
 ) -> ValidationResult {
-    let mut response = ObjectResponse::default();
+    let response = ObjectResponse::default();
 
-    let todo = "validate key";
-
-    if old_key.is_none() {
+    if let Some(old_key) = old_key {
+        if key.key == old_key.key {
+            return Ok(Ok(response));
+        }
+    } else {
         // Validate quotas
         let num_masked = set
             .server
@@ -46,5 +44,13 @@ pub(crate) async fn validate_public_key(
         }
     }
 
-    todo!()
+    match parse_public_key(key) {
+        Ok(Some(_)) => Ok(Ok(response)),
+        Ok(None) => Ok(Err(SetError::invalid_properties()
+            .with_property(Property::Key)
+            .with_description("No valid public key found."))),
+        Err(err) => Ok(Err(SetError::invalid_properties()
+            .with_property(Property::Key)
+            .with_description(err.into_owned()))),
+    }
 }

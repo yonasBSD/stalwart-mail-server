@@ -18,6 +18,7 @@ use registry::{
         prelude::ObjectType,
         structs::{
             SieveSystemInterpreter, SieveSystemScript, SieveUserInterpreter, SieveUserScript,
+            SystemSettings,
         },
     },
     types::EnumImpl,
@@ -91,6 +92,7 @@ impl Scripting {
 
         // Allocate compiler and runtime
         let trusted = bp.setting_infallible::<SieveSystemInterpreter>().await;
+        let system = bp.setting_infallible::<SystemSettings>().await;
         let trusted_compiler = Compiler::new()
             .with_max_string_size(52428800)
             .with_max_variable_name_size(100)
@@ -128,7 +130,7 @@ impl Scripting {
             .with_max_nested_includes(trusted.max_nested_includes as usize)
             .with_max_received_headers(trusted.max_received_headers as usize)
             .with_default_duplicate_expiry(trusted.duplicate_expiry.into_inner().as_secs());
-        trusted_runtime.set_local_hostname(bp.node.hostname.clone());
+        trusted_runtime.set_local_hostname(system.default_hostname.clone());
 
         // Parse trusted scripts
         let mut trusted_scripts = AHashMap::new();

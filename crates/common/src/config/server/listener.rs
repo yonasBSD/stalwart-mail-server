@@ -14,7 +14,7 @@ use crate::{
 };
 use registry::schema::{
     enums::{NetworkListenerProtocol, TlsCipherSuite, TlsVersion},
-    structs::NetworkListener,
+    structs::{NetworkListener, SystemSettings},
 };
 use rustls::{
     ALL_VERSIONS, ServerConfig, SupportedCipherSuite,
@@ -36,6 +36,8 @@ impl Listeners {
 
         // Parse servers
         let node_id = bp.node_id();
+        let system = bp.setting_infallible::<SystemSettings>().await;
+
         for listener in bp.list_infallible::<NetworkListener>().await {
             if listener.object.enable_for_nodes.is_empty()
                 || listener
@@ -44,13 +46,18 @@ impl Listeners {
                     .values()
                     .any(|n| n.contains(node_id))
             {
-                servers.parse_server(bp, listener);
+                servers.parse_server(bp, listener, &system);
             }
         }
         servers
     }
 
-    fn parse_server(&mut self, bp: &mut Bootstrap, listener: RegistryObject<NetworkListener>) {
+    fn parse_server(
+        &mut self,
+        bp: &mut Bootstrap,
+        listener: RegistryObject<NetworkListener>,
+        system: &SystemSettings,
+    ) {
         let id = listener.id;
         let revision = listener.revision;
         let listener = listener.object;
@@ -124,8 +131,9 @@ impl Listeners {
         }
 
         let span_id_gen = self.span_id_gen.clone();
+
         self.servers.push(Listener {
-            max_connections: listener.max_connections.unwrap_or(bp.node.max_connections),
+            max_connections: listener.max_connections.unwrap_or(system.max_connections),
             id: listener.name.clone(),
             registry_id: id,
             protocol,
@@ -133,7 +141,7 @@ impl Listeners {
             proxy_networks: if !listener.override_proxy_trusted_networks.is_empty() {
                 listener.override_proxy_trusted_networks.as_slice().to_vec()
             } else {
-                bp.node.proxy_trusted_networks.as_slice().to_vec()
+                system.proxy_trusted_networks.as_slice().to_vec()
             },
             span_id_gen,
         });

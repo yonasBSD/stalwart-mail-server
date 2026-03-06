@@ -14,8 +14,8 @@ use crate::{
 };
 use registry::{
     schema::prelude::{
-        OBJ_FILTER_ACCOUNT, OBJ_FILTER_TENANT, OBJ_SEQ_ID, OBJ_SINGLETON, Object, ObjectType,
-        Property,
+        OBJ_FILTER_ACCOUNT, OBJ_FILTER_TENANT, OBJ_SEQ_ID, OBJ_SINGLETON, Object, ObjectInner,
+        ObjectType, Property,
     },
     types::{
         EnumImpl,
@@ -159,19 +159,15 @@ impl RegistryStore {
         }
 
         // Write to local registry
-        if self.0.local_objects.contains(&object_type) {
+        if let ObjectInner::DataStore(data_store) = &object.inner {
             if generate_id {
                 return Ok(RegistryWriteResult::NotSupported);
             }
-            let id = Id::new(item_id);
-            self.0
-                .local_registry
-                .write()
-                .insert(ObjectId::new(object_type, id), object.clone());
+
             return self
-                .write_local_registry()
+                .write_data_store(data_store)
                 .await
-                .map(|_| RegistryWriteResult::Success(id));
+                .map(|_| RegistryWriteResult::Success(Id::singleton()));
         }
 
         // Validate foreign keys
@@ -329,17 +325,6 @@ impl RegistryStore {
         let object_type_id = object_type.to_id();
         let id = object_id.id();
         let item_id = id.id();
-
-        if self.0.local_objects.contains(&object_type) {
-            let object = ObjectId::new(object_type, id);
-            return if self.0.local_registry.write().remove(&object).is_some() {
-                self.write_local_registry()
-                    .await
-                    .map(|_| RegistryWriteResult::Success(id))
-            } else {
-                Ok(RegistryWriteResult::NotFound { object_id: object })
-            };
-        }
 
         // Fetch object
         let object = if let Some(object) = object {

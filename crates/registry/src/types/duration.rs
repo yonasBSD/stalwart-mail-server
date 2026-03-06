@@ -160,3 +160,9 @@ impl IntoValue for Duration {
         JmapValue::Number((self.0.as_millis() as u64).into())
     }
 }
+
+impl From<std::time::Duration> for Duration {
+    fn from(value: std::time::Duration) -> Self {
+        Duration(value)
+    }
+}

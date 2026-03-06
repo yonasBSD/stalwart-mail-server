@@ -43,7 +43,7 @@ pub(crate) async fn task_set(
                 continue 'outer;
             };
             let ptr = JsonPointer::new(vec![JsonPointerItem::Key(Key::Property(prop))]);
-            if let Err(err) = task.patch(JsonPointerPatch::new(&ptr).with_create(false), value) {
+            if let Err(err) = task.patch(JsonPointerPatch::new(&ptr).with_create(true), value) {
                 set.response.not_created.append(id, err.into());
                 continue 'outer;
             }

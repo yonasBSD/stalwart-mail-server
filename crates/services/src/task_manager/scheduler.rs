@@ -445,8 +445,10 @@ pub fn spawn_task_scheduler(inner: Arc<Inner>) {
                             .await
                         {
                             Ok(result) => {
-                                if let Some(new_core) = result.new_core {
-                                    if let Some(enterprise) = &new_core.enterprise {
+                                if !result.has_errors() {
+                                    if let Some(enterprise) =
+                                        server.inner.build_server().core.enterprise.as_ref()
+                                    {
                                         let renew_in = if enterprise.license.is_near_expiration() {
                                             // Something went wrong during renewal, try again in 1 day or 1 hour,
                                             // depending on the time left on the license
@@ -467,14 +469,13 @@ pub fn spawn_task_scheduler(inner: Arc<Inner>) {
                                         );
                                     }
 
-                                    // Update core
-                                    server.inner.shared_core.store(new_core.into());
-
                                     server
                                         .cluster_broadcast(common::ipc::BroadcastEvent::reload(
                                             ObjectType::Enterprise,
                                         ))
                                         .await;
+                                } else {
+                                    result.log();
                                 }
                             }
                             Err(err) => {

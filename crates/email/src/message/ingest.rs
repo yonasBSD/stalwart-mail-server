@@ -9,7 +9,7 @@ use crate::{
     cache::{MessageCacheFetch, email::MessageCacheAccess, mailbox::MailboxCacheAccess},
     mailbox::{INBOX_ID, JUNK_ID, SENT_ID, TRASH_ID, UidMailbox},
     message::{
-        crypto::EncryptionParams,
+        crypto::EncryptionFlags,
         index::{IndexMessage, extractors::VisitText},
         metadata::{MessageData, MessageMetadata},
     },
@@ -51,7 +51,7 @@ use types::{
     blob::{BlobClass, BlobId},
     blob_hash::BlobHash,
     collection::{Collection, SyncCollection},
-    field::{ContactField, EmailField, MailboxField, PrincipalField},
+    field::{ContactField, EmailField, MailboxField},
     id::Id,
     keyword::Keyword,
     special_use::SpecialUse,
@@ -151,7 +151,8 @@ impl EmailIngest for Server {
         let account_id = params.access_token.account_id();
         let tenant_id = params.access_token.tenant_id();
         let mut raw_message_len = params.raw_message.len() as u64;
-        self.has_available_quota(account_id, raw_message_len)
+        let account = self.account(account_id).await.caused_by(trc::location!())?;
+        self.has_available_quota(&account, raw_message_len)
             .await
             .caused_by(trc::location!())?;
 
@@ -372,7 +373,7 @@ impl EmailIngest for Server {
                         .has_permission(Permission::CalendarSchedulingReceive)
                 {
                     let account_info = self
-                        .account_info(account_id)
+                        .build_account_info(account.clone())
                         .await
                         .caused_by(trc::location!())?;
                     let mut sender = None;
@@ -505,21 +506,9 @@ impl EmailIngest for Server {
         };
         let is_encrypted = if do_encrypt
             && !message.is_encrypted()
-            && let Some(encrypt_params_) = self
-                .store()
-                .get_value::<Archive<AlignedBytes>>(ValueKey::property(
-                    account_id,
-                    Collection::Principal,
-                    0,
-                    PrincipalField::EncryptionKeys,
-                ))
-                .await
-                .caused_by(trc::location!())?
+            && let Some(encrypt_keys) = &account.encryption_key
         {
-            let encrypt_params = encrypt_params_
-                .unarchive::<EncryptionParams>()
-                .caused_by(trc::location!())?;
-            match message.encrypt(encrypt_params).await {
+            match message.encrypt(encrypt_keys, account.flags).await {
                 Ok(new_raw_message) => {
                     raw_message = Cow::from(new_raw_message);
                     raw_message_len = raw_message.len() as u64;
@@ -535,7 +524,7 @@ impl EmailIngest for Server {
                         })?;
 
                     // Disable spam training if requested
-                    if !encrypt_params.can_train_spam_filter() {
+                    if !account.flags.can_train_spam_filter() {
                         train_spam = None;
                     }
 

@@ -4,8 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::net::IpAddr;
-
 use common::{Server, auth::AccessToken};
 use jmap_proto::{
     error::set::SetError,
@@ -17,12 +15,15 @@ use registry::{
     jmap::{JmapValue, RegistryValue},
     schema::prelude::{ObjectType, Property},
 };
+use std::net::IpAddr;
 use store::ahash::AHashSet;
 use types::id::Id;
 use utils::map::vec_map::VecMap;
 
 pub mod account;
+pub mod action;
 pub mod archived_item;
+pub mod dkim;
 pub mod log;
 pub mod masked_email;
 pub mod principal;

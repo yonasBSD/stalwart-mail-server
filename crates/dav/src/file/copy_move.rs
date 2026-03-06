@@ -240,7 +240,7 @@ impl FileCopyMoveRequestHandler for Server {
                 .subtree(from_resource_name)
                 .map(|a| a.size() as u64)
                 .sum::<u64>();
-            self.has_available_quota(to_account_id, space_needed)
+            self.has_available_quota(self.account(to_account_id).await?.as_ref(), space_needed)
                 .await?;
         }
 

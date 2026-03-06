@@ -92,7 +92,7 @@ impl BroadcastBatch<Vec<BroadcastEvent>> {
                         let _ = serialized.write_leb128(object.to_id());
                     }
                 },
-                BroadcastEvent::CacheInvalidation(items) => {
+                BroadcastEvent::CacheInvalidate(items) => {
                     serialized.push(7u8);
                     let _ = serialized.write_leb128(items.len());
                     for item in items {
@@ -111,6 +111,16 @@ impl BroadcastBatch<Vec<BroadcastEvent>> {
 
                         serialized.push(marker);
                         let _ = serialized.write_leb128(id);
+                    }
+                }
+                BroadcastEvent::CacheInvalidateAll => {
+                    serialized.push(8u8);
+                }
+                BroadcastEvent::MtaQueueStatus { is_running } => {
+                    if *is_running {
+                        serialized.push(9u8);
+                    } else {
+                        serialized.push(10u8);
                     }
                 }
             }
@@ -223,9 +233,11 @@ where
                             _ => return Err(()),
                         });
                     }
-                    Ok(Some(BroadcastEvent::CacheInvalidation(items)))
+                    Ok(Some(BroadcastEvent::CacheInvalidate(items)))
                 }
-
+                8 => Ok(Some(BroadcastEvent::CacheInvalidateAll)),
+                9 => Ok(Some(BroadcastEvent::MtaQueueStatus { is_running: true })),
+                10 => Ok(Some(BroadcastEvent::MtaQueueStatus { is_running: false })),
                 _ => Err(()),
             }
         } else {

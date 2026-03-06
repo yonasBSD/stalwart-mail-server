@@ -92,7 +92,8 @@ impl EmailCopy for Server {
 
         // Check quota
         let size = metadata.root_part().offset_end;
-        match self.has_available_quota(to_account_id, size as u64).await {
+        let to_account = self.account(to_account_id).await?;
+        match self.has_available_quota(&to_account, size as u64).await {
             Ok(_) => (),
             Err(err) => {
                 if err.matches(trc::EventType::Limit(trc::LimitEvent::Quota))
@@ -177,7 +178,7 @@ impl EmailCopy for Server {
         batch.with_account_id(to_account_id);
 
         // Determine thread id
-        let tenant_id = self.account(to_account_id).await?.tenant_id();
+        let tenant_id = to_account.tenant_id();
         let thread_id = if let Some(thread_id) = thread_result.thread_id {
             thread_id
         } else {

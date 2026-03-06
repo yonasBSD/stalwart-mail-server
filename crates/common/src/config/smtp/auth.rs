@@ -124,7 +124,7 @@ impl MailAuthConfig {
 }
 
 impl DkimSigner {
-    pub fn new(domain: String, signature: DkimSignature) -> trc::Result<Self> {
+    pub async fn new(domain: String, signature: DkimSignature) -> trc::Result<Self> {
         let mut errors = vec![];
         if !signature.validate(&mut errors) {
             return Err(trc::DkimEvent::BuildError
@@ -139,7 +139,8 @@ impl DkimSigner {
 
         match signature {
             DkimSignature::Dkim1Ed25519Sha256(signature) => {
-                let private_key = simple_pem_parse(&signature.private_key).ok_or_else(|| {
+                let private_key = signature.private_key.pem().await?;
+                let private_key = simple_pem_parse(&private_key).ok_or_else(|| {
                     trc::DkimEvent::BuildError
                         .reason("Failed to parse ED25519 private key PEM")
                         .details("Invalid PEM format")
@@ -156,24 +157,8 @@ impl DkimSigner {
                 )))
             }
             DkimSignature::Dkim1RsaSha256(signature) => {
-                let key = PrivatePkcs1KeyDer::from_pem_slice(signature.private_key.as_bytes())
-                    .map(PrivateKeyDer::Pkcs1)
-                    .or_else(|_| {
-                        PrivatePkcs8KeyDer::from_pem_slice(signature.private_key.as_bytes())
-                            .map(PrivateKeyDer::Pkcs8)
-                    })
-                    .map_err(|err| {
-                        trc::DkimEvent::BuildError
-                            .reason(err)
-                            .details("Failed to build RSA key")
-                    })
-                    .and_then(|key| {
-                        RsaKey::<Sha256>::from_key_der(key).map_err(|err| {
-                            trc::DkimEvent::BuildError
-                                .reason(err)
-                                .details("Failed to build RSA key")
-                        })
-                    })?;
+                let private_key = signature.private_key.pem().await?;
+                let key = rsa_key_parse(private_key.as_bytes())?;
 
                 Ok(DkimSigner::RsaSha256(build_dkim1_signer(
                     domain, signature, key,
@@ -183,7 +168,25 @@ impl DkimSigner {
     }
 }
 
-impl ArcSealer {
+pub fn rsa_key_parse(private_key: &[u8]) -> trc::Result<RsaKey<Sha256>> {
+    PrivatePkcs1KeyDer::from_pem_slice(private_key)
+        .map(PrivateKeyDer::Pkcs1)
+        .or_else(|_| PrivatePkcs8KeyDer::from_pem_slice(private_key).map(PrivateKeyDer::Pkcs8))
+        .map_err(|err| {
+            trc::DkimEvent::BuildError
+                .reason(err)
+                .details("Failed to build RSA key")
+        })
+        .and_then(|key| {
+            RsaKey::<Sha256>::from_key_der(key).map_err(|err| {
+                trc::DkimEvent::BuildError
+                    .reason(err)
+                    .details("Failed to build RSA key")
+            })
+        })
+}
+
+/*impl ArcSealer {
     pub fn new(selector: String, domain: String, signature: DkimSignature) -> trc::Result<Self> {
         let mut errors = vec![];
         if !signature.validate(&mut errors) {
@@ -241,7 +244,7 @@ impl ArcSealer {
             }
         }
     }
-}
+}*/
 
 pub fn simple_pem_parse(contents: &str) -> Option<Vec<u8>> {
     let mut contents = contents.as_bytes().iter().copied();
@@ -327,7 +330,7 @@ fn build_dkim1_signer<T: SigningKey>(
     signer
 }
 
-fn build_dkim1_sealer<T: SigningKey<Hasher = Sha256>>(
+/*fn build_dkim1_sealer<T: SigningKey<Hasher = Sha256>>(
     domain: String,
     selector: String,
     mut signature: Dkim1Signature,
@@ -377,6 +380,8 @@ fn build_dkim1_sealer<T: SigningKey<Hasher = Sha256>>(
 
     sealer
 }
+
+*/
 
 impl<'x> TryFrom<expr::Variable<'x>> for VerifyStrategy {
     type Error = ();

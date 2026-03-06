@@ -6,6 +6,7 @@
 
 use crate::{
     Server,
+    auth::AccountCache,
     storage::{ObjectQuota, TenantQuota},
 };
 use registry::{
@@ -39,10 +40,13 @@ impl Server {
             .add_context(|err| err.caused_by(trc::location!()))
     }
 
-    pub async fn has_available_quota(&self, account_id: u32, item_size: u64) -> trc::Result<()> {
-        let account = self.account(account_id).await.caused_by(trc::location!())?;
+    pub async fn has_available_quota(
+        &self,
+        account: &AccountCache,
+        item_size: u64,
+    ) -> trc::Result<()> {
         if account.quota_disk != 0 {
-            let used_quota = self.get_used_quota_account(account_id).await? as u64;
+            let used_quota = self.get_used_quota_account(account.id).await? as u64;
 
             if used_quota + item_size > account.quota_disk {
                 return Err(trc::LimitEvent::Quota

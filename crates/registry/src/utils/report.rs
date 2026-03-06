@@ -8,7 +8,10 @@ use crate::{
     schema::{enums, prelude::UTCDateTime, structs},
     types::{ipaddr::IpAddr, list::List},
 };
-use mail_auth::report::{tlsrpt::*, *};
+use mail_auth::{
+    IprevOutput, IprevResult, SpfOutput,
+    report::{tlsrpt::*, *},
+};
 use std::borrow::Cow;
 
 impl From<enums::DmarcAlignment> for Alignment {
@@ -800,5 +803,127 @@ fn fo_to_failure_reporting_options(fo: &Option<String>) -> Vec<enums::FailureRep
                 _ => None,
             })
             .collect(),
+    }
+}
+
+impl From<&SpfOutput> for structs::DmarcTroubleshootAuthResult {
+    fn from(value: &SpfOutput) -> Self {
+        match value.result() {
+            mail_auth::SpfResult::Pass => structs::DmarcTroubleshootAuthResult::Pass,
+            mail_auth::SpfResult::Fail => {
+                structs::DmarcTroubleshootAuthResult::Fail(structs::DmarcTroubleshootDetails {
+                    details: value.explanation().map(|e| e.to_string()),
+                })
+            }
+            mail_auth::SpfResult::SoftFail => {
+                structs::DmarcTroubleshootAuthResult::SoftFail(structs::DmarcTroubleshootDetails {
+                    details: value.explanation().map(|e| e.to_string()),
+                })
+            }
+            mail_auth::SpfResult::Neutral => {
+                structs::DmarcTroubleshootAuthResult::Neutral(structs::DmarcTroubleshootDetails {
+                    details: value.explanation().map(|e| e.to_string()),
+                })
+            }
+            mail_auth::SpfResult::TempError => {
+                structs::DmarcTroubleshootAuthResult::TempError(structs::DmarcTroubleshootDetails {
+                    details: value.explanation().map(|e| e.to_string()),
+                })
+            }
+            mail_auth::SpfResult::PermError => {
+                structs::DmarcTroubleshootAuthResult::PermError(structs::DmarcTroubleshootDetails {
+                    details: value.explanation().map(|e| e.to_string()),
+                })
+            }
+            mail_auth::SpfResult::None => structs::DmarcTroubleshootAuthResult::None,
+        }
+    }
+}
+
+impl From<&IprevOutput> for structs::DmarcTroubleshootAuthResult {
+    fn from(value: &IprevOutput) -> Self {
+        match &value.result {
+            IprevResult::Pass => structs::DmarcTroubleshootAuthResult::Pass,
+            IprevResult::Fail(error) => {
+                structs::DmarcTroubleshootAuthResult::Fail(structs::DmarcTroubleshootDetails {
+                    details: error.to_string().into(),
+                })
+            }
+            IprevResult::TempError(error) => {
+                structs::DmarcTroubleshootAuthResult::TempError(structs::DmarcTroubleshootDetails {
+                    details: error.to_string().into(),
+                })
+            }
+            IprevResult::PermError(error) => {
+                structs::DmarcTroubleshootAuthResult::PermError(structs::DmarcTroubleshootDetails {
+                    details: error.to_string().into(),
+                })
+            }
+            IprevResult::None => structs::DmarcTroubleshootAuthResult::None,
+        }
+    }
+}
+
+impl From<&mail_auth::DkimResult> for structs::DmarcTroubleshootAuthResult {
+    fn from(value: &mail_auth::DkimResult) -> Self {
+        match value {
+            mail_auth::DkimResult::Pass => structs::DmarcTroubleshootAuthResult::Pass,
+            mail_auth::DkimResult::Neutral(error) => {
+                structs::DmarcTroubleshootAuthResult::Neutral(structs::DmarcTroubleshootDetails {
+                    details: error.to_string().into(),
+                })
+            }
+            mail_auth::DkimResult::Fail(error) => {
+                structs::DmarcTroubleshootAuthResult::Fail(structs::DmarcTroubleshootDetails {
+                    details: error.to_string().into(),
+                })
+            }
+            mail_auth::DkimResult::PermError(error) => {
+                structs::DmarcTroubleshootAuthResult::PermError(structs::DmarcTroubleshootDetails {
+                    details: error.to_string().into(),
+                })
+            }
+            mail_auth::DkimResult::TempError(error) => {
+                structs::DmarcTroubleshootAuthResult::TempError(structs::DmarcTroubleshootDetails {
+                    details: error.to_string().into(),
+                })
+            }
+            mail_auth::DkimResult::None => structs::DmarcTroubleshootAuthResult::None,
+        }
+    }
+}
+
+impl From<&mail_auth::DmarcResult> for structs::DmarcTroubleshootAuthResult {
+    fn from(value: &mail_auth::DmarcResult) -> Self {
+        match value {
+            mail_auth::DmarcResult::Pass => structs::DmarcTroubleshootAuthResult::Pass,
+            mail_auth::DmarcResult::Fail(error) => {
+                structs::DmarcTroubleshootAuthResult::Fail(structs::DmarcTroubleshootDetails {
+                    details: error.to_string().into(),
+                })
+            }
+            mail_auth::DmarcResult::TempError(error) => {
+                structs::DmarcTroubleshootAuthResult::TempError(structs::DmarcTroubleshootDetails {
+                    details: error.to_string().into(),
+                })
+            }
+            mail_auth::DmarcResult::PermError(error) => {
+                structs::DmarcTroubleshootAuthResult::PermError(structs::DmarcTroubleshootDetails {
+                    details: error.to_string().into(),
+                })
+            }
+            mail_auth::DmarcResult::None => structs::DmarcTroubleshootAuthResult::None,
+        }
+    }
+}
+
+impl From<&mail_auth::dmarc::Policy> for enums::DmarcDisposition {
+    fn from(value: &mail_auth::dmarc::Policy) -> Self {
+        match value {
+            mail_auth::dmarc::Policy::None => enums::DmarcDisposition::None,
+            mail_auth::dmarc::Policy::Quarantine => enums::DmarcDisposition::Quarantine,
+            mail_auth::dmarc::Policy::Reject => enums::DmarcDisposition::Reject,
+            mail_auth::dmarc::Policy::Unspecified => enums::DmarcDisposition::Unspecified,
+        }
     }
 }

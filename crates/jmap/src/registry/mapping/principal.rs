@@ -322,6 +322,7 @@ pub(crate) async fn validate_tenant_quota(
                 TenantStorageQuota::MaxOauthClients => {
                     (ObjectType::OAuthClient, None, "OAuth clients")
                 }
+                TenantStorageQuota::MaxDkimKeys => (ObjectType::DkimSignature, None, "DKIM keys"),
                 TenantStorageQuota::MaxDiskQuota => unreachable!(),
             };
             let mut query = RegistryQuery::new(object_type).with_tenant(tenant_id.into());

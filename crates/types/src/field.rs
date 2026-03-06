@@ -77,7 +77,6 @@ pub enum IdentityField {
 #[repr(u8)]
 pub enum PrincipalField {
     Archive = ARCHIVE_FIELD,
-    EncryptionKeys = 46,
     ParticipantIdentities = 45,
     DefaultCalendarId = 47,
     DefaultAddressBookId = 48,
@@ -157,7 +156,6 @@ impl From<PrincipalField> for u8 {
     fn from(value: PrincipalField) -> Self {
         match value {
             PrincipalField::ParticipantIdentities => 45,
-            PrincipalField::EncryptionKeys => 46,
             PrincipalField::DefaultCalendarId => 47,
             PrincipalField::DefaultAddressBookId => 48,
             PrincipalField::ActiveScriptId => 49,

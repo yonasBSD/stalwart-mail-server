@@ -24,10 +24,7 @@ use arc_swap::ArcSwap;
 use mail_auth::{MX, Parameters, Txt};
 use mail_send::smtp::tls::build_tls_connector;
 use parking_lot::RwLock;
-use registry::schema::{
-    prelude::{Object, ObjectType},
-    structs,
-};
+use registry::schema::{prelude::ObjectType, structs};
 use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     sync::Arc,

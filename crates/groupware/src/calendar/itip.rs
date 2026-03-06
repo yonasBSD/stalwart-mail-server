@@ -203,7 +203,10 @@ impl ItipIngest for Server {
                             .saturating_sub(event_.inner.size.to_native() as u64);
                         if extra_bytes > 0
                             && self
-                                .has_available_quota(account_id, extra_bytes)
+                                .has_available_quota(
+                                    self.account(account_id).await?.as_ref(),
+                                    extra_bytes,
+                                )
                                 .await
                                 .is_err()
                         {
@@ -309,7 +312,10 @@ impl ItipIngest for Server {
 
             // Validate quota
             if self
-                .has_available_quota(account_id, itip_message.len() as u64)
+                .has_available_quota(
+                    self.account(account_id).await?.as_ref(),
+                    itip_message.len() as u64,
+                )
                 .await
                 .is_err()
             {

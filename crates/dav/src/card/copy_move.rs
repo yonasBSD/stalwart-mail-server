@@ -977,7 +977,10 @@ async fn copy_container(
 
     if from_account_id != to_account_id && required_space > 0 {
         server
-            .has_available_quota(to_account_id, required_space)
+            .has_available_quota(
+                server.account(to_account_id).await?.as_ref(),
+                required_space,
+            )
             .await?;
     }
 

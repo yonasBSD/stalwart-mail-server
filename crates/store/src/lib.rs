@@ -12,17 +12,10 @@ pub mod registry;
 pub mod search;
 pub mod write;
 
-use ::registry::{
-    schema::{
-        enums::CompressionAlgo,
-        prelude::{Object, ObjectType},
-    },
-    types::id::ObjectId,
-};
+use ::registry::schema::enums::{CompressionAlgo, NodeRole};
 pub use ahash;
 pub use blake3;
 pub use parking_lot;
-use parking_lot::RwLock;
 pub use rand;
 pub use rkyv;
 pub use roaring;
@@ -213,10 +206,12 @@ pub struct RegistryStore(pub(crate) Arc<RegistryStoreInner>);
 
 pub struct RegistryStoreInner {
     pub(crate) local_path: PathBuf,
-    pub(crate) local_registry: RwLock<AHashMap<ObjectId, Object>>,
-    pub(crate) local_objects: AHashSet<ObjectType>,
     pub(crate) store: Store,
     pub(crate) node_id: u64,
+    pub(crate) env_recovery_admin: Option<(String, String)>,
+    pub(crate) env_node_roles: AHashSet<NodeRole>,
+    pub(crate) env_node_roles_shard_id: u64,
+    pub(crate) env_hostname: String,
     pub(crate) id_generator: SnowflakeIdGenerator,
 }
 
