@@ -109,7 +109,7 @@ async fn send_email_alarm(
         .caused_by(trc::location!())?
         .build();
 
-    if !access_token.has_permission(Permission::CalendarAlarms) {
+    if !access_token.has_permission(Permission::CalendarAlarmsSend) {
         trc::event!(
             Calendar(trc::CalendarEvent::AlarmSkipped),
             Reason = "Account does not have permission to send calendar alarms",

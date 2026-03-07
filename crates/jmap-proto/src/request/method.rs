@@ -5,7 +5,7 @@
  */
 
 use std::{borrow::Cow, fmt::Display};
-use registry::{schema::prelude::ObjectType, types::EnumImpl};
+use registry::{schema::prelude::{OBJ_SINGLETON, ObjectType}, types::EnumImpl};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MethodName {
@@ -306,7 +306,12 @@ impl MethodName {
                 "set" => MethodFunction::Set,
                 "query" => MethodFunction::Query,
             )?;
-            (MethodObject::Registry(obj), fnc).into()
+
+            if obj.flags() & OBJ_SINGLETON == 0 || fnc != MethodFunction::Query {
+                (MethodObject::Registry(obj), fnc).into()
+            } else {
+                None
+            }
         }).map(|(obj, fnc)| MethodName { obj, fnc })
     }
 

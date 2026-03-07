@@ -183,6 +183,7 @@ pub enum ValueClass {
     ChangeId,
     Quota,
     TenantQuota(u32),
+    NodeId(u16),
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]

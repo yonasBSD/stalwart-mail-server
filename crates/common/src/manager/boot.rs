@@ -235,7 +235,8 @@ impl BootManager {
         let registry = RegistryStore::init(PathBuf::from(config_path.unwrap()))
             .await
             .failed("⚠️ Startup failed");
-        let mut bootstrap = Bootstrap::new(registry);
+        let mut bootstrap = Bootstrap::new(registry).await;
+        let todo = "implement recovery mode";
 
         // Start listeners
         let mut servers = Listeners::parse(&mut bootstrap).await;
@@ -270,8 +271,22 @@ impl BootManager {
 
                 trc::event!(
                     Server(trc::ServerEvent::Startup),
+                    Hostname = bootstrap.registry.local_hostname().to_string(),
                     Version = env!("CARGO_PKG_VERSION"),
                 );
+
+                if core.storage.coordinator.is_enabled() {
+                    trc::event!(
+                        Cluster(trc::ClusterEvent::Startup),
+                        Id = bootstrap.registry.node_id(),
+                        Type = bootstrap
+                            .registry
+                            .cluster_role()
+                            .unwrap_or("[default]")
+                            .to_string(),
+                        Details = bootstrap.registry.cluster_role_shard()
+                    );
+                }
 
                 // Build shared inner
                 let has_remote_asn = matches!(

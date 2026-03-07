@@ -57,6 +57,7 @@ impl EventType {
             b"calendar.itip-message-sent" => EventType::Calendar(CalendarEvent::ItipMessageSent),
             b"calendar.itip-message-received" => EventType::Calendar(CalendarEvent::ItipMessageReceived),
             b"calendar.itip-message-error" => EventType::Calendar(CalendarEvent::ItipMessageError),
+            b"cluster.startup" => EventType::Cluster(ClusterEvent::Startup),
             b"cluster.subscriber-start" => EventType::Cluster(ClusterEvent::SubscriberStart),
             b"cluster.subscriber-stop" => EventType::Cluster(ClusterEvent::SubscriberStop),
             b"cluster.subscriber-error" => EventType::Cluster(ClusterEvent::SubscriberError),
@@ -67,6 +68,7 @@ impl EventType {
             b"cluster.message-received" => EventType::Cluster(ClusterEvent::MessageReceived),
             b"cluster.message-skipped" => EventType::Cluster(ClusterEvent::MessageSkipped),
             b"cluster.message-invalid" => EventType::Cluster(ClusterEvent::MessageInvalid),
+            b"cluster.node-id-renewed" => EventType::Cluster(ClusterEvent::NodeIdRenewed),
             b"dane.authentication-success" => EventType::Dane(DaneEvent::AuthenticationSuccess),
             b"dane.authentication-failure" => EventType::Dane(DaneEvent::AuthenticationFailure),
             b"dane.no-certificates-found" => EventType::Dane(DaneEvent::NoCertificatesFound),
@@ -257,8 +259,6 @@ impl EventType {
             b"mail-auth.dns-record-not-found" => EventType::MailAuth(MailAuthEvent::DnsRecordNotFound),
             b"mail-auth.dns-invalid-record-type" => EventType::MailAuth(MailAuthEvent::DnsInvalidRecordType),
             b"mail-auth.policy-not-aligned" => EventType::MailAuth(MailAuthEvent::PolicyNotAligned),
-            b"manage.reserved1" => EventType::Manage(ManageEvent::Reserved1),
-            b"manage.reserved2" => EventType::Manage(ManageEvent::Reserved2),
             b"manage.reserved3" => EventType::Manage(ManageEvent::Reserved3),
             b"manage.reserved4" => EventType::Manage(ManageEvent::Reserved4),
             b"manage.reserved5" => EventType::Manage(ManageEvent::Reserved5),
@@ -665,6 +665,7 @@ impl EventType {
                 "calendar.itip-message-received"
             }
             EventType::Calendar(CalendarEvent::ItipMessageError) => "calendar.itip-message-error",
+            EventType::Cluster(ClusterEvent::Startup) => "cluster.startup",
             EventType::Cluster(ClusterEvent::SubscriberStart) => "cluster.subscriber-start",
             EventType::Cluster(ClusterEvent::SubscriberStop) => "cluster.subscriber-stop",
             EventType::Cluster(ClusterEvent::SubscriberError) => "cluster.subscriber-error",
@@ -677,6 +678,7 @@ impl EventType {
             EventType::Cluster(ClusterEvent::MessageReceived) => "cluster.message-received",
             EventType::Cluster(ClusterEvent::MessageSkipped) => "cluster.message-skipped",
             EventType::Cluster(ClusterEvent::MessageInvalid) => "cluster.message-invalid",
+            EventType::Cluster(ClusterEvent::NodeIdRenewed) => "cluster.node-id-renewed",
             EventType::Dane(DaneEvent::AuthenticationSuccess) => "dane.authentication-success",
             EventType::Dane(DaneEvent::AuthenticationFailure) => "dane.authentication-failure",
             EventType::Dane(DaneEvent::NoCertificatesFound) => "dane.no-certificates-found",
@@ -915,8 +917,6 @@ impl EventType {
                 "mail-auth.dns-invalid-record-type"
             }
             EventType::MailAuth(MailAuthEvent::PolicyNotAligned) => "mail-auth.policy-not-aligned",
-            EventType::Manage(ManageEvent::Reserved1) => "manage.reserved1",
-            EventType::Manage(ManageEvent::Reserved2) => "manage.reserved2",
             EventType::Manage(ManageEvent::Reserved3) => "manage.reserved3",
             EventType::Manage(ManageEvent::Reserved4) => "manage.reserved4",
             EventType::Manage(ManageEvent::Reserved5) => "manage.reserved5",
@@ -1386,6 +1386,7 @@ impl EventType {
             EventType::Calendar(CalendarEvent::ItipMessageSent) => 583,
             EventType::Calendar(CalendarEvent::ItipMessageReceived) => 584,
             EventType::Calendar(CalendarEvent::ItipMessageError) => 585,
+            EventType::Cluster(ClusterEvent::Startup) => 278,
             EventType::Cluster(ClusterEvent::SubscriberStart) => 39,
             EventType::Cluster(ClusterEvent::SubscriberStop) => 40,
             EventType::Cluster(ClusterEvent::SubscriberError) => 41,
@@ -1396,6 +1397,7 @@ impl EventType {
             EventType::Cluster(ClusterEvent::MessageReceived) => 46,
             EventType::Cluster(ClusterEvent::MessageSkipped) => 47,
             EventType::Cluster(ClusterEvent::MessageInvalid) => 49,
+            EventType::Cluster(ClusterEvent::NodeIdRenewed) => 275,
             EventType::Dane(DaneEvent::AuthenticationSuccess) => 67,
             EventType::Dane(DaneEvent::AuthenticationFailure) => 66,
             EventType::Dane(DaneEvent::NoCertificatesFound) => 69,
@@ -1586,8 +1588,6 @@ impl EventType {
             EventType::MailAuth(MailAuthEvent::DnsRecordNotFound) => 250,
             EventType::MailAuth(MailAuthEvent::DnsInvalidRecordType) => 249,
             EventType::MailAuth(MailAuthEvent::PolicyNotAligned) => 255,
-            EventType::Manage(ManageEvent::Reserved1) => 278,
-            EventType::Manage(ManageEvent::Reserved2) => 275,
             EventType::Manage(ManageEvent::Reserved3) => 276,
             EventType::Manage(ManageEvent::Reserved4) => 279,
             EventType::Manage(ManageEvent::Reserved5) => 280,
@@ -1987,6 +1987,7 @@ impl EventType {
             583 => Some(EventType::Calendar(CalendarEvent::ItipMessageSent)),
             584 => Some(EventType::Calendar(CalendarEvent::ItipMessageReceived)),
             585 => Some(EventType::Calendar(CalendarEvent::ItipMessageError)),
+            278 => Some(EventType::Cluster(ClusterEvent::Startup)),
             39 => Some(EventType::Cluster(ClusterEvent::SubscriberStart)),
             40 => Some(EventType::Cluster(ClusterEvent::SubscriberStop)),
             41 => Some(EventType::Cluster(ClusterEvent::SubscriberError)),
@@ -1997,6 +1998,7 @@ impl EventType {
             46 => Some(EventType::Cluster(ClusterEvent::MessageReceived)),
             47 => Some(EventType::Cluster(ClusterEvent::MessageSkipped)),
             49 => Some(EventType::Cluster(ClusterEvent::MessageInvalid)),
+            275 => Some(EventType::Cluster(ClusterEvent::NodeIdRenewed)),
             67 => Some(EventType::Dane(DaneEvent::AuthenticationSuccess)),
             66 => Some(EventType::Dane(DaneEvent::AuthenticationFailure)),
             69 => Some(EventType::Dane(DaneEvent::NoCertificatesFound)),
@@ -2205,8 +2207,6 @@ impl EventType {
             250 => Some(EventType::MailAuth(MailAuthEvent::DnsRecordNotFound)),
             249 => Some(EventType::MailAuth(MailAuthEvent::DnsInvalidRecordType)),
             255 => Some(EventType::MailAuth(MailAuthEvent::PolicyNotAligned)),
-            278 => Some(EventType::Manage(ManageEvent::Reserved1)),
-            275 => Some(EventType::Manage(ManageEvent::Reserved2)),
             276 => Some(EventType::Manage(ManageEvent::Reserved3)),
             279 => Some(EventType::Manage(ManageEvent::Reserved4)),
             280 => Some(EventType::Manage(ManageEvent::Reserved5)),
@@ -2650,6 +2650,7 @@ impl EventType {
             EventType::Calendar(CalendarEvent::AlarmSent) => Level::Info,
             EventType::Calendar(CalendarEvent::ItipMessageSent) => Level::Info,
             EventType::Calendar(CalendarEvent::ItipMessageReceived) => Level::Info,
+            EventType::Cluster(ClusterEvent::Startup) => Level::Info,
             EventType::Cluster(ClusterEvent::SubscriberStart) => Level::Info,
             EventType::Cluster(ClusterEvent::SubscriberStop) => Level::Info,
             EventType::Cluster(ClusterEvent::PublisherStart) => Level::Info,
@@ -2973,6 +2974,7 @@ impl EventType {
                 "Calendar iTIP message received"
             }
             EventType::Calendar(CalendarEvent::ItipMessageError) => "iTIP message error",
+            EventType::Cluster(ClusterEvent::Startup) => "Clustering enabled",
             EventType::Cluster(ClusterEvent::SubscriberStart) => "PubSub subscriber started",
             EventType::Cluster(ClusterEvent::SubscriberStop) => "PubSub subscriber stopped",
             EventType::Cluster(ClusterEvent::SubscriberError) => "PubSub subscriber error",
@@ -2985,6 +2987,7 @@ impl EventType {
             EventType::Cluster(ClusterEvent::MessageReceived) => "PubSub message received",
             EventType::Cluster(ClusterEvent::MessageSkipped) => "PubSub message skipped",
             EventType::Cluster(ClusterEvent::MessageInvalid) => "Invalid PubSub message",
+            EventType::Cluster(ClusterEvent::NodeIdRenewed) => "Node ID renewed",
             EventType::Dane(DaneEvent::AuthenticationSuccess) => "DANE authentication successful",
             EventType::Dane(DaneEvent::AuthenticationFailure) => "DANE authentication failed",
             EventType::Dane(DaneEvent::NoCertificatesFound) => "No certificates found for DANE",
@@ -3221,8 +3224,6 @@ impl EventType {
             EventType::MailAuth(MailAuthEvent::DnsRecordNotFound) => "DNS record not found",
             EventType::MailAuth(MailAuthEvent::DnsInvalidRecordType) => "Invalid DNS record type",
             EventType::MailAuth(MailAuthEvent::PolicyNotAligned) => "Policy not aligned",
-            EventType::Manage(ManageEvent::Reserved1) => "Missing parameter",
-            EventType::Manage(ManageEvent::Reserved2) => "Record already exists",
             EventType::Manage(ManageEvent::Reserved3) => "Assertion failed",
             EventType::Manage(ManageEvent::Reserved4) => "Resource not found",
             EventType::Manage(ManageEvent::Reserved5) => "Management operation not supported",
@@ -3728,6 +3729,9 @@ impl EventType {
             EventType::Calendar(CalendarEvent::ItipMessageError) => {
                 "An error occurred while processing an iTIP/iMIP message"
             }
+            EventType::Cluster(ClusterEvent::Startup) => {
+                "The clustering subsystem has been initialized"
+            }
             EventType::Cluster(ClusterEvent::SubscriberStart) => {
                 "The PubSub subscriber has started"
             }
@@ -3752,6 +3756,7 @@ impl EventType {
             EventType::Cluster(ClusterEvent::MessageInvalid) => {
                 "An invalid message was received from the PubSub server"
             }
+            EventType::Cluster(ClusterEvent::NodeIdRenewed) => "The node ID lease has been renewed",
             EventType::Dane(DaneEvent::AuthenticationSuccess) => "Successful DANE authentication",
             EventType::Dane(DaneEvent::AuthenticationFailure) => "Failed DANE authentication",
             EventType::Dane(DaneEvent::NoCertificatesFound) => {
@@ -4086,10 +4091,6 @@ impl EventType {
                 "The DNS record type is invalid"
             }
             EventType::MailAuth(MailAuthEvent::PolicyNotAligned) => "The policy is not aligned",
-            EventType::Manage(ManageEvent::Reserved1) => "A parameter is missing",
-            EventType::Manage(ManageEvent::Reserved2) => {
-                "A record with the same name already exists"
-            }
             EventType::Manage(ManageEvent::Reserved3) => "A management assertion has failed",
             EventType::Manage(ManageEvent::Reserved4) => "The managed resource was not found",
             EventType::Manage(ManageEvent::Reserved5) => {
@@ -4855,8 +4856,6 @@ impl EventType {
             EventType::Limit(LimitEvent::BlobQuota) => "Blob quota exceeded",
             EventType::Limit(LimitEvent::TenantQuota) => "Tenant quota exceeded",
             EventType::Limit(LimitEvent::TooManyRequests) => "Too many requests",
-            EventType::Manage(ManageEvent::Reserved1) => "Missing parameter",
-            EventType::Manage(ManageEvent::Reserved2) => "Already exists",
             EventType::Manage(ManageEvent::Reserved3) => "Assertion failed",
             EventType::Manage(ManageEvent::Reserved4) => "Not found",
             EventType::Manage(ManageEvent::Reserved5) => "Operation not supported",
@@ -5092,6 +5091,7 @@ impl EventType {
             EventType::Calendar(CalendarEvent::ItipMessageSent),
             EventType::Calendar(CalendarEvent::ItipMessageReceived),
             EventType::Calendar(CalendarEvent::ItipMessageError),
+            EventType::Cluster(ClusterEvent::Startup),
             EventType::Cluster(ClusterEvent::SubscriberStart),
             EventType::Cluster(ClusterEvent::SubscriberStop),
             EventType::Cluster(ClusterEvent::SubscriberError),
@@ -5102,6 +5102,7 @@ impl EventType {
             EventType::Cluster(ClusterEvent::MessageReceived),
             EventType::Cluster(ClusterEvent::MessageSkipped),
             EventType::Cluster(ClusterEvent::MessageInvalid),
+            EventType::Cluster(ClusterEvent::NodeIdRenewed),
             EventType::Dane(DaneEvent::AuthenticationSuccess),
             EventType::Dane(DaneEvent::AuthenticationFailure),
             EventType::Dane(DaneEvent::NoCertificatesFound),
@@ -5292,8 +5293,6 @@ impl EventType {
             EventType::MailAuth(MailAuthEvent::DnsRecordNotFound),
             EventType::MailAuth(MailAuthEvent::DnsInvalidRecordType),
             EventType::MailAuth(MailAuthEvent::PolicyNotAligned),
-            EventType::Manage(ManageEvent::Reserved1),
-            EventType::Manage(ManageEvent::Reserved2),
             EventType::Manage(ManageEvent::Reserved3),
             EventType::Manage(ManageEvent::Reserved4),
             EventType::Manage(ManageEvent::Reserved5),

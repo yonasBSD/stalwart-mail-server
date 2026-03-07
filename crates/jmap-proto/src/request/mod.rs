@@ -149,7 +149,6 @@ pub enum QueryChangesRequestMethod {
     Email(QueryChangesRequest<Email>),
     Mailbox(QueryChangesRequest<Mailbox>),
     EmailSubmission(QueryChangesRequest<EmailSubmission>),
-    Sieve(QueryChangesRequest<Sieve>),
     Principal(QueryChangesRequest<Principal>),
     Quota(QueryChangesRequest<Quota>),
     ContactCard(QueryChangesRequest<ContactCard>),

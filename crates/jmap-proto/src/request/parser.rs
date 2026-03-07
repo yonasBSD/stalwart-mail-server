@@ -490,15 +490,6 @@ impl<'de> Visitor<'de> for CallVisitor {
                     }
                 }
             }
-            (MethodFunction::QueryChanges, MethodObject::SieveScript) => match seq.next_element() {
-                Ok(Some(value)) => {
-                    RequestMethod::QueryChanges(QueryChangesRequestMethod::Sieve(value))
-                }
-                Err(err) => RequestMethod::invalid(err),
-                Ok(None) => {
-                    return Err(de::Error::invalid_length(1, &self));
-                }
-            },
             (MethodFunction::QueryChanges, MethodObject::Principal) => match seq.next_element() {
                 Ok(Some(value)) => {
                     RequestMethod::QueryChanges(QueryChangesRequestMethod::Principal(value))

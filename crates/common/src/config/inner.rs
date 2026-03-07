@@ -47,7 +47,7 @@ impl Data {
 
         // Build and test snowflake id generator
         let node_id = bp.node_id();
-        SnowflakeIdGenerator::set_node_id(node_id);
+        SnowflakeIdGenerator::set_node_id(node_id as u64);
         let id_generator = SnowflakeIdGenerator::new();
         if !id_generator.is_valid() {
             panic!("Invalid system time, panicking to avoid data corruption");

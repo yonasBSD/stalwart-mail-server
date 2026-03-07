@@ -231,7 +231,7 @@ impl Server {
                         .into_err()
                         .details("Account no longer exists")
                 })
-        } else if let Some((_, secret)) = &self.core.network.security.fallback_admin {
+        } else if let Some((_, secret)) = self.registry().recovery_admin() {
             Ok(secret.into())
         } else {
             Err(trc::AuthEvent::Error

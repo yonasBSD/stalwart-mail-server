@@ -117,28 +117,6 @@ impl QueryChanges for Server {
                 up_to_id = request.up_to_id;
                 results = self.email_submission_query(request.into()).await?;
             }
-            QueryChangesRequestMethod::Sieve(mut request) => {
-                // Query changes
-                set_account_id_if_missing(&mut request.account_id, access_token);
-                changes = self
-                    .changes(
-                        build_changes_request(&request),
-                        MethodObject::SieveScript,
-                        access_token,
-                    )
-                    .await?
-                    .response;
-                let calculate_total = request.calculate_total.unwrap_or(false);
-                has_changes = changes.has_changes();
-                response = build_query_changes_response(&request, &changes);
-
-                if !has_changes && !calculate_total {
-                    return Ok(response);
-                }
-
-                up_to_id = request.up_to_id;
-                results = self.sieve_script_query(request.into()).await?;
-            }
             QueryChangesRequestMethod::ContactCard(mut request) => {
                 // Query changes
                 set_account_id_if_missing(&mut request.account_id, access_token);

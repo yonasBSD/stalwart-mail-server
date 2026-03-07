@@ -12,7 +12,7 @@ pub mod registry;
 pub mod search;
 pub mod write;
 
-use ::registry::schema::enums::{CompressionAlgo, NodeRole};
+use ::registry::schema::enums::CompressionAlgo;
 pub use ahash;
 pub use blake3;
 pub use parking_lot;
@@ -23,7 +23,7 @@ use utils::snowflake::SnowflakeIdGenerator;
 pub use xxhash_rust;
 
 use crate::backend::{elastic::ElasticSearchStore, meili::MeiliSearchStore};
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashMap;
 use backend::{fs::FsStore, http::HttpStore, memory::StaticMemoryStore};
 use std::{borrow::Cow, path::PathBuf, sync::Arc};
 use write::ValueClass;
@@ -207,10 +207,11 @@ pub struct RegistryStore(pub(crate) Arc<RegistryStoreInner>);
 pub struct RegistryStoreInner {
     pub(crate) local_path: PathBuf,
     pub(crate) store: Store,
-    pub(crate) node_id: u64,
+    pub(crate) node_id: u16,
+    pub(crate) env_recovery_mode: bool,
     pub(crate) env_recovery_admin: Option<(String, String)>,
-    pub(crate) env_node_roles: AHashSet<NodeRole>,
-    pub(crate) env_node_roles_shard_id: u64,
+    pub(crate) env_cluster_role: Option<String>,
+    pub(crate) env_cluster_role_shard_id: u64,
     pub(crate) env_hostname: String,
     pub(crate) id_generator: SnowflakeIdGenerator,
 }

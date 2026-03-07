@@ -14,7 +14,7 @@ use registry::{
     schema::{
         enums::{BlockReason, PasswordHashAlgorithm},
         prelude::{Object, ObjectType},
-        structs::{self, AllowedIp, BlockedIp, Rate},
+        structs::{self, AllowedIp, BlockedIp, Rate, SystemSettings},
     },
     types::{datetime::UTCDateTime, ipmask::IpAddrOrMask},
 };
@@ -32,8 +32,6 @@ use utils::glob::{GlobPattern, MatchType};
 
 #[derive(Debug, Clone)]
 pub struct Security {
-    pub fallback_admin: Option<(String, String)>,
-
     pub allowed_ip_addresses: AHashSet<IpAddr>,
     pub allowed_ip_networks: Vec<IpAddrOrMask>,
     pub has_allowed_networks: bool,
@@ -75,7 +73,7 @@ impl Security {
             if ip.expires_at.as_ref().is_none_or(|ip| ip.timestamp() > now) {
                 if let Some(ip) = ip.address.try_to_ip() {
                     allowed_ip_addresses.insert(ip);
-                } else {
+                } else if !allowed_ip_networks.contains(&ip.address) {
                     allowed_ip_networks.push(ip.address);
                 }
             } else {
@@ -87,6 +85,16 @@ impl Security {
                         revision,
                     },
                 ));
+            }
+        }
+
+        // Add proxy protocol IPs as allowed
+        let system = bp.setting_infallible::<SystemSettings>().await;
+        for ip in system.proxy_trusted_networks {
+            if let Some(ip) = ip.try_to_ip() {
+                allowed_ip_addresses.insert(ip);
+            } else if !allowed_ip_networks.contains(&ip) {
+                allowed_ip_networks.push(ip);
             }
         }
 
@@ -123,12 +131,6 @@ impl Security {
         let security = bp.setting_infallible::<structs::Security>().await;
         let auth = bp.setting_infallible::<structs::Authentication>().await;
         Security {
-            fallback_admin: local.fallback_admin_user.as_ref().and_then(|user| {
-                local
-                    .fallback_admin_secret
-                    .as_ref()
-                    .map(|secret| (user.to_string(), secret.to_string()))
-            }),
             has_allowed_networks: !allowed_ip_networks.is_empty(),
             allowed_ip_addresses,
             allowed_ip_networks,

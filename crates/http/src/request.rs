@@ -395,11 +395,11 @@ impl ParseHttp for Server {
                         let path = req.uri().path();
                         let (grant_type, permissions) = if path.starts_with("/api/telemetry/traces")
                         {
-                            (GrantType::LiveTracing, Permission::TracingLive)
+                            (GrantType::LiveTracing, Permission::LiveTracing)
                         } else if path.starts_with("/api/telemetry/metrics") {
-                            (GrantType::LiveMetrics, Permission::MetricsLive)
+                            (GrantType::LiveMetrics, Permission::LiveMetrics)
                         } else if path.starts_with("/api/diagnose") {
-                            (GrantType::Diagnose, Permission::Troubleshoot)
+                            (GrantType::Diagnose, Permission::LiveDeliveryTest)
                         } else {
                             return Err(trc::ResourceEvent::NotFound.into_err());
                         };

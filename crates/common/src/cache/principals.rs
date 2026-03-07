@@ -116,7 +116,7 @@ impl Server {
                     }
                     SubAddressing::Custom(custom) => {
                         flags |= DOMAIN_FLAG_SUB_ADDRESSING;
-                        let mut bp = Bootstrap::new(self.registry().clone());
+                        let mut bp = Bootstrap::new_uninitialized(self.registry().clone());
                         let custom = bp.compile_expr(
                             ObjectId::new(ObjectType::Domain, domain_id.into()),
                             &custom.ctx_custom_rule(),

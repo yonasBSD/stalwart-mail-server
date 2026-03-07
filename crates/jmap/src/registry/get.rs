@@ -121,7 +121,7 @@ impl RegistryGet for Server {
             | ObjectType::Imap
             | ObjectType::InMemoryStore
             | ObjectType::Jmap
-            | ObjectType::LocalSettings
+            | ObjectType::SystemSettings
             | ObjectType::MemoryLookupKey
             | ObjectType::MemoryLookupKeyValue
             | ObjectType::Metrics
@@ -147,9 +147,7 @@ impl RegistryGet for Server {
             | ObjectType::MtaTlsStrategy
             | ObjectType::MtaVirtualQueue
             | ObjectType::NetworkListener
-            | ObjectType::Node
-            | ObjectType::NodeRole
-            | ObjectType::NodeShard
+            | ObjectType::ClusterRole
             | ObjectType::OidcProvider
             | ObjectType::RegistryBundle
             | ObjectType::ReportSettings

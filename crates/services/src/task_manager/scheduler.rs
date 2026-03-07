@@ -24,7 +24,7 @@ use registry::{
     types::EnumImpl,
 };
 use store::write::{BatchBuilder, now};
-use trc::{Collector, MetricType, TaskManagerEvent, TelemetryEvent};
+use trc::{ClusterEvent, Collector, MetricType, TaskManagerEvent, TelemetryEvent};
 
 #[derive(PartialEq, Eq)]
 struct Action {
@@ -40,6 +40,7 @@ enum Event {
     OtelMetrics,
     CalculateMetrics,
     TrainSpamClassifier,
+    RenewNodeIdLease,
     // SPDX-SnippetBegin
     // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
     // SPDX-License-Identifier: LicenseRef-SEL
@@ -87,6 +88,14 @@ pub fn spawn_task_scheduler(inner: Arc<Inner>) {
                 Instant::now() + server.core.email.blob_purge_frequency.time_to_next(),
                 Event::PurgeBlobStore,
             );
+
+            // Node ID lease renewal
+            if server.core.storage.coordinator.is_enabled() {
+                queue.schedule(
+                    Instant::now() + server.registry().refresh_node_id_interval(),
+                    Event::RenewNodeIdLease,
+                );
+            }
 
             // Spam classifier training
             if let Some(train_frequency) = server
@@ -217,6 +226,24 @@ pub fn spawn_task_scheduler(inner: Arc<Inner>) {
                                 status: TaskStatus::now(),
                             }));
                         }
+                    }
+                    Event::RenewNodeIdLease => {
+                        queue.schedule(
+                            Instant::now() + server.registry().refresh_node_id_interval(),
+                            Event::RenewNodeIdLease,
+                        );
+
+                        trc::event!(
+                            Cluster(ClusterEvent::NodeIdRenewed),
+                            Id = server.registry().node_id()
+                        );
+
+                        let server = server.clone();
+                        tokio::spawn(async move {
+                            if let Err(err) = server.registry().refresh_node_id_lease().await {
+                                trc::error!(err.details("Failed to renew node ID lease"));
+                            }
+                        });
                     }
                     Event::OtelMetrics => {
                         if let Some(otel) = &server.core.metrics.otel {
@@ -546,7 +573,7 @@ impl Event {
             Event::OtelMetrics => "otelMetrics",
             Event::CalculateMetrics => "calculateMetrics",
             Event::TrainSpamClassifier => "trainSpamClassifier",
-
+            Event::RenewNodeIdLease => "renewNodeIdLease",
             // SPDX-SnippetBegin
             // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <info@stalwartlabs.com>
             // SPDX-License-Identifier: LicenseRef-SEL

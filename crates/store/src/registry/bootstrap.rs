@@ -6,7 +6,10 @@
 
 use crate::{RegistryStore, Store, registry::RegistryObject};
 use registry::{
-    schema::prelude::{Object, Property},
+    schema::{
+        prelude::{Object, ObjectType, Property},
+        structs::ClusterRole,
+    },
     types::{
         ObjectImpl,
         error::{Error, ValidationError, Warning},
@@ -21,16 +24,50 @@ pub struct Bootstrap {
     pub errors: Vec<Error>,
     pub warnings: Vec<Warning>,
     pub has_fatal_errors: bool,
+    pub role: Option<ClusterRole>,
 }
 
 impl Bootstrap {
-    pub fn new(registry: RegistryStore) -> Self {
+    pub async fn new(registry: RegistryStore) -> Self {
+        let mut bp = Self::new_uninitialized(registry);
+
+        let Some(role_name) = bp.registry.cluster_role().map(|r| r.to_string()) else {
+            return bp;
+        };
+
+        for role in bp.list_infallible::<ClusterRole>().await {
+            if role.object.name == role_name {
+                if bp.registry.cluster_role_shard() >= role.object.shard_size {
+                    bp.build_error(
+                        ObjectType::ClusterRole.singleton(),
+                        format!(
+                            "Cluster role \"{role_name}\" has shard size of {}, which is smaller than the configured shard id {}.",
+                            role.object.shard_size,
+                            bp.registry.cluster_role_shard()
+                        ),
+                    );
+                }
+                bp.role = Some(role.object);
+                return bp;
+            }
+        }
+
+        bp.build_error(
+            ObjectType::ClusterRole.singleton(),
+            format!("Cluster role \"{role_name}\" not found in registry"),
+        );
+
+        bp
+    }
+
+    pub fn new_uninitialized(registry: RegistryStore) -> Self {
         Self {
             data_store: registry.0.store.clone(),
             registry,
             errors: Vec::new(),
             warnings: Vec::new(),
             has_fatal_errors: false,
+            role: None,
         }
     }
 
@@ -156,7 +193,7 @@ impl Bootstrap {
         }
     }
 
-    pub fn node_id(&self) -> u64 {
+    pub fn node_id(&self) -> u16 {
         self.registry.0.node_id
     }
 

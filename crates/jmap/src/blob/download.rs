@@ -102,7 +102,7 @@ impl BlobDownload for Server {
         access_token: &AccessToken,
     ) -> trc::Result<bool> {
         Ok(
-            (blob_id.class.is_superuser() && access_token.has_permission(Permission::BlobFetch))
+            (blob_id.class.is_superuser() && access_token.has_permission(Permission::FetchAnyBlob))
                 || (self
                     .store()
                     .blob_has_access(&blob_id.hash, &blob_id.class)

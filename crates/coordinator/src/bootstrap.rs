@@ -59,6 +59,10 @@ impl Coordinator {
             }
         }
     }
+
+    pub fn is_enabled(&self) -> bool {
+        !matches!(self, Coordinator::None)
+    }
 }
 
 #[cfg(feature = "redis")]

@@ -129,6 +129,7 @@ pub enum CalendarEvent {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u16)]
 pub enum ClusterEvent {
+    Startup = 278,
     SubscriberStart = 39,
     SubscriberStop = 40,
     SubscriberError = 41,
@@ -139,6 +140,7 @@ pub enum ClusterEvent {
     MessageReceived = 46,
     MessageSkipped = 47,
     MessageInvalid = 49,
+    NodeIdRenewed = 275,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -399,8 +401,6 @@ pub enum MailAuthEvent {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u16)]
 pub enum ManageEvent {
-    Reserved1 = 278,
-    Reserved2 = 275,
     Reserved3 = 276,
     Reserved4 = 279,
     Reserved5 = 280,

@@ -5,10 +5,7 @@
  */
 
 use crate::{RegistryStore, RegistryStoreInner, Store};
-use registry::{
-    schema::{enums::NodeRole, structs::DataStore},
-    types::EnumImpl,
-};
+use registry::schema::structs::DataStore;
 use std::path::PathBuf;
 use utils::snowflake::SnowflakeIdGenerator;
 
@@ -19,38 +16,26 @@ impl RegistryStoreInner {
             store: Store::None,
             id_generator: SnowflakeIdGenerator::new(),
             node_id: 0,
-            env_recovery_admin: std::env::var("STALWART_RECOVERY_ACCOUNT")
+            env_recovery_mode: std::env::var("STALWART_RECOVERY_MODE")
+                .ok()
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false),
+            env_recovery_admin: std::env::var("STALWART_ADMIN_ACCOUNT")
                 .ok()
                 .filter(|a| !a.is_empty())
                 .and_then(|a| {
-                    std::env::var("STALWART_RECOVERY_PASS")
+                    std::env::var("STALWART_ADMIN_PASS")
                         .ok()
                         .filter(|p| !p.is_empty())
                         .map(|p| (a, p))
                 }),
-            env_node_roles: std::env::var("STALWART_ROLES")
+            env_cluster_role: std::env::var("STALWART_ROLE")
                 .ok()
-                .map(|roles| {
-                    roles
-                        .split(',')
-                        .map(|r| r.trim())
-                        .filter(|r| !r.is_empty())
-                        .filter_map(|r| {
-                            let role = NodeRole::parse(r);
-                            if role.is_none() {
-                                eprintln!(
-                                    "Invalid node role specified in STALWART_NODE_ROLES: {r}"
-                                );
-                            }
-                            role
-                        })
-                        .collect()
-                })
-                .unwrap_or_default(),
-            env_node_roles_shard_id: std::env::var("STALWART_ROLES_SHARD")
+                .filter(|r| !r.is_empty()),
+            env_cluster_role_shard_id: std::env::var("STALWART_ROLE_SHARD")
                 .ok()
-                .and_then(|id| id.parse::<u64>().ok())
-                .unwrap_or(1),
+                .and_then(|id| id.parse::<u64>().ok().and_then(|v| v.checked_sub(1)))
+                .unwrap_or(0),
             env_hostname: std::env::var("STALWART_HOSTNAME")
                 .ok()
                 .filter(|h| !h.is_empty())

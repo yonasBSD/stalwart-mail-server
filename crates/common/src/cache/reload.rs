@@ -31,7 +31,7 @@ pub struct ReloadResult {
 
 impl Server {
     pub async fn reload_registry(&self, change: RegistryChange) -> trc::Result<ReloadResult> {
-        let mut bootstrap = Bootstrap::new(self.registry().clone());
+        let mut bootstrap = Bootstrap::new(self.registry().clone()).await;
         let object = match change {
             RegistryChange::Insert(id) => {
                 if matches!(id.object(), ObjectType::BlockedIp) {

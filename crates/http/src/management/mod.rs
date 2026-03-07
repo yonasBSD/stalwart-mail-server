@@ -60,7 +60,7 @@ impl ManagementApi for Server {
                     #[cfg(feature = "enterprise")]
                     Some("tracing") if self.core.is_enterprise_edition() => {
                         // Validate the access token
-                        access_token.enforce_permission(Permission::TracingLive)?;
+                        access_token.enforce_permission(Permission::LiveTracing)?;
 
                         // Issue a live telemetry token valid for 60 seconds
                         Ok(JsonResponse::new(json!({
@@ -71,7 +71,7 @@ impl ManagementApi for Server {
                     #[cfg(feature = "enterprise")]
                     Some("metrics") if self.core.is_enterprise_edition() => {
                         // Validate the access token
-                        access_token.enforce_permission(Permission::MetricsLive)?;
+                        access_token.enforce_permission(Permission::LiveMetrics)?;
 
                         // Issue a live telemetry token valid for 60 seconds
                         Ok(JsonResponse::new(json!({
@@ -82,7 +82,7 @@ impl ManagementApi for Server {
                     // SPDX-SnippetEnd
                     Some("delivery") => {
                         // Validate the access token
-                        access_token.enforce_permission(Permission::Troubleshoot)?;
+                        access_token.enforce_permission(Permission::LiveDeliveryTest)?;
 
                         // Issue a live telemetry token valid for 60 seconds
                         Ok(JsonResponse::new(json!({
@@ -108,7 +108,7 @@ impl ManagementApi for Server {
                 ) {
                     ("delivery", Some(target), &Method::GET) => {
                         // Validate the access token
-                        access_token.enforce_permission(Permission::Troubleshoot)?;
+                        access_token.enforce_permission(Permission::LiveDeliveryTest)?;
 
                         let timeout = Duration::from_secs(
                             params

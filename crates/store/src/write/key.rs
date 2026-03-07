@@ -354,6 +354,7 @@ impl ValueClass {
             ValueClass::ChangeId => serializer.write(account_id),
             ValueClass::Quota => serializer.write(account_id).write(u8::MAX),
             ValueClass::TenantQuota(tenant_id) => serializer.write(*tenant_id).write(u8::MAX - 1),
+            ValueClass::NodeId(node_id) => serializer.write(u32::MAX).write(*node_id),
             ValueClass::ShareNotification {
                 notification_id,
                 notify_account_id,
@@ -527,6 +528,7 @@ impl ValueClass {
             ValueClass::DocumentId | ValueClass::Quota | ValueClass::TenantQuota(_) => U32_LEN + 1,
             ValueClass::ChangeId => U32_LEN,
             ValueClass::ShareNotification { .. } => U32_LEN + U64_LEN + 1,
+            ValueClass::NodeId(_) => (U16_LEN * 3) + 1,
             ValueClass::SearchIndex(v) => match &v.typ {
                 SearchIndexType::Term { hash, .. } => U64_LEN + hash.len() + 2,
                 SearchIndexType::Index { field, .. } => 1 + field.data.len() + U64_LEN,
@@ -576,6 +578,7 @@ impl ValueClass {
                 }
                 RegistryClass::IdCounter { .. } => SUBSPACE_COUNTER,
             },
+            ValueClass::NodeId(_) => SUBSPACE_REGISTRY_PK,
             ValueClass::InMemory(lookup) => match lookup {
                 InMemoryClass::Key(_) => SUBSPACE_IN_MEMORY_VALUE,
                 InMemoryClass::Counter(_) => SUBSPACE_IN_MEMORY_COUNTER,

@@ -9,13 +9,10 @@ use crate::{
     expr::if_block::{BootstrapExprExt, IfBlock},
     network::security::Security,
 };
-use ahash::AHashMap;
-use registry::{
-    schema::{
-        prelude::ObjectType,
-        structs::{self, Asn, HttpForm, Rate, SystemSettings, TaskManager},
-    },
-    types::EnumImpl,
+use registry::schema::{
+    enums::{ClusterShardedTaskType, ClusterTaskType},
+    prelude::ObjectType,
+    structs::{self, Asn, ClusterTaskGroup, HttpForm, Rate, SystemSettings, TaskManager},
 };
 use std::{hash::Hasher, str::FromStr, time::Duration};
 use xxhash_rust::xxh3::Xxh3Builder;
@@ -152,7 +149,7 @@ impl Network {
         let system = bp.setting_infallible::<SystemSettings>().await;
 
         let mut network = Network {
-            node_id: bp.node_id(),
+            node_id: bp.node_id() as u64,
             server_name: system.default_hostname,
             security: Security::parse(bp).await,
             contact_form: ContactForm::parse(bp).await,
@@ -162,161 +159,146 @@ impl Network {
             task_manager: bp.setting_infallible::<TaskManager>().await,
         };
 
-        // Process ranges
-        let node_id = bp.node_id();
-        let ranges = bp.list_infallible::<NodeRole>().await;
-        if !ranges.is_empty() {
-            for network_role in network.roles.all_mut() {
-                network_role.set_uninit();
-            }
-
-            for range in ranges {
-                let is_success = match &range.object {
-                    NodeRole::CalculateMetrics(_)
-                    | NodeRole::PushMetrics(_)
-                    | NodeRole::SpamClassifierTraining(_)
-                    | NodeRole::TaskScheduler(_) => {
-                        let (roles, role_obj) = match &range.object {
-                            NodeRole::CalculateMetrics(role) => {
-                                (&mut network.roles.calculate_metrics, role)
-                            }
-                            NodeRole::PushMetrics(role) => (&mut network.roles.push_metrics, role),
-                            NodeRole::SpamClassifierTraining(role) => {
-                                (&mut network.roles.spam_training, role)
-                            }
-                            NodeRole::TaskScheduler(role) => {
-                                (&mut network.roles.task_scheduler, role)
-                            }
-                            _ => unreachable!(),
-                        };
-
-                        roles.set_role(role_obj.node_id == node_id)
+        if let Some(role) = &bp.role {
+            match &role.tasks {
+                ClusterTaskGroup::EnableAll => {}
+                ClusterTaskGroup::DisableAll => {
+                    for network_role in network.roles.all_mut() {
+                        network_role.set_role(false);
                     }
-                    NodeRole::StoreMaintenance(_)
-                    | NodeRole::AccountMaintenance(_)
-                    | NodeRole::PushNotifications(_)
-                    | NodeRole::SearchIndexing(_)
-                    | NodeRole::ImipProcessing(_)
-                    | NodeRole::CalendarAlerts(_)
-                    | NodeRole::MergeThreads(_)
-                    | NodeRole::DnsAndAcme(_)
-                    | NodeRole::OutboundMta(_)
-                    | NodeRole::TaskQueueProcessing(_) => {
-                        let (roles, role_obj) = match &range.object {
-                            NodeRole::StoreMaintenance(role) => {
-                                (&mut network.roles.store_maintenance, role)
-                            }
-                            NodeRole::AccountMaintenance(role) => {
-                                (&mut network.roles.account_maintenance, role)
-                            }
-                            NodeRole::PushNotifications(role) => {
-                                (&mut network.roles.push_notifications, role)
-                            }
-                            NodeRole::SearchIndexing(role) => {
-                                (&mut network.roles.search_indexing, role)
-                            }
-                            NodeRole::ImipProcessing(role) => {
-                                (&mut network.roles.imip_processing, role)
-                            }
-                            NodeRole::CalendarAlerts(role) => {
-                                (&mut network.roles.calendar_alerts, role)
-                            }
-                            NodeRole::MergeThreads(role) => {
-                                (&mut network.roles.merge_threads, role)
-                            }
-                            NodeRole::OutboundMta(role) => (&mut network.roles.outbound_mta, role),
-                            NodeRole::DnsAndAcme(role) => (&mut network.roles.dns_acme, role),
-                            NodeRole::TaskQueueProcessing(role) => {
-                                (&mut network.roles.task_manager, role)
-                            }
-                            _ => unreachable!(),
-                        };
-
-                        roles.set_role(
-                            role_obj
-                                .node_ranges
-                                .values()
-                                .any(|range| range.contains(node_id)),
-                        )
+                }
+                ClusterTaskGroup::EnableSome(group) => {
+                    for network_role in network.roles.all_mut() {
+                        network_role.set_role(false);
                     }
-                };
-
-                if !is_success {
-                    bp.build_warning(
-                        range.id,
-                        format!("Multiple role definitions found for node id {node_id}",),
-                    );
-                }
-            }
-
-            for network_role in network.roles.all_mut() {
-                network_role.finalize();
-            }
-
-            // Node shards
-            let mut shards = AHashMap::new();
-            for shard in bp.list_infallible::<NodeShard>().await {
-                shards
-                    .entry(shard.object.shard_type)
-                    .or_insert_with(Vec::new)
-                    .push(shard);
-            }
-            for (shard_type, shards) in shards {
-                if shards.len() == 1 {
-                    bp.build_warning(shards[0].id, format!(
-                        "Only one shard defined for shard type {:?}, ignoring shard configuration",
-                        shard_type.as_str()
-                    ));
-                    continue;
-                }
-
-                let roles = match shard_type {
-                    NodeShardType::StoreMaintenance => &mut network.roles.store_maintenance,
-                    NodeShardType::AccountMaintenance => &mut network.roles.account_maintenance,
-                    NodeShardType::DnsAndAcme => &mut network.roles.dns_acme,
-                    NodeShardType::PushNotifications => &mut network.roles.push_notifications,
-                    NodeShardType::SearchIndexing => &mut network.roles.search_indexing,
-                    NodeShardType::ImipProcessing => &mut network.roles.imip_processing,
-                    NodeShardType::CalendarAlerts => &mut network.roles.calendar_alerts,
-                    NodeShardType::MergeThreads => &mut network.roles.merge_threads,
-                };
-
-                if matches!(roles, ClusterRole::Disabled) {
-                    continue;
-                }
-
-                for (shard_num, shard) in shards.iter().enumerate() {
-                    if shard
-                        .object
-                        .node_ranges
-                        .values()
-                        .any(|range| range.contains(node_id))
-                    {
-                        if matches!(roles, ClusterRole::Enabled) {
-                            *roles = ClusterRole::Sharded {
-                                shard_id: shard_num as u32,
-                                total_shards: shards.len() as u32,
-                            };
-                        } else {
-                            bp.build_warning(
-                                shard.id,
-                                format!(
-                                    "Node id {node_id} matches multiple shards for shard type {:?}",
-                                    shard_type.as_str()
-                                ),
-                            );
+                    for task_type in group.task_types.iter() {
+                        match task_type {
+                            ClusterTaskType::StoreMaintenance => {
+                                network.roles.store_maintenance.set_role(true);
+                            }
+                            ClusterTaskType::AccountMaintenance => {
+                                network.roles.account_maintenance.set_role(true);
+                            }
+                            ClusterTaskType::DnsAndAcme => {
+                                network.roles.dns_acme.set_role(true);
+                            }
+                            ClusterTaskType::CalculateMetrics => {
+                                network.roles.calculate_metrics.set_role(true);
+                            }
+                            ClusterTaskType::PushMetrics => {
+                                network.roles.push_metrics.set_role(true);
+                            }
+                            ClusterTaskType::PushNotifications => {
+                                network.roles.push_notifications.set_role(true);
+                            }
+                            ClusterTaskType::SearchIndexing => {
+                                network.roles.search_indexing.set_role(true);
+                            }
+                            ClusterTaskType::SpamClassifierTraining => {
+                                network.roles.spam_training.set_role(true);
+                            }
+                            ClusterTaskType::ImipProcessing => {
+                                network.roles.imip_processing.set_role(true);
+                            }
+                            ClusterTaskType::CalendarAlerts => {
+                                network.roles.calendar_alerts.set_role(true);
+                            }
+                            ClusterTaskType::MergeThreads => {
+                                network.roles.merge_threads.set_role(true);
+                            }
+                            ClusterTaskType::OutboundMta => {
+                                network.roles.outbound_mta.set_role(true);
+                            }
+                            ClusterTaskType::TaskQueueProcessing => {
+                                network.roles.task_manager.set_role(true);
+                            }
+                            ClusterTaskType::TaskScheduler => {
+                                network.roles.task_scheduler.set_role(true);
+                            }
                         }
                     }
                 }
+                ClusterTaskGroup::DisableSome(group) => {
+                    for task_type in group.task_types.iter() {
+                        match task_type {
+                            ClusterTaskType::StoreMaintenance => {
+                                network.roles.store_maintenance.set_role(true);
+                            }
+                            ClusterTaskType::AccountMaintenance => {
+                                network.roles.account_maintenance.set_role(false);
+                            }
+                            ClusterTaskType::DnsAndAcme => {
+                                network.roles.dns_acme.set_role(false);
+                            }
+                            ClusterTaskType::CalculateMetrics => {
+                                network.roles.calculate_metrics.set_role(false);
+                            }
+                            ClusterTaskType::PushMetrics => {
+                                network.roles.push_metrics.set_role(false);
+                            }
+                            ClusterTaskType::PushNotifications => {
+                                network.roles.push_notifications.set_role(false);
+                            }
+                            ClusterTaskType::SearchIndexing => {
+                                network.roles.search_indexing.set_role(false);
+                            }
+                            ClusterTaskType::SpamClassifierTraining => {
+                                network.roles.spam_training.set_role(false);
+                            }
+                            ClusterTaskType::ImipProcessing => {
+                                network.roles.imip_processing.set_role(false);
+                            }
+                            ClusterTaskType::CalendarAlerts => {
+                                network.roles.calendar_alerts.set_role(false);
+                            }
+                            ClusterTaskType::MergeThreads => {
+                                network.roles.merge_threads.set_role(false);
+                            }
+                            ClusterTaskType::OutboundMta => {
+                                network.roles.outbound_mta.set_role(false);
+                            }
+                            ClusterTaskType::TaskQueueProcessing => {
+                                network.roles.task_manager.set_role(false);
+                            }
+                            ClusterTaskType::TaskScheduler => {
+                                network.roles.task_scheduler.set_role(false);
+                            }
+                        }
+                    }
+                }
+            }
 
-                if matches!(roles, ClusterRole::Enabled) {
-                    bp.build_warning(
-                        shards[0].id,
-                        format!(
-                            "Node id {node_id} does not match any shards for shard type {:?}, defaulting to all shards",
-                            shard_type.as_str()
-                        ),
-                    );
+            if role.shard_size > 1 {
+                for task_type in role.shard_task_types.iter() {
+                    let network_role = match task_type {
+                        ClusterShardedTaskType::StoreMaintenance => {
+                            &mut network.roles.store_maintenance
+                        }
+                        ClusterShardedTaskType::AccountMaintenance => {
+                            &mut network.roles.account_maintenance
+                        }
+                        ClusterShardedTaskType::DnsAndAcme => &mut network.roles.dns_acme,
+                        ClusterShardedTaskType::PushNotifications => {
+                            &mut network.roles.push_notifications
+                        }
+                        ClusterShardedTaskType::SearchIndexing => {
+                            &mut network.roles.search_indexing
+                        }
+                        ClusterShardedTaskType::ImipProcessing => {
+                            &mut network.roles.imip_processing
+                        }
+                        ClusterShardedTaskType::CalendarAlerts => {
+                            &mut network.roles.calendar_alerts
+                        }
+                        ClusterShardedTaskType::MergeThreads => &mut network.roles.merge_threads,
+                    };
+
+                    if network_role.is_enabled_or_sharded() {
+                        *network_role = ClusterRole::Sharded {
+                            shard_id: bp.registry.cluster_role_shard() as u32,
+                            total_shards: role.shard_size as u32,
+                        };
+                    }
                 }
             }
         }

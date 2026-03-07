@@ -56,7 +56,7 @@ impl ClientRegistrationHandler for Server {
             let (_, access_token) = self.authenticate_headers(req, &session).await?;
 
             // Validate permissions
-            access_token.enforce_permission(Permission::OauthClientRegistration)?;
+            access_token.enforce_permission(Permission::OAuthClientRegistration)?;
             access_token.tenant_id()
         } else {
             self.is_http_anonymous_request_allowed(&session.remote_ip)
@@ -164,7 +164,7 @@ impl ClientRegistrationHandler for Server {
             .await
             .caused_by(trc::location!())?
             .build()
-            .has_permission(Permission::OauthClientOverride)
+            .has_permission(Permission::OAuthClientOverride)
         {
             return Ok(None);
         }

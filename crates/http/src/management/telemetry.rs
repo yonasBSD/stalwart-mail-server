@@ -49,7 +49,7 @@ impl TelemetryApi for Server {
         let params = UrlParams::new(req.uri().query());
         if is_tracing {
             // Validate the access token
-            access_token.enforce_permission(Permission::TracingLive)?;
+            access_token.enforce_permission(Permission::LiveTracing)?;
 
             let mut key_filters = AHashMap::new();
             let mut filter = None;
@@ -175,7 +175,7 @@ impl TelemetryApi for Server {
                 ))))
         } else {
             // Validate the access token
-            access_token.enforce_permission(Permission::MetricsLive)?;
+            access_token.enforce_permission(Permission::LiveMetrics)?;
 
             let interval = Duration::from_secs(
                 params

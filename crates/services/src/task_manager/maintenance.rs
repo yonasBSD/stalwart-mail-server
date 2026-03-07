@@ -127,7 +127,7 @@ async fn store_maintenance(
             let todo =
                 "make sure spam samples with their indexes and undelete items are purged as well";
 
-            let mut started = Instant::now();
+            let started = Instant::now();
 
             server
                 .store()

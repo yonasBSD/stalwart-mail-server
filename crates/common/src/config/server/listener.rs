@@ -14,7 +14,7 @@ use crate::{
 };
 use registry::schema::{
     enums::{NetworkListenerProtocol, TlsCipherSuite, TlsVersion},
-    structs::{NetworkListener, SystemSettings},
+    structs::{ClusterListenerGroup, NetworkListener, SystemSettings},
 };
 use rustls::{
     ALL_VERSIONS, ServerConfig, SupportedCipherSuite,
@@ -35,17 +35,19 @@ impl Listeners {
         };
 
         // Parse servers
-        let node_id = bp.node_id();
         let system = bp.setting_infallible::<SystemSettings>().await;
 
         for listener in bp.list_infallible::<NetworkListener>().await {
-            if listener.object.enable_for_nodes.is_empty()
-                || listener
-                    .object
-                    .enable_for_nodes
-                    .values()
-                    .any(|n| n.contains(node_id))
-            {
+            if bp.role.as_ref().is_none_or(|r| match &r.listeners {
+                ClusterListenerGroup::EnableAll => true,
+                ClusterListenerGroup::DisableAll => false,
+                ClusterListenerGroup::EnableSome(group) => {
+                    group.listener_ids.iter().any(|id| *id == listener.id.id())
+                }
+                ClusterListenerGroup::DisableSome(group) => {
+                    !group.listener_ids.iter().any(|id| *id == listener.id.id())
+                }
+            }) {
                 servers.parse_server(bp, listener, &system);
             }
         }

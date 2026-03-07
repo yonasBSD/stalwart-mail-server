@@ -30,7 +30,7 @@ use jmap_proto::{
     object::registry::Registry,
     request::IntoValid,
 };
-use jmap_tools::{JsonPointer, JsonPointerItem, Key, Map};
+use jmap_tools::{JsonPointer, JsonPointerItem, Key};
 use registry::{
     jmap::{JmapValue, JsonPointerPatch, MaybeUnpatched, RegistryValue},
     schema::{
@@ -75,8 +75,6 @@ impl RegistrySet for Server {
         let todo = "list";
         //  locks for expensive tasks should be longer or renewed
         // Validate expressions
-        // Fallback admin password from env or files
-        // Individual permissions for each object + create/update/destroy
         let object_flags = object_type.flags();
         let is_singleton = (object_flags & OBJ_SINGLETON) != 0;
         let has_account_id = (object_flags & OBJ_FILTER_ACCOUNT) != 0;
@@ -132,7 +130,6 @@ impl RegistrySet for Server {
             account_id: request.account_id.document_id(),
             object_type,
             response,
-            object_flags,
             is_tenant_filtered,
             is_account_filtered,
             create,
@@ -162,7 +159,7 @@ impl RegistrySet for Server {
             | ObjectType::Imap
             | ObjectType::InMemoryStore
             | ObjectType::Jmap
-            | ObjectType::LocalSettings
+            | ObjectType::SystemSettings
             | ObjectType::Metrics
             | ObjectType::MetricsStore
             | ObjectType::MtaConnectionStrategy
@@ -219,9 +216,7 @@ impl RegistrySet for Server {
             | ObjectType::MtaMilter
             | ObjectType::MtaHook
             | ObjectType::NetworkListener
-            | ObjectType::Node
-            | ObjectType::NodeRole
-            | ObjectType::NodeShard
+            | ObjectType::ClusterRole
             | ObjectType::RegistryBundle
             | ObjectType::SieveSystemScript
             | ObjectType::SieveUserScript
@@ -561,44 +556,6 @@ impl RegistrySetResponse<'_> {
         match modification {
             Modification::Create(id) => self.response.not_created.append(id, error),
             Modification::Update { id, .. } => self.response.not_updated.append(id, error),
-        }
-    }
-
-    fn create(
-        &mut self,
-        client_id: String,
-        result: RegistryWriteResult,
-        mut object: Map<'static, Property, RegistryValue>,
-    ) {
-        match result {
-            RegistryWriteResult::Success(id) => {
-                object.insert(Key::Property(Property::Id), RegistryValue::Id(id));
-                self.response
-                    .created
-                    .insert(client_id, JmapValue::Object(object));
-            }
-            RegistryWriteResult::NotFound { .. } => {
-                self.response
-                    .not_created
-                    .append(client_id, SetError::not_found());
-            }
-            err => {
-                self.response
-                    .not_created
-                    .append(client_id, map_write_error(err));
-            }
-        }
-    }
-
-    fn update(&mut self, id: Id, result: RegistryWriteResult) {
-        match result {
-            RegistryWriteResult::Success(_) => self.response.updated.append(id, None),
-            RegistryWriteResult::NotFound { .. } => {
-                self.response.not_updated.append(id, SetError::not_found());
-            }
-            err => {
-                self.response.not_updated.append(id, map_write_error(err));
-            }
         }
     }
 

@@ -67,8 +67,7 @@ impl Server {
                 let username = UsernameParts::new(username);
 
                 // Try to authenticate as fallback admin if configured
-                if let Some((fallback_user, fallback_hash)) =
-                    &self.core.network.security.fallback_admin
+                if let Some((fallback_user, fallback_hash)) = &self.registry().recovery_admin()
                     && username.auth_as().address() == fallback_user
                 {
                     return if verify_secret_hash(fallback_hash, secret.as_bytes()).await? {

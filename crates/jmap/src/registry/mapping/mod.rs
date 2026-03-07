@@ -57,7 +57,6 @@ pub(crate) struct RegistrySetResponse<'x> {
     pub destroy: Vec<Id>,
     pub response: SetResponse<Registry>,
     pub object_type: ObjectType,
-    pub object_flags: u64,
     pub is_tenant_filtered: bool,
     pub is_account_filtered: bool,
 }
