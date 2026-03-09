@@ -4,7 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::registry::mapping::{RegistryGetResponse, RegistrySetResponse};
+use crate::{
+    api::query::QueryResponseBuilder,
+    registry::mapping::{RegistryGetResponse, RegistryQueryResponse, RegistrySetResponse},
+};
 use common::Server;
 use jmap_proto::error::set::{SetError, SetErrorType};
 use jmap_tools::{JsonPointer, JsonPointerItem, Key};
@@ -55,6 +58,17 @@ pub(crate) async fn task_set(
                 id,
                 SetError::new(SetErrorType::ValidationFailed)
                     .with_validation_errors(validation_errors),
+            );
+            continue 'outer;
+        }
+
+        if !set.access_token.has_permission(task.permission()) {
+            set.response.not_created.append(
+                id,
+                SetError::forbidden().with_description(format!(
+                    "Insufficient permissions to create task of type {}",
+                    task.object_type().as_str()
+                )),
             );
             continue 'outer;
         }
@@ -136,6 +150,17 @@ pub(crate) async fn task_set(
             continue;
         };
 
+        if !set.access_token.has_permission(task.permission()) {
+            set.response.not_updated.append(
+                id,
+                SetError::forbidden().with_description(format!(
+                    "Insufficient permissions to update task of type {}",
+                    task.object_type().as_str()
+                )),
+            );
+            continue 'outer;
+        }
+
         if !set.server.try_lock_task(task_id).await {
             set.response.not_updated.append(
                 id,
@@ -204,6 +229,17 @@ pub(crate) async fn task_set(
             set.response.not_destroyed.append(id, SetError::not_found());
             continue;
         };
+
+        if !set.access_token.has_permission(task.permission()) {
+            set.response.not_destroyed.append(
+                id,
+                SetError::forbidden().with_description(format!(
+                    "Insufficient permissions to destroy task of type {}",
+                    task.object_type().as_str()
+                )),
+            );
+            continue;
+        }
 
         if !set.server.try_lock_task(task_id).await {
             set.response.not_destroyed.append(
@@ -333,6 +369,12 @@ pub(crate) async fn task_get(
     }
 
     Ok(get)
+}
+
+pub(crate) async fn task_query(
+    mut query: RegistryQueryResponse<'_>,
+) -> trc::Result<QueryResponseBuilder> {
+    todo!()
 }
 
 async fn task_ids(server: &Server, max_results: usize) -> trc::Result<Vec<Id>> {

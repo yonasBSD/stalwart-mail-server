@@ -14,7 +14,7 @@ use hickory_proto::rr::dnssec::KeyPair;
 use rcgen::generate_simple_self_signed;
 use registry::schema::{
     enums,
-    structs::{self, Certificate, DnsServer},
+    structs::{self, Certificate, DnsServer, SystemSettings},
 };
 use ring::signature::{EcdsaKeyPair, Ed25519KeyPair};
 use rustls::{
@@ -268,6 +268,8 @@ pub(crate) async fn parse_certificates(
     certificates: &mut AHashMap<Box<str>, Arc<CertifiedKey>>,
     subject_names: &mut AHashSet<Box<str>>,
 ) {
+    let system = bp.setting_infallible::<SystemSettings>().await;
+
     // Parse certificates
     for cert_obj in bp.list_infallible::<Certificate>().await {
         let secret = match cert_obj.object.private_key.secret().await {
@@ -347,7 +349,11 @@ pub(crate) async fn parse_certificates(
                         }
 
                         // Add default certificate
-                        if cert_obj.object.default {
+                        if system
+                            .default_certificate_id
+                            .as_ref()
+                            .is_some_and(|id| *id == cert_obj.id.id())
+                        {
                             certificates.insert("*".into(), cert.clone());
                         }
                     }

@@ -211,7 +211,7 @@ pub struct RegistryStoreInner {
     pub(crate) env_recovery_mode: bool,
     pub(crate) env_recovery_admin: Option<(String, String)>,
     pub(crate) env_cluster_role: Option<String>,
-    pub(crate) env_cluster_role_shard_id: u64,
+    pub(crate) env_push_shard_id: u32,
     pub(crate) env_hostname: String,
     pub(crate) id_generator: SnowflakeIdGenerator,
 }

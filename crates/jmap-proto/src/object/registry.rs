@@ -8,10 +8,7 @@ use crate::{
     object::{AnyId, JmapObject, JmapObjectId},
     request::deserialize::DeserializeArguments,
 };
-use registry::{
-    jmap::RegistryValue,
-    schema::prelude::{ObjectType, Property},
-};
+use registry::{jmap::RegistryValue, schema::prelude::Property, types::EnumImpl};
 use std::borrow::Cow;
 use types::id::Id;
 
@@ -20,16 +17,25 @@ pub struct Registry;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RegistryFilter {
-    Type(ObjectType),
-    Text(String),
-    Id(Vec<Id>),
-    Property(Property),
+    Property {
+        property: Property,
+        operator: RegistryFilterOperator,
+        value: serde_json::Value,
+    },
     _T(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RegistryFilterOperator {
+    Equal,
+    GreaterThan,
+    GreaterThanOrEqual,
+    LessThan,
+    LessThanOrEqual,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RegistryComparator {
-    Id,
     Property(Property),
     _T(String),
 }
@@ -119,18 +125,31 @@ impl<'de> DeserializeArguments<'de> for RegistryFilter {
     where
         A: serde::de::MapAccess<'de>,
     {
-        hashify::fnc_map!(key.as_bytes(),
-            b"text" => {
-                *self = RegistryFilter::Text(map.next_value()?);
-            },
-            b"id" => {
-                *self = RegistryFilter::Id(map.next_value()?);
-            },
-            _ => {
-                *self = RegistryFilter::_T(key.to_string());
-                let _ = map.next_value::<serde::de::IgnoredAny>()?;
-            }
-        );
+        if let Some(property) = Property::parse(key) {
+            let value = map.next_value()?;
+            *self = RegistryFilter::Property {
+                property,
+                operator: RegistryFilterOperator::Equal,
+                value,
+            };
+            return Ok(());
+        } else if let Some((property, operator)) = key.rsplit_once("Is")
+            && let (Some(property), Some(operator)) = (
+                Property::parse(property),
+                RegistryFilterOperator::parse(operator),
+            )
+        {
+            let value = map.next_value()?;
+            *self = RegistryFilter::Property {
+                property,
+                operator,
+                value,
+            };
+            return Ok(());
+        }
+
+        *self = RegistryFilter::_T(key.to_string());
+        let _ = map.next_value::<serde::de::IgnoredAny>()?;
 
         Ok(())
     }
@@ -143,19 +162,28 @@ impl<'de> DeserializeArguments<'de> for RegistryComparator {
     {
         if key == "property" {
             let value = map.next_value::<Cow<str>>()?;
-            hashify::fnc_map!(value.as_bytes(),
-                b"id" => {
-                    *self = RegistryComparator::Id;
-                },
-                _ => {
-                    *self = RegistryComparator::_T(key.to_string());
-                }
-            );
+
+            if let Some(property) = Property::parse(value.as_ref()) {
+                *self = RegistryComparator::Property(property);
+            } else {
+                *self = RegistryComparator::_T(value.into_owned());
+            }
         } else {
             let _ = map.next_value::<serde::de::IgnoredAny>()?;
         }
 
         Ok(())
+    }
+}
+
+impl RegistryFilterOperator {
+    pub fn parse(value: &str) -> Option<Self> {
+        hashify::tiny_map!(value.as_bytes(),
+            b"GreaterThan" => RegistryFilterOperator::GreaterThan,
+            b"GreaterThanOrEqual" => RegistryFilterOperator::GreaterThanOrEqual,
+            b"LessThan" => RegistryFilterOperator::LessThan,
+            b"LessThanOrEqual" => RegistryFilterOperator::LessThanOrEqual,
+        )
     }
 }
 

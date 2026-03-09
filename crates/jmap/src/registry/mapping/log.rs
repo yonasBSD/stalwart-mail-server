@@ -4,7 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::registry::mapping::RegistryGetResponse;
+use crate::{
+    api::query::QueryResponseBuilder,
+    registry::mapping::{RegistryGetResponse, RegistryQueryResponse},
+};
 use chrono::DateTime;
 use registry::{
     jmap::IntoValue,
@@ -63,6 +66,12 @@ pub(crate) async fn log_get(
     }
 
     Ok(get)
+}
+
+pub(crate) async fn log_query(
+    mut query: RegistryQueryResponse<'_>,
+) -> trc::Result<QueryResponseBuilder> {
+    todo!()
 }
 
 fn line_numbers(

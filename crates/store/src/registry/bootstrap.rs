@@ -37,16 +37,6 @@ impl Bootstrap {
 
         for role in bp.list_infallible::<ClusterRole>().await {
             if role.object.name == role_name {
-                if bp.registry.cluster_role_shard() >= role.object.shard_size {
-                    bp.build_error(
-                        ObjectType::ClusterRole.singleton(),
-                        format!(
-                            "Cluster role \"{role_name}\" has shard size of {}, which is smaller than the configured shard id {}.",
-                            role.object.shard_size,
-                            bp.registry.cluster_role_shard()
-                        ),
-                    );
-                }
                 bp.role = Some(role.object);
                 return bp;
             }

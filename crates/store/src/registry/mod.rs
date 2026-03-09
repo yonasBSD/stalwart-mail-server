@@ -41,6 +41,7 @@ pub struct RegistryFilter {
     pub property: Property,
     pub op: RegistryFilterOp,
     pub value: RegistryFilterValue,
+    pub is_pk: bool,
 }
 
 #[derive(Debug, PartialEq, Clone, Copy, Eq, Hash)]
@@ -61,6 +62,7 @@ pub enum RegistryFilterOp {
 
 pub enum RegistryFilterValue {
     String(String),
+    Bytes(Vec<u8>),
     U64(u64),
     U16(u16),
     Boolean(bool),

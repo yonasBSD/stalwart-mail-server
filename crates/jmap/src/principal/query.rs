@@ -42,7 +42,7 @@ impl PrincipalQuery for Server {
         access_token: &AccessToken,
     ) -> trc::Result<QueryResponse> {
         if !self.core.groupware.allow_directory_query
-            && !access_token.has_permission(Permission::AccountQuery)
+            && !access_token.has_permission(Permission::SysAccountQuery)
         {
             return Err(trc::JmapEvent::Forbidden
                 .into_err()
@@ -88,7 +88,7 @@ impl PrincipalQuery for Server {
                                 .query::<RoaringBitmap>(
                                     RegistryQuery::new(ObjectType::Account)
                                         .with_tenant(access_token.tenant_id())
-                                        .text(text),
+                                        .text(Property::Text, text),
                                 )
                                 .await
                                 .caused_by(trc::location!())?,

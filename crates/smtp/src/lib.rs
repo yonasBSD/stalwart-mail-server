@@ -37,14 +37,7 @@ impl StartQueueManager for BootManager {
 
 impl SpawnQueueManager for IpcReceivers {
     fn spawn_queue_manager(&mut self, inner: Arc<Inner>) {
-        if inner
-            .build_server()
-            .core
-            .network
-            .roles
-            .outbound_mta
-            .is_enabled_or_sharded()
-        {
+        if inner.build_server().core.network.roles.outbound_mta {
             // Spawn queue manager
             self.queue_rx.take().unwrap().spawn(inner.clone());
 

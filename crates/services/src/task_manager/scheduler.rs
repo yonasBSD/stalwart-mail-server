@@ -168,7 +168,7 @@ pub fn spawn_task_scheduler(inner: Arc<Inner>) {
 
             let server = inner.build_server();
             let roles = &server.core.network.roles;
-            let mut batch = (roles.task_scheduler.is_enabled_or_sharded()).then(BatchBuilder::new);
+            let mut batch = (roles.task_scheduler).then(BatchBuilder::new);
 
             while let Some(event) = queue.pop() {
                 match event.event {
@@ -188,6 +188,7 @@ pub fn spawn_task_scheduler(inner: Arc<Inner>) {
                             batch.schedule_task(Task::StoreMaintenance(TaskStoreMaintenance {
                                 maintenance_type: TaskStoreMaintenanceType::PurgeAccounts,
                                 status: TaskStatus::now(),
+                                shard_index: None,
                             }));
                         }
                     }
@@ -206,6 +207,7 @@ pub fn spawn_task_scheduler(inner: Arc<Inner>) {
                             batch.schedule_task(Task::StoreMaintenance(TaskStoreMaintenance {
                                 maintenance_type: TaskStoreMaintenanceType::PurgeData,
                                 status: TaskStatus::now(),
+                                shard_index: None,
                             }));
                         }
                     }
@@ -224,6 +226,7 @@ pub fn spawn_task_scheduler(inner: Arc<Inner>) {
                             batch.schedule_task(Task::StoreMaintenance(TaskStoreMaintenance {
                                 maintenance_type: TaskStoreMaintenanceType::PurgeBlob,
                                 status: TaskStatus::now(),
+                                shard_index: None,
                             }));
                         }
                     }
@@ -249,7 +252,7 @@ pub fn spawn_task_scheduler(inner: Arc<Inner>) {
                         if let Some(otel) = &server.core.metrics.otel {
                             queue.schedule(Instant::now() + otel.interval, Event::OtelMetrics);
 
-                            if roles.push_metrics.is_enabled_or_sharded() {
+                            if roles.metrics_push {
                                 let otel = otel.clone();
 
                                 // SPDX-SnippetBegin
@@ -291,13 +294,7 @@ pub fn spawn_task_scheduler(inner: Arc<Inner>) {
                         let server = server.clone();
                         tokio::spawn(async move {
                             let elapsed = Instant::now();
-                            if server
-                                .core
-                                .network
-                                .roles
-                                .calculate_metrics
-                                .is_enabled_or_sharded()
-                            {
+                            if server.core.network.roles.metrics_calculate {
                                 // SPDX-SnippetBegin
                                 // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
                                 // SPDX-License-Identifier: LicenseRef-SEL

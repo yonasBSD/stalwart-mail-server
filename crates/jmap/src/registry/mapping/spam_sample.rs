@@ -5,8 +5,9 @@
  */
 
 use crate::{
+    api::query::QueryResponseBuilder,
     blob::download::BlobDownload,
-    registry::mapping::{RegistryGetResponse, RegistrySetResponse},
+    registry::mapping::{RegistryGetResponse, RegistryQueryResponse, RegistrySetResponse},
 };
 use jmap_proto::error::set::SetError;
 use jmap_tools::{JsonPointer, JsonPointerItem, Key};
@@ -297,4 +298,10 @@ pub(crate) async fn spam_sample_get(
     }
 
     Ok(get)
+}
+
+pub(crate) async fn spam_sample_query(
+    mut query: RegistryQueryResponse<'_>,
+) -> trc::Result<QueryResponseBuilder> {
+    todo!()
 }

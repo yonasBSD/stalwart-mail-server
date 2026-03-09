@@ -200,7 +200,7 @@ impl PropFindRequestHandler for Server {
                     } else if access_token.has_account_access(account_id)
                         || (self.core.groupware.allow_directory_query
                             && access_token.has_permission(Permission::DavPrincipalList))
-                        || access_token.has_permission(Permission::AccountQuery)
+                        || access_token.has_permission(Permission::SysAccountQuery)
                     {
                         self.prepare_principal_propfind_response(
                             access_token,
@@ -255,7 +255,7 @@ impl PropFindRequestHandler for Server {
                     )
                 } else if (self.core.groupware.allow_directory_query
                     && access_token.has_permission(Permission::DavPrincipalList))
-                    || access_token.has_permission(Permission::AccountQuery)
+                    || access_token.has_permission(Permission::SysAccountQuery)
                 {
                     // Return all principals
                     self.registry()

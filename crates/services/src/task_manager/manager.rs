@@ -46,15 +46,18 @@ use trc::TaskManagerEvent;
 use utils::snowflake::SnowflakeIdGenerator;
 
 pub fn spawn_task_manager(inner: Arc<Inner>) {
-    if !inner
-        .build_server()
-        .core
-        .network
-        .roles
-        .task_manager
-        .is_enabled_or_sharded()
     {
-        return;
+        let server = inner.build_server();
+        let roles = &server.core.network.roles;
+
+        if !roles.account_maintenance
+            && !roles.store_maintenance
+            && !roles.search_indexing
+            && !roles.spam_training
+            && !roles.task_manager
+        {
+            return;
+        }
     }
 
     trc::event!(TaskManager(TaskManagerEvent::ManagerStarted));
@@ -364,28 +367,21 @@ impl TaskQueueManager for Server {
         let roles = &self.core.network.roles;
         for (task_job, task_type_idx) in tasks {
             let enabled = match task_job.typ {
-                TaskType::IndexDocument | TaskType::UnindexDocument | TaskType::IndexTrace => roles
-                    .search_indexing
-                    .is_enabled_for_integer(task_job.id_hash()),
-                TaskType::CalendarAlarmEmail | TaskType::CalendarAlarmNotification => roles
-                    .calendar_alerts
-                    .is_enabled_for_integer(task_job.id_hash()),
-                TaskType::CalendarItipMessage => roles
-                    .imip_processing
-                    .is_enabled_for_integer(task_job.id_hash()),
-                TaskType::MergeThreads => roles
-                    .merge_threads
-                    .is_enabled_for_integer(task_job.id_hash()),
-                TaskType::AccountMaintenance | TaskType::DestroyAccount => roles
-                    .account_maintenance
-                    .is_enabled_for_integer(task_job.id_hash()),
-                TaskType::StoreMaintenance => roles
-                    .store_maintenance
-                    .is_enabled_for_integer(task_job.id_hash()),
-                TaskType::SpamFilterMaintenance => roles
-                    .spam_training
-                    .is_enabled_for_integer(task_job.id_hash()),
-                TaskType::DmarcReport | TaskType::TlsReport | TaskType::RestoreArchivedItem => true,
+                TaskType::IndexDocument | TaskType::UnindexDocument | TaskType::IndexTrace => {
+                    roles.search_indexing
+                }
+                TaskType::AccountMaintenance | TaskType::DestroyAccount => {
+                    roles.account_maintenance
+                }
+                TaskType::StoreMaintenance => roles.store_maintenance,
+                TaskType::SpamFilterMaintenance => roles.spam_training,
+                TaskType::CalendarAlarmEmail
+                | TaskType::CalendarAlarmNotification
+                | TaskType::CalendarItipMessage
+                | TaskType::MergeThreads
+                | TaskType::DmarcReport
+                | TaskType::TlsReport
+                | TaskType::RestoreArchivedItem => true,
             };
 
             if enabled {

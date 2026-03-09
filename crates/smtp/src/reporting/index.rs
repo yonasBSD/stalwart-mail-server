@@ -6,6 +6,7 @@
 
 use registry::{
     schema::{
+        enums::DmarcActionDisposition,
         prelude::{ObjectType, Property},
         structs::{
             ArfExternalReport, DmarcExternalReport, DmarcInternalReport, Task, TaskDmarcReport,
@@ -108,16 +109,22 @@ pub trait ExternalReportIndex: ObjectImpl {
 
     fn domains(&self) -> impl Iterator<Item = &str>;
 
+    fn success_fail_count(&self) -> (u64, u64);
+
     fn write_ops(&self, batch: &mut BatchBuilder, item_id: u64, is_set: bool) {
         let object_id = Self::OBJECT.to_id();
         let mut index_builder = IndexBuilder::default();
         for text in self.text() {
-            index_builder.text(Property::Domain, text);
+            index_builder.text(Property::Text, text);
         }
 
         if let Some(tenant_id) = self.tenant_id() {
             index_builder.search(Property::MemberTenantId, tenant_id.id());
         }
+
+        let (success_count, fail_count) = self.success_fail_count();
+        index_builder.search(Property::TotalSuccessfulSessions, success_count);
+        index_builder.search(Property::TotalFailedSessions, fail_count);
 
         index_builder.search(Property::ExpiresAt, self.expires_at());
         batch.registry_index(object_id, item_id, index_builder.keys.iter(), is_set);
@@ -228,6 +235,10 @@ impl ExternalReportIndex for ArfExternalReport {
     fn expires_at(&self) -> u64 {
         self.expires_at.timestamp() as u64
     }
+
+    fn success_fail_count(&self) -> (u64, u64) {
+        (self.report.incidents, 0)
+    }
 }
 
 impl ExternalReportIndex for DmarcExternalReport {
@@ -266,6 +277,21 @@ impl ExternalReportIndex for DmarcExternalReport {
     fn expires_at(&self) -> u64 {
         self.expires_at.timestamp() as u64
     }
+
+    fn success_fail_count(&self) -> (u64, u64) {
+        let mut success_count = 0;
+        let mut fail_count = 0;
+
+        for record in self.report.records.iter() {
+            if record.evaluated_disposition == DmarcActionDisposition::Pass {
+                success_count += std::cmp::min(record.count, 1);
+            } else {
+                fail_count += std::cmp::min(record.count, 1);
+            }
+        }
+
+        (success_count, fail_count)
+    }
 }
 
 impl ExternalReportIndex for TlsExternalReport {
@@ -303,6 +329,18 @@ impl ExternalReportIndex for TlsExternalReport {
 
     fn expires_at(&self) -> u64 {
         self.expires_at.timestamp() as u64
+    }
+
+    fn success_fail_count(&self) -> (u64, u64) {
+        let mut success_count = 0;
+        let mut fail_count = 0;
+
+        for policy in self.report.policies.iter() {
+            success_count += std::cmp::min(policy.total_successful_sessions, 1);
+            fail_count += std::cmp::min(policy.total_failed_sessions, 1);
+        }
+
+        (success_count, fail_count)
     }
 }
 

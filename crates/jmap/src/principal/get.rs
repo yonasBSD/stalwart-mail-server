@@ -32,7 +32,7 @@ impl PrincipalGet for Server {
         access_token: &AccessToken,
     ) -> trc::Result<GetResponse<Principal>> {
         if !self.core.groupware.allow_directory_query
-            && !access_token.has_permission(Permission::AccountQuery)
+            && !access_token.has_permission(Permission::SysAccountQuery)
         {
             return Err(trc::JmapEvent::Forbidden
                 .into_err()

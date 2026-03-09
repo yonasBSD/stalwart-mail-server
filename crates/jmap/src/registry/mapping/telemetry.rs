@@ -4,7 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::registry::mapping::RegistryGetResponse;
+use crate::{
+    api::query::QueryResponseBuilder,
+    registry::mapping::{RegistryGetResponse, RegistryQueryResponse},
+};
 use common::Server;
 use registry::{
     jmap::IntoValue,
@@ -98,6 +101,18 @@ pub(crate) async fn metric_get(
     }
 
     Ok(get)
+}
+
+pub(crate) async fn trace_query(
+    mut query: RegistryQueryResponse<'_>,
+) -> trc::Result<QueryResponseBuilder> {
+    todo!()
+}
+
+pub(crate) async fn metric_query(
+    mut query: RegistryQueryResponse<'_>,
+) -> trc::Result<QueryResponseBuilder> {
+    todo!()
 }
 
 async fn metric_ids(server: &Server, max_results: usize) -> trc::Result<Vec<Id>> {

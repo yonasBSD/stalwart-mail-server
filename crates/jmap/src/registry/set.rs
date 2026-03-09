@@ -12,6 +12,7 @@ use crate::registry::mapping::{
     action::action_set,
     archived_item::archived_item_set,
     dkim::validate_dkim_signature,
+    map_bootstrap_error,
     masked_email::validate_masked_email,
     principal::{
         schedule_account_destruction, validate_account, validate_role, validate_tenant_quota,
@@ -22,7 +23,10 @@ use crate::registry::mapping::{
     spam_sample::spam_sample_set,
     task::task_set,
 };
-use common::{Server, auth::AccessToken, cache::invalidate::CacheInvalidationBuilder};
+use common::{
+    Server, auth::AccessToken, cache::invalidate::CacheInvalidationBuilder,
+    expr::if_block::BootstrapExprExt,
+};
 use http_proto::HttpSessionData;
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
@@ -43,7 +47,10 @@ use registry::{
     },
     types::id::ObjectId,
 };
-use store::registry::write::{RegistryWrite, RegistryWriteResult};
+use store::registry::{
+    bootstrap::Bootstrap,
+    write::{RegistryWrite, RegistryWriteResult},
+};
 use trc::AddContext;
 use types::id::Id;
 use utils::map::vec_map::VecMap;
@@ -72,9 +79,6 @@ impl RegistrySet for Server {
         access_token: &AccessToken,
         session: &HttpSessionData,
     ) -> trc::Result<SetResponse<Registry>> {
-        let todo = "list";
-        //  locks for expensive tasks should be longer or renewed
-        // Validate expressions
         let object_flags = object_type.flags();
         let is_singleton = (object_flags & OBJ_SINGLETON) != 0;
         let has_account_id = (object_flags & OBJ_FILTER_ACCOUNT) != 0;
@@ -417,6 +421,24 @@ impl RegistrySet for Server {
                             continue 'outer;
                         }
                     };
+
+                    // Validate expressions
+                    if let Some(expressions) = new_object.inner.expression_ctxs() {
+                        let mut bp = Bootstrap::new_uninitialized(self.registry().clone());
+
+                        for expression in expressions {
+                            bp.compile_expr(ObjectId::new(object_type, 0u64.into()), &expression);
+                            if !bp.errors.is_empty() {
+                                set.failed(
+                                    modification,
+                                    map_bootstrap_error(bp.errors)
+                                        .with_object_id_opt(None)
+                                        .with_property(expression.property),
+                                );
+                                continue 'outer;
+                            }
+                        }
+                    }
 
                     // Save object
                     let result = match &modification {

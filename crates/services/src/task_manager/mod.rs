@@ -11,7 +11,6 @@ use registry::types::EnumImpl;
 use std::future::Future;
 use std::time::Instant;
 use store::write::Operation;
-use store::xxhash_rust::xxh3::xxh3_64;
 use store::{ahash::AHashMap, write::now};
 use tokio::sync::mpsc;
 use trc::TaskManagerEvent;
@@ -111,12 +110,5 @@ impl TaskResult {
             typ: TaskFailureType::Temporary,
             message: message.into(),
         }
-    }
-}
-
-impl TaskJob {
-    #[inline(always)]
-    pub fn id_hash(&self) -> u64 {
-        xxh3_64(&self.id.to_le_bytes())
     }
 }

@@ -284,7 +284,7 @@ impl BootManager {
                             .cluster_role()
                             .unwrap_or("[default]")
                             .to_string(),
-                        Details = bootstrap.registry.cluster_role_shard()
+                        Details = bootstrap.registry.cluster_push_shard()
                     );
                 }
 

@@ -207,7 +207,7 @@ impl Server {
                 }?;
 
                 // Enforce alias login restrictions
-                if is_alias_login && !token.has_permission(Permission::AuthenticateAlias) {
+                if is_alias_login && !token.has_permission(Permission::AuthenticateWithAlias) {
                     return Err(trc::AuthEvent::Failed
                         .into_err()
                         .ctx(trc::Key::AccountName, auth_as_address.to_string())

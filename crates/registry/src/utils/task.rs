@@ -4,7 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::schema::prelude::{Task, TaskStatus, TaskStatusPending, UTCDateTime};
+use crate::schema::{
+    enums::Permission,
+    prelude::{Action, Task, TaskStatus, TaskStatusPending, UTCDateTime},
+};
 
 impl Task {
     pub fn set_status(&mut self, status: TaskStatus) {
@@ -58,6 +61,41 @@ impl Task {
             TaskStatus::Pending(status) => status.due.timestamp() as u64,
             TaskStatus::Retry(status) => status.due.timestamp() as u64,
             TaskStatus::Failed(_) => u64::MAX,
+        }
+    }
+
+    pub fn permission(&self) -> Permission {
+        match self {
+            Task::IndexDocument(_) => Permission::TaskIndexDocument,
+            Task::UnindexDocument(_) => Permission::TaskUnindexDocument,
+            Task::IndexTrace(_) => Permission::TaskIndexTrace,
+            Task::CalendarAlarmEmail(_) => Permission::TaskCalendarAlarmEmail,
+            Task::CalendarAlarmNotification(_) => Permission::TaskCalendarAlarmNotification,
+            Task::CalendarItipMessage(_) => Permission::TaskCalendarItipMessage,
+            Task::MergeThreads(_) => Permission::TaskMergeThreads,
+            Task::DmarcReport(_) => Permission::TaskDmarcReport,
+            Task::TlsReport(_) => Permission::TaskTlsReport,
+            Task::RestoreArchivedItem(_) => Permission::TaskRestoreArchivedItem,
+            Task::DestroyAccount(_) => Permission::TaskDestroyAccount,
+            Task::AccountMaintenance(_) => Permission::TaskAccountMaintenance,
+            Task::StoreMaintenance(_) => Permission::TaskStoreMaintenance,
+            Task::SpamFilterMaintenance(_) => Permission::TaskSpamFilterMaintenance,
+        }
+    }
+}
+
+impl Action {
+    pub fn permission(&self) -> Permission {
+        match self {
+            Action::ReloadSettings => Permission::ActionReloadSettings,
+            Action::ReloadTlsCertificates => Permission::ActionReloadTlsCertificates,
+            Action::ReloadLookupStores => Permission::ActionReloadLookupStores,
+            Action::ReloadBlockedIps => Permission::ActionReloadBlockedIps,
+            Action::TroubleshootDmarc(_) => Permission::ActionTroubleshootDmarc,
+            Action::ClassifySpam(_) => Permission::ActionClassifySpam,
+            Action::InvalidateCaches => Permission::ActionInvalidateCaches,
+            Action::PauseMtaQueue => Permission::ActionPauseMtaQueue,
+            Action::ResumeMtaQueue => Permission::ActionResumeMtaQueue,
         }
     }
 }

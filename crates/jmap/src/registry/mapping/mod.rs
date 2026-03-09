@@ -6,14 +6,15 @@
 
 use common::{Server, auth::AccessToken};
 use jmap_proto::{
-    error::set::SetError,
-    method::{get::GetResponse, set::SetResponse},
+    error::set::{SetError, SetErrorType},
+    method::{get::GetResponse, query::QueryRequest, set::SetResponse},
     object::registry::Registry,
 };
 use jmap_tools::Map;
 use registry::{
     jmap::{JmapValue, RegistryValue},
     schema::prelude::{ObjectType, Property},
+    types::error::Error,
 };
 use std::net::IpAddr;
 use store::ahash::AHashSet;
@@ -61,6 +62,13 @@ pub(crate) struct RegistrySetResponse<'x> {
     pub is_account_filtered: bool,
 }
 
+pub(crate) struct RegistryQueryResponse<'x> {
+    pub server: &'x Server,
+    pub access_token: &'x AccessToken,
+    pub object_type: ObjectType,
+    pub request: QueryRequest<Registry>,
+}
+
 pub type ValidationResult = trc::Result<Result<ObjectResponse, SetError<Property>>>;
 
 pub struct ObjectResponse {
@@ -82,6 +90,23 @@ impl Default for ObjectResponse {
         Self {
             id: None,
             object: Map::with_capacity(1),
+        }
+    }
+}
+
+pub(crate) fn map_bootstrap_error(error: Vec<Error>) -> SetError<Property> {
+    match error.into_iter().next().unwrap() {
+        Error::Validation { object_id, errors } => SetError::new(SetErrorType::ValidationFailed)
+            .with_validation_errors(errors)
+            .with_object_id(object_id),
+        Error::Build { object_id, message } => SetError::new(SetErrorType::ValidationFailed)
+            .with_description(message)
+            .with_object_id(object_id),
+        Error::Internal { object_id, error } => SetError::new(SetErrorType::Forbidden)
+            .with_description(error.to_string())
+            .with_object_id_opt(object_id),
+        Error::NotFound { object_id } => {
+            SetError::new(SetErrorType::NotFound).with_object_id(object_id)
         }
     }
 }

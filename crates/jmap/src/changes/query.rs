@@ -10,7 +10,7 @@ use crate::{
     calendar_event_notification::query::CalendarEventNotificationQuery,
     contact::query::ContactCardQuery, email::query::EmailQuery, file::query::FileNodeQuery,
     mailbox::query::MailboxQuery, share_notification::query::ShareNotificationQuery,
-    sieve::query::SieveScriptQuery, submission::query::EmailSubmissionQuery,
+    submission::query::EmailSubmissionQuery,
 };
 use common::{Server, auth::AccessToken};
 use jmap_proto::{

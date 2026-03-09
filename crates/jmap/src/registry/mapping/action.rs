@@ -4,8 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::time::Instant;
-
+use crate::registry::mapping::{RegistrySetResponse, map_bootstrap_error};
 use common::{
     Server,
     config::mailstore::spamfilter::SpamFilterAction,
@@ -26,16 +25,15 @@ use registry::{
         prelude::{ObjectType, Property},
         structs::{Action, DmarcTroubleshoot, SpamClassify, SpamClassifyTag},
     },
-    types::{ObjectImpl, error::Error},
+    types::{EnumImpl, ObjectImpl},
 };
 use smtp_proto::{MAIL_BODY_7BIT, MAIL_BODY_8BITMIME, MAIL_BODY_BINARYMIME, MAIL_SMTPUTF8};
 use spam_filter::{
     SpamFilterInput,
     analysis::{init::SpamFilterInit, score::SpamFilterAnalyzeScore},
 };
+use std::time::Instant;
 use store::write::now;
-
-use crate::registry::mapping::RegistrySetResponse;
 
 pub(crate) async fn action_set(
     mut set: RegistrySetResponse<'_>,
@@ -68,6 +66,17 @@ pub(crate) async fn action_set(
                 id,
                 SetError::new(SetErrorType::ValidationFailed)
                     .with_validation_errors(validation_errors),
+            );
+            continue 'outer;
+        }
+
+        if !set.access_token.has_permission(action.permission()) {
+            set.response.not_created.append(
+                id,
+                SetError::forbidden().with_description(format!(
+                    "Insufficient permissions to perform action of type {}",
+                    action.object_type().as_str()
+                )),
             );
             continue 'outer;
         }
@@ -523,21 +532,4 @@ async fn dmarc_troubleshoot(
     request.elapsed = now.elapsed().into();
 
     Some(request)
-}
-
-fn map_bootstrap_error(error: Vec<Error>) -> SetError<Property> {
-    match error.into_iter().next().unwrap() {
-        Error::Validation { object_id, errors } => SetError::new(SetErrorType::ValidationFailed)
-            .with_validation_errors(errors)
-            .with_object_id(object_id),
-        Error::Build { object_id, message } => SetError::new(SetErrorType::ValidationFailed)
-            .with_description(message)
-            .with_object_id(object_id),
-        Error::Internal { object_id, error } => SetError::new(SetErrorType::Forbidden)
-            .with_description(error.to_string())
-            .with_object_id_opt(object_id),
-        Error::NotFound { object_id } => {
-            SetError::new(SetErrorType::NotFound).with_object_id(object_id)
-        }
-    }
 }

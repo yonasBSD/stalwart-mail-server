@@ -4,9 +4,15 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::registry::{
-    mapping::{RegistryGetResponse, RegistrySetResponse, principal::build_set_error},
-    set::map_write_error,
+use crate::{
+    api::query::QueryResponseBuilder,
+    registry::{
+        mapping::{
+            RegistryGetResponse, RegistryQueryResponse, RegistrySetResponse,
+            principal::build_set_error,
+        },
+        set::map_write_error,
+    },
 };
 use common::{
     auth::{
@@ -646,6 +652,12 @@ pub(crate) async fn account_get(
     }
 
     Ok(get)
+}
+
+pub(crate) async fn credential_query(
+    mut query: RegistryQueryResponse<'_>,
+) -> trc::Result<QueryResponseBuilder> {
+    todo!()
 }
 
 fn validate_credential_permissions(

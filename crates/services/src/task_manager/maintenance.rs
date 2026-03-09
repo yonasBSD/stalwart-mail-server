@@ -185,11 +185,34 @@ async fn store_maintenance(
             );
         }
         TaskStoreMaintenanceType::PurgeBlob => {
-            server
-                .store()
-                .purge_blobs(server.blob_store().clone())
-                .await
-                .caused_by(trc::location!())?;
+            if let Some(shard_index) = task.shard_index {
+                server
+                    .store()
+                    .purge_blobs(server.blob_store().clone(), shard_index as u8)
+                    .await
+                    .caused_by(trc::location!())?;
+            } else {
+                let mut batch = BatchBuilder::new();
+                let now = now() as i64;
+                for shard_index in 0..=u8::MAX {
+                    batch.schedule_task(Task::StoreMaintenance(TaskStoreMaintenance {
+                        maintenance_type: TaskStoreMaintenanceType::PurgeBlob,
+                        shard_index: Some(shard_index as u64),
+                        status: TaskStatus::at(now),
+                    }));
+
+                    if batch.is_large_batch() {
+                        server.core.storage.data.write(batch.build_all()).await?;
+                        server.notify_task_queue();
+                        batch = BatchBuilder::new();
+                    }
+                }
+
+                if !batch.is_empty() {
+                    server.core.storage.data.write(batch.build_all()).await?;
+                    server.notify_task_queue();
+                }
+            }
         }
         TaskStoreMaintenanceType::RemoveGreylist
         | TaskStoreMaintenanceType::RemoveLockQueueMessage

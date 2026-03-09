@@ -4,7 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::registry::mapping::{RegistryGetResponse, RegistrySetResponse};
+use crate::{
+    api::query::QueryResponseBuilder,
+    registry::mapping::{RegistryGetResponse, RegistryQueryResponse, RegistrySetResponse},
+};
 use jmap_proto::error::set::SetError;
 use jmap_tools::{Key, Value};
 use registry::{
@@ -230,11 +233,15 @@ pub(crate) async fn archived_item_get(
     let ids = if let Some(ids) = get.ids.take() {
         ids
     } else {
+        let query = if !get.is_account_filtered {
+            RegistryQuery::new(get.object_type).greater_than_or_equal(Property::AccountId, 0u64)
+        } else {
+            RegistryQuery::new(get.object_type).with_account(get.account_id)
+        };
+
         get.server
             .registry()
-            .query::<AHashSet<u64>>(
-                RegistryQuery::new(get.object_type).with_account(get.account_id),
-            )
+            .query::<AHashSet<u64>>(query)
             .await?
             .into_iter()
             .take(get.server.core.jmap.get_max_objects)
@@ -270,4 +277,10 @@ pub(crate) async fn archived_item_get(
     }
 
     Ok(get)
+}
+
+pub(crate) async fn archived_item_query(
+    mut query: RegistryQueryResponse<'_>,
+) -> trc::Result<QueryResponseBuilder> {
+    todo!()
 }

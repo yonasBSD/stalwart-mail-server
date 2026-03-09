@@ -165,8 +165,8 @@ impl RegistryStore {
         self.0.env_cluster_role.as_deref()
     }
 
-    pub fn cluster_role_shard(&self) -> u64 {
-        self.0.env_cluster_role_shard_id
+    pub fn cluster_push_shard(&self) -> u32 {
+        self.0.env_push_shard_id
     }
 
     pub fn local_hostname(&self) -> &str {

@@ -21,7 +21,7 @@ pub use crate::types::datetime::UTCDateTime;
 pub use crate::types::duration::Duration;
 pub use crate::types::error::*;
 pub use crate::types::float::Float;
-pub use crate::types::index::IndexBuilder;
+pub use crate::types::index::{IndexBuilder, IndexSchema, IndexSchemaType, IndexSchemaValueType};
 pub use crate::types::ipaddr::IpAddr;
 pub use crate::types::ipmask::IpAddrOrMask;
 pub use crate::types::list::List;

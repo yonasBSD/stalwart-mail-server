@@ -46,6 +46,31 @@ pub enum IndexValue<'x> {
     None,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct IndexSchema {
+    pub prop: Property,
+    pub typ: IndexSchemaType,
+    pub value: IndexSchemaValueType,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum IndexSchemaType {
+    Unique,
+    Search,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum IndexSchemaValueType {
+    Keyword,
+    Text,
+    Number,
+    Enum,
+    Boolean,
+    Id,
+}
+
 #[derive(Debug, Default)]
 
 pub struct IndexBuilder<'x> {
@@ -132,6 +157,12 @@ impl<'x> IndexBuilder<'x> {
 
     pub fn is_empty(&self) -> bool {
         self.keys.is_empty()
+    }
+}
+
+impl IndexSchema {
+    pub const fn new(prop: Property, typ: IndexSchemaType, value: IndexSchemaValueType) -> Self {
+        Self { prop, typ, value }
     }
 }
 

@@ -4,7 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::registry::mapping::{RegistryGetResponse, RegistrySetResponse};
+use crate::{
+    api::query::QueryResponseBuilder,
+    registry::mapping::{RegistryGetResponse, RegistryQueryResponse, RegistrySetResponse},
+};
 use common::{
     Server,
     config::smtp::queue::{ArchivedQueueExpiry, QueueName},
@@ -257,6 +260,12 @@ pub(crate) async fn queued_message_get(
     }
 
     Ok(get)
+}
+
+pub(crate) async fn queued_message_query(
+    mut query: RegistryQueryResponse<'_>,
+) -> trc::Result<QueryResponseBuilder> {
+    todo!()
 }
 
 async fn tenant_domains(server: &Server, tenant_id: u32) -> trc::Result<AHashSet<String>> {

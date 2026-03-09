@@ -81,7 +81,7 @@ impl Expression {
     }
 }
 
-pub(crate) trait BootstrapExprExt {
+pub trait BootstrapExprExt {
     fn compile_expr(&mut self, id: ObjectId, expr_ctx: &ExpressionContext<'_>) -> IfBlock;
     fn compile_default_expr(&mut self, id: ObjectId, expr_ctx: &ExpressionContext<'_>) -> IfBlock;
     fn try_compile_expr(

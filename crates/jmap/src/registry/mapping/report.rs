@@ -4,9 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::registry::mapping::{RegistryGetResponse, RegistrySetResponse};
-use common::Server;
-use jmap_proto::error::set::SetError;
+use crate::{
+    api::query::QueryResponseBuilder,
+    registry::{
+        mapping::{RegistryGetResponse, RegistryQueryResponse, RegistrySetResponse},
+        query::RegistryQueryFilters,
+    },
+};
+use jmap_proto::{error::set::SetError, types::state::State};
 use jmap_tools::{Key, Value};
 use registry::{
     jmap::IntoValue,
@@ -16,10 +21,10 @@ use registry::{
 use smtp::reporting::index::{ExternalReportIndex, InternalReportIndex};
 use std::str::FromStr;
 use store::{
-    IterateParams, U16_LEN, ValueKey,
+    U64_LEN, ValueKey,
     ahash::AHashSet,
-    registry::RegistryQuery,
-    write::{BatchBuilder, RegistryClass, ValueClass, key::DeserializeBigEndian},
+    registry::{RegistryFilter, RegistryFilterValue, RegistryQuery},
+    write::{BatchBuilder, RegistryClass, ValueClass, key::KeySerializer},
 };
 use trc::AddContext;
 use types::id::Id;
@@ -184,7 +189,20 @@ pub(crate) async fn report_get(
         .map(Id::from)
         .collect()
     } else {
-        internal_report_ids(get.server, object_id, get.server.core.jmap.get_max_objects).await?
+        get.server
+            .registry()
+            .query::<AHashSet<u64>>(RegistryQuery::new(get.object_type).filter(
+                RegistryFilter::greater_than(
+                    Property::Domain,
+                    RegistryFilterValue::Bytes(vec![]),
+                    true,
+                ),
+            ))
+            .await?
+            .into_iter()
+            .take(get.server.core.jmap.get_max_objects)
+            .map(Id::from)
+            .collect()
     };
 
     let tenant_id = get.access_token.tenant_id().map(Id::from);
@@ -210,46 +228,189 @@ pub(crate) async fn report_get(
     Ok(get)
 }
 
-async fn internal_report_ids(
-    server: &Server,
-    object_id: u16,
-    max_results: usize,
-) -> trc::Result<Vec<Id>> {
-    let mut events = Vec::with_capacity(8);
+pub(crate) async fn report_query(
+    mut req: RegistryQueryResponse<'_>,
+) -> trc::Result<QueryResponseBuilder> {
+    let mut query = store::registry::RegistryQuery::new(req.object_type)
+        .with_tenant(req.access_token.tenant_id());
+    let is_internal = matches!(
+        req.object_type,
+        ObjectType::DmarcInternalReport | ObjectType::TlsInternalReport
+    );
 
-    let from_key = ValueKey::from(ValueClass::Registry(RegistryClass::PrimaryKey {
-        object_id: object_id.into(),
-        index_id: Property::Domain.to_id(),
-        key: vec![],
-    }));
-    let to_key = ValueKey::from(ValueClass::Registry(RegistryClass::PrimaryKey {
-        object_id: object_id.into(),
-        index_id: Property::Domain.to_id(),
-        key: vec![
-            u8::MAX,
-            u8::MAX,
-            u8::MAX,
-            u8::MAX,
-            u8::MAX,
-            u8::MAX,
-            u8::MAX,
-            u8::MAX,
-        ],
-    }));
+    req.request
+        .extract_filters(|property, op, value| match property {
+            Property::Domain => {
+                if let serde_json::Value::String(value) = value {
+                    match req.object_type {
+                        ObjectType::DmarcInternalReport => {
+                            query.filters.push(RegistryFilter::greater_than_or_equal(
+                                property,
+                                RegistryFilterValue::Bytes(
+                                    KeySerializer::new(value.len() + U64_LEN)
+                                        .write(value.as_str())
+                                        .write(0u64)
+                                        .finalize(),
+                                ),
+                                true,
+                            ));
+                            query.filters.push(RegistryFilter::less_than_or_equal(
+                                property,
+                                RegistryFilterValue::Bytes(
+                                    KeySerializer::new(value.len() + U64_LEN)
+                                        .write(value.as_str())
+                                        .write(u64::MAX)
+                                        .finalize(),
+                                ),
+                                true,
+                            ));
 
-    server
-        .store()
-        .iterate(
-            IterateParams::new(from_key, to_key).ascending(),
-            |key, value| {
-                if !value.is_empty() {
-                    events.push(key.deserialize_be_u64(U16_LEN)?.into());
+                            true
+                        }
+                        ObjectType::TlsInternalReport => {
+                            query
+                                .filters
+                                .push(RegistryFilter::equal(property, value, true));
+                            true
+                        }
+                        _ => false,
+                    }
+                } else {
+                    false
                 }
+            }
+            Property::Text if !is_internal => {
+                if let serde_json::Value::String(value) = value {
+                    query.filters.push(RegistryFilter::text(property, value));
+                    true
+                } else {
+                    false
+                }
+            }
+            Property::MemberTenantId if !is_internal => {
+                if req.access_token.tenant_id().is_none()
+                    && let Some(id) = value.as_str().and_then(|s| Id::from_str(s).ok())
+                {
+                    query
+                        .filters
+                        .push(RegistryFilter::equal(property, id.id(), false));
+                    true
+                } else {
+                    false
+                }
+            }
+            Property::TotalFailedSessions | Property::TotalSuccessfulSessions if !is_internal => {
+                if let Some(value) = value.as_u64() {
+                    query.filters.push(store::registry::RegistryFilter {
+                        property,
+                        op,
+                        value: value.into(),
+                        is_pk: false,
+                    });
+                    true
+                } else {
+                    false
+                }
+            }
+            Property::ExpiresAt if !is_internal => {
+                if let Some(value) = value
+                    .as_str()
+                    .and_then(|value| UTCDateTime::from_str(value).ok())
+                {
+                    query.filters.push(store::registry::RegistryFilter {
+                        property,
+                        op,
+                        value: (value.timestamp() as u64).into(),
+                        is_pk: false,
+                    });
+                    true
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        })?;
 
-                Ok(events.len() < max_results)
-            },
-        )
-        .await
-        .caused_by(trc::location!())
-        .map(|_| events)
+    let (comparator, is_ascending) = req.request.extract_comparator()?;
+
+    if !query.has_filters() {
+        if is_internal {
+            query.filters.push(RegistryFilter::greater_than(
+                Property::Domain,
+                RegistryFilterValue::Bytes(vec![]),
+                true,
+            ));
+        } else {
+            query.filters.push(RegistryFilter::greater_than(
+                Property::ExpiresAt,
+                0u64,
+                false,
+            ));
+        }
+    }
+
+    let matches = req.server.registry().query::<AHashSet<u64>>(query).await?;
+    let results = match comparator {
+        Property::Id => {
+            let mut results = matches.into_iter().collect::<Vec<_>>();
+            if is_ascending {
+                results.sort_unstable();
+            } else {
+                results.sort_unstable_by(|a, b| b.cmp(a));
+            }
+            results
+        }
+        Property::Domain if is_internal => {
+            if !matches.is_empty() {
+                req.server
+                    .registry()
+                    .sort_by_pk(
+                        req.object_type,
+                        Property::Domain,
+                        Some(matches),
+                        is_ascending,
+                    )
+                    .await?
+            } else {
+                vec![]
+            }
+        }
+        Property::ExpiresAt if !is_internal => {
+            if !matches.is_empty() {
+                req.server
+                    .registry()
+                    .sort_by_index(
+                        req.object_type,
+                        Property::ExpiresAt,
+                        Some(matches),
+                        is_ascending,
+                    )
+                    .await?
+            } else {
+                vec![]
+            }
+        }
+        property => {
+            return Err(trc::JmapEvent::UnsupportedSort.into_err().details(format!(
+                "Property {} is not supported for sorting",
+                property
+            )));
+        }
+    };
+
+    // Build response
+    let mut response = QueryResponseBuilder::new(
+        results.len(),
+        req.server.core.jmap.query_max_results,
+        State::Initial,
+        &req.request,
+    );
+
+    for id in results {
+        if !response.add_id(id.into()) {
+            break;
+        }
+    }
+
+    Ok(response)
 }

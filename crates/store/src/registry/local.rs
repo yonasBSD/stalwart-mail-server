@@ -32,9 +32,9 @@ impl RegistryStoreInner {
             env_cluster_role: std::env::var("STALWART_ROLE")
                 .ok()
                 .filter(|r| !r.is_empty()),
-            env_cluster_role_shard_id: std::env::var("STALWART_ROLE_SHARD")
+            env_push_shard_id: std::env::var("STALWART_PUSH_SHARD")
                 .ok()
-                .and_then(|id| id.parse::<u64>().ok().and_then(|v| v.checked_sub(1)))
+                .and_then(|id| id.parse::<u32>().ok().and_then(|v| v.checked_sub(1)))
                 .unwrap_or(0),
             env_hostname: std::env::var("STALWART_HOSTNAME")
                 .ok()

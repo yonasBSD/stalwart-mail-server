@@ -36,7 +36,7 @@ pub async fn exec(ctx: PluginContext<'_>) -> trc::Result<Variable> {
             if ctx.access_token.is_none_or(|token| {
                 use registry::schema::enums::Permission;
 
-                if token.has_permission(Permission::AiModelInteract) {
+                if token.has_permission(Permission::InteractAi) {
                     true
                 } else {
                     use registry::types::EnumImpl;
@@ -44,7 +44,7 @@ pub async fn exec(ctx: PluginContext<'_>) -> trc::Result<Variable> {
                     trc::event!(
                         Security(SecurityEvent::Unauthorized),
                         AccountId = token.account_id(),
-                        Details = Permission::AiModelInteract.as_str(),
+                        Details = Permission::InteractAi.as_str(),
                         SpanId = ctx.session_id,
                     );
                     false

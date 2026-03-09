@@ -40,6 +40,7 @@ pub struct JmapConfig {
     pub push_timeout: Duration,
     pub push_verify_timeout: Duration,
     pub push_throttle: Duration,
+    pub push_total_shards: u32,
 
     pub web_socket_throttle: Duration,
     pub web_socket_timeout: Duration,
@@ -79,6 +80,7 @@ impl JmapConfig {
             push_timeout: jmap.push_request_timeout.into_inner(),
             push_verify_timeout: jmap.push_verify_timeout.into_inner(),
             push_throttle: jmap.push_throttle.into_inner(),
+            push_total_shards: jmap.push_shards_total as u32,
             capabilities: BaseCapabilities::default(),
         };
 

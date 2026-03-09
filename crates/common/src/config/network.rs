@@ -10,12 +10,11 @@ use crate::{
     network::security::Security,
 };
 use registry::schema::{
-    enums::{ClusterShardedTaskType, ClusterTaskType},
+    enums::ClusterTaskType,
     prelude::ObjectType,
     structs::{self, Asn, ClusterTaskGroup, HttpForm, Rate, SystemSettings, TaskManager},
 };
-use std::{hash::Hasher, str::FromStr, time::Duration};
-use xxhash_rust::xxh3::Xxh3Builder;
+use std::{str::FromStr, time::Duration};
 
 #[derive(Clone)]
 pub struct Network {
@@ -51,33 +50,18 @@ pub struct ContactForm {
     pub field_honey_pot: Option<String>,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct ClusterRoles {
-    pub store_maintenance: ClusterRole,
-    pub account_maintenance: ClusterRole,
-    pub push_notifications: ClusterRole,
-    pub search_indexing: ClusterRole,
-    pub spam_training: ClusterRole,
-    pub imip_processing: ClusterRole,
-    pub merge_threads: ClusterRole,
-    pub calendar_alerts: ClusterRole,
-    pub dns_acme: ClusterRole,
-    pub calculate_metrics: ClusterRole,
-    pub push_metrics: ClusterRole,
-    pub outbound_mta: ClusterRole,
-    pub task_scheduler: ClusterRole,
-    pub task_manager: ClusterRole,
-}
-
-#[derive(Clone, Copy, Default)]
-pub enum ClusterRole {
-    #[default]
-    Enabled,
-    Disabled,
-    Sharded {
-        shard_id: u32,
-        total_shards: u32,
-    },
+    pub store_maintenance: bool,
+    pub account_maintenance: bool,
+    pub push_notifications: bool,
+    pub search_indexing: bool,
+    pub spam_training: bool,
+    pub metrics_calculate: bool,
+    pub metrics_push: bool,
+    pub outbound_mta: bool,
+    pub task_scheduler: bool,
+    pub task_manager: bool,
 }
 
 #[derive(Clone, Default)]
@@ -164,140 +148,20 @@ impl Network {
                 ClusterTaskGroup::EnableAll => {}
                 ClusterTaskGroup::DisableAll => {
                     for network_role in network.roles.all_mut() {
-                        network_role.set_role(false);
+                        *network_role = false;
                     }
                 }
                 ClusterTaskGroup::EnableSome(group) => {
                     for network_role in network.roles.all_mut() {
-                        network_role.set_role(false);
+                        *network_role = false;
                     }
                     for task_type in group.task_types.iter() {
-                        match task_type {
-                            ClusterTaskType::StoreMaintenance => {
-                                network.roles.store_maintenance.set_role(true);
-                            }
-                            ClusterTaskType::AccountMaintenance => {
-                                network.roles.account_maintenance.set_role(true);
-                            }
-                            ClusterTaskType::DnsAndAcme => {
-                                network.roles.dns_acme.set_role(true);
-                            }
-                            ClusterTaskType::CalculateMetrics => {
-                                network.roles.calculate_metrics.set_role(true);
-                            }
-                            ClusterTaskType::PushMetrics => {
-                                network.roles.push_metrics.set_role(true);
-                            }
-                            ClusterTaskType::PushNotifications => {
-                                network.roles.push_notifications.set_role(true);
-                            }
-                            ClusterTaskType::SearchIndexing => {
-                                network.roles.search_indexing.set_role(true);
-                            }
-                            ClusterTaskType::SpamClassifierTraining => {
-                                network.roles.spam_training.set_role(true);
-                            }
-                            ClusterTaskType::ImipProcessing => {
-                                network.roles.imip_processing.set_role(true);
-                            }
-                            ClusterTaskType::CalendarAlerts => {
-                                network.roles.calendar_alerts.set_role(true);
-                            }
-                            ClusterTaskType::MergeThreads => {
-                                network.roles.merge_threads.set_role(true);
-                            }
-                            ClusterTaskType::OutboundMta => {
-                                network.roles.outbound_mta.set_role(true);
-                            }
-                            ClusterTaskType::TaskQueueProcessing => {
-                                network.roles.task_manager.set_role(true);
-                            }
-                            ClusterTaskType::TaskScheduler => {
-                                network.roles.task_scheduler.set_role(true);
-                            }
-                        }
+                        network.roles.set_role(*task_type, true);
                     }
                 }
                 ClusterTaskGroup::DisableSome(group) => {
                     for task_type in group.task_types.iter() {
-                        match task_type {
-                            ClusterTaskType::StoreMaintenance => {
-                                network.roles.store_maintenance.set_role(true);
-                            }
-                            ClusterTaskType::AccountMaintenance => {
-                                network.roles.account_maintenance.set_role(false);
-                            }
-                            ClusterTaskType::DnsAndAcme => {
-                                network.roles.dns_acme.set_role(false);
-                            }
-                            ClusterTaskType::CalculateMetrics => {
-                                network.roles.calculate_metrics.set_role(false);
-                            }
-                            ClusterTaskType::PushMetrics => {
-                                network.roles.push_metrics.set_role(false);
-                            }
-                            ClusterTaskType::PushNotifications => {
-                                network.roles.push_notifications.set_role(false);
-                            }
-                            ClusterTaskType::SearchIndexing => {
-                                network.roles.search_indexing.set_role(false);
-                            }
-                            ClusterTaskType::SpamClassifierTraining => {
-                                network.roles.spam_training.set_role(false);
-                            }
-                            ClusterTaskType::ImipProcessing => {
-                                network.roles.imip_processing.set_role(false);
-                            }
-                            ClusterTaskType::CalendarAlerts => {
-                                network.roles.calendar_alerts.set_role(false);
-                            }
-                            ClusterTaskType::MergeThreads => {
-                                network.roles.merge_threads.set_role(false);
-                            }
-                            ClusterTaskType::OutboundMta => {
-                                network.roles.outbound_mta.set_role(false);
-                            }
-                            ClusterTaskType::TaskQueueProcessing => {
-                                network.roles.task_manager.set_role(false);
-                            }
-                            ClusterTaskType::TaskScheduler => {
-                                network.roles.task_scheduler.set_role(false);
-                            }
-                        }
-                    }
-                }
-            }
-
-            if role.shard_size > 1 {
-                for task_type in role.shard_task_types.iter() {
-                    let network_role = match task_type {
-                        ClusterShardedTaskType::StoreMaintenance => {
-                            &mut network.roles.store_maintenance
-                        }
-                        ClusterShardedTaskType::AccountMaintenance => {
-                            &mut network.roles.account_maintenance
-                        }
-                        ClusterShardedTaskType::DnsAndAcme => &mut network.roles.dns_acme,
-                        ClusterShardedTaskType::PushNotifications => {
-                            &mut network.roles.push_notifications
-                        }
-                        ClusterShardedTaskType::SearchIndexing => {
-                            &mut network.roles.search_indexing
-                        }
-                        ClusterShardedTaskType::ImipProcessing => {
-                            &mut network.roles.imip_processing
-                        }
-                        ClusterShardedTaskType::CalendarAlerts => {
-                            &mut network.roles.calendar_alerts
-                        }
-                        ClusterShardedTaskType::MergeThreads => &mut network.roles.merge_threads,
-                    };
-
-                    if network_role.is_enabled_or_sharded() {
-                        *network_role = ClusterRole::Sharded {
-                            shard_id: bp.registry.cluster_role_shard() as u32,
-                            total_shards: role.shard_size as u32,
-                        };
+                        network.roles.set_role(*task_type, false);
                     }
                 }
             }
@@ -408,104 +272,52 @@ impl AsnGeoLookupConfig {
     }
 }
 
-impl ClusterRole {
-    pub fn is_enabled_or_sharded(&self) -> bool {
-        debug_assert!(!self.is_uninit() && !self.is_seen_role());
-        matches!(self, ClusterRole::Enabled | ClusterRole::Sharded { .. })
-    }
-
-    pub fn is_enabled_for_integer(&self, value: u64) -> bool {
-        debug_assert!(!self.is_uninit() && !self.is_seen_role());
-        match self {
-            ClusterRole::Enabled => true,
-            ClusterRole::Disabled => false,
-            ClusterRole::Sharded {
-                shard_id,
-                total_shards,
-            } => (value as u32 % total_shards) == *shard_id,
-        }
-    }
-
-    pub fn is_enabled_for_hash(&self, item: &impl std::hash::Hash) -> bool {
-        debug_assert!(!self.is_uninit() && !self.is_seen_role());
-        match self {
-            ClusterRole::Enabled => true,
-            ClusterRole::Disabled => false,
-            ClusterRole::Sharded {
-                shard_id,
-                total_shards,
-            } => {
-                let mut hasher = Xxh3Builder::new().with_seed(201179).build();
-                item.hash(&mut hasher);
-                hasher.finish() % (*total_shards as u64) == *shard_id as u64
-            }
-        }
-    }
-
-    fn set_uninit(&mut self) {
-        *self = ClusterRole::Sharded {
-            shard_id: u32::MAX,
-            total_shards: u32::MAX,
-        };
-    }
-
-    fn set_role(&mut self, is_member: bool) -> bool {
-        if self.is_uninit() {
-            if is_member {
-                *self = ClusterRole::Enabled;
-            } else {
-                *self = ClusterRole::Sharded {
-                    shard_id: u32::MAX,
-                    total_shards: 0,
-                };
-            }
-            true
-        } else {
-            false
-        }
-    }
-
-    fn is_seen_role(&self) -> bool {
-        matches!(self, ClusterRole::Sharded {
-                shard_id,
-                total_shards,
-            } if *shard_id == u32::MAX && *total_shards == 0)
-    }
-
-    fn is_uninit(&self) -> bool {
-        matches!(self, ClusterRole::Sharded {
-                shard_id,
-                total_shards,
-            } if *shard_id == u32::MAX && *total_shards == u32::MAX)
-    }
-
-    fn finalize(&mut self) {
-        if self.is_uninit() {
-            *self = ClusterRole::Enabled;
-        } else if self.is_seen_role() {
-            *self = ClusterRole::Disabled;
-        }
-    }
-}
-
 impl ClusterRoles {
-    fn all_mut(&mut self) -> impl Iterator<Item = &mut ClusterRole> {
+    fn all_mut(&mut self) -> impl Iterator<Item = &mut bool> {
         [
             &mut self.store_maintenance,
             &mut self.account_maintenance,
             &mut self.push_notifications,
             &mut self.search_indexing,
             &mut self.spam_training,
-            &mut self.imip_processing,
-            &mut self.merge_threads,
-            &mut self.calendar_alerts,
-            &mut self.dns_acme,
             &mut self.outbound_mta,
-            &mut self.calculate_metrics,
-            &mut self.push_metrics,
             &mut self.task_manager,
             &mut self.task_scheduler,
+            &mut self.metrics_calculate,
+            &mut self.metrics_push,
         ]
         .into_iter()
+    }
+
+    fn set_role(&mut self, role: ClusterTaskType, enabled: bool) {
+        match role {
+            ClusterTaskType::StoreMaintenance => self.store_maintenance = enabled,
+            ClusterTaskType::AccountMaintenance => self.account_maintenance = enabled,
+            ClusterTaskType::PushNotifications => self.push_notifications = enabled,
+            ClusterTaskType::SearchIndexing => self.search_indexing = enabled,
+            ClusterTaskType::SpamClassifierTraining => self.spam_training = enabled,
+            ClusterTaskType::MetricsCalculate => self.metrics_calculate = enabled,
+            ClusterTaskType::MetricsPush => self.metrics_push = enabled,
+            ClusterTaskType::OutboundMta => self.outbound_mta = enabled,
+            ClusterTaskType::TaskQueueProcessing => self.task_manager = enabled,
+            ClusterTaskType::TaskScheduler => self.task_scheduler = enabled,
+        }
+    }
+}
+
+impl Default for ClusterRoles {
+    fn default() -> Self {
+        ClusterRoles {
+            store_maintenance: true,
+            account_maintenance: true,
+            push_notifications: true,
+            search_indexing: true,
+            spam_training: true,
+            metrics_calculate: true,
+            metrics_push: true,
+            outbound_mta: true,
+            task_manager: true,
+            task_scheduler: true,
+        }
     }
 }
