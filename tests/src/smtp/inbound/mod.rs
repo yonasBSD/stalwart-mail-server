@@ -4,23 +4,18 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::time::Duration;
-
+use super::{QueueReceiver, ReportReceiver};
 use common::{
     Server,
     ipc::{DmarcEvent, QueueEvent, QueueEventStatus, ReportingEvent, TlsEvent},
 };
+use smtp::queue::{Message, MessageWrapper, QueueId, QueuedMessage};
+use std::time::Duration;
 use store::{
     Deserialize, IterateParams, U64_LEN, ValueKey,
-    write::{
-        AlignedBytes, Archive, QueueClass, ReportEvent, ValueClass, key::DeserializeBigEndian,
-    },
+    write::{AlignedBytes, Archive, QueueClass, ValueClass, key::DeserializeBigEndian},
 };
 use tokio::sync::mpsc::error::TryRecvError;
-
-use smtp::queue::{Message, MessageWrapper, QueueId, QueuedMessage};
-
-use super::{QueueReceiver, ReportReceiver};
 
 pub mod antispam;
 pub mod asn;

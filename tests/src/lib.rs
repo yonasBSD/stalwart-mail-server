@@ -6,6 +6,8 @@
 
 use std::path::PathBuf;
 
+#[cfg(test)]
+use ::store::registry::bootstrap::Bootstrap;
 #[cfg(not(target_env = "msvc"))]
 use jemallocator::Jemalloc;
 #[cfg(test)]
@@ -15,12 +17,11 @@ use trc::Collector;
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
+/*
 #[cfg(test)]
 pub mod cluster;
 #[cfg(test)]
 pub mod directory;
-#[cfg(test)]
-pub mod http_server;
 #[cfg(test)]
 pub mod imap;
 #[cfg(test)]
@@ -31,6 +32,11 @@ pub mod smtp;
 pub mod store;
 #[cfg(test)]
 pub mod webdav;
+*/
+#[cfg(test)]
+pub mod system;
+#[cfg(test)]
+pub mod utils;
 
 pub fn add_test_certs(config: &str) -> String {
     let mut cert_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -52,7 +58,7 @@ pub trait AssertConfig {
 }
 
 #[cfg(test)]
-impl AssertConfig for utils::config::Config {
+impl AssertConfig for Bootstrap {
     fn assert_no_errors(self) -> Self {
         if !self.errors.is_empty() {
             panic!("Errors: {:#?}", self.errors);

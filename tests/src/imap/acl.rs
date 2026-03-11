@@ -4,9 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::jmap::mail::delivery::SmtpConnection;
-
 use super::{AssertResult, ImapConnection, Type, append::assert_append_message};
+use crate::jmap::mail::delivery::SmtpConnection;
 use imap_proto::ResponseType;
 
 pub async fn test(mut imap_john: &mut ImapConnection, _imap_check: &mut ImapConnection) {

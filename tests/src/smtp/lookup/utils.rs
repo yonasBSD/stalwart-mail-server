@@ -4,8 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::net::IpAddr;
-
 use crate::smtp::TestSMTP;
 use ::smtp::outbound::NextHop;
 use common::{
@@ -29,8 +27,8 @@ use smtp::{
     },
     reporting::AggregateTimestamp,
 };
+use std::net::IpAddr;
 use store::write::now;
-use utils::config::Config;
 
 const CONFIG: &str = r#"
 [queue.connection.test.timeout]

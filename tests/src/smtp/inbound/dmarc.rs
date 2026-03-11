@@ -4,10 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::time::{Duration, Instant};
-
+use crate::smtp::{
+    DnsCache, TempDir, TestSMTP,
+    inbound::{TestMessage, TestReportingEvent, sign::SIGNATURES},
+    session::{TestSession, VerifyResponse},
+};
 use common::{Core, config::smtp::report::AggregateFrequency};
-
 use mail_auth::{
     common::{parse::TxtRecordParser, verify::DomainKey},
     dkim::DomainKeyReport,
@@ -15,15 +17,8 @@ use mail_auth::{
     report::DmarcResult,
     spf::Spf,
 };
-use store::Stores;
-use utils::config::Config;
-
-use crate::smtp::{
-    DnsCache, TempDir, TestSMTP,
-    inbound::{TestMessage, TestReportingEvent, sign::SIGNATURES},
-    session::{TestSession, VerifyResponse},
-};
 use smtp::core::Session;
+use std::time::{Duration, Instant};
 
 const CONFIG: &str = r#"
 [storage]

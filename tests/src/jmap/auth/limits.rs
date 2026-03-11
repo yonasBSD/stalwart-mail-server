@@ -7,10 +7,8 @@
 use crate::{
     directory::internal::TestInternalDirectory,
     imap::{ImapConnection, Type},
-    jmap::{JMAPTest},
+    jmap::JMAPTest,
 };
-use common::listener::blocked::BLOCKED_IP_KEY;
-use directory::Permission;
 use imap_proto::ResponseType;
 use jmap_client::{
     client::{Client, Credentials},

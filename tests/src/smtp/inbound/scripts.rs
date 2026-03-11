@@ -4,9 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use core::panic;
-use std::{fmt::Write, fs, path::PathBuf};
-
 use crate::{
     AssertConfig, enable_logging,
     smtp::{
@@ -16,13 +13,12 @@ use crate::{
     },
 };
 use common::Core;
-
+use core::panic;
 use smtp::{
     core::Session,
     scripts::{ScriptResult, event_loop::RunScript},
 };
-use store::Stores;
-use utils::config::Config;
+use std::{fmt::Write, fs, path::PathBuf};
 
 const CONFIG: &str = r#"
 [storage]

@@ -4,12 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::Core;
-
-use smtp::core::Session;
-use utils::config::Config;
-
 use crate::smtp::{TestSMTP, session::TestSession};
+use common::Core;
+use smtp::core::Session;
 
 const CONFIG: &str = r#"
 [session.mail]

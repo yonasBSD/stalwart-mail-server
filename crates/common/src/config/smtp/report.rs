@@ -106,8 +106,10 @@ impl ReportConfig {
                     ObjectType::DkimReportSettings.singleton(),
                     &dkim.ctx_from_address(),
                 ),
-                subject: bp
-                    .compile_expr(ObjectType::DkimReportSettings.singleton(), &dkim.ctx_subject()),
+                subject: bp.compile_expr(
+                    ObjectType::DkimReportSettings.singleton(),
+                    &dkim.ctx_subject(),
+                ),
                 sign: bp.compile_expr(
                     ObjectType::DkimReportSettings.singleton(),
                     &dkim.ctx_dkim_sign_domain(),
@@ -118,12 +120,18 @@ impl ReportConfig {
                 ),
             },
             spf: Report {
-                name: bp.compile_expr(ObjectType::SpfReportSettings.singleton(), &spf.ctx_from_name()),
+                name: bp.compile_expr(
+                    ObjectType::SpfReportSettings.singleton(),
+                    &spf.ctx_from_name(),
+                ),
                 address: bp.compile_expr(
                     ObjectType::SpfReportSettings.singleton(),
                     &spf.ctx_from_address(),
                 ),
-                subject: bp.compile_expr(ObjectType::SpfReportSettings.singleton(), &spf.ctx_subject()),
+                subject: bp.compile_expr(
+                    ObjectType::SpfReportSettings.singleton(),
+                    &spf.ctx_subject(),
+                ),
                 sign: bp.compile_expr(
                     ObjectType::SpfReportSettings.singleton(),
                     &spf.ctx_dkim_sign_domain(),
@@ -186,13 +194,18 @@ impl ReportConfig {
                 ),
             },
             tls: AggregateReport {
-                name: bp.compile_expr(ObjectType::TlsReportSettings.singleton(), &tls.ctx_from_name()),
+                name: bp.compile_expr(
+                    ObjectType::TlsReportSettings.singleton(),
+                    &tls.ctx_from_name(),
+                ),
                 address: bp.compile_expr(
                     ObjectType::TlsReportSettings.singleton(),
                     &tls.ctx_from_address(),
                 ),
-                org_name: bp
-                    .compile_expr(ObjectType::TlsReportSettings.singleton(), &tls.ctx_org_name()),
+                org_name: bp.compile_expr(
+                    ObjectType::TlsReportSettings.singleton(),
+                    &tls.ctx_org_name(),
+                ),
                 contact_info: bp.compile_expr(
                     ObjectType::TlsReportSettings.singleton(),
                     &tls.ctx_contact_info(),

@@ -12,7 +12,6 @@ use crate::{
 };
 use common::config::smtp::queue::QueueName;
 use email::{cache::MessageCacheFetch, mailbox::INBOX_ID};
-use http::management::stores::recalculate_quota;
 use jmap::blob::upload::DISABLE_UPLOAD_QUOTA;
 use jmap_client::{
     core::set::{SetErrorType, SetObject},

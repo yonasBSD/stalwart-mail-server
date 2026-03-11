@@ -16,8 +16,6 @@ use crate::{
     store::cleanup::{search_store_destroy, store_destroy},
 };
 use std::io::Read;
-use store::Stores;
-use utils::config::Config;
 
 pub struct TempDir {
     pub path: std::path::PathBuf,

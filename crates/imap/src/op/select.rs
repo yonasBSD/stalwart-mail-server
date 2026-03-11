@@ -7,7 +7,6 @@
 use super::{ImapContext, ToModSeq};
 use crate::core::{SavedSearch, SelectedMailbox, Session, State};
 use common::network::SessionStream;
-use registry::schema::enums::Permission;
 use imap_proto::{
     Command, ResponseCode, StatusResponse,
     protocol::{
@@ -17,6 +16,7 @@ use imap_proto::{
     },
     receiver::Request,
 };
+use registry::schema::enums::Permission;
 use std::{sync::Arc, time::Instant};
 use types::id::Id;
 

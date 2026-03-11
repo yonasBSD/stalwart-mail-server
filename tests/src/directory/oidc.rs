@@ -13,7 +13,6 @@ use crate::{
     http_server::{HttpMessage, spawn_mock_http_server},
 };
 use base64::{Engine, engine::general_purpose};
-use directory::QueryParams;
 use http_proto::{JsonProblemResponse, JsonResponse, ToHttpResponse};
 use hyper::{Method, StatusCode};
 use mail_send::Credentials;

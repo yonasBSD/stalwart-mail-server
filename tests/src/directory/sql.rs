@@ -4,10 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use directory::{
-    QueryParams, ROLE_ADMIN, ROLE_USER, Type,
-    backend::{RcptType, internal::manage::ManageDirectory},
-};
 use mail_send::Credentials;
 
 #[allow(unused_imports)]

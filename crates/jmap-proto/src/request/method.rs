@@ -4,8 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use registry::{
+    schema::prelude::{OBJ_SINGLETON, ObjectType},
+    types::EnumImpl,
+};
 use std::{borrow::Cow, fmt::Display};
-use registry::{schema::prelude::{OBJ_SINGLETON, ObjectType}, types::EnumImpl};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MethodName {
@@ -124,7 +127,9 @@ impl MethodName {
             (MethodFunction::Query, MethodObject::Principal) => "Principal/query",
             (MethodFunction::Changes, MethodObject::Principal) => "Principal/changes",
             (MethodFunction::QueryChanges, MethodObject::Principal) => "Principal/queryChanges",
-            (MethodFunction::GetAvailability, MethodObject::Principal) => "Principal/getAvailability",
+            (MethodFunction::GetAvailability, MethodObject::Principal) => {
+                "Principal/getAvailability"
+            }
 
             (MethodFunction::Get, MethodObject::Quota) => "Quota/get",
             (MethodFunction::Changes, MethodObject::Quota) => "Quota/changes",
@@ -155,9 +160,13 @@ impl MethodName {
             (MethodFunction::Set, MethodObject::FileNode) => "FileNode/set",
 
             (MethodFunction::Get, MethodObject::ShareNotification) => "ShareNotification/get",
-            (MethodFunction::Changes, MethodObject::ShareNotification) => "ShareNotification/changes",
+            (MethodFunction::Changes, MethodObject::ShareNotification) => {
+                "ShareNotification/changes"
+            }
             (MethodFunction::Query, MethodObject::ShareNotification) => "ShareNotification/query",
-            (MethodFunction::QueryChanges, MethodObject::ShareNotification) => "ShareNotification/queryChanges",
+            (MethodFunction::QueryChanges, MethodObject::ShareNotification) => {
+                "ShareNotification/queryChanges"
+            }
             (MethodFunction::Set, MethodObject::ShareNotification) => "ShareNotification/set",
 
             (MethodFunction::Get, MethodObject::Calendar) => "Calendar/get",
@@ -167,19 +176,33 @@ impl MethodName {
             (MethodFunction::Get, MethodObject::CalendarEvent) => "CalendarEvent/get",
             (MethodFunction::Changes, MethodObject::CalendarEvent) => "CalendarEvent/changes",
             (MethodFunction::Query, MethodObject::CalendarEvent) => "CalendarEvent/query",
-            (MethodFunction::QueryChanges, MethodObject::CalendarEvent) => "CalendarEvent/queryChanges",
+            (MethodFunction::QueryChanges, MethodObject::CalendarEvent) => {
+                "CalendarEvent/queryChanges"
+            }
             (MethodFunction::Set, MethodObject::CalendarEvent) => "CalendarEvent/set",
             (MethodFunction::Copy, MethodObject::CalendarEvent) => "CalendarEvent/copy",
             (MethodFunction::Parse, MethodObject::CalendarEvent) => "CalendarEvent/parse",
 
-            (MethodFunction::Get, MethodObject::CalendarEventNotification) => "CalendarEventNotification/get",
-            (MethodFunction::Changes, MethodObject::CalendarEventNotification) => "CalendarEventNotification/changes",
-            (MethodFunction::Query, MethodObject::CalendarEventNotification) => "CalendarEventNotification/query",
-            (MethodFunction::QueryChanges, MethodObject::CalendarEventNotification) => "CalendarEventNotification/queryChanges",
-            (MethodFunction::Set, MethodObject::CalendarEventNotification) => "CalendarEventNotification/set",
+            (MethodFunction::Get, MethodObject::CalendarEventNotification) => {
+                "CalendarEventNotification/get"
+            }
+            (MethodFunction::Changes, MethodObject::CalendarEventNotification) => {
+                "CalendarEventNotification/changes"
+            }
+            (MethodFunction::Query, MethodObject::CalendarEventNotification) => {
+                "CalendarEventNotification/query"
+            }
+            (MethodFunction::QueryChanges, MethodObject::CalendarEventNotification) => {
+                "CalendarEventNotification/queryChanges"
+            }
+            (MethodFunction::Set, MethodObject::CalendarEventNotification) => {
+                "CalendarEventNotification/set"
+            }
 
             (MethodFunction::Get, MethodObject::ParticipantIdentity) => "ParticipantIdentity/get",
-            (MethodFunction::Changes, MethodObject::ParticipantIdentity) => "ParticipantIdentity/changes",
+            (MethodFunction::Changes, MethodObject::ParticipantIdentity) => {
+                "ParticipantIdentity/changes"
+            }
             (MethodFunction::Set, MethodObject::ParticipantIdentity) => "ParticipantIdentity/set",
 
             (MethodFunction::Echo, MethodObject::Core) => "Core/echo",
@@ -187,11 +210,12 @@ impl MethodName {
                 return Cow::Owned(format!("x:{}/{}", obj.as_str(), method.as_str()));
             }
             _ => "error",
-        }.into()
+        }
+        .into()
     }
 
     pub fn parse(s: &str) -> Option<Self> {
-       hashify::tiny_map!(s.as_bytes(), 
+        hashify::tiny_map!(s.as_bytes(), 
             "PushSubscription/get" => (MethodObject::PushSubscription, MethodFunction::Get),
             "PushSubscription/set" => (MethodObject::PushSubscription, MethodFunction::Set),
 
@@ -314,7 +338,6 @@ impl MethodName {
             }
         }).map(|(obj, fnc)| MethodName { obj, fnc })
     }
-
 }
 
 impl Display for MethodObject {
@@ -344,7 +367,7 @@ impl Display for MethodObject {
             MethodObject::Registry(obj) => {
                 f.write_str("x:")?;
                 return f.write_str(obj.as_str());
-            },
+            }
         })
     }
 }
@@ -374,7 +397,7 @@ impl MethodObject {
         match self {
             MethodObject::Registry(obj) => obj,
             _ => panic!("Not a registry method object"),
-         }
+        }
     }
 }
 
@@ -385,9 +408,8 @@ impl<'de> serde::Deserialize<'de> for MethodName {
     {
         let value = <&str>::deserialize(deserializer)?;
 
-        MethodName::parse(value).ok_or_else(|| {
-            serde::de::Error::custom(format!("Invalid method name: {:?}", value))
-        })
+        MethodName::parse(value)
+            .ok_or_else(|| serde::de::Error::custom(format!("Invalid method name: {:?}", value)))
     }
 }
 

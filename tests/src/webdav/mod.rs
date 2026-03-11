@@ -14,7 +14,6 @@ use crate::{
     },
 };
 use ::managesieve::core::ManageSieveSessionManager;
-use ::store::Stores;
 use ahash::{AHashMap, AHashSet};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use common::{
@@ -23,14 +22,12 @@ use common::{
         server::{Listeners, ServerProtocol},
         telemetry::Telemetry,
     },
-    core::BuildServer,
     manager::boot::build_ipc,
 };
 use dav_proto::{
     schema::property::{DavProperty, WebDavProperty},
     xml_pretty_print,
 };
-use directory::Permission;
 use email::message::metadata::MessageMetadata;
 use groupware::{DavResourceName, cache::GroupwareCache};
 use http::HttpSessionManager;

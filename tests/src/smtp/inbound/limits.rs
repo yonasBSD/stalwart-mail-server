@@ -4,18 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::time::{Duration, Instant};
-
-use common::Core;
-use tokio::sync::watch;
-
-use smtp::core::Session;
-use utils::config::Config;
-
 use crate::smtp::{
     TestSMTP,
     session::{TestSession, VerifyResponse},
 };
+use common::Core;
+use smtp::core::Session;
+use std::time::{Duration, Instant};
+use tokio::sync::watch;
 
 const CONFIG: &str = r#"
 [session]

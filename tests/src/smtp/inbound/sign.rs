@@ -4,23 +4,18 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::time::{Duration, Instant};
-
-use common::Core;
-
-use mail_auth::{
-    common::{parse::TxtRecordParser, verify::DomainKey},
-    spf::Spf,
-};
-use store::Stores;
-use utils::config::Config;
-
 use crate::smtp::{
     DnsCache, TempDir, TestSMTP,
     inbound::TestMessage,
     session::{TestSession, VerifyResponse},
 };
+use common::Core;
+use mail_auth::{
+    common::{parse::TxtRecordParser, verify::DomainKey},
+    spf::Spf,
+};
 use smtp::core::Session;
+use std::time::{Duration, Instant};
 
 pub const SIGNATURES: &str = "
 [signature.rsa]

@@ -10,8 +10,8 @@ use crate::{
     spawn_op,
 };
 use common::{network::SessionStream, storage::index::ObjectIndexBuilder};
-use registry::schema::enums::Permission;
 use imap_proto::{Command, ResponseCode, StatusResponse, receiver::Request};
+use registry::schema::enums::Permission;
 use std::time::Instant;
 use store::{
     ValueKey,

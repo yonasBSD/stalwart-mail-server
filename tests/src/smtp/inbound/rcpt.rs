@@ -4,20 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::time::Duration;
-
-use common::Core;
-
-use smtp_proto::{RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_SUCCESS};
-use store::Stores;
-use utils::config::Config;
-
-use smtp::core::{Session, State};
-
 use crate::smtp::{
     TempDir, TestSMTP,
     session::{TestSession, VerifyResponse},
 };
+use common::Core;
+use smtp::core::{Session, State};
+use smtp_proto::{RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_SUCCESS};
+use std::time::Duration;
 
 const CONFIG: &str = r#"
 [storage]

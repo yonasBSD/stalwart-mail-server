@@ -10,7 +10,6 @@ use crate::{
 };
 use ahash::AHashSet;
 use common::{ipc::PushNotification, network::SessionStream};
-use registry::schema::enums::Permission;
 use imap_proto::{
     Command, StatusResponse,
     protocol::{
@@ -20,6 +19,7 @@ use imap_proto::{
     },
     receiver::Request,
 };
+use registry::schema::enums::Permission;
 use std::{sync::Arc, time::Instant};
 use store::query::log::Query;
 use tokio::io::AsyncReadExt;

@@ -4,8 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{fs, net::IpAddr, path::PathBuf, sync::Arc, time::Duration};
-
+use super::add_test_certs;
 use common::{
     Server,
     config::{
@@ -14,14 +13,9 @@ use common::{
     },
     expr::{functions::ResolveVariable, if_block::*, tokenizer::TokenMap, *},
 };
-
 use compact_str::ToCompactString;
-use throttle::parse_queue_rate_limiter;
+use std::{fs, net::IpAddr, path::PathBuf, sync::Arc, time::Duration};
 use tokio::net::TcpSocket;
-
-use utils::config::{Config, Rate};
-
-use super::add_test_certs;
 
 struct TestEnvelope {
     pub local_ip: IpAddr,

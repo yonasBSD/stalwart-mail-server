@@ -29,7 +29,6 @@ use crate::{
     },
 };
 use ::managesieve::core::ManageSieveSessionManager;
-use ::store::Stores;
 use ahash::AHashSet;
 use base64::{Engine, engine::general_purpose};
 use common::{
@@ -38,7 +37,6 @@ use common::{
         server::{Listeners, ServerProtocol},
         telemetry::Telemetry,
     },
-    core::BuildServer,
     manager::boot::build_ipc,
 };
 use http::HttpSessionManager;
@@ -57,7 +55,6 @@ use tokio::{
     net::TcpStream,
     sync::watch,
 };
-use utils::config::Config;
 
 #[tokio::test]
 pub async fn imap_tests() {

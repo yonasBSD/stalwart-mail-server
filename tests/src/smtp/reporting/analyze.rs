@@ -4,14 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::time::Duration;
-
 use crate::smtp::{TestSMTP, inbound::TestQueueEvent, session::TestSession};
-
-use store::{
-    IterateParams, ValueKey,
-    write::{ReportClass, ValueClass},
-};
+use std::time::Duration;
+use store::{IterateParams, ValueKey, write::ValueClass};
 
 const CONFIG: &str = r#"
 [session.rcpt]

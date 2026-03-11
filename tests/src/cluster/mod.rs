@@ -18,11 +18,6 @@ use common::{
         server::{Listeners, ServerProtocol},
         telemetry::Telemetry,
     },
-    core::BuildServer,
-    manager::{
-        boot::build_ipc,
-        config::{ConfigManager, Patterns},
-    },
 };
 use http::HttpSessionManager;
 use imap::core::ImapSessionManager;
@@ -33,9 +28,7 @@ use pop3::Pop3SessionManager;
 use services::{SpawnServices, broadcast::subscriber::spawn_broadcast_subscriber};
 use smtp::{SpawnQueueManager, core::SmtpSessionManager};
 use std::{path::PathBuf, sync::Arc, time::Duration};
-use store::Stores;
 use tokio::sync::watch;
-use utils::config::Config;
 
 pub mod broadcast;
 pub mod stress;

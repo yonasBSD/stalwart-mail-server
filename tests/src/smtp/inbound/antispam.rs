@@ -13,7 +13,6 @@ use ahash::{AHashMap, AHashSet};
 use common::{
     Core, Server,
     auth::AccessToken,
-    config::spamfilter::SpamFilterAction,
     enterprise::{
         SpamFilterLlmConfig,
         llm::{
@@ -57,8 +56,6 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use store::{Stores, write::BatchBuilder};
-use utils::config::Config;
 
 const CONFIG: &str = r#"
 [spam-filter.score]

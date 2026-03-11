@@ -4,11 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::time::Duration;
-
-use store::{InMemoryStore, Stores, dispatch::lookup::KeyValue};
-use utils::config::{Config, Rate};
-
 use crate::{
     AssertConfig,
     store::{
@@ -16,6 +11,8 @@ use crate::{
         cleanup::{store_assert_is_empty, store_destroy},
     },
 };
+use std::time::Duration;
+use store::{InMemoryStore, dispatch::lookup::KeyValue};
 
 #[tokio::test]
 pub async fn lookup_tests() {

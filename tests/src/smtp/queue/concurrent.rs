@@ -4,16 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::time::{Duration, Instant};
-
-use common::{config::server::ServerProtocol, core::BuildServer, ipc::QueueEvent};
-use mail_auth::MX;
-
 use crate::{
     smtp::{DnsCache, TestSMTP, session::TestSession},
     store::cleanup::store_assert_is_empty,
 };
+use common::{config::server::ServerProtocol, ipc::QueueEvent};
+use mail_auth::MX;
 use smtp::queue::manager::Queue;
+use std::time::{Duration, Instant};
 
 const LOCAL: &str = r#"
 [spam-filter]

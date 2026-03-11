@@ -21,9 +21,7 @@ use dav_proto::schema::property::{CalDavProperty, DavProperty, WebDavProperty};
 use email::cache::MessageCacheFetch;
 use groupware::{
     cache::GroupwareCache,
-    scheduling::{
-        ArchivedItipSummary, ItipField, ItipParticipant, ItipSummary, ItipTime, ItipValue,
-    },
+    scheduling::{ItipField, ItipParticipant, ItipSummary, ItipTime, ItipValue},
 };
 use hyper::StatusCode;
 use mail_parser::{DateTime, MessageParser};

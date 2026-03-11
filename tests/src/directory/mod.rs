@@ -4,27 +4,19 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-pub mod imap;
 pub mod internal;
 pub mod ldap;
 pub mod oidc;
-pub mod smtp;
 pub mod sql;
 
+use crate::{AssertConfig, store::TempDir};
 use common::{Core, Server, config::smtp::session::AddressMapping};
-use directory::{
-    Directories, Principal, PrincipalData, Type,
-    backend::internal::{PrincipalField, PrincipalSet, manage::ManageDirectory},
-};
 use mail_send::Credentials;
 use rustls::ServerConfig;
 use rustls_pemfile::{certs, pkcs8_private_keys};
 use rustls_pki_types::PrivateKeyDer;
 use std::{borrow::Cow, io::BufReader, sync::Arc};
-use store::{Store, Stores};
 use tokio_rustls::TlsAcceptor;
-
-use crate::{AssertConfig, store::TempDir};
 
 const CONFIG: &str = r#"
 [directory."rocksdb"]

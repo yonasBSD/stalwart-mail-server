@@ -10,13 +10,11 @@ use crate::{
 };
 use ahash::AHashSet;
 use common::Server;
-use directory::{QueryBy, backend::internal::manage::ManageDirectory};
 use email::{
     cache::{MessageCacheFetch, email::MessageCacheAccess},
     mailbox::{INBOX_ID, JUNK_ID, TRASH_ID},
     message::delete::EmailDeletion,
 };
-use http::management::stores::destroy_account_data;
 use imap_proto::ResponseType;
 use store::{IterateParams, LogKey, U32_LEN, U64_LEN, write::key::DeserializeBigEndian};
 use types::id::Id;

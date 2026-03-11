@@ -18,10 +18,7 @@ use mail_auth::{
 };
 use store::write::QueueClass;
 
-use smtp::reporting::{
-    dmarc::{DmarcFormat, DmarcReporting},
-    tls::TlsReporting,
-};
+use smtp::reporting::{dmarc::DmarcReporting, tls::TlsReporting};
 
 use crate::smtp::TestSMTP;
 

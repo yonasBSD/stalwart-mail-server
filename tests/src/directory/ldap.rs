@@ -4,17 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::fmt::Debug;
-
-use directory::{
-    QueryParams, ROLE_USER, Type,
-    backend::{RcptType, internal::manage::ManageDirectory},
-};
-use mail_send::Credentials;
-
 use crate::directory::{
     DirectoryTest, IntoTestPrincipal, TestPrincipal, map_account_id, map_account_ids,
 };
+use mail_send::Credentials;
+use std::fmt::Debug;
 
 #[tokio::test]
 async fn ldap_directory() {

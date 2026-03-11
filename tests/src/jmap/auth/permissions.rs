@@ -9,11 +9,6 @@ use crate::{
     jmap::{JMAPTest, ManagementApi, server::List},
 };
 use ahash::AHashSet;
-use common::auth::{AccessToken, TenantInfo};
-use directory::{
-    Permission, Type,
-    backend::internal::{PrincipalField, PrincipalSet, PrincipalUpdate, PrincipalValue},
-};
 use email::message::delivery::{IngestMessage, IngestRecipient, LocalDeliveryStatus, MailDelivery};
 use std::sync::Arc;
 

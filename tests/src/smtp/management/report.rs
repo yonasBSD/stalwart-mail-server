@@ -4,15 +4,15 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::sync::Arc;
-
+use crate::{
+    jmap::ManagementApi,
+    smtp::{TestSMTP, management::queue::List},
+};
 use ahash::{AHashMap, HashSet};
 use common::{
     config::{server::ServerProtocol, smtp::report::AggregateFrequency},
     ipc::{DmarcEvent, PolicyType, TlsEvent},
 };
-
-use http::management::queue::Report;
 use mail_auth::{
     common::parse::TxtRecordParser,
     dmarc::Dmarc,
@@ -23,12 +23,8 @@ use mail_auth::{
     },
 };
 use reqwest::Method;
-
-use crate::{
-    jmap::ManagementApi,
-    smtp::{TestSMTP, management::queue::List},
-};
-use smtp::reporting::{SmtpReporting, scheduler::SpawnReport};
+use smtp::reporting::scheduler::SpawnReport;
+use std::sync::Arc;
 
 const CONFIG: &str = r#"
 [storage]

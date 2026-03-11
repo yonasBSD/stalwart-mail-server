@@ -6,9 +6,9 @@
 
 use crate::core::{Command, ResponseCode, Session, StatusResponse};
 use common::{network::SessionStream, storage::index::ObjectIndexBuilder};
-use registry::schema::enums::Permission;
 use email::sieve::SieveScript;
 use imap_proto::receiver::Request;
+use registry::schema::enums::Permission;
 use std::time::Instant;
 use store::{
     ValueKey,

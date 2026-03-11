@@ -4,21 +4,17 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::time::{Duration, Instant};
-
-use ahash::{AHashMap, HashMap, HashSet};
-use common::config::server::ServerProtocol;
-
-use http::management::queue::Message;
-use mail_auth::MX;
-use mail_parser::DateTime;
-use reqwest::{Method, StatusCode, header::AUTHORIZATION};
-
 use crate::{
     jmap::ManagementApi,
     smtp::{DnsCache, TestSMTP, session::TestSession},
 };
+use ahash::{AHashMap, HashMap, HashSet};
+use common::config::server::ServerProtocol;
+use mail_auth::MX;
+use mail_parser::DateTime;
+use reqwest::{Method, StatusCode, header::AUTHORIZATION};
 use smtp::queue::{QueueId, Status, manager::SpawnQueue};
+use std::time::{Duration, Instant};
 
 const LOCAL: &str = r#"
 [storage]

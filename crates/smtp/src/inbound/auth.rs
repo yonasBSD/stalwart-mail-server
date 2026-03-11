@@ -111,11 +111,7 @@ impl<T: SessionStream> Session<T> {
             .and_then(|access_token| access_token.assert_has_permission(Permission::EmailSend));
 
         let result = match result {
-            Ok(access_token) => {
-                self.server
-                    .account_info(access_token.account_id())
-                    .await
-            }
+            Ok(access_token) => self.server.account_info(access_token.account_id()).await,
             Err(err) => Err(err),
         };
 

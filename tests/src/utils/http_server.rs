@@ -4,17 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::sync::Arc;
-
+use crate::{AssertConfig, add_test_certs};
 use ahash::AHashMap;
-use common::{Caches, Core, Data, Inner, config::server::Listeners, listener::SessionData};
+use common::{Caches, Core, Data, Inner, config::server::Listeners, network::SessionData};
 use http_proto::{HttpResponse, request::fetch_body};
 use hyper::{Method, Uri, body, server::conn::http1, service::service_fn};
 use hyper_util::rt::TokioIo;
+use std::sync::Arc;
 use tokio::sync::watch;
-use utils::config::Config;
-
-use crate::{AssertConfig, add_test_certs};
 
 const MOCK_HTTP_SERVER: &str = r#"
 [server]
@@ -94,9 +91,9 @@ pub async fn spawn_mock_http_server(
     })
 }
 
-impl common::listener::SessionManager for HttpSessionManager {
+impl common::network::SessionManager for HttpSessionManager {
     #[allow(clippy::manual_async_fn)]
-    fn handle<T: common::listener::SessionStream>(
+    fn handle<T: common::network::SessionStream>(
         self,
         session: SessionData<T>,
     ) -> impl std::future::Future<Output = ()> + Send {

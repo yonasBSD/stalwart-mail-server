@@ -12,18 +12,6 @@ use crate::{
 };
 use ahash::AHashSet;
 use common::{Core, Inner, Server, config::storage::Storage};
-use directory::{
-    Permission, QueryBy, QueryParams, Type,
-    backend::{
-        RcptType,
-        internal::{
-            PrincipalField, PrincipalSet, PrincipalUpdate, PrincipalValue,
-            lookup::DirectoryStore,
-            manage::{self, ChangedPrincipals, ManageDirectory, UpdatePrincipal},
-        },
-    },
-};
-use http::management::stores::destroy_account_data;
 use mail_send::Credentials;
 use store::{
     IterateParams, Store, ValueKey,

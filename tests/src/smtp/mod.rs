@@ -4,32 +4,27 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{
-    net::{IpAddr, Ipv4Addr, Ipv6Addr},
-    path::PathBuf,
-    sync::Arc,
-};
-
+use crate::{AssertConfig, store::cleanup::store_destroy};
 use common::{
     Core, Data, Inner, Server,
     config::{
         server::{Listeners, ServerProtocol},
         smtp::resolver::Tlsa,
-        spamfilter::IpResolver,
     },
     ipc::{QueueEvent, ReportingEvent},
     manager::boot::{IpcReceivers, build_ipc},
 };
-
 use http::HttpSessionManager;
 use mail_auth::{MX, Txt, common::resolver::IntoFqdn};
 use session::{DummyIo, TestSession};
 use smtp::core::{Session, SmtpSessionManager};
-use store::{BlobStore, Store, Stores};
+use std::{
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    path::PathBuf,
+    sync::Arc,
+};
+use store::{BlobStore, Store};
 use tokio::sync::{mpsc, watch};
-use utils::config::Config;
-
-use crate::{AssertConfig, store::cleanup::store_destroy};
 
 pub mod config;
 pub mod inbound;

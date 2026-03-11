@@ -4,19 +4,15 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::store::cleanup::store_assert_is_empty;
 use ahash::AHashSet;
 use std::collections::HashSet;
 use store::{
     Store, ValueKey,
     rand::{self, Rng},
-    write::{
-        AlignedBytes, Archive, Archiver, BatchBuilder, DirectoryClass, MergeResult, Params,
-        ValueClass,
-    },
+    write::{AlignedBytes, Archive, Archiver, BatchBuilder, MergeResult, Params, ValueClass},
 };
 use types::collection::{Collection, SyncCollection};
-
-use crate::store::cleanup::store_assert_is_empty;
 
 // FDB max value
 const MAX_VALUE_SIZE: usize = 100000;

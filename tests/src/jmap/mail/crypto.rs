@@ -5,9 +5,6 @@
  */
 
 use crate::jmap::{JMAPTest, ManagementApi, mail::delivery::SmtpConnection};
-use email::message::crypto::{
-    Algorithm, EncryptMessage, EncryptionMethod, EncryptionParams, EncryptionType, try_parse_certs,
-};
 use mail_parser::{MessageParser, MimeHeaders};
 use std::path::PathBuf;
 use store::{

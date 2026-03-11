@@ -4,13 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::time::Duration;
-
 use crate::smtp::{TempDir, TestSMTP, session::TestSession};
 use common::Core;
 use smtp::core::{Session, SessionAddress};
-use store::Stores;
-use utils::config::Config;
+use std::time::Duration;
 
 const CONFIG: &str = r#"
 [storage]

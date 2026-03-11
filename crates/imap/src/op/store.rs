@@ -11,7 +11,6 @@ use crate::{
 };
 use ahash::AHashSet;
 use common::{network::SessionStream, storage::index::ObjectIndexBuilder};
-use registry::schema::enums::Permission;
 use email::{
     mailbox::TRASH_ID,
     message::{ingest::EmailIngest, metadata::MessageData},
@@ -25,6 +24,7 @@ use imap_proto::{
     },
     receiver::Request,
 };
+use registry::schema::enums::Permission;
 use std::{sync::Arc, time::Instant};
 use store::{
     ValueKey,

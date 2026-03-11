@@ -6,7 +6,7 @@
 
 use crate::{AssertConfig, add_test_certs, jmap::JMAPTest};
 use base64::{Engine, engine::general_purpose};
-use common::{Caches, Core, Data, Inner, config::server::Listeners, listener::SessionData};
+use common::{Caches, Core, Data, Inner, config::server::Listeners, network::SessionData};
 use ece::EcKeyComponents;
 use http_proto::{HtmlResponse, ToHttpResponse, request::fetch_body};
 use hyper::{StatusCode, body, header::CONTENT_ENCODING, server::conn::http1, service::service_fn};
@@ -24,7 +24,6 @@ use std::{
 use store::ahash::AHashSet;
 use tokio::sync::mpsc;
 use types::{id::Id, type_state::DataType};
-use utils::{config::Config, map::vec_map::VecMap};
 
 const SERVER: &str = r#"
 [server]

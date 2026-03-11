@@ -70,7 +70,7 @@ pub async fn search_store_destroy(store: &SearchStore) {
             if let Err(err) = store.drop_indexes().await {
                 eprintln!("Failed to drop elasticsearch indexes: {}", err);
             }
-            store.create_indexes(3, 0, false).await.unwrap();
+            store.create_indexes().await.unwrap();
         }
         SearchStore::MeiliSearch(store) => {
             if let Err(err) = store.drop_indexes().await {
@@ -130,7 +130,7 @@ pub async fn store_blob_expire_all(store: &Store) {
     store
         .iterate(
             IterateParams::new(from_key, to_key).ascending(),
-            |key, value| {
+            |key, _| {
                 if key.len() == BLOB_HASH_LEN + U32_LEN + U64_LEN {
                     let account_id = key
                         .deserialize_be_u32(BLOB_HASH_LEN)
@@ -223,7 +223,12 @@ pub async fn store_lookup_expire_all(store: &Store) {
 pub async fn store_assert_is_empty(store: &Store, blob_store: BlobStore, include_directory: bool) {
     store_blob_expire_all(store).await;
     store_lookup_expire_all(store).await;
-    store.purge_blobs(blob_store).await.unwrap();
+    for shard_idx in 0..=u8::MAX {
+        store
+            .purge_blobs(blob_store.clone(), shard_idx)
+            .await
+            .unwrap();
+    }
     store.purge_store().await.unwrap();
 
     let store = store.clone();

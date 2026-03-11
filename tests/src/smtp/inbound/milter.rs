@@ -4,8 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{fs, net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
-
+use crate::smtp::{
+    TempDir, TestSMTP,
+    inbound::TestMessage,
+    session::{TestSession, VerifyResponse, load_test_message},
+};
 use ahash::AHashSet;
 use common::{
     Core,
@@ -13,7 +16,6 @@ use common::{
     expr::if_block::IfBlock,
     manager::application::Resource,
 };
-
 use http_proto::{ToHttpResponse, request::fetch_body};
 use hyper::{body, server::conn::http1, service::service_fn};
 use hyper_util::rt::TokioIo;
@@ -30,18 +32,11 @@ use smtp::{
         },
     },
 };
-use store::Stores;
+use std::{fs, net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
     sync::watch,
-};
-use utils::config::Config;
-
-use crate::smtp::{
-    TempDir, TestSMTP,
-    inbound::TestMessage,
-    session::{TestSession, VerifyResponse, load_test_message},
 };
 
 #[derive(Debug, Deserialize)]

@@ -4,11 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::Core;
-
-use store::Stores;
-use utils::config::Config;
-
 use crate::{
     AssertConfig,
     smtp::{
@@ -16,6 +11,7 @@ use crate::{
         session::{TestSession, VerifyResponse},
     },
 };
+use common::Core;
 use smtp::core::{Session, State};
 
 const CONFIG: &str = r#"

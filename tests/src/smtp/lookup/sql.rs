@@ -4,21 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::time::{Duration, Instant};
-
-use common::{
-    Core,
-    expr::{tokenizer::TokenMap, *},
-};
-
-use directory::{
-    QueryParams, Type,
-    backend::internal::{PrincipalField, PrincipalSet, PrincipalValue, manage::ManageDirectory},
-};
-use mail_auth::MX;
-use store::Stores;
-use utils::config::Config;
-
 use crate::{
     directory::DirectoryStore,
     smtp::{
@@ -26,7 +11,13 @@ use crate::{
         session::{TestSession, VerifyResponse},
     },
 };
+use common::{
+    Core,
+    expr::{tokenizer::TokenMap, *},
+};
+use mail_auth::MX;
 use smtp::{core::Session, queue::RecipientDomain};
+use std::time::{Duration, Instant};
 
 const CONFIG: &str = r#"
 [storage]

@@ -4,18 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::time::{Duration, Instant};
-
-use common::Core;
-use mail_auth::{SpfResult, common::parse::TxtRecordParser, spf::Spf};
-
-use smtp::core::Session;
-use utils::config::Config;
-
 use crate::smtp::{
     DnsCache, TestSMTP,
     session::{TestSession, VerifyResponse},
 };
+use common::Core;
+use mail_auth::{SpfResult, common::parse::TxtRecordParser, spf::Spf};
+use smtp::core::Session;
+use std::time::{Duration, Instant};
 
 const CONFIG: &str = r#"
 [session.data.limits]

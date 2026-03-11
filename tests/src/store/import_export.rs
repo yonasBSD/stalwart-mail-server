@@ -13,8 +13,8 @@ use common::{Core, DATABASE_SCHEMA_VERSION, manager::backup::BackupParams};
 use store::{
     rand,
     write::{
-        AnyClass, AnyKey, BatchBuilder, BlobLink, BlobOp, DirectoryClass, Operation, QueueClass,
-        QueueEvent, ValueClass,
+        AnyClass, AnyKey, BatchBuilder, BlobLink, BlobOp, Operation, QueueClass, QueueEvent,
+        ValueClass,
     },
     *,
 };

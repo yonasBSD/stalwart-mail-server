@@ -6,10 +6,6 @@
 
 use super::ClusterTest;
 use crate::imap::idle;
-use directory::backend::internal::{
-    PrincipalAction, PrincipalField, PrincipalUpdate, PrincipalValue,
-    manage::{ManageDirectory, UpdatePrincipal},
-};
 use groupware::cache::GroupwareCache;
 use std::net::IpAddr;
 use types::collection::SyncCollection;

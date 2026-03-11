@@ -8,14 +8,12 @@ use crate::store::{CONFIG, TempDir, cleanup::store_destroy};
 use ahash::AHashMap;
 use common::{Core, Inner, Server, config::storage::Storage};
 use email::message::metadata::MessageMetadata;
-use http::management::stores::destroy_account_blobs;
 use std::sync::Arc;
 use store::{
-    BlobStore, Serialize, SerializeInfallible, Stores,
+    BlobStore, Serialize, SerializeInfallible,
     write::{Archiver, BatchBuilder, BlobLink, BlobOp, ValueClass, blob::BlobQuota, now},
 };
 use types::{blob::BlobClass, blob_hash::BlobHash, collection::Collection, field::EmailField};
-use utils::config::Config;
 
 #[tokio::test]
 pub async fn blob_tests() {

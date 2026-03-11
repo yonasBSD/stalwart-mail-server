@@ -4,14 +4,13 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, path::PathBuf, sync::Arc};
-
 use common::{
     Server,
     config::server::ServerProtocol,
-    listener::{ServerInstance, SessionStream, TcpAcceptor, limiter::ConcurrencyLimiter},
+    network::{ServerInstance, SessionStream, TcpAcceptor, limiter::ConcurrencyLimiter},
 };
 use rustls::{ServerConfig, server::ResolvesServerCert};
+use std::{borrow::Cow, path::PathBuf, sync::Arc};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     sync::watch,
