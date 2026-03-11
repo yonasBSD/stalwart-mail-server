@@ -12,7 +12,7 @@ use registry::schema::{
     prelude::{ObjectType, Property},
     structs::PublicKey,
 };
-use store::registry::RegistryQuery;
+use store::registry::{RegistryObjectCounter, RegistryQuery};
 
 pub(crate) async fn validate_public_key(
     set: &RegistrySetResponse<'_>,
@@ -30,8 +30,11 @@ pub(crate) async fn validate_public_key(
         let num_masked = set
             .server
             .registry()
-            .count(RegistryQuery::new(ObjectType::PublicKey).with_account(set.account_id))
-            .await? as u32;
+            .query::<RegistryObjectCounter>(
+                RegistryQuery::new(ObjectType::PublicKey).with_account(set.account_id),
+            )
+            .await?
+            .0 as u32;
         let account = set.server.account(set.account_id).await?;
         let masked_quota = set
             .server

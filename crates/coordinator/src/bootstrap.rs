@@ -10,12 +10,12 @@ use store::{InMemoryStore, registry::bootstrap::Bootstrap};
 
 #[allow(unreachable_patterns)]
 impl Coordinator {
-    pub async fn build(bp: &mut Bootstrap, in_memory: &InMemoryStore) -> Option<Self> {
+    pub async fn build(bp: &mut Bootstrap, _in_memory: &InMemoryStore) -> Option<Self> {
         let result = match bp.setting_infallible::<structs::Coordinator>().await {
             structs::Coordinator::Disabled => Ok(Coordinator::None),
             #[cfg(feature = "redis")]
             structs::Coordinator::Default => {
-                if let InMemoryStore::Redis(redis) = &in_memory {
+                if let InMemoryStore::Redis(redis) = &_in_memory {
                     Ok(Coordinator::Redis(redis.clone()))
                 } else {
                     Err(

@@ -11,6 +11,7 @@ use crate::{
         network::AsnGeoLookupConfig, server::Listeners, storage::Storage, telemetry::Telemetry,
     },
     ipc::{BroadcastEvent, PushEvent, QueueEvent, ReportingEvent, TrainTaskController},
+    manager::defaults::BootstrapDefaults,
 };
 use arc_swap::ArcSwap;
 use pwhash::sha512_crypt;
@@ -66,107 +67,6 @@ enum StoreOp {
     Console,
     None,
 }
-
-pub const DEFAULT_SETTINGS: &[(&str, &str)] = &[
-    ("oauth.key", "abc"),
-    ("queue.quota.size.messages", "100000"),
-    ("queue.quota.size.size", "10737418240"),
-    ("queue.quota.size.enable", "true"),
-    ("queue.limiter.inbound.ip.key", "remote_ip"),
-    ("queue.limiter.inbound.ip.rate", "5/1s"),
-    ("queue.limiter.inbound.ip.enable", "true"),
-    ("queue.limiter.inbound.sender.key.0", "sender_domain"),
-    ("queue.limiter.inbound.sender.key.1", "rcpt"),
-    ("queue.limiter.inbound.sender.rate", "25/1h"),
-    ("queue.limiter.inbound.sender.enable", "true"),
-    ("report.analysis.addresses", "postmaster@*"),
-    ("queue.virtual.local.threads-per-node", "25"),
-    ("queue.virtual.local.description", "Local delivery queue"),
-    ("queue.virtual.remote.threads-per-node", "50"),
-    ("queue.virtual.remote.description", "Remote delivery queue"),
-    ("queue.virtual.dsn.threads-per-node", "5"),
-    (
-        "queue.virtual.dsn.description",
-        "Delivery Status Notification delivery queue",
-    ),
-    ("queue.virtual.report.threads-per-node", "5"),
-    (
-        "queue.virtual.report.description",
-        "DMARC and TLS report delivery queue",
-    ),
-    ("queue.schedule.local.queue-name", "local"),
-    ("queue.schedule.local.retry.0", "2m"),
-    ("queue.schedule.local.retry.1", "5m"),
-    ("queue.schedule.local.retry.2", "10m"),
-    ("queue.schedule.local.retry.3", "15m"),
-    ("queue.schedule.local.retry.4", "30m"),
-    ("queue.schedule.local.retry.5", "1h"),
-    ("queue.schedule.local.retry.6", "2h"),
-    ("queue.schedule.local.notify.0", "1d"),
-    ("queue.schedule.local.notify.1", "3d"),
-    ("queue.schedule.local.expire-type", "ttl"),
-    ("queue.schedule.local.expire", "3d"),
-    (
-        "queue.schedule.local.description",
-        "Local delivery schedule",
-    ),
-    ("queue.schedule.remote.queue-name", "remote"),
-    ("queue.schedule.remote.retry.0", "2m"),
-    ("queue.schedule.remote.retry.1", "5m"),
-    ("queue.schedule.remote.retry.2", "10m"),
-    ("queue.schedule.remote.retry.3", "15m"),
-    ("queue.schedule.remote.retry.4", "30m"),
-    ("queue.schedule.remote.retry.5", "1h"),
-    ("queue.schedule.remote.retry.6", "2h"),
-    ("queue.schedule.remote.notify.0", "1d"),
-    ("queue.schedule.remote.notify.1", "3d"),
-    ("queue.schedule.remote.expire-type", "ttl"),
-    ("queue.schedule.remote.expire", "3d"),
-    (
-        "queue.schedule.remote.description",
-        "Remote delivery schedule",
-    ),
-    ("queue.schedule.dsn.queue-name", "dsn"),
-    ("queue.schedule.dsn.retry.0", "15m"),
-    ("queue.schedule.dsn.retry.1", "30m"),
-    ("queue.schedule.dsn.retry.2", "1h"),
-    ("queue.schedule.dsn.retry.3", "2h"),
-    ("queue.schedule.dsn.expire-type", "attempts"),
-    ("queue.schedule.dsn.max-attempts", "10"),
-    (
-        "queue.schedule.dsn.description",
-        "Delivery Status Notification delivery schedule",
-    ),
-    ("queue.schedule.report.queue-name", "report"),
-    ("queue.schedule.report.retry.0", "30m"),
-    ("queue.schedule.report.retry.1", "1h"),
-    ("queue.schedule.report.retry.2", "2h"),
-    ("queue.schedule.report.expire-type", "attempts"),
-    ("queue.schedule.report.max-attempts", "8"),
-    (
-        "queue.schedule.report.description",
-        "DMARC and TLS report delivery schedule",
-    ),
-    ("queue.tls.invalid-tls.allow-invalid-certs", "true"),
-    (
-        "queue.tls.invalid-tls.description",
-        "Allow invalid TLS certificates",
-    ),
-    ("queue.tls.default.allow-invalid-certs", "false"),
-    ("queue.tls.default.description", "Default TLS settings"),
-    ("queue.route.local.type", "local"),
-    ("queue.route.local.description", "Local delivery route"),
-    ("queue.route.mx.type", "mx"),
-    ("queue.route.mx.limits.multihomed", "2"),
-    ("queue.route.mx.limits.mx", "5"),
-    ("queue.route.mx.ip-lookup", "ipv4_then_ipv6"),
-    ("queue.route.mx.description", "MX delivery route"),
-    ("queue.connection.default.timeout.connect", "5m"),
-    (
-        "queue.connection.default.description",
-        "Default connection settings",
-    ),
-];
 
 impl BootManager {
     pub async fn init() -> Self {
@@ -250,7 +150,8 @@ impl BootManager {
 
         match import_export {
             StoreOp::None => {
-                let todo = "add default settings, hostname, download filter rules, webadmin";
+                // Add safe defaults if missing
+                bootstrap.insert_safe_defaults().await;
 
                 // Parse components
                 let core = Box::pin(Core::parse(&mut bootstrap, storage)).await;

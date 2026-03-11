@@ -16,7 +16,10 @@ use registry::{
         structs::MaskedEmail,
     },
 };
-use store::{registry::RegistryQuery, write::now};
+use store::{
+    registry::{RegistryObjectCounter, RegistryQuery},
+    write::now,
+};
 use utils::{DomainPart, map::vec_map::VecMap};
 
 pub(crate) async fn validate_masked_email(
@@ -32,8 +35,11 @@ pub(crate) async fn validate_masked_email(
         let num_masked = set
             .server
             .registry()
-            .count(RegistryQuery::new(ObjectType::MaskedEmail).with_account(set.account_id))
-            .await? as u32;
+            .query::<RegistryObjectCounter>(
+                RegistryQuery::new(ObjectType::MaskedEmail).with_account(set.account_id),
+            )
+            .await?
+            .0 as u32;
         let account = set.server.account(set.account_id).await?;
         let masked_quota = set
             .server

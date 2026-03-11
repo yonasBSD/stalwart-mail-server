@@ -273,6 +273,8 @@ impl QueueConfig {
                             30 * 60,
                             60 * 60,
                             2 * 60 * 60,
+                            24 * 60 * 60,
+                            3 * 24 * 60 * 60,
                         ],
                         MtaDeliveryScheduleIntervalsOrDefault::Custom(intervals) => intervals
                             .intervals

@@ -139,7 +139,9 @@ impl DavAclHandler for Server {
 
         if grants.len() != acls.len() || acls.iter().zip(grants.iter()).any(|(a, b)| a != b) {
             // Refresh ACLs
-            self.refresh_archived_acls(&grants, acls).await;
+            self.refresh_archived_acls(&grants, acls)
+                .await
+                .caused_by(trc::location!())?;
 
             let mut batch = BatchBuilder::new();
             match container {

@@ -22,7 +22,6 @@ use crate::{
         encryption::{EncryptionMethod, parse_public_key},
     },
 };
-use ahash::AHashSet;
 use arcstr::ArcStr;
 use registry::{
     schema::{
@@ -60,7 +59,7 @@ impl Server {
             if domain_names_negative.get(domain).is_none() {
                 if let Some(domain_id) = self
                     .registry()
-                    .query::<AHashSet<u64>>(
+                    .query::<Vec<Id>>(
                         RegistryQuery::new(ObjectType::Domain).equal(Property::Name, domain),
                     )
                     .await?
@@ -68,7 +67,7 @@ impl Server {
                     .next()
                 {
                     // Cache positive result
-                    let domain_id = domain_id as u32;
+                    let domain_id = domain_id.document_id();
                     let domain = self.domain_by_id(domain_id).await?;
                     if let Some(domain) = &domain {
                         for name in domain.names.iter() {
@@ -664,20 +663,20 @@ impl Server {
             Err(guard) => {
                 let ids = self
                     .registry()
-                    .query::<AHashSet<u64>>(
+                    .query::<Vec<Id>>(
                         RegistryQuery::new(ObjectType::DkimSignature)
                             .equal(Property::DomainId, domain.id),
                     )
                     .await?;
                 let mut signatures = Vec::with_capacity(ids.len());
                 for id in ids {
-                    if let Some(signature) =
-                        self.registry().object::<DkimSignature>(id.into()).await?
-                    {
+                    if let Some(signature) = self.registry().object::<DkimSignature>(id).await? {
                         match DkimSigner::new(domain.names[0].to_string(), signature).await {
                             Ok(signer) => signatures.push(signer),
                             Err(err) => {
-                                trc::error!(err.ctx(trc::Key::Id, id).caused_by(trc::location!()));
+                                trc::error!(
+                                    err.ctx(trc::Key::Id, id.id()).caused_by(trc::location!())
+                                );
                             }
                         }
                     }

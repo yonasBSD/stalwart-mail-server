@@ -24,7 +24,6 @@ use registry::{
 };
 use std::future::Future;
 use store::{
-    ahash::AHashSet,
     rand::{Rng, distr::Alphanumeric, rng},
     registry::{RegistryQuery, write::RegistryWrite},
 };
@@ -125,24 +124,23 @@ impl ClientRegistrationHandler for Server {
         // Fetch client registration
         let found_registration = if let Some(client_id) = self
             .registry()
-            .query::<AHashSet<u64>>(
+            .query::<Vec<Id>>(
                 RegistryQuery::new(ObjectType::OAuthClient).equal(Property::ClientId, client_id),
             )
             .await?
-            .iter()
-            .next()
+            .first()
         {
             if let Some(redirect_uri) = redirect_uri {
                 let client = self
                     .registry()
-                    .object::<OAuthClient>(Id::new(*client_id))
+                    .object::<OAuthClient>(*client_id)
                     .await?
                     .ok_or_else(|| {
                         trc::StoreEvent::UnexpectedError
                             .into_err()
                             .details("OAuth client not found.")
                             .caused_by(trc::location!())
-                            .ctx(trc::Key::Id, *client_id)
+                            .ctx(trc::Key::Id, client_id.id())
                     })?;
                 if client.redirect_uris.iter().any(|uri| uri == redirect_uri) {
                     return Ok(None);

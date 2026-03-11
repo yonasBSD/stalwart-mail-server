@@ -20,7 +20,10 @@ use registry::{
     },
     types::EnumImpl,
 };
-use store::{registry::RegistryQuery, write::BatchBuilder};
+use store::{
+    registry::{RegistryObjectCounter, RegistryQuery},
+    write::BatchBuilder,
+};
 use trc::AddContext;
 use types::id::Id;
 
@@ -325,11 +328,21 @@ pub(crate) async fn validate_tenant_quota(
                 TenantStorageQuota::MaxDkimKeys => (ObjectType::DkimSignature, None, "DKIM keys"),
                 TenantStorageQuota::MaxDiskQuota => unreachable!(),
             };
-            let mut query = RegistryQuery::new(object_type).with_tenant(tenant_id.into());
-            if let Some(type_filter) = type_filter {
-                query = query.equal(Property::Type, type_filter.to_id());
-            }
-            let count = set.server.registry().count(query).await? as u32;
+            let query = RegistryQuery::new(object_type).with_tenant(tenant_id.into());
+            let count = if let Some(type_filter) = type_filter {
+                set.server
+                    .registry()
+                    .query::<Vec<Id>>(query.equal(Property::Type, type_filter.to_id()))
+                    .await?
+                    .len() as u32
+            } else {
+                set.server
+                    .registry()
+                    .query::<RegistryObjectCounter>(query)
+                    .await?
+                    .0 as u32
+            };
+
             if count >= quotas {
                 return Ok(Err(SetError::over_quota().with_description(format!(
                     "You have exceeded your quota of {} {}.",

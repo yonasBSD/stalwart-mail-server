@@ -14,7 +14,7 @@ use registry::{
     types::EnumImpl,
 };
 use std::sync::Arc;
-use store::{BlobStore, InMemoryStore, RegistryStore, SearchStore, Store, registry::RegistryQuery};
+use store::{BlobStore, InMemoryStore, RegistryStore, SearchStore, Store};
 
 pub mod archive;
 pub mod blob;
@@ -88,15 +88,11 @@ impl Server {
     }
 
     pub async fn total_accounts(&self) -> trc::Result<usize> {
-        self.registry()
-            .count(RegistryQuery::new(ObjectType::Account))
-            .await
+        self.registry().count_object(ObjectType::Account).await
     }
 
     pub async fn total_domains(&self) -> trc::Result<usize> {
-        self.registry()
-            .count(RegistryQuery::new(ObjectType::Domain))
-            .await
+        self.registry().count_object(ObjectType::Domain).await
     }
 
     #[cfg(not(feature = "enterprise"))]

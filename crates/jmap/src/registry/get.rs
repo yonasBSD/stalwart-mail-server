@@ -192,21 +192,15 @@ impl RegistryGet for Server {
                 let ids = if let Some(ids) = get.ids.take() {
                     ids
                 } else {
-                    let mut ids = self
-                        .registry()
-                        .query::<AHashSet<u64>>(
+                    self.registry()
+                        .query::<Vec<Id>>(
                             RegistryQuery::new(object_type)
                                 .with_tenant(access_token.tenant_id())
-                                .with_account_opt(is_account_filtered.then_some(get.account_id)),
+                                .with_account_opt(is_account_filtered.then_some(get.account_id))
+                                .with_limit(self.core.jmap.get_max_objects),
                         )
                         .await
                         .caused_by(trc::location!())?
-                        .into_iter()
-                        .take(self.core.jmap.get_max_objects)
-                        .map(Id::new)
-                        .collect::<Vec<_>>();
-                    ids.sort_unstable();
-                    ids
                 };
                 get.response.list.reserve(ids.len());
 

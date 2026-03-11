@@ -35,10 +35,7 @@ use registry::{
     },
 };
 use std::str::FromStr;
-use store::{
-    ahash::AHashSet,
-    registry::{RegistryFilterOp, RegistryFilterValue},
-};
+use store::registry::{RegistryFilterOp, RegistryFilterValue};
 use types::id::Id;
 
 pub trait RegistryQuery: Sync + Send {
@@ -210,9 +207,19 @@ impl RegistryQuery for Server {
                     }
                 })?;
 
-                let (comparator, is_ascending) = request.extract_comparator()?;
-                let matches = if query.has_filters() || matches!(comparator, Property::Id) {
-                    let matches = self.registry().query::<AHashSet<u64>>(query).await?;
+                let params = request
+                    .extract_parameters(self.core.jmap.query_max_results, Some(Property::Id))?;
+                if let Some(limit) = params.limit {
+                    query = query.with_limit(limit);
+                    if let Some(anchor) = params.anchor {
+                        query = query.with_anchor(anchor);
+                    } else if let Some(position) = params.position {
+                        query = query.with_index_start(position);
+                    }
+                }
+
+                let matches = if query.has_filters() || params.sort_by == Property::Id {
+                    let matches = self.registry().query::<Vec<Id>>(query).await?;
                     if matches.is_empty() {
                         return QueryResponseBuilder::new(
                             0,
@@ -227,12 +234,10 @@ impl RegistryQuery for Server {
                     None
                 };
 
-                let results = match comparator {
+                let results = match params.sort_by {
                     Property::Id => {
-                        let mut results = matches.unwrap().into_iter().collect::<Vec<_>>();
-                        if is_ascending {
-                            results.sort_unstable();
-                        } else {
+                        let mut results = matches.unwrap();
+                        if !params.sort_ascending {
                             results.sort_unstable_by(|a, b| b.cmp(a));
                         }
                         results
@@ -249,11 +254,16 @@ impl RegistryQuery for Server {
 
                         if index.typ == IndexSchemaType::Search {
                             self.registry()
-                                .sort_by_index(object_type, index.prop, matches, is_ascending)
+                                .sort_by_index(
+                                    object_type,
+                                    index.prop,
+                                    matches,
+                                    params.sort_ascending,
+                                )
                                 .await?
                         } else {
                             self.registry()
-                                .sort_by_pk(object_type, index.prop, matches, is_ascending)
+                                .sort_by_pk(object_type, index.prop, matches, params.sort_ascending)
                                 .await?
                         }
                     }
@@ -268,7 +278,7 @@ impl RegistryQuery for Server {
                 );
 
                 for id in results {
-                    if !response.add_id(id.into()) {
+                    if !response.add_id(id) {
                         break;
                     }
                 }
@@ -285,7 +295,19 @@ pub(crate) trait RegistryQueryFilters {
         cb: impl FnMut(Property, RegistryFilterOp, serde_json::Value) -> bool,
     ) -> trc::Result<()>;
 
-    fn extract_comparator(&mut self) -> trc::Result<(Property, bool)>;
+    fn extract_parameters(
+        &mut self,
+        max_results: usize,
+        external_filter: Option<Property>,
+    ) -> trc::Result<RegistryQueryParameters>;
+}
+
+pub(crate) struct RegistryQueryParameters {
+    pub sort_by: Property,
+    pub sort_ascending: bool,
+    pub anchor: Option<u64>,
+    pub position: Option<u64>,
+    pub limit: Option<usize>,
 }
 
 impl RegistryQueryFilters for QueryRequest<Registry> {
@@ -339,7 +361,11 @@ impl RegistryQueryFilters for QueryRequest<Registry> {
         Ok(())
     }
 
-    fn extract_comparator(&mut self) -> trc::Result<(Property, bool)> {
+    fn extract_parameters(
+        &mut self,
+        max_results: usize,
+        external_filter: Option<Property>,
+    ) -> trc::Result<RegistryQueryParameters> {
         let comparator = self
             .sort
             .take()
@@ -349,7 +375,34 @@ impl RegistryQueryFilters for QueryRequest<Registry> {
             .unwrap_or_else(|| Comparator::ascending(RegistryComparator::Property(Property::Id)));
 
         match comparator.property {
-            RegistryComparator::Property(property) => Ok((property, comparator.is_ascending)),
+            RegistryComparator::Property(property) => {
+                if external_filter.is_some_and(|f| f == property)
+                    && !self.calculate_total.unwrap_or(false)
+                    && self.anchor_offset.is_none_or(|offset| offset == 0)
+                    && self.position.is_none_or(|pos| pos > 0)
+                {
+                    Ok(RegistryQueryParameters {
+                        sort_by: property,
+                        sort_ascending: comparator.is_ascending,
+                        anchor: self.anchor.take().map(|anchor| anchor.id()),
+                        position: self.position.take().map(|pos| pos as u64),
+                        limit: self
+                            .limit
+                            .take()
+                            .map(|limit| std::cmp::min(limit, max_results))
+                            .unwrap_or(max_results)
+                            .into(),
+                    })
+                } else {
+                    Ok(RegistryQueryParameters {
+                        sort_by: property,
+                        sort_ascending: comparator.is_ascending,
+                        anchor: None,
+                        position: None,
+                        limit: None,
+                    })
+                }
+            }
             RegistryComparator::_T(other) => Err(trc::JmapEvent::UnsupportedSort
                 .into_err()
                 .details(format!("Property {} is not supported for sorting", other))),

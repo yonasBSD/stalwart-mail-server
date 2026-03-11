@@ -8,7 +8,11 @@ use crate::{Server, cache::invalidate::CacheInvalidationBuilder, ipc::CacheInval
 use types::acl::{AclGrant, ArchivedAclGrant};
 
 impl Server {
-    pub async fn refresh_acls(&self, acl_changes: &[AclGrant], current: Option<&[AclGrant]>) {
+    pub async fn refresh_acls(
+        &self,
+        acl_changes: &[AclGrant],
+        current: Option<&[AclGrant]>,
+    ) -> trc::Result<()> {
         let mut changed_principals = CacheInvalidationBuilder::default();
         if let Some(acl_current) = current {
             for current_item in acl_current {
@@ -44,14 +48,14 @@ impl Server {
             }
         }
 
-        self.invalidate_caches(changed_principals).await;
+        self.invalidate_caches(changed_principals).await
     }
 
     pub async fn refresh_archived_acls(
         &self,
         acl_changes: &[AclGrant],
         acl_current: &[ArchivedAclGrant],
-    ) {
+    ) -> trc::Result<()> {
         let mut changed_principals = CacheInvalidationBuilder::default();
 
         for current_item in acl_current.iter() {
@@ -83,6 +87,6 @@ impl Server {
             }
         }
 
-        self.invalidate_caches(changed_principals).await;
+        self.invalidate_caches(changed_principals).await
     }
 }

@@ -512,7 +512,11 @@ impl RegistrySet for Server {
                             .write(RegistryWrite::Delete {
                                 object_id,
                                 object: Some(&object),
-                                force: object_type == ObjectType::Account, // Force delete accounts to allow recovery, but not other objects
+                                allowed_orphan_types: if object_type == ObjectType::Account {
+                                    &[ObjectType::PublicKey, ObjectType::MaskedEmail]
+                                } else {
+                                    &[]
+                                },
                             })
                             .await?
                         {

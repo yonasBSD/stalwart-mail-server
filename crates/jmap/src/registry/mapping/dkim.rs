@@ -7,15 +7,18 @@
 use crate::registry::mapping::{
     ObjectResponse, RegistrySetResponse, ValidationResult, principal::validate_tenant_quota,
 };
-use common::config::smtp::auth::{DkimSigner, rsa_key_parse, simple_pem_parse};
+use common::{
+    config::smtp::auth::{DkimSigner, rsa_key_parse, simple_pem_parse},
+    network::dkim::generate_dkim_private_key,
+};
 use jmap_proto::error::set::SetError;
-use mail_auth::{common::crypto::Ed25519Key, dkim::generate::DkimKeyPair};
+use mail_auth::common::crypto::Ed25519Key;
 use mail_builder::encoders::base64::base64_encode;
 use pkcs8::Document;
 use registry::{
     jmap::IntoValue,
     schema::{
-        enums::{DkimSignatureType, TenantStorageQuota},
+        enums::TenantStorageQuota,
         prelude::{MASKED_PASSWORD, Property},
         structs::{DkimPrivateKey, DkimSignature, SecretTextValue},
     },
@@ -47,41 +50,9 @@ pub(crate) async fn validate_dkim_signature(
         *pk = old_key.private_key().clone();
     }
     if pk == &DkimPrivateKey::Generate {
-        let private_key = tokio::task::spawn_blocking(move || match key_type {
-            DkimSignatureType::Dkim1RsaSha256 => {
-                DkimKeyPair::generate_rsa(2048).map(|key| (key, "RSA PRIVATE KEY"))
-            }
-            DkimSignatureType::Dkim1Ed25519Sha256 => {
-                DkimKeyPair::generate_ed25519().map(|key| (key, "PRIVATE KEY"))
-            }
-        })
-        .await
-        .map_err(|err| {
-            trc::EventType::Server(trc::ServerEvent::ThreadError)
-                .reason(err)
-                .caused_by(trc::location!())
-        })?;
-
-        match private_key {
-            Ok((private_key, pk_type)) => {
-                let mut pem = format!("-----BEGIN {pk_type}-----\n").into_bytes();
-                let mut lf_count = 65;
-                for ch in base64_encode(private_key.private_key()).unwrap_or_default() {
-                    pem.push(ch);
-                    lf_count -= 1;
-                    if lf_count == 0 {
-                        pem.push(b'\n');
-                        lf_count = 65;
-                    }
-                }
-                if lf_count != 65 {
-                    pem.push(b'\n');
-                }
-                pem.extend_from_slice(format!("-----END {pk_type}-----\n").as_bytes());
-
-                let pk_value = DkimPrivateKey::Value(SecretTextValue {
-                    secret: String::from_utf8(pem).unwrap_or_default(),
-                });
+        match generate_dkim_private_key(key_type).await? {
+            Ok(secret) => {
+                let pk_value = DkimPrivateKey::Value(SecretTextValue { secret });
 
                 response
                     .object

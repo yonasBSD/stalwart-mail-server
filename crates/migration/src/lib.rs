@@ -13,7 +13,7 @@
     v013::migrate_v0_13,
     v014::{SUBSPACE_BITMAP_ID, migrate_principal_v0_14, migrate_v0_14},
 };*/
-use common::{DATABASE_SCHEMA_VERSION, Server, manager::boot::DEFAULT_SETTINGS};
+use common::{DATABASE_SCHEMA_VERSION, Server};
 use std::time::Duration;
 use store::{
     Deserialize, IterateParams, SUBSPACE_PROPERTY, SUBSPACE_QUEUE_MESSAGE, SUBSPACE_REGISTRY,

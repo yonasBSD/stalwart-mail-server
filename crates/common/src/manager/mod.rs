@@ -13,6 +13,7 @@ pub mod application;
 pub mod backup;
 pub mod boot;
 pub mod console;
+pub mod defaults;
 pub mod restore;
 
 pub const WEBADMIN_KEY: &[u8] = "STALWART_WEBADMIN".as_bytes();

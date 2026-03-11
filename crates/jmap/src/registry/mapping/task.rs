@@ -6,23 +6,37 @@
 
 use crate::{
     api::query::QueryResponseBuilder,
-    registry::mapping::{RegistryGetResponse, RegistryQueryResponse, RegistrySetResponse},
+    registry::{
+        mapping::{RegistryGetResponse, RegistryQueryResponse, RegistrySetResponse},
+        query::RegistryQueryFilters,
+    },
 };
 use common::Server;
-use jmap_proto::error::set::{SetError, SetErrorType};
+use jmap_proto::{
+    error::set::{SetError, SetErrorType},
+    object::registry::RegistryComparator,
+    types::state::State,
+};
 use jmap_tools::{JsonPointer, JsonPointerItem, Key};
 use registry::{
     jmap::{IntoValue, JsonPointerPatch, RegistryJsonPatch},
     pickle::Pickle,
-    schema::{enums::TaskType, prelude::Object, structs::Task},
+    schema::{
+        enums::{TaskStatusType, TaskType},
+        prelude::{Object, Property},
+        structs::Task,
+    },
     types::{
         EnumImpl, ObjectImpl,
+        datetime::UTCDateTime,
         index::{IndexBuilder, IndexKey},
     },
 };
 use services::task_manager::lock::TaskLockManager;
+use std::str::FromStr;
 use store::{
     IterateParams, SerializeInfallible, U64_LEN, ValueKey,
+    registry::RegistryFilterOp,
     write::{BatchBuilder, RegistryClass, TaskQueueClass, ValueClass, key::DeserializeBigEndian},
 };
 use trc::AddContext;
@@ -372,14 +386,118 @@ pub(crate) async fn task_get(
 }
 
 pub(crate) async fn task_query(
-    mut query: RegistryQueryResponse<'_>,
+    mut req: RegistryQueryResponse<'_>,
 ) -> trc::Result<QueryResponseBuilder> {
-    todo!()
+    let mut due_from = 0u64;
+    let mut due_to = u64::MAX;
+
+    req.request
+        .extract_filters(|property, op, value| match property {
+            Property::Due => {
+                if let Some(due) = value.as_str().and_then(|s| UTCDateTime::from_str(s).ok()) {
+                    let due = due.timestamp() as u64;
+                    let (from, to) = match op {
+                        RegistryFilterOp::Equal => (due, due),
+                        RegistryFilterOp::GreaterThan => (due + 1, u64::MAX),
+                        RegistryFilterOp::GreaterEqualThan => (due, u64::MAX),
+                        RegistryFilterOp::LowerThan => (0, due - 1),
+                        RegistryFilterOp::LowerEqualThan => (0, due),
+                        _ => return false,
+                    };
+
+                    // Intersect with existing range
+                    due_from = due_from.max(from);
+                    due_to = due_to.min(to);
+
+                    due_from <= due_to
+                } else {
+                    false
+                }
+            }
+            Property::Status => {
+                if let Some(typ) = value.as_str().and_then(TaskStatusType::parse) {
+                    if typ == TaskStatusType::Failed {
+                        due_from = u64::MAX;
+                        due_to = u64::MAX;
+                    }
+                    true
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        })?;
+
+    if req
+        .request
+        .sort
+        .as_ref()
+        .and_then(|sort| sort.first())
+        .is_some_and(|comp| !matches!(comp.property, RegistryComparator::Property(Property::Due)))
+    {
+        return Err(trc::JmapEvent::UnsupportedSort
+            .into_err()
+            .details("Only sorting by 'due' is supported for tasks".to_string()));
+    }
+
+    let params = req
+        .request
+        .extract_parameters(req.server.core.jmap.query_max_results, None)?;
+
+    // Build response
+    let mut response = QueryResponseBuilder::new(
+        req.server.core.jmap.query_max_results,
+        req.server.core.jmap.query_max_results,
+        State::Initial,
+        &req.request,
+    );
+
+    if response.response.total.is_some() {
+        response.response.total = Some(0);
+    }
+
+    let from_key = ValueKey::from(ValueClass::TaskQueue(TaskQueueClass::Due {
+        id: 0,
+        due: due_from,
+    }));
+    let to_key = ValueKey::from(ValueClass::TaskQueue(TaskQueueClass::Due {
+        id: u64::MAX,
+        due: due_to,
+    }));
+
+    req.server
+        .store()
+        .iterate(
+            IterateParams::new(from_key, to_key)
+                .set_ascending(params.sort_ascending)
+                .no_values(),
+            |key, _| {
+                let id = key.deserialize_be_u64(U64_LEN)?;
+                if let Some(total) = response.response.total.as_mut() {
+                    *total += 1;
+                    if !response.is_full() {
+                        response.add_id(id.into());
+                    }
+                    Ok(true)
+                } else {
+                    Ok(response.add_id(id.into()))
+                }
+            },
+        )
+        .await
+        .caused_by(trc::location!())?;
+
+    if let (Some(total), Some(limit)) = (response.response.total, response.response.limit)
+        && total < limit
+    {
+        response.response.limit = None;
+    }
+
+    Ok(response)
 }
 
 async fn task_ids(server: &Server, max_results: usize) -> trc::Result<Vec<Id>> {
-    let mut events = Vec::with_capacity(8);
-
+    let mut tasks = Vec::with_capacity(8);
     let from_key = ValueKey::from(ValueClass::TaskQueue(TaskQueueClass::Due { id: 0, due: 0 }));
     let to_key = ValueKey::from(ValueClass::TaskQueue(TaskQueueClass::Due {
         id: u64::MAX,
@@ -391,12 +509,12 @@ async fn task_ids(server: &Server, max_results: usize) -> trc::Result<Vec<Id>> {
         .iterate(
             IterateParams::new(from_key, to_key).ascending().no_values(),
             |key, _| {
-                events.push(key.deserialize_be_u64(U64_LEN)?.into());
+                tasks.push(key.deserialize_be_u64(U64_LEN)?.into());
 
-                Ok(events.len() < max_results)
+                Ok(tasks.len() < max_results)
             },
         )
         .await
         .caused_by(trc::location!())
-        .map(|_| events)
+        .map(|_| tasks)
 }

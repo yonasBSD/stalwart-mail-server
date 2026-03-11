@@ -106,7 +106,9 @@ impl CalendarSet for Server {
                     continue 'create;
                 }
 
-                self.refresh_acls(&calendar.acls, None).await;
+                self.refresh_acls(&calendar.acls, None)
+                    .await
+                    .caused_by(trc::location!())?;
             }
 
             // Insert record
@@ -192,7 +194,8 @@ impl CalendarSet for Server {
                     continue 'update;
                 }
                 self.refresh_archived_acls(&new_calendar.acls, calendar.inner.acls.as_slice())
-                    .await;
+                    .await
+                    .caused_by(trc::location!())?;
             }
 
             // Update record

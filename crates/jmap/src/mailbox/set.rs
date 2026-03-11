@@ -581,7 +581,8 @@ impl MailboxSet for Server {
                 &changes.acls,
                 current.as_ref().map(|m| m.inner.acls.as_slice()),
             )
-            .await;
+            .await
+            .caused_by(trc::location!())?;
         }
 
         // Validate

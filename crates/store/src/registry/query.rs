@@ -7,7 +7,10 @@
 use crate::{
     IterateParams, RegistryStore, SUBSPACE_REGISTRY_IDX, SUBSPACE_REGISTRY_PK, Store, U16_LEN,
     U64_LEN, ValueKey,
-    registry::{RegistryFilter, RegistryFilterOp, RegistryFilterValue, RegistryQuery},
+    registry::{
+        RegistryFilter, RegistryFilterOp, RegistryFilterValue, RegistryObjectCounter,
+        RegistryQuery, RegistryQueryStart,
+    },
     write::{
         AnyClass, RegistryClass, ValueClass,
         key::{DeserializeBigEndian, KeySerializer},
@@ -15,7 +18,7 @@ use crate::{
 };
 use ahash::AHashSet;
 use registry::{
-    schema::prelude::{OBJ_FILTER_ACCOUNT, OBJ_FILTER_TENANT, OBJ_SINGLETON, ObjectType, Property},
+    schema::prelude::{OBJ_FILTER_ACCOUNT, OBJ_FILTER_TENANT, ObjectType, Property},
     types::EnumImpl,
 };
 use roaring::RoaringBitmap;
@@ -25,30 +28,20 @@ use types::id::Id;
 
 impl RegistryStore {
     pub async fn query<T: RegistryQueryResults>(&self, query: RegistryQuery) -> trc::Result<T> {
-        let flags = query.object_type.flags();
-        if flags & OBJ_SINGLETON != 0 {
-            if query.filters.is_empty() {
-                let mut results = T::default();
-                results.push(Id::singleton().id());
-                return Ok(results);
-            } else {
-                return Err(trc::EventType::Registry(trc::RegistryEvent::NotSupported)
-                    .into_err()
-                    .details("Singletons do not support searching"));
-            }
-        } else if query.filters.is_empty() {
-            return all_ids::<T>(&self.0.store, query.object_type).await;
+        if query.filters.is_empty() {
+            return all_ids::<T>(&self.0.store, query).await;
         }
 
         let mut u64_buffer;
         let mut u16_buffer;
         let mut bool_buffer = [0u8; 1];
 
-        let mut results = T::default();
-        for filter in query.filters {
+        let mut results = ResultsPagination::<T>::new(&query);
+        for filter in &query.filters {
             if filter.op == RegistryFilterOp::TextMatch {
-                if let RegistryFilterValue::String(text) = filter.value {
-                    let mut matches = T::default();
+                if let RegistryFilterValue::String(text) = &filter.value {
+                    let mut matches = ResultsPagination::<T>::new(&query);
+
                     for word in text
                         .split(|c: char| !c.is_alphanumeric())
                         .filter(|s| s.len() > 1)
@@ -62,29 +55,32 @@ impl RegistryStore {
                             Cow::Owned(word.to_lowercase())
                         };
 
-                        let result = index_range(
+                        let mut result = ResultsPagination::<T>::new(&query);
+
+                        index_range(
                             &self.0.store,
                             query.object_type,
                             filter.property.to_id(),
                             word.as_bytes(),
                             RegistryFilterOp::Equal,
+                            &mut result,
                         )
                         .await?;
 
-                        if !matches.has_items() {
+                        if !matches.list.has_items() {
                             matches = result;
                         } else {
-                            matches.intersect(&result);
-                            if !matches.has_items() {
+                            matches.list.intersect(&result.list);
+                            if !matches.list.has_items() {
                                 break;
                             }
                         }
                     }
 
-                    if !results.has_items() {
+                    if !results.list.has_items() {
                         results = matches;
                     } else {
-                        results.intersect(&matches);
+                        results.list.intersect(&matches.list);
                     }
                 } else {
                     return Err(trc::EventType::Registry(trc::RegistryEvent::NotSupported)
@@ -109,13 +105,15 @@ impl RegistryStore {
                     }
                 };
 
-                let result = if !filter.is_pk {
+                let mut result = ResultsPagination::<T>::new(&query);
+                if !filter.is_pk {
                     index_range(
                         &self.0.store,
                         query.object_type,
                         filter.property.to_id(),
                         value,
                         filter.op,
+                        &mut result,
                     )
                     .await?
                 } else {
@@ -125,36 +123,40 @@ impl RegistryStore {
                         filter.property.to_id(),
                         value,
                         filter.op,
+                        &mut result,
                     )
                     .await?
                 };
 
-                if !results.has_items() {
+                if !results.list.has_items() {
                     results = result;
                 } else {
-                    results.intersect(&result);
+                    results.list.intersect(&result.list);
                 }
             }
 
-            if !results.has_items() {
-                return Ok(results);
+            if !results.list.has_items() {
+                break;
             }
         }
 
-        Ok(results)
+        Ok(results.finalize())
     }
 
-    pub async fn count(&self, query: RegistryQuery) -> trc::Result<usize> {
-        self.query::<AHashSet<u64>>(query).await.map(|r| r.len())
+    pub async fn count_object(&self, object_type: ObjectType) -> trc::Result<usize> {
+        self.query::<RegistryObjectCounter>(RegistryQuery::new(object_type))
+            .await
+            .map(|r| r.0)
     }
 
     pub async fn sort_by_index(
         &self,
         object: ObjectType,
         property: Property,
-        mut ids: Option<AHashSet<u64>>,
+        ids: Option<Vec<Id>>,
         ascending: bool,
-    ) -> trc::Result<Vec<u64>> {
+    ) -> trc::Result<Vec<Id>> {
+        let mut ids = ids.map(|ids| ids.into_iter().collect::<AHashSet<_>>());
         let mut ids_sorted = Vec::with_capacity(ids.as_ref().map_or(0, |ids| ids.len()));
 
         let object_id = object.to_id();
@@ -182,7 +184,7 @@ impl RegistryStore {
                     .no_values()
                     .set_ascending(ascending),
                 |key, _| {
-                    let id = key.deserialize_be_u64(key.len() - U64_LEN)?;
+                    let id = Id::from(key.deserialize_be_u64(key.len() - U64_LEN)?);
                     if let Some(ids) = ids.as_mut() {
                         if ids.remove(&id) {
                             ids_sorted.push(id);
@@ -211,9 +213,10 @@ impl RegistryStore {
         &self,
         object: ObjectType,
         property: Property,
-        mut ids: Option<AHashSet<u64>>,
+        ids: Option<Vec<Id>>,
         ascending: bool,
-    ) -> trc::Result<Vec<u64>> {
+    ) -> trc::Result<Vec<Id>> {
+        let mut ids = ids.map(|ids| ids.into_iter().collect::<AHashSet<_>>());
         let mut ids_sorted = Vec::with_capacity(ids.as_ref().map_or(0, |ids| ids.len()));
 
         let object_id = object.to_id();
@@ -239,7 +242,7 @@ impl RegistryStore {
             .iterate(
                 IterateParams::new(begin, end).set_ascending(ascending),
                 |_, value| {
-                    let id = value.deserialize_be_u64(U16_LEN)?;
+                    let id = Id::from(value.deserialize_be_u64(U16_LEN)?);
 
                     if let Some(ids) = ids.as_mut() {
                         if ids.remove(&id) {
@@ -266,15 +269,22 @@ impl RegistryStore {
     }
 }
 
-async fn all_ids<T: RegistryQueryResults>(store: &Store, object: ObjectType) -> trc::Result<T> {
+async fn all_ids<T: RegistryQueryResults>(store: &Store, query: RegistryQuery) -> trc::Result<T> {
     let mut bm = T::default();
-    let object_id = object.to_id();
+    let object_id = query.object_type.to_id();
+
+    let (item_id, mut offset) = match query.start {
+        RegistryQueryStart::Index(index) => (0, index),
+        RegistryQueryStart::Anchor(anchor) => (anchor + 1, 0),
+        RegistryQueryStart::None => (0, 0),
+    };
+
     store
         .iterate(
             IterateParams::new(
                 ValueKey::from(ValueClass::Registry(RegistryClass::IndexId {
                     object_id,
-                    item_id: 0u64,
+                    item_id,
                 })),
                 ValueKey::from(ValueClass::Registry(RegistryClass::IndexId {
                     object_id,
@@ -284,11 +294,15 @@ async fn all_ids<T: RegistryQueryResults>(store: &Store, object: ObjectType) -> 
             .no_values()
             .ascending(),
             |key, _| {
-                if key.len() == U64_LEN + U16_LEN {
-                    bm.push(key.deserialize_be_u64(key.len() - U64_LEN)?);
+                if offset == 0 {
+                    if key.len() == U64_LEN + U16_LEN {
+                        bm.push(key.deserialize_be_u64(key.len() - U64_LEN)?);
+                    }
+                    Ok(query.limit.is_none_or(|limit| bm.count() < limit))
+                } else {
+                    offset -= 1;
+                    Ok(true)
                 }
-
-                Ok(true)
             },
         )
         .await
@@ -302,7 +316,8 @@ async fn index_range<T: RegistryQueryResults>(
     index_id: u16,
     match_value: &[u8],
     op: RegistryFilterOp,
-) -> trc::Result<T> {
+    results: &mut ResultsPagination<T>,
+) -> trc::Result<()> {
     let object_id = object.to_id();
     let ((from_value, from_doc_id, from_index_id), (end_value, end_doc_id, end_index_id)) = match op
     {
@@ -343,7 +358,6 @@ async fn index_range<T: RegistryQueryResults>(
             .finalize(),
     }));
 
-    let mut bm = T::default();
     let prefix = KeySerializer::new(U16_LEN * 2)
         .write(object_id)
         .write(index_id)
@@ -372,15 +386,15 @@ async fn index_range<T: RegistryQueryResults>(
                 };
 
                 if matches {
-                    bm.push(key.deserialize_be_u64(id_pos)?);
+                    Ok(results.push(key.deserialize_be_u64(id_pos)?))
+                } else {
+                    Ok(true)
                 }
-
-                Ok(true)
             },
         )
         .await
         .caused_by(trc::location!())
-        .map(|_| bm)
+        .inspect(|_| results.list.sort())
 }
 
 async fn pk_range<T: RegistryQueryResults>(
@@ -389,7 +403,8 @@ async fn pk_range<T: RegistryQueryResults>(
     index_id: u16,
     match_value: &[u8],
     op: RegistryFilterOp,
-) -> trc::Result<T> {
+    results: &mut ResultsPagination<T>,
+) -> trc::Result<()> {
     let object_id = object.to_id();
     let ((from_value, from_index_id), (end_value, end_index_id)) = match op {
         RegistryFilterOp::LowerThan => ((&[][..], object_id), (match_value, object_id)),
@@ -418,7 +433,6 @@ async fn pk_range<T: RegistryQueryResults>(
             .finalize(),
     }));
 
-    let mut bm = T::default();
     let prefix = KeySerializer::new(U16_LEN * 2)
         .write(object_id)
         .write(index_id)
@@ -445,25 +459,28 @@ async fn pk_range<T: RegistryQueryResults>(
             };
 
             if matches {
-                bm.push(value.deserialize_be_u64(U16_LEN)?);
+                Ok(results.push(value.deserialize_be_u64(U16_LEN)?))
+            } else {
+                Ok(true)
             }
-
-            Ok(true)
         })
         .await
         .caused_by(trc::location!())
-        .map(|_| bm)
+        .inspect(|_| results.list.sort())
 }
 
 pub trait RegistryQueryResults: Default + Sized + Sync + Send {
     fn push(&mut self, id: u64);
     fn has_items(&self) -> bool;
     fn intersect(&mut self, other: &Self);
+    fn count(&self) -> usize;
+    fn sort(&mut self);
+    fn into_list(self) -> impl Iterator<Item = u64>;
 }
 
-impl RegistryQueryResults for AHashSet<u64> {
+impl RegistryQueryResults for Vec<Id> {
     fn push(&mut self, id: u64) {
-        self.insert(id);
+        self.push(Id::new(id));
     }
 
     fn has_items(&self) -> bool {
@@ -471,7 +488,45 @@ impl RegistryQueryResults for AHashSet<u64> {
     }
 
     fn intersect(&mut self, other: &Self) {
-        self.retain(|id| other.contains(id));
+        let a = self;
+        let b = other;
+        let mut i = 0;
+        let mut j = 0;
+        let mut write = 0;
+
+        while i < a.len() && j < b.len() {
+            if a[i] < b[j] {
+                let target = b[j];
+                let remain = &a[i..];
+                i += remain.partition_point(|&x| x < target);
+            } else if a[i] > b[j] {
+                let target = a[i];
+                let remain = &b[j..];
+                j += remain.partition_point(|&x| x < target);
+            } else {
+                a[write] = a[i];
+                write += 1;
+                i += 1;
+                j += 1;
+            }
+        }
+        a.truncate(write);
+    }
+
+    fn count(&self) -> usize {
+        self.len()
+    }
+
+    fn sort(&mut self) {
+        match self.len() {
+            0 | 1 => {}
+            ..3000 => self.sort_unstable(),
+            _ => radsort::sort_by_key(self, |id| id.id()),
+        }
+    }
+
+    fn into_list(self) -> impl Iterator<Item = u64> {
+        self.into_iter().map(|id| id.id())
     }
 }
 
@@ -487,6 +542,112 @@ impl RegistryQueryResults for RoaringBitmap {
     fn intersect(&mut self, other: &Self) {
         self.bitand_assign(other);
     }
+
+    fn count(&self) -> usize {
+        self.len() as usize
+    }
+
+    fn sort(&mut self) {}
+
+    fn into_list(self) -> impl Iterator<Item = u64> {
+        self.into_iter().map(|id| id as u64)
+    }
+}
+
+impl RegistryQueryResults for RegistryObjectCounter {
+    fn push(&mut self, _: u64) {
+        self.0 += 1;
+    }
+
+    fn has_items(&self) -> bool {
+        self.0 > 0
+    }
+
+    fn intersect(&mut self, _: &Self) {
+        unimplemented!()
+    }
+
+    fn count(&self) -> usize {
+        self.0
+    }
+
+    fn sort(&mut self) {}
+
+    fn into_list(self) -> impl Iterator<Item = u64> {
+        Vec::new().into_iter()
+    }
+}
+
+struct ResultsPagination<T: RegistryQueryResults> {
+    list: T,
+    offset: usize,
+    anchor: Option<u64>,
+    limit: Option<usize>,
+    deferred_pagination: bool,
+}
+
+impl<T: RegistryQueryResults> ResultsPagination<T> {
+    fn new(query: &RegistryQuery) -> Self {
+        let (anchor, offset) = match query.start {
+            RegistryQueryStart::Index(index) => (None, index),
+            RegistryQueryStart::Anchor(anchor) => (Some(anchor), 0),
+            RegistryQueryStart::None => (None, 0),
+        };
+
+        Self {
+            list: T::default(),
+            offset: offset as usize,
+            anchor,
+            limit: query.limit,
+            deferred_pagination: query.filters.len() > 1
+                || query.filters.first().is_some_and(|f| {
+                    if let (RegistryFilterOp::TextMatch, RegistryFilterValue::String(value)) =
+                        (&f.op, &f.value)
+                    {
+                        value.chars().any(|c| !c.is_alphanumeric()) && value.len() > 1
+                    } else {
+                        false
+                    }
+                }),
+        }
+    }
+
+    fn push(&mut self, id: u64) -> bool {
+        if !self.deferred_pagination {
+            if self.offset > 0 {
+                self.offset -= 1;
+                true
+            } else if let Some(anchor) = self.anchor {
+                if id == anchor {
+                    self.anchor = None;
+                }
+                true
+            } else {
+                self.list.push(id);
+                self.limit.is_none_or(|limit| self.list.count() < limit)
+            }
+        } else {
+            self.list.push(id);
+            true
+        }
+    }
+
+    fn finalize(mut self) -> T {
+        if self.deferred_pagination
+            && self.list.has_items()
+            && (self.limit.is_some() || self.anchor.is_some() || self.offset > 0)
+        {
+            let list = std::mem::take(&mut self.list);
+            self.deferred_pagination = false;
+
+            for item in list.into_list() {
+                if !self.push(item) {
+                    break;
+                }
+            }
+        }
+        self.list
+    }
 }
 
 impl RegistryQuery {
@@ -494,7 +655,24 @@ impl RegistryQuery {
         Self {
             object_type,
             filters: Vec::new(),
+            start: RegistryQueryStart::None,
+            limit: None,
         }
+    }
+
+    pub fn with_anchor(mut self, anchor: u64) -> Self {
+        self.start = RegistryQueryStart::Anchor(anchor);
+        self
+    }
+
+    pub fn with_index_start(mut self, index: u64) -> Self {
+        self.start = RegistryQueryStart::Index(index);
+        self
+    }
+
+    pub fn with_limit(mut self, limit: usize) -> Self {
+        self.limit = Some(limit);
+        self
     }
 
     pub fn with_account(mut self, account_id: u32) -> Self {

@@ -6,15 +6,18 @@
 
 use crate::{
     api::query::QueryResponseBuilder,
-    registry::mapping::{RegistryGetResponse, RegistryQueryResponse, RegistrySetResponse},
+    registry::{
+        mapping::{RegistryGetResponse, RegistryQueryResponse, RegistrySetResponse},
+        query::RegistryQueryFilters,
+    },
 };
-use jmap_proto::error::set::SetError;
+use jmap_proto::{error::set::SetError, types::state::State};
 use jmap_tools::{Key, Value};
 use registry::{
     jmap::IntoValue,
     pickle::Pickle,
     schema::{
-        enums::ArchivedItemStatus,
+        enums::{ArchivedItemStatus, Permission},
         prelude::{Object, ObjectType, Property},
         structs::{ArchivedItem, Task, TaskRestoreArchivedItem, TaskStatus},
     },
@@ -23,7 +26,6 @@ use registry::{
 use std::str::FromStr;
 use store::{
     SerializeInfallible, ValueKey,
-    ahash::AHashSet,
     registry::RegistryQuery,
     write::{BatchBuilder, BlobLink, BlobOp, RegistryClass, ValueClass, assert::AssertValue},
 };
@@ -237,16 +239,10 @@ pub(crate) async fn archived_item_get(
             RegistryQuery::new(get.object_type).greater_than_or_equal(Property::AccountId, 0u64)
         } else {
             RegistryQuery::new(get.object_type).with_account(get.account_id)
-        };
+        }
+        .with_limit(get.server.core.jmap.get_max_objects);
 
-        get.server
-            .registry()
-            .query::<AHashSet<u64>>(query)
-            .await?
-            .into_iter()
-            .take(get.server.core.jmap.get_max_objects)
-            .map(Id::from)
-            .collect()
+        get.server.registry().query::<Vec<Id>>(query).await?
     };
 
     for id in ids {
@@ -280,7 +276,75 @@ pub(crate) async fn archived_item_get(
 }
 
 pub(crate) async fn archived_item_query(
-    mut query: RegistryQueryResponse<'_>,
+    mut req: RegistryQueryResponse<'_>,
 ) -> trc::Result<QueryResponseBuilder> {
-    todo!()
+    let can_impersonate = req.access_token.has_permission(Permission::Impersonate);
+    let mut account_id = None;
+
+    req.request
+        .extract_filters(|property, _, value| match property {
+            Property::AccountId if can_impersonate => {
+                if let Some(id) = value.as_str().and_then(|s| Id::from_str(s).ok()) {
+                    account_id = Some(id);
+                    true
+                } else {
+                    false
+                }
+            }
+
+            _ => false,
+        })?;
+
+    let mut query = if let Some(account_id) = account_id {
+        RegistryQuery::new(req.object_type).with_account(account_id.document_id())
+    } else if !can_impersonate {
+        RegistryQuery::new(req.object_type).with_account(req.request.account_id.document_id())
+    } else {
+        RegistryQuery::new(req.object_type).greater_than_or_equal(Property::AccountId, 0u64)
+    };
+
+    let params = req
+        .request
+        .extract_parameters(req.server.core.jmap.query_max_results, Some(Property::Id))?;
+
+    if let Some(limit) = params.limit {
+        query = query.with_limit(limit);
+        if let Some(anchor) = params.anchor {
+            query = query.with_anchor(anchor);
+        } else if let Some(position) = params.position {
+            query = query.with_index_start(position);
+        }
+    }
+
+    let mut results = req.server.registry().query::<Vec<Id>>(query).await?;
+
+    match params.sort_by {
+        Property::Id => {
+            if !params.sort_ascending {
+                results.sort_unstable_by(|a, b| b.cmp(a));
+            }
+        }
+        property => {
+            return Err(trc::JmapEvent::UnsupportedSort.into_err().details(format!(
+                "Property {} is not supported for sorting",
+                property
+            )));
+        }
+    }
+
+    // Build response
+    let mut response = QueryResponseBuilder::new(
+        results.len(),
+        req.server.core.jmap.query_max_results,
+        State::Initial,
+        &req.request,
+    );
+
+    for id in results {
+        if !response.add_id(id) {
+            break;
+        }
+    }
+
+    Ok(response)
 }

@@ -2920,7 +2920,6 @@ dependencies = [
  "pkcs8",
  "quick-xml 0.38.4",
  "registry",
- "rev_lines",
  "rkyv",
  "rsa",
  "serde",
@@ -3589,7 +3588,6 @@ dependencies = [
  "rand 0.9.2",
  "registry",
  "reqwest",
- "rev_lines",
  "rkyv",
  "rsa",
  "serde",
@@ -5676,6 +5674,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "radsort"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "019b4b213425016d7d84a153c4c73afb0946fbb4840e4eece7ba8848b9d6da22"
+
+[[package]]
 name = "rancor"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6091,15 +6095,6 @@ name = "resolv-conf"
 version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e061d1b48cb8d38042de4ae0a7a6401009d6143dc80d2e2d6f31f0bdd6470c7"
-
-[[package]]
-name = "rev_lines"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed62916ac7a5ccbf13fa5e1d303029ff015600fee841756dfc134a1ac62bf05f"
-dependencies = [
- "thiserror 1.0.69",
-]
 
 [[package]]
 name = "rfc6979"
@@ -7431,6 +7426,7 @@ dependencies = [
  "num_cpus",
  "parking_lot",
  "r2d2",
+ "radsort",
  "rand 0.9.2",
  "rayon",
  "redis",

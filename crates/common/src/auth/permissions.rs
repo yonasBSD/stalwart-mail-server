@@ -169,6 +169,13 @@ pub(crate) fn build_permissions_list(permissions_in: &Permissions) -> Vec<Permis
     permissions
 }
 
+pub struct DefaultPermissions {
+    pub user: Vec<Permission>,
+    pub group: Vec<Permission>,
+    pub tenant: Vec<Permission>,
+    pub superuser: Vec<Permission>,
+}
+
 impl PermissionsGroup {
     pub fn with_merge(mut self, merge: bool) -> Self {
         self.merge = merge;
@@ -197,17 +204,82 @@ impl PermissionsGroup {
     }
 
     pub fn user() -> Self {
-        let todo = "fix";
         let mut permissions = PermissionsGroup::default();
-        for permission in [
-            Permission::Authenticate,
-            Permission::JmapParticipantIdentityGet,
-            Permission::JmapParticipantIdentityChanges,
-        ] {
+        for permission in DefaultPermissions::default().user {
             permissions.enabled.set(permission as usize);
         }
 
         permissions
+    }
+}
+
+impl Default for DefaultPermissions {
+    fn default() -> Self {
+        let mut default = Self {
+            user: Default::default(),
+            group: Default::default(),
+            tenant: Default::default(),
+            superuser: Default::default(),
+        };
+
+        for permission_id in 0..Permission::COUNT {
+            let permission = Permission::from_id(permission_id as u16).unwrap();
+            match permission {
+                Permission::Authenticate
+                | Permission::AuthenticateWithAlias
+                | Permission::InteractAi => {
+                    default.user.push(permission);
+                }
+                Permission::Impersonate
+                | Permission::UnlimitedRequests
+                | Permission::UnlimitedUploads
+                | Permission::LiveMetrics
+                | Permission::LiveTracing => {
+                    default.superuser.push(permission);
+                }
+                Permission::FetchAnyBlob | Permission::LiveDeliveryTest => {
+                    default.superuser.push(permission);
+                    default.tenant.push(permission);
+                }
+                permission => {
+                    let name = permission.as_str();
+                    if name.starts_with("jmap")
+                        || name.starts_with("imap")
+                        || name.starts_with("pop3")
+                        || name.starts_with("calendar")
+                        || name.starts_with("email")
+                        || name.starts_with("dav")
+                        || name.starts_with("sieve")
+                        || name.starts_with("sysMaskedEmail")
+                        || name.starts_with("sysArchivedItem")
+                        || name.starts_with("sysAccountSettings")
+                        || name.starts_with("sysPublicKey")
+                        || name.starts_with("sysSpamTrainingSample")
+                    {
+                        default.user.push(permission);
+                        default.group.push(permission);
+                    } else if name.starts_with("sysCredential") {
+                        default.user.push(permission);
+                    } else if name.starts_with("sysDomain")
+                        || name.starts_with("sysDkimSignature")
+                        || name.starts_with("sysAccount")
+                        || name.starts_with("sysRole")
+                        || name.starts_with("sysOAuthClient")
+                        || name.starts_with("sysMailingList")
+                        || name.starts_with("sysExternalReport")
+                        || name.starts_with("sysDnsServer")
+                        || name.starts_with("sysQueuedMessage")
+                    {
+                        default.tenant.push(permission);
+                        default.superuser.push(permission);
+                    } else {
+                        default.superuser.push(permission);
+                    }
+                }
+            }
+        }
+
+        default
     }
 }
 

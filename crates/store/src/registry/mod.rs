@@ -33,8 +33,20 @@ pub struct RegistryObject<T: ObjectImpl> {
 }
 
 pub struct RegistryQuery {
-    pub object_type: ObjectType,
+    pub(crate) object_type: ObjectType,
     pub filters: Vec<RegistryFilter>,
+    pub(crate) start: RegistryQueryStart,
+    pub(crate) limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RegistryObjectCounter(pub usize);
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum RegistryQueryStart {
+    Index(u64),
+    Anchor(u64),
+    None,
 }
 
 pub struct RegistryFilter {

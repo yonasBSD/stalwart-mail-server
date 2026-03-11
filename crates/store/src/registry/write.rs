@@ -65,7 +65,7 @@ pub enum RegistryWrite<'x> {
     Delete {
         object_id: ObjectId,
         object: Option<&'x Object>,
-        force: bool,
+        allowed_orphan_types: &'x [ObjectType],
     },
 }
 
@@ -141,10 +141,10 @@ impl RegistryStore {
             RegistryWrite::Delete {
                 object_id,
                 object,
-                force,
+                allowed_orphan_types,
             } => {
                 return if object_id.object().flags() & OBJ_SINGLETON == 0 {
-                    self.delete(object_id, object, force).await
+                    self.delete(object_id, object, allowed_orphan_types).await
                 } else {
                     Ok(RegistryWriteResult::CannotDeleteSingleton)
                 };
@@ -319,7 +319,7 @@ impl RegistryStore {
         &self,
         object_id: ObjectId,
         object: Option<&Object>,
-        force: bool,
+        allowed_orphan_types: &[ObjectType],
     ) -> trc::Result<RegistryWriteResult> {
         let object_type = object_id.object();
         let object_type_id = object_type.to_id();
@@ -342,8 +342,12 @@ impl RegistryStore {
         object.index(&mut clear_index);
 
         // Validate relationships
-        if !force {
-            let linked = self.linked_objects(object_id).await?;
+        let mut linked = self.linked_objects(object_id).await?;
+        if !linked.is_empty() {
+            if !allowed_orphan_types.is_empty() {
+                linked.retain(|object_id| !allowed_orphan_types.contains(&object_id.object()));
+            }
+
             if !linked.is_empty() {
                 return Ok(RegistryWriteResult::CannotDeleteLinked {
                     object_id: ObjectId::new(object_type, id),
@@ -542,7 +546,7 @@ impl<'x> RegistryWrite<'x> {
         RegistryWrite::Delete {
             object_id,
             object: None,
-            force: false,
+            allowed_orphan_types: &[],
         }
     }
 
@@ -550,7 +554,7 @@ impl<'x> RegistryWrite<'x> {
         RegistryWrite::Delete {
             object_id,
             object: Some(object),
-            force: false,
+            allowed_orphan_types: &[],
         }
     }
 }

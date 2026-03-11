@@ -163,7 +163,9 @@ impl FileNodeSet for Server {
                     continue 'create;
                 }
 
-                self.refresh_acls(&file_node.acls, None).await;
+                self.refresh_acls(&file_node.acls, None)
+                    .await
+                    .caused_by(trc::location!())?;
             }
 
             // Insert record
@@ -299,7 +301,8 @@ impl FileNodeSet for Server {
                             .as_slice(),
                     ),
                 )
-                .await;
+                .await
+                .caused_by(trc::location!())?;
             }
 
             // Update record

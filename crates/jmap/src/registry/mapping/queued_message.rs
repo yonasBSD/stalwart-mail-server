@@ -4,22 +4,27 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::str::FromStr;
+
 use crate::{
     api::query::QueryResponseBuilder,
-    registry::mapping::{RegistryGetResponse, RegistryQueryResponse, RegistrySetResponse},
+    registry::{
+        mapping::{RegistryGetResponse, RegistryQueryResponse, RegistrySetResponse},
+        query::RegistryQueryFilters,
+    },
 };
 use common::{
     Server,
     config::smtp::queue::{ArchivedQueueExpiry, QueueName},
     ipc::QueueEvent,
 };
-use jmap_proto::error::set::SetError;
+use jmap_proto::{error::set::SetError, object::registry::RegistryComparator, types::state::State};
 use jmap_tools::{JsonPointer, JsonPointerItem, Key};
 use registry::{
     jmap::{IntoValue, JsonPointerPatch, RegistryJsonPatch},
     schema::{
         enums::{DeliveryErrorType, MessageFlag, RecipientFlag},
-        prelude::ObjectType,
+        prelude::{ObjectType, Property},
         structs::{
             DeliveryError, QueueExpiry, QueueExpiryAttempts, QueueExpiryTtl, QueuedMessage,
             QueuedRecipient, RecipientStatus, ServerResponse,
@@ -34,10 +39,10 @@ use smtp::queue::{
     Schedule, Status, spool::SmtpSpool,
 };
 use store::{
-    IterateParams, U64_LEN, ValueKey,
+    Deserialize, IterateParams, U64_LEN, ValueKey,
     ahash::AHashSet,
-    registry::RegistryQuery,
-    write::{QueueClass, ValueClass, key::DeserializeBigEndian},
+    registry::{RegistryFilterOp, RegistryQuery},
+    write::{AlignedBytes, Archive, QueueClass, ValueClass, key::DeserializeBigEndian},
 };
 use trc::AddContext;
 use types::{blob::BlobId, blob_hash::BlobHash, id::Id};
@@ -263,23 +268,253 @@ pub(crate) async fn queued_message_get(
 }
 
 pub(crate) async fn queued_message_query(
-    mut query: RegistryQueryResponse<'_>,
+    mut req: RegistryQueryResponse<'_>,
 ) -> trc::Result<QueryResponseBuilder> {
-    todo!()
+    let mut due_from = 0u64;
+    let mut due_to = u64::MAX;
+    let mut queue_name = None;
+    let mut filter_text = None;
+    let mut filter_from = None;
+    let mut filter_to = None;
+
+    // Obtain tenant domains
+    let tenant_domains = if let Some(tenant_id) = req.access_token.tenant_id() {
+        Some(tenant_domains(req.server, tenant_id).await?)
+    } else {
+        None
+    };
+
+    req.request
+        .extract_filters(|property, op, value| match property {
+            Property::Due => {
+                if let Some(due) = value.as_str().and_then(|s| UTCDateTime::from_str(s).ok()) {
+                    let due = due.timestamp() as u64;
+                    let (from, to) = match op {
+                        RegistryFilterOp::Equal => (due, due),
+                        RegistryFilterOp::GreaterThan => (due + 1, u64::MAX),
+                        RegistryFilterOp::GreaterEqualThan => (due, u64::MAX),
+                        RegistryFilterOp::LowerThan => (0, due - 1),
+                        RegistryFilterOp::LowerEqualThan => (0, due),
+                        _ => return false,
+                    };
+
+                    // Intersect with existing range
+                    due_from = due_from.max(from);
+                    due_to = due_to.min(to);
+
+                    due_from <= due_to
+                } else {
+                    false
+                }
+            }
+            Property::QueueName => {
+                if let Some(value) = value.as_str().and_then(QueueName::new) {
+                    queue_name = Some(value);
+                    true
+                } else {
+                    false
+                }
+            }
+            Property::ReturnPath => {
+                if let serde_json::Value::String(name) = value {
+                    filter_from = Some(name);
+                    true
+                } else {
+                    false
+                }
+            }
+            Property::To => {
+                if let serde_json::Value::String(name) = value {
+                    filter_to = Some(name);
+                    true
+                } else {
+                    false
+                }
+            }
+            Property::Text => {
+                if let serde_json::Value::String(name) = value {
+                    filter_text = Some(name);
+                    true
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        })?;
+
+    if req
+        .request
+        .sort
+        .as_ref()
+        .and_then(|sort| sort.first())
+        .is_some_and(|comp| !matches!(comp.property, RegistryComparator::Property(Property::Due)))
+    {
+        return Err(trc::JmapEvent::UnsupportedSort
+            .into_err()
+            .details("Only sorting by 'due' is supported for queued messages".to_string()));
+    }
+
+    let params = req
+        .request
+        .extract_parameters(req.server.core.jmap.query_max_results, None)?;
+
+    let has_filters = filter_text.is_some() || filter_from.is_some() || filter_to.is_some();
+    if has_filters || tenant_domains.is_some() {
+        let from_key = ValueKey::from(ValueClass::Queue(QueueClass::Message(0)));
+        let to_key = ValueKey::from(ValueClass::Queue(QueueClass::Message(u64::MAX)));
+
+        let mut results = Vec::with_capacity(8);
+        req.server
+            .core
+            .storage
+            .data
+            .iterate(
+                IterateParams::new(from_key, to_key).ascending(),
+                |key, value| {
+                    let message_ = <Archive<AlignedBytes> as Deserialize>::deserialize(value)
+                        .add_context(|ctx| ctx.ctx(trc::Key::Key, key))?;
+                    let message = message_
+                        .unarchive::<queue::Message>()
+                        .add_context(|ctx| ctx.ctx(trc::Key::Key, key))?;
+
+                    if let Some(due) = message.next_delivery_event(queue_name)
+                        && tenant_domains
+                            .as_ref()
+                            .is_none_or(|domains| message.has_domain(domains))
+                        && (due_from..=due_to).contains(&due)
+                        && queue_name
+                            .as_ref()
+                            .is_none_or(|q| message.recipients.iter().any(|r| &r.queue == q))
+                        && (!has_filters
+                            || (filter_text
+                                .as_ref()
+                                .map(|text| {
+                                    message.return_path.contains(text)
+                                        || message
+                                            .recipients
+                                            .iter()
+                                            .any(|r| r.address().contains(text))
+                                })
+                                .unwrap_or_else(|| {
+                                    filter_from
+                                        .as_ref()
+                                        .is_none_or(|from| message.return_path.contains(from))
+                                        && filter_to.as_ref().is_none_or(|to| {
+                                            message
+                                                .recipients
+                                                .iter()
+                                                .any(|r| r.address().contains(to))
+                                        })
+                                })))
+                    {
+                        results.push((key.deserialize_be_u64(0)?, due));
+                    }
+
+                    Ok(true)
+                },
+            )
+            .await
+            .caused_by(trc::location!())?;
+
+        // Build response
+        let mut response = QueryResponseBuilder::new(
+            results.len(),
+            req.server.core.jmap.query_max_results,
+            State::Initial,
+            &req.request,
+        );
+
+        if params.sort_ascending {
+            results.sort_by_key(|(_, due)| *due);
+        } else {
+            results.sort_by_key(|(_, due)| u64::MAX - *due);
+        }
+
+        for (id, _) in results {
+            if !response.add_id(id.into()) {
+                break;
+            }
+        }
+
+        Ok(response)
+    } else {
+        // Build response
+        let mut response = QueryResponseBuilder::new(
+            req.server.core.jmap.query_max_results,
+            req.server.core.jmap.query_max_results,
+            State::Initial,
+            &req.request,
+        );
+
+        if response.response.total.is_some() {
+            response.response.total = Some(0);
+        }
+
+        let from_key = ValueKey::from(ValueClass::Queue(QueueClass::MessageEvent(
+            store::write::QueueEvent {
+                due: due_from,
+                queue_id: 0,
+                queue_name: [0; 8],
+            },
+        )));
+        let to_key = ValueKey::from(ValueClass::Queue(QueueClass::MessageEvent(
+            store::write::QueueEvent {
+                due: due_to,
+                queue_id: u64::MAX,
+                queue_name: [u8::MAX; 8],
+            },
+        )));
+
+        let mut seen_ids = AHashSet::with_capacity(8);
+        req.server
+            .store()
+            .iterate(
+                IterateParams::new(from_key, to_key)
+                    .set_ascending(params.sort_ascending)
+                    .no_values(),
+                |key, _| {
+                    let id = key.deserialize_be_u64(U64_LEN)?;
+                    if queue_name.is_none_or(|queue_name| {
+                        queue_name.as_slice() == key.get(U64_LEN * 2..).unwrap_or_default()
+                    }) && seen_ids.insert(id)
+                    {
+                        if let Some(total) = response.response.total.as_mut() {
+                            *total += 1;
+                            if !response.is_full() {
+                                response.add_id(id.into());
+                            }
+                            Ok(true)
+                        } else {
+                            Ok(response.add_id(id.into()))
+                        }
+                    } else {
+                        Ok(true)
+                    }
+                },
+            )
+            .await
+            .caused_by(trc::location!())?;
+
+        if let (Some(total), Some(limit)) = (response.response.total, response.response.limit)
+            && total < limit
+        {
+            response.response.limit = None;
+        }
+
+        Ok(response)
+    }
 }
 
 async fn tenant_domains(server: &Server, tenant_id: u32) -> trc::Result<AHashSet<String>> {
     let domain_ids = server
         .registry()
-        .query::<AHashSet<u64>>(
-            RegistryQuery::new(ObjectType::Domain).with_tenant(tenant_id.into()),
-        )
+        .query::<Vec<Id>>(RegistryQuery::new(ObjectType::Domain).with_tenant(tenant_id.into()))
         .await?;
 
     let mut domains = AHashSet::with_capacity(domain_ids.len());
 
     for domain_id in domain_ids {
-        if let Some(domain) = server.domain_by_id(domain_id as u32).await? {
+        if let Some(domain) = server.domain_by_id(domain_id.document_id()).await? {
             domains.extend(domain.names.iter().map(|name| name.to_string()));
         }
     }

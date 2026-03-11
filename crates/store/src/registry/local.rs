@@ -39,7 +39,8 @@ impl RegistryStoreInner {
             env_hostname: std::env::var("STALWART_HOSTNAME")
                 .ok()
                 .filter(|h| !h.is_empty())
-                .unwrap_or_else(|| gethostname::gethostname().to_string_lossy().into_owned()),
+                .unwrap_or_else(|| gethostname::gethostname().to_string_lossy().into_owned())
+                .to_lowercase(),
         }
     }
 

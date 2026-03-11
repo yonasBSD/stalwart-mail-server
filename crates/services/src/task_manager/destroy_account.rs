@@ -8,16 +8,25 @@ use crate::task_manager::TaskResult;
 use common::Server;
 use email::{message::metadata::MessageMetadata, sieve::SieveScript};
 use groupware::file::FileNode;
-use registry::schema::structs::TaskDestroyAccount;
+use registry::{
+    schema::{
+        prelude::{ObjectType, Property},
+        structs::{ArchivedItem, TaskDestroyAccount},
+    },
+    types::EnumImpl,
+};
 use store::{
+    SerializeInfallible, ValueKey,
+    registry::RegistryQuery,
     search::SearchQuery,
-    write::{BatchBuilder, BlobLink, BlobOp, SearchIndex, ValueClass},
+    write::{BatchBuilder, BlobLink, BlobOp, RegistryClass, SearchIndex, ValueClass},
 };
 use trc::AddContext;
 use types::{
     blob_hash::BlobHash,
     collection::Collection,
     field::{EmailField, Field},
+    id::Id,
 };
 
 pub(crate) trait DestroyAccountTask: Sync + Send {
@@ -43,7 +52,87 @@ impl DestroyAccountTask for Server {
 
 async fn destroy_account(server: &Server, task: &TaskDestroyAccount) -> trc::Result<TaskResult> {
     let account_id = task.account_id.document_id();
-    let todo = "destroy spam samples, undelete, registry objects, etc.";
+
+    // Destroy public keys and masked emails
+    for object in [ObjectType::PublicKey, ObjectType::MaskedEmail] {
+        let mut batch = BatchBuilder::new();
+        let ids = server
+            .registry()
+            .query::<Vec<Id>>(RegistryQuery::new(object).with_account(account_id))
+            .await?;
+        let object_id = object.to_id();
+
+        for id in ids {
+            batch
+                .clear(ValueClass::Registry(RegistryClass::Item {
+                    object_id,
+                    item_id: id.id(),
+                }))
+                .clear(ValueClass::Registry(RegistryClass::IndexId {
+                    object_id,
+                    item_id: id.id(),
+                }))
+                .clear(ValueClass::Registry(RegistryClass::Index {
+                    index_id: Property::AccountId as u16,
+                    object_id,
+                    item_id: id.id(),
+                    key: (account_id as u64).serialize(),
+                }))
+                .clear(ValueClass::Registry(RegistryClass::Reference {
+                    to_object_id: ObjectType::Account as u16,
+                    to_item_id: account_id as u64,
+                    from_object_id: object_id,
+                    from_item_id: id.id(),
+                }));
+        }
+
+        if !batch.is_empty() {
+            server.store().write(batch.build_all()).await?;
+        }
+    }
+
+    // Remove archived items
+    let mut batch = BatchBuilder::new();
+    let ids = server
+        .registry()
+        .query::<Vec<Id>>(RegistryQuery::new(ObjectType::ArchivedItem).with_account(account_id))
+        .await?;
+    for id in ids {
+        let object_id = ObjectType::ArchivedItem.to_id();
+        let item_id = id.id();
+
+        if let Some(item) = server
+            .store()
+            .get_value::<ArchivedItem>(ValueKey::from(ValueClass::Registry(RegistryClass::Item {
+                object_id,
+                item_id,
+            })))
+            .await?
+        {
+            let until = item.archived_until().timestamp() as u64;
+            let blob_hash = item.into_blob_id().hash;
+
+            batch
+                .with_account_id(account_id)
+                .clear(BlobOp::Link {
+                    hash: blob_hash,
+                    to: BlobLink::Temporary { until },
+                })
+                .clear(ValueClass::Registry(RegistryClass::Index {
+                    index_id: Property::AccountId.to_id(),
+                    object_id,
+                    item_id,
+                    key: (account_id as u64).serialize(),
+                }))
+                .clear(ValueClass::Registry(RegistryClass::Item {
+                    object_id,
+                    item_id,
+                }));
+        }
+    }
+    if !batch.is_empty() {
+        server.store().write(batch.build_all()).await?;
+    }
 
     // Remove search index
     for index in [

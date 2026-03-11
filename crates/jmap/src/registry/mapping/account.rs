@@ -11,6 +11,7 @@ use crate::{
             RegistryGetResponse, RegistryQueryResponse, RegistrySetResponse,
             principal::build_set_error,
         },
+        query::RegistryQueryFilters,
         set::map_write_error,
     },
 };
@@ -24,20 +25,24 @@ use common::{
     ipc::CacheInvalidation,
 };
 use directory::core::secret::{hash_secret, verify_otp_auth, verify_secret_hash};
-use jmap_proto::error::set::SetError;
+use jmap_proto::{error::set::SetError, types::state::State};
 use jmap_tools::{JsonPointer, JsonPointerItem, Key, Map, Value};
 use registry::{
     jmap::{IntoValue, JsonPointerPatch, MaybeUnpatched, RegistryJsonPatch, RegistryValue},
     schema::{
-        enums::StorageQuota,
+        enums::{CredentialType, StorageQuota},
         prelude::{MASKED_PASSWORD, Object, ObjectInner, ObjectType, Property},
         structs::{
             Account, AccountSettings, Credential, CredentialPermissions, SecondaryCredential,
         },
     },
-    types::id::ObjectId,
+    types::{EnumImpl, datetime::UTCDateTime, id::ObjectId},
 };
-use store::registry::write::{RegistryWrite, RegistryWriteResult};
+use std::str::FromStr;
+use store::registry::{
+    RegistryFilterOp,
+    write::{RegistryWrite, RegistryWriteResult},
+};
 use trc::AddContext;
 use types::id::Id;
 use utils::map::vec_map::VecMap;
@@ -657,7 +662,114 @@ pub(crate) async fn account_get(
 pub(crate) async fn credential_query(
     mut query: RegistryQueryResponse<'_>,
 ) -> trc::Result<QueryResponseBuilder> {
-    todo!()
+    let Some(Account::User(account)) = query
+        .server
+        .registry()
+        .object::<Account>(query.request.account_id)
+        .await?
+    else {
+        return Err(trc::JmapEvent::Forbidden
+            .into_err()
+            .details("Account not found."));
+    };
+
+    let mut credential_type = None;
+    let mut expires_at_filter = None;
+
+    query
+        .request
+        .extract_filters(|property, op, value| match property {
+            Property::Type => {
+                if let Some(typ) = value.as_str().and_then(CredentialType::parse) {
+                    credential_type = Some(typ);
+                    true
+                } else {
+                    false
+                }
+            }
+            Property::ExpiresAt => {
+                if let Some(value) = value
+                    .as_str()
+                    .and_then(|value| UTCDateTime::from_str(value).ok())
+                {
+                    expires_at_filter = Some((op, value));
+                    true
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        })?;
+
+    let mut matches = Vec::new();
+    for credential in account.credentials.iter() {
+        if credential_type.is_none_or(|typ| credential.object_type() == typ) {
+            let (credential_id, expires_at) = match credential {
+                Credential::Password(credential) => {
+                    (credential.credential_id, credential.expires_at)
+                }
+                Credential::AppPassword(credential) => {
+                    (credential.credential_id, credential.expires_at)
+                }
+                Credential::ApiKey(credential) => (credential.credential_id, credential.expires_at),
+            };
+            if expires_at_filter.is_none_or(|(op, filter_value)| {
+                expires_at.is_some_and(|expires_at| match op {
+                    RegistryFilterOp::Equal => expires_at == filter_value,
+                    RegistryFilterOp::GreaterThan => expires_at > filter_value,
+                    RegistryFilterOp::GreaterEqualThan => expires_at >= filter_value,
+                    RegistryFilterOp::LowerThan => expires_at < filter_value,
+                    RegistryFilterOp::LowerEqualThan => expires_at <= filter_value,
+                    RegistryFilterOp::TextMatch => false,
+                })
+            }) {
+                matches.push((credential_id, expires_at));
+            }
+        }
+    }
+
+    let params = query
+        .request
+        .extract_parameters(query.server.core.jmap.query_max_results, None)?;
+
+    match params.sort_by {
+        Property::ExpiresAt => {
+            if params.sort_ascending {
+                matches.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
+            } else {
+                matches.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+            }
+        }
+        Property::Id => {
+            if params.sort_ascending {
+                matches.sort_by(|a, b| a.0.cmp(&b.0));
+            } else {
+                matches.sort_by(|a, b| b.0.cmp(&a.0));
+            }
+        }
+        property => {
+            return Err(trc::JmapEvent::UnsupportedSort.into_err().details(format!(
+                "Property {} is not supported for sorting",
+                property
+            )));
+        }
+    }
+
+    // Build response
+    let mut response = QueryResponseBuilder::new(
+        matches.len(),
+        query.server.core.jmap.query_max_results,
+        State::Initial,
+        &query.request,
+    );
+
+    for (id, _) in matches {
+        if !response.add_id(id) {
+            break;
+        }
+    }
+
+    Ok(response)
 }
 
 fn validate_credential_permissions(

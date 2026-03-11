@@ -22,7 +22,6 @@ use smtp::reporting::index::{ExternalReportIndex, InternalReportIndex};
 use std::str::FromStr;
 use store::{
     U64_LEN, ValueKey,
-    ahash::AHashSet,
     registry::{RegistryFilter, RegistryFilterValue, RegistryQuery},
     write::{BatchBuilder, RegistryClass, ValueClass, key::KeySerializer},
 };
@@ -119,7 +118,7 @@ pub(crate) async fn report_set(
         if let Some(report) = set
             .server
             .store()
-            .get_value::<Object>(ValueKey::from(key.clone()))
+            .get_value::<Object>(ValueKey::from(key))
             .await?
             .filter(|report| {
                 !set.is_tenant_filtered || report.inner.member_tenant_id() == tenant_id
@@ -175,34 +174,32 @@ pub(crate) async fn report_get(
             | ObjectType::ArfExternalReport
     ) {
         if get.is_tenant_filtered {
-            get.server.registry().query::<AHashSet<u64>>(
-                RegistryQuery::new(get.object_type).with_tenant(get.access_token.tenant_id()),
+            get.server.registry().query::<Vec<Id>>(
+                RegistryQuery::new(get.object_type)
+                    .with_tenant(get.access_token.tenant_id())
+                    .with_limit(get.server.core.jmap.get_max_objects),
             )
         } else {
-            get.server.registry().query::<AHashSet<u64>>(
-                RegistryQuery::new(get.object_type).greater_than(Property::ExpiresAt, 0u64),
+            get.server.registry().query::<Vec<Id>>(
+                RegistryQuery::new(get.object_type)
+                    .greater_than(Property::ExpiresAt, 0u64)
+                    .with_limit(get.server.core.jmap.get_max_objects),
             )
         }
         .await?
-        .into_iter()
-        .take(get.server.core.jmap.get_max_objects)
-        .map(Id::from)
-        .collect()
     } else {
         get.server
             .registry()
-            .query::<AHashSet<u64>>(RegistryQuery::new(get.object_type).filter(
-                RegistryFilter::greater_than(
-                    Property::Domain,
-                    RegistryFilterValue::Bytes(vec![]),
-                    true,
-                ),
-            ))
+            .query::<Vec<Id>>(
+                RegistryQuery::new(get.object_type)
+                    .filter(RegistryFilter::greater_than(
+                        Property::Domain,
+                        RegistryFilterValue::Bytes(vec![]),
+                        true,
+                    ))
+                    .with_limit(get.server.core.jmap.get_max_objects),
+            )
             .await?
-            .into_iter()
-            .take(get.server.core.jmap.get_max_objects)
-            .map(Id::from)
-            .collect()
     };
 
     let tenant_id = get.access_token.tenant_id().map(Id::from);
@@ -331,7 +328,9 @@ pub(crate) async fn report_query(
             _ => false,
         })?;
 
-    let (comparator, is_ascending) = req.request.extract_comparator()?;
+    let params = req
+        .request
+        .extract_parameters(req.server.core.jmap.query_max_results, Some(Property::Id))?;
 
     if !query.has_filters() {
         if is_internal {
@@ -348,14 +347,20 @@ pub(crate) async fn report_query(
             ));
         }
     }
+    if let Some(limit) = params.limit {
+        query = query.with_limit(limit);
+        if let Some(anchor) = params.anchor {
+            query = query.with_anchor(anchor);
+        } else if let Some(position) = params.position {
+            query = query.with_index_start(position);
+        }
+    }
 
-    let matches = req.server.registry().query::<AHashSet<u64>>(query).await?;
-    let results = match comparator {
+    let matches = req.server.registry().query::<Vec<Id>>(query).await?;
+    let results = match params.sort_by {
         Property::Id => {
-            let mut results = matches.into_iter().collect::<Vec<_>>();
-            if is_ascending {
-                results.sort_unstable();
-            } else {
+            let mut results = matches;
+            if !params.sort_ascending {
                 results.sort_unstable_by(|a, b| b.cmp(a));
             }
             results
@@ -368,7 +373,7 @@ pub(crate) async fn report_query(
                         req.object_type,
                         Property::Domain,
                         Some(matches),
-                        is_ascending,
+                        params.sort_ascending,
                     )
                     .await?
             } else {
@@ -383,7 +388,7 @@ pub(crate) async fn report_query(
                         req.object_type,
                         Property::ExpiresAt,
                         Some(matches),
-                        is_ascending,
+                        params.sort_ascending,
                     )
                     .await?
             } else {
@@ -407,7 +412,7 @@ pub(crate) async fn report_query(
     );
 
     for id in results {
-        if !response.add_id(id.into()) {
+        if !response.add_id(id) {
             break;
         }
     }

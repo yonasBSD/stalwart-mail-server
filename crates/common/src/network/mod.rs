@@ -26,6 +26,7 @@ use utils::snowflake::SnowflakeIdGenerator;
 
 pub mod acme;
 pub mod asn;
+pub mod dkim;
 pub mod dns;
 pub mod limiter;
 pub mod listen;

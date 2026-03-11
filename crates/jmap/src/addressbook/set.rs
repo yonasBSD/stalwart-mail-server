@@ -101,7 +101,9 @@ impl AddressBookSet for Server {
                     continue 'create;
                 }
 
-                self.refresh_acls(&address_book.acls, None).await;
+                self.refresh_acls(&address_book.acls, None)
+                    .await
+                    .caused_by(trc::location!())?;
             }
 
             // Insert record
@@ -191,7 +193,8 @@ impl AddressBookSet for Server {
                     &new_address_book.acls,
                     address_book.inner.acls.as_slice(),
                 )
-                .await;
+                .await
+                .caused_by(trc::location!())?;
             }
 
             // Update record

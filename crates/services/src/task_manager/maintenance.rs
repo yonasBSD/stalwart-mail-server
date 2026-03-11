@@ -26,22 +26,27 @@ use groupware::{
     contact::{AddressBook, ContactCard},
     file::FileNode,
 };
-use registry::schema::{
-    enums::{TaskAccountMaintenanceType, TaskStoreMaintenanceType},
-    prelude::ObjectType,
-    structs::{Task, TaskAccountMaintenance, TaskStatus, TaskStoreMaintenance},
+use registry::{
+    schema::{
+        enums::{TaskAccountMaintenanceType, TaskStoreMaintenanceType},
+        prelude::{Object, ObjectInner, ObjectType, Property},
+        structs::{Task, TaskAccountMaintenance, TaskStatus, TaskStoreMaintenance},
+    },
+    types::EnumImpl,
 };
+use smtp::reporting::index::ExternalReportIndex;
 use store::{
     Serialize, ValueKey,
     rand::{self, Rng},
-    registry::RegistryQuery,
+    registry::{RegistryFilter, RegistryQuery},
     roaring::RoaringBitmap,
-    write::{AlignedBytes, Archive, Archiver, BatchBuilder, ValueClass, now},
+    write::{AlignedBytes, Archive, Archiver, BatchBuilder, RegistryClass, ValueClass, now},
 };
 use trc::{AddContext, StoreEvent};
 use types::{
     collection::Collection,
     field::{EmailField, MailboxField},
+    id::Id,
 };
 
 pub(crate) trait MaintenanceTask: Sync + Send {
@@ -123,9 +128,55 @@ async fn store_maintenance(
             reindex_telemetry(server).await?;
         }
         TaskStoreMaintenanceType::PurgeData => {
-            let todo = "make sure all store types are purged, in memory, metrics, tracing, etc";
-            let todo =
-                "make sure spam samples with their indexes and undelete items are purged as well";
+            // Delete expired external reports
+            let now = now();
+            let mut batch = BatchBuilder::new();
+            for object in [
+                ObjectType::DmarcExternalReport,
+                ObjectType::TlsExternalReport,
+                ObjectType::ArfExternalReport,
+            ] {
+                let ids = server
+                    .registry()
+                    .query::<Vec<Id>>(RegistryQuery::new(object).filter(RegistryFilter::less_than(
+                        Property::ExpiresAt,
+                        now,
+                        false,
+                    )))
+                    .await?;
+                let object_id = object.to_id();
+                for id in ids {
+                    let item_id = id.id();
+                    if let Some(report) = server
+                        .store()
+                        .get_value::<Object>(ValueKey::from(ValueClass::Registry(
+                            RegistryClass::Item { object_id, item_id },
+                        )))
+                        .await?
+                    {
+                        match &report.inner {
+                            ObjectInner::DmarcExternalReport(report) => {
+                                report.write_ops(&mut batch, item_id, false);
+                            }
+                            ObjectInner::TlsExternalReport(report) => {
+                                report.write_ops(&mut batch, item_id, false);
+                            }
+                            ObjectInner::ArfExternalReport(report) => {
+                                report.write_ops(&mut batch, item_id, false);
+                            }
+                            _ => {}
+                        }
+
+                        if batch.is_large_batch() {
+                            server.store().write(batch.build_all()).await?;
+                            batch = BatchBuilder::new();
+                        }
+                    }
+                }
+            }
+            if !batch.is_empty() {
+                server.store().write(batch.build_all()).await?;
+            }
 
             let started = Instant::now();
 
