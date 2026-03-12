@@ -34,6 +34,26 @@ impl SqliteStore {
         .await
     }
 
+    pub(crate) async fn key_exists(&self, key: impl Key) -> trc::Result<bool> {
+        let manager = self.conn_pool.clone();
+        self.spawn_worker(move || {
+            let conn = manager.get().map_err(into_error)?;
+            let mut result = conn
+                .prepare_cached(&format!(
+                    "SELECT 1 FROM {} WHERE k = ?",
+                    char::from(key.subspace())
+                ))
+                .map_err(into_error)?;
+            let key = key.serialize(0);
+            result
+                .query_row([&key], |_| Ok(()))
+                .optional()
+                .map(|opt| opt.is_some())
+                .map_err(into_error)
+        })
+        .await
+    }
+
     pub(crate) async fn iterate<T: Key>(
         &self,
         params: IterateParams<T>,

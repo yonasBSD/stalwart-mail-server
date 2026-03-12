@@ -63,15 +63,13 @@ impl RegistryStore {
                 IterateParams::new(
                     ValueKey::from(ValueClass::Any(AnyClass {
                         subspace: SUBSPACE_REGISTRY,
-                        key: KeySerializer::new(U16_LEN + 1)
-                            .write(0u8)
+                        key: KeySerializer::new(U16_LEN)
                             .write(object_type.to_id())
                             .finalize(),
                     })),
                     ValueKey::from(ValueClass::Any(AnyClass {
                         subspace: SUBSPACE_REGISTRY,
-                        key: KeySerializer::new(U16_LEN + U64_LEN + 1)
-                            .write(0u8)
+                        key: KeySerializer::new(U16_LEN + U64_LEN)
                             .write(object_type.to_id())
                             .write(u64::MAX)
                             .finalize(),
@@ -79,7 +77,7 @@ impl RegistryStore {
                 ),
                 |key, value| {
                     let id = key
-                        .get(U16_LEN + 1..)
+                        .get(U16_LEN..)
                         .and_then(|key| key.read_leb128::<u64>())
                         .map(|r| r.0)
                         .ok_or_else(|| {

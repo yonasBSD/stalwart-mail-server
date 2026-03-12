@@ -196,23 +196,22 @@ impl RegistryStore {
                     } else {
                         RegistryClass::IndexId { object_id, item_id }
                     };
-                    if self
+                    if !self
                         .0
                         .store
-                        .get_value::<()>(ValueKey::from(ValueClass::Registry(key)))
+                        .key_exists(ValueKey::from(ValueClass::Registry(key)))
                         .await
                         .caused_by(trc::location!())?
-                        .is_none()
                     {
                         return Ok(RegistryWriteResult::InvalidForeignKey {
                             object_id: *foreign_id,
                         });
                     } else if let Some(tenant_id) = tenant_id
                         && (object_flags & OBJ_FILTER_TENANT) != 0
-                        && self
+                        && !self
                             .0
                             .store
-                            .get_value::<()>(ValueKey::from(ValueClass::Registry(
+                            .key_exists(ValueKey::from(ValueClass::Registry(
                                 RegistryClass::Index {
                                     index_id: Property::MemberTenantId.to_id(),
                                     object_id,
@@ -222,17 +221,16 @@ impl RegistryStore {
                             )))
                             .await
                             .caused_by(trc::location!())?
-                            .is_none()
                     {
                         return Ok(RegistryWriteResult::InvalidForeignKey {
                             object_id: *foreign_id,
                         });
                     } else if (object_flags & OBJ_FILTER_ACCOUNT) != 0
                         && let Some(account_id) = account_id
-                        && self
+                        && !self
                             .0
                             .store
-                            .get_value::<()>(ValueKey::from(ValueClass::Registry(
+                            .key_exists(ValueKey::from(ValueClass::Registry(
                                 RegistryClass::Index {
                                     index_id: Property::AccountId.to_id(),
                                     object_id,
@@ -242,7 +240,6 @@ impl RegistryStore {
                             )))
                             .await
                             .caused_by(trc::location!())?
-                            .is_none()
                     {
                         return Ok(RegistryWriteResult::InvalidForeignKey {
                             object_id: *foreign_id,
@@ -312,7 +309,10 @@ impl RegistryStore {
                 out,
             );
 
-        Ok(RegistryWriteResult::Success(Id::new(item_id)))
+        self.store()
+            .write(batch.build_all())
+            .await
+            .map(|_| RegistryWriteResult::Success(Id::new(item_id)))
     }
 
     async fn delete(

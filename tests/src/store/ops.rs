@@ -4,15 +4,18 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::store::cleanup::store_assert_is_empty;
+use crate::utils::{cleanup::store_assert_is_empty, server::TestServer};
 use ahash::AHashSet;
 use std::collections::HashSet;
+use store::Store;
+use store::write::RegistryClass;
 use store::{
-    Store, ValueKey,
+    ValueKey,
     rand::{self, Rng},
     write::{AlignedBytes, Archive, Archiver, BatchBuilder, MergeResult, Params, ValueClass},
 };
-use types::collection::{Collection, SyncCollection};
+use types::collection::Collection;
+use types::collection::SyncCollection;
 
 // FDB max value
 const MAX_VALUE_SIZE: usize = 100000;
@@ -26,17 +29,17 @@ fn value_gen(chunks: impl IntoIterator<Item = (u8, usize)>) -> Vec<u8> {
     value
 }
 
-pub async fn test(db: Store) {
+pub async fn test(test: &TestServer) {
+    let db = test.server.store().clone();
+
     #[cfg(feature = "foundationdb")]
     if matches!(db, Store::FoundationDb(_)) {
-        use types::collection::Collection;
-
         println!("Running FoundationDB chunked iterator test...");
         let kvs = [
-            ("a", value_gen([(b'a', 1)])),
-            ("b", value_gen([(b'b', MAX_VALUE_SIZE), (b'0', 1)])),
+            (1, value_gen([(b'a', 1)])),
+            (2, value_gen([(b'b', MAX_VALUE_SIZE), (b'0', 1)])),
             (
-                "c",
+                3,
                 value_gen([
                     (b'c', MAX_VALUE_SIZE),
                     (b'1', MAX_VALUE_SIZE),
@@ -44,10 +47,10 @@ pub async fn test(db: Store) {
                 ]),
             ),
             (
-                "d",
+                4,
                 value_gen([(b'd', MAX_VALUE_SIZE), (b'3', MAX_VALUE_SIZE)]),
             ),
-            ("e", value_gen([(b'e', 1)])),
+            (5, value_gen([(b'e', 1)])),
         ];
         let mut batch = BatchBuilder::new();
         batch
@@ -56,7 +59,13 @@ pub async fn test(db: Store) {
             .with_document(0);
 
         for (key, value) in &kvs {
-            batch.set(ValueClass::Config(key.as_bytes().to_vec()), value.clone());
+            batch.set(
+                ValueClass::Registry(RegistryClass::Item {
+                    object_id: *key,
+                    item_id: 0,
+                }),
+                value.clone(),
+            );
         }
         db.write(batch.build_all()).await.unwrap();
 
@@ -68,13 +77,19 @@ pub async fn test(db: Store) {
                     account_id: 0,
                     collection: 0,
                     document_id: 0,
-                    class: ValueClass::Config(b"".to_vec()),
+                    class: ValueClass::Registry(RegistryClass::Item {
+                        object_id: 0,
+                        item_id: 0,
+                    }),
                 },
                 ValueKey {
                     account_id: 0,
                     collection: 0,
                     document_id: 0,
-                    class: ValueClass::Config(b"\xFF".to_vec()),
+                    class: ValueClass::Registry(RegistryClass::Item {
+                        object_id: u16::MAX,
+                        item_id: u64::MAX,
+                    }),
                 },
             ),
             |key, value| {
@@ -92,13 +107,19 @@ pub async fn test(db: Store) {
                 account_id: 0,
                 collection: 0,
                 document_id: 0,
-                class: ValueClass::Config(b"".to_vec()),
+                class: ValueClass::Registry(RegistryClass::Item {
+                    object_id: 0,
+                    item_id: 0,
+                }),
             },
             ValueKey {
                 account_id: 0,
                 collection: 0,
                 document_id: 0,
-                class: ValueClass::Config(b"\xFF".to_vec()),
+                class: ValueClass::Registry(RegistryClass::Item {
+                    object_id: u16::MAX,
+                    item_id: u64::MAX,
+                }),
             },
         )
         .await
@@ -114,7 +135,10 @@ pub async fn test(db: Store) {
                 .with_document(0);
             for n in 0..900000 {
                 batch.set(
-                    ValueClass::Config(format!("key{n:10}").into_bytes()),
+                    ValueClass::Registry(RegistryClass::Item {
+                        object_id: 0,
+                        item_id: n,
+                    }),
                     format!("value{n:10}").into_bytes(),
                 );
 
@@ -139,13 +163,19 @@ pub async fn test(db: Store) {
                         account_id: 0,
                         collection: 0,
                         document_id: 0,
-                        class: ValueClass::Config(b"".to_vec()),
+                        class: ValueClass::Registry(RegistryClass::Item {
+                            object_id: 0,
+                            item_id: 0,
+                        }),
                     },
                     ValueKey {
                         account_id: 0,
                         collection: 0,
                         document_id: 0,
-                        class: ValueClass::Config(b"\xFF".to_vec()),
+                        class: ValueClass::Registry(RegistryClass::Item {
+                            object_id: 0,
+                            item_id: u64::MAX,
+                        }),
                     },
                 ),
                 |key, value| {
@@ -169,7 +199,10 @@ pub async fn test(db: Store) {
                 .with_collection(Collection::Email)
                 .with_document(0);
             for n in 0..900000 {
-                batch.clear(ValueClass::Config(format!("key{n:10}").into_bytes()));
+                batch.clear(ValueClass::Registry(RegistryClass::Item {
+                    object_id: 0,
+                    item_id: n,
+                }));
 
                 if n % 10000 == 0 {
                     db.write(batch.build_all()).await.unwrap();
@@ -260,7 +293,7 @@ pub async fn test(db: Store) {
                     .with_account_id(0)
                     .with_collection(Collection::Email)
                     .with_document(0)
-                    .add_and_get(ValueClass::Directory(DirectoryClass::UsedQuota(0)), 1);
+                    .add_and_get(ValueClass::Quota, 1);
                 db.write(builder.build_all())
                     .await
                     .unwrap()
@@ -283,7 +316,7 @@ pub async fn test(db: Store) {
             account_id: 0,
             collection: 0,
             document_id: 0,
-            class: ValueClass::Directory(DirectoryClass::UsedQuota(0)),
+            class: ValueClass::Quota,
         })
         .await
         .unwrap(),
@@ -471,7 +504,7 @@ pub async fn test(db: Store) {
             .clear(ValueClass::Property(0))
             .clear(ValueClass::Property(2))
             .clear(ValueClass::Property(3))
-            .clear(ValueClass::Directory(DirectoryClass::UsedQuota(0)))
+            .clear(ValueClass::Quota)
             .clear(ValueClass::ChangeId);
 
         for document_id in 0..1000 {

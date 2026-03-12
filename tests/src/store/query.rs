@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::store::deflate_test_resource;
+use crate::{store::deflate_test_resource, utils::server::TestServer};
 use ahash::AHashSet;
 use nlp::language::Language;
 use std::{
@@ -105,7 +105,8 @@ const ALL_IDS: &[&str] = &[
 ];
 
 #[allow(clippy::mutex_atomic)]
-pub async fn test(store: SearchStore, do_insert: bool) {
+pub async fn test(test: &TestServer, do_insert: bool) {
+    let store = test.server.search_store().clone();
     println!("Running Store query tests...");
 
     let pool = rayon::ThreadPoolBuilder::new()

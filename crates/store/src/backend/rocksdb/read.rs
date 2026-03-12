@@ -36,6 +36,22 @@ impl RocksDbStore {
         .await
     }
 
+    pub(crate) async fn key_exists(&self, key: impl Key) -> trc::Result<bool> {
+        let db = self.db.clone();
+        self.spawn_worker(move || {
+            let subspace = &[key.subspace()];
+            let key = key.serialize(0);
+            db.get_pinned_cf(
+                &db.cf_handle(unsafe { std::str::from_utf8_unchecked(subspace.as_slice()) })
+                    .unwrap(),
+                &key,
+            )
+            .map_err(into_error)
+            .map(|value| value.is_some())
+        })
+        .await
+    }
+
     pub(crate) async fn iterate<T: Key>(
         &self,
         params: IterateParams<T>,

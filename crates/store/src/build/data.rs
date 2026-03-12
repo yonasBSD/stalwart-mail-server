@@ -10,6 +10,7 @@ use registry::schema::{
     structs::{DataStore, MetricsStore, TracingStore},
 };
 
+#[allow(unreachable_patterns)]
 impl Store {
     pub async fn build(config: DataStore) -> Result<Self, String> {
         #[allow(unreachable_patterns)]

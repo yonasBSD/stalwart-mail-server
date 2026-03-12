@@ -95,7 +95,7 @@ impl EmailConfig {
             default_domain.name
         } else {
             bp.build_error(
-                ObjectType::Authentication.singleton(),
+                ObjectType::SystemSettings.singleton(),
                 format!(
                     "Default domain with ID {} not found",
                     system.default_domain_id

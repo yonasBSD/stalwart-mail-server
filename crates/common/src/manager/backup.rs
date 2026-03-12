@@ -179,7 +179,9 @@ impl Core {
                                     key: vec![u8::MAX; 32],
                                 },
                             )
-                            .set_values(subspace != SUBSPACE_INDEXES),
+                            .set_values(
+                                ![SUBSPACE_INDEXES, SUBSPACE_REGISTRY_IDX].contains(&subspace),
+                            ),
                             |key, value| {
                                 writer
                                     .send((key.to_vec(), value.to_vec()))

@@ -4,30 +4,22 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{auth::permissions::DefaultPermissions, network::dkim::generate_dkim_private_key};
+use crate::auth::permissions::DefaultPermissions;
 use registry::{
     schema::{
-        enums::{DkimSignatureType, MtaInboundThrottleKey, MtaIpStrategy},
-        prelude::ObjectType,
-        structs::{
-            Authentication, Dkim1Signature, DkimPrivateKey, DkimSignature, Domain,
-            MtaConnectionStrategy, MtaDeliveryExpiration, MtaDeliveryExpirationAttempts,
-            MtaDeliveryExpirationTtl, MtaDeliverySchedule, MtaDeliveryScheduleInterval,
-            MtaDeliveryScheduleIntervals, MtaDeliveryScheduleIntervalsOrDefault,
-            MtaInboundThrottle, MtaQueueQuota, MtaRoute, MtaRouteCommon, MtaRouteMx,
-            MtaTlsStrategy, MtaVirtualQueue, OidcProvider, Rate, Role, SecretKey, SecretKeyValue,
-            SecretText, SecretTextValue, SystemSettings,
-        },
+        enums::*,
+        prelude::{ObjectType, SocketAddr},
+        structs::*,
     },
     types::{duration::Duration, error::Error, list::List, map::Map},
 };
+use std::str::FromStr;
 use store::{
     rand::{Rng, distr::Alphanumeric, rng},
     registry::{
         bootstrap::Bootstrap,
         write::{RegistryWrite, RegistryWriteResult},
     },
-    write::now,
 };
 use types::id::Id;
 
@@ -399,21 +391,24 @@ async fn insert_safe_defaults(bp: &mut Bootstrap) -> trc::Result<()> {
             }
         }
 
+        #[cfg(not(feature = "test_mode"))]
         if let Some(domain_id) = default_domain_id {
-            let now = now();
+            let now = store::write::now();
             let signature_rsa = DkimSignature::Dkim1RsaSha256(Dkim1Signature {
                 domain_id,
                 enabled: true,
                 selector: format!("rsa-{now}"),
                 private_key: DkimPrivateKey::Value(SecretTextValue {
-                    secret: generate_dkim_private_key(DkimSignatureType::Dkim1RsaSha256)
-                        .await?
-                        .map_err(|err| {
-                            trc::EventType::Dkim(trc::DkimEvent::BuildError)
-                                .into_err()
-                                .reason(err)
-                                .caused_by(trc::location!())
-                        })?,
+                    secret: crate::network::dkim::generate_dkim_private_key(
+                        DkimSignatureType::Dkim1RsaSha256,
+                    )
+                    .await?
+                    .map_err(|err| {
+                        trc::EventType::Dkim(trc::DkimEvent::BuildError)
+                            .into_err()
+                            .reason(err)
+                            .caused_by(trc::location!())
+                    })?,
                 }),
                 ..Default::default()
             });
@@ -422,14 +417,16 @@ async fn insert_safe_defaults(bp: &mut Bootstrap) -> trc::Result<()> {
                 enabled: true,
                 selector: format!("ed-{now}"),
                 private_key: DkimPrivateKey::Value(SecretTextValue {
-                    secret: generate_dkim_private_key(DkimSignatureType::Dkim1Ed25519Sha256)
-                        .await?
-                        .map_err(|err| {
-                            trc::EventType::Dkim(trc::DkimEvent::BuildError)
-                                .into_err()
-                                .reason(err)
-                                .caused_by(trc::location!())
-                        })?,
+                    secret: crate::network::dkim::generate_dkim_private_key(
+                        DkimSignatureType::Dkim1Ed25519Sha256,
+                    )
+                    .await?
+                    .map_err(|err| {
+                        trc::EventType::Dkim(trc::DkimEvent::BuildError)
+                            .into_err()
+                            .reason(err)
+                            .caused_by(trc::location!())
+                    })?,
                 }),
                 ..Default::default()
             });
@@ -450,6 +447,57 @@ async fn insert_safe_defaults(bp: &mut Bootstrap) -> trc::Result<()> {
                     default_domain_id: default_domain_id.unwrap_or(Id::new(0)),
                     ..Default::default()
                 }
+                .into(),
+            ))
+            .await?;
+    }
+
+    if bp
+        .registry
+        .count_object(ObjectType::NetworkListener)
+        .await?
+        == 0
+    {
+        for (protocol, name, port, use_tls) in [
+            (NetworkListenerProtocol::Smtp, "smtp", 25, false),
+            (NetworkListenerProtocol::Smtp, "submission", 587, false),
+            (NetworkListenerProtocol::Smtp, "submissions", 465, true),
+            (NetworkListenerProtocol::Imap, "imap", 143, false),
+            (NetworkListenerProtocol::Imap, "imaps", 993, true),
+            (NetworkListenerProtocol::Pop3, "pop3", 110, false),
+            (NetworkListenerProtocol::Pop3, "pop3s", 995, true),
+            (NetworkListenerProtocol::ManageSieve, "sieve", 4190, false),
+            (NetworkListenerProtocol::Http, "https", 443, true),
+            (NetworkListenerProtocol::Http, "http", 8080, false),
+        ] {
+            bp.registry
+                .write(RegistryWrite::insert(
+                    &NetworkListener {
+                        bind: Map::new(vec![
+                            SocketAddr::from_str(&format!("[::]:{port}")).unwrap(),
+                        ]),
+                        name: name.to_string(),
+                        protocol,
+                        use_tls,
+                        ..Default::default()
+                    }
+                    .into(),
+                ))
+                .await?;
+        }
+    }
+
+    if bp.registry.count_object(ObjectType::Tracer).await? == 0 {
+        bp.registry
+            .write(RegistryWrite::insert(
+                &Tracer::Log(TracerLog {
+                    enable: true,
+                    ansi: false,
+                    prefix: "stalwart.log".into(),
+                    rotate: LogRotateFrequency::Daily,
+                    path: "/var/log/stalwart".into(),
+                    ..Default::default()
+                })
                 .into(),
             ))
             .await?;

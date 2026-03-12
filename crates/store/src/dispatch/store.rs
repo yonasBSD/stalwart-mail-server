@@ -45,6 +45,29 @@ impl Store {
         .caused_by(trc::location!())
     }
 
+    pub async fn key_exists(&self, key: impl Key) -> trc::Result<bool> {
+        match self {
+            #[cfg(feature = "sqlite")]
+            Self::SQLite(store) => store.key_exists(key).await,
+            #[cfg(feature = "foundation")]
+            Self::FoundationDb(store) => store.key_exists(key).await,
+            #[cfg(feature = "postgres")]
+            Self::PostgreSQL(store) => store.key_exists(key).await,
+            #[cfg(feature = "mysql")]
+            Self::MySQL(store) => store.key_exists(key).await,
+            #[cfg(feature = "rocks")]
+            Self::RocksDb(store) => store.key_exists(key).await,
+            // SPDX-SnippetBegin
+            // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
+            // SPDX-License-Identifier: LicenseRef-SEL
+            #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
+            Self::SQLReadReplica(store) => store.key_exists(key).await,
+            // SPDX-SnippetEnd
+            Self::None => Err(trc::StoreEvent::NotConfigured.into()),
+        }
+        .caused_by(trc::location!())
+    }
+
     pub async fn iterate<T: Key>(
         &self,
         params: IterateParams<T>,

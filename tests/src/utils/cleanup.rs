@@ -259,7 +259,7 @@ pub async fn store_assert_is_empty(store: &Store, blob_store: BlobStore, include
         (SUBSPACE_REGISTRY_PK, true),
         (SUBSPACE_DIRECTORY, true),
     ] {
-        if (subspace == SUBSPACE_SEARCH_INDEX && store.is_pg_or_mysql())
+        if subspace == SUBSPACE_SEARCH_INDEX && store.is_pg_or_mysql()
         //|| (subspace == directory && !include_directory)
         {
             continue;

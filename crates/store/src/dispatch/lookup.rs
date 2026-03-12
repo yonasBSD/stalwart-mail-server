@@ -271,11 +271,11 @@ impl InMemoryStore {
     pub async fn key_exists(&self, key: impl Into<LookupKey<'_>>) -> trc::Result<bool> {
         match self {
             InMemoryStore::Store(store) => store
-                .get_value::<LookupValue<()>>(ValueKey::from(ValueClass::InMemory(
+                .get_value::<LookupValue<Empty>>(ValueKey::from(ValueClass::InMemory(
                     InMemoryClass::Key(key.into().into_bytes()),
                 )))
                 .await
-                .map(|value| matches!(value, Some(LookupValue::Value(())))),
+                .map(|value| matches!(value, Some(LookupValue::Value(Empty)))),
             #[cfg(feature = "redis")]
             InMemoryStore::Redis(store) => store.key_exists(key.into().as_bytes()).await,
             // SPDX-SnippetBegin
@@ -635,6 +635,8 @@ impl<T> KeyValue<T> {
     }
 }
 
+struct Empty;
+
 enum LookupValue<T> {
     Value(T),
     None,
@@ -652,6 +654,12 @@ impl<T: Deserialize> Deserialize for LookupValue<T> {
                 LookupValue::None
             })
         })
+    }
+}
+
+impl Deserialize for Empty {
+    fn deserialize(_bytes: &[u8]) -> trc::Result<Self> {
+        Ok(Empty)
     }
 }
 

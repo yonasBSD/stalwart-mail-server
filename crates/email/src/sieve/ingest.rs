@@ -256,10 +256,9 @@ impl SieveScriptIngest for Server {
                         } else {
                             let exists = self
                                 .in_memory_store()
-                                .key_get::<()>(id_hash.key())
+                                .key_exists(id_hash.key())
                                 .await
-                                .caused_by(trc::location!())?
-                                .is_some();
+                                .caused_by(trc::location!())?;
 
                             if !exists || last {
                                 self.in_memory_store()

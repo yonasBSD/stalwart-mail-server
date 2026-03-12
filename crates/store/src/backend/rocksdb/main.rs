@@ -65,7 +65,7 @@ impl RocksDbStore {
             SUBSPACE_REGISTRY_PK,
             SUBSPACE_DIRECTORY,
             LEGACY_SUBSPACE_BITMAP_TEXT,
-            LEGACY_SUBSPACE_FTS_INDEX,
+            LEGACY_SUBSPACE_BITMAP_TAG,
         ] {
             let cf_opts = Options::default();
             cfs.push(ColumnFamilyDescriptor::new(

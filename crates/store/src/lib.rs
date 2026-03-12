@@ -110,7 +110,7 @@ pub const SUBSPACE_IN_MEMORY_COUNTER: u8 = b'y';
 pub const SUBSPACE_PROPERTY: u8 = b'p';
 pub const SUBSPACE_REGISTRY: u8 = b's';
 pub const SUBSPACE_REGISTRY_IDX: u8 = b'b';
-pub const SUBSPACE_REGISTRY_PK: u8 = b'c';
+pub const SUBSPACE_REGISTRY_PK: u8 = b'g';
 pub const SUBSPACE_DIRECTORY: u8 = b'd';
 pub const SUBSPACE_QUEUE_MESSAGE: u8 = b'e';
 pub const SUBSPACE_QUEUE_EVENT: u8 = b'q';
@@ -125,7 +125,7 @@ pub const SUBSPACE_SPAM_SAMPLES: u8 = b'w';
 
 // TODO: Remove in v1.0
 pub const LEGACY_SUBSPACE_BITMAP_TEXT: u8 = b'v';
-pub const LEGACY_SUBSPACE_FTS_INDEX: u8 = b'g';
+pub const LEGACY_SUBSPACE_BITMAP_TAG: u8 = b'c';
 
 #[derive(Clone)]
 pub struct IterateParams<T: Key> {
@@ -277,6 +277,12 @@ impl From<Store> for SearchStore {
 }
 
 impl From<Store> for InMemoryStore {
+    fn from(store: Store) -> Self {
+        Self::Store(store)
+    }
+}
+
+impl From<Store> for BlobStore {
     fn from(store: Store) -> Self {
         Self::Store(store)
     }

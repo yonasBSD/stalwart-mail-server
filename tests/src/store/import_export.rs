@@ -4,17 +4,21 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::store::{
-    TempDir,
-    cleanup::{store_assert_is_empty, store_destroy},
+use crate::{
+    store::TempDir,
+    utils::{
+        cleanup::{store_assert_is_empty, store_destroy},
+        server::TestServer,
+    },
 };
+use ::registry::schema::enums::CompressionAlgo;
 use ahash::AHashSet;
-use common::{Core, DATABASE_SCHEMA_VERSION, manager::backup::BackupParams};
+use common::{DATABASE_SCHEMA_VERSION, manager::backup::BackupParams};
 use store::{
     rand,
     write::{
         AnyClass, AnyKey, BatchBuilder, BlobLink, BlobOp, Operation, QueueClass, QueueEvent,
-        ValueClass,
+        RegistryClass, ValueClass,
     },
     *,
 };
@@ -24,15 +28,10 @@ use types::{
     field::{Field, MailboxField},
 };
 
-pub async fn test(db: Store) {
-    let mut core = Core::default();
-    core.storage.data = db.clone();
-    core.storage.blob = db.clone().into();
-    core.storage.fts = db.clone().into();
-    core.storage.lookup = db.clone().into();
-
+pub async fn test(test: &TestServer) {
     // Make sure the store is empty
-    store_assert_is_empty(&db, db.clone().into(), true).await;
+    store_assert_is_empty(test.server.store(), test.server.blob_store().clone(), true).await;
+    let db = test.server.store().clone();
 
     // Create blobs
     println!("Creating blobs...");
@@ -49,9 +48,9 @@ pub async fn test(db: Store) {
         let data = random_bytes(blob_size);
         let hash = BlobHash::generate(data.as_slice());
         blob_hashes.push(hash.clone());
-        core.storage
-            .blob
-            .put_blob(hash.as_ref(), &data)
+        test.server
+            .blob_store()
+            .put_blob(hash.as_ref(), &data, CompressionAlgo::Lz4)
             .await
             .unwrap();
         batch.set(ValueClass::Blob(BlobOp::Commit { hash }), vec![]);
@@ -142,16 +141,11 @@ pub async fn test(db: Store) {
             })),
             random_bytes(idx),
         );
-        /*batch.set(
-            ValueClass::InMemory(InMemoryClass::Key(random_bytes(idx))),
-            random_bytes(idx),
-        );
-        batch.add(
-            ValueClass::InMemory(InMemoryClass::Counter(random_bytes(idx))),
-            rand::random(),
-        );*/
         batch.set(
-            ValueClass::Config(random_bytes(idx + 10)),
+            ValueClass::Registry(RegistryClass::Item {
+                object_id: 0,
+                item_id: 1,
+            }),
             random_bytes(idx + 10),
         );
     }
@@ -167,40 +161,7 @@ pub async fn test(db: Store) {
     for account_id in [1, 2, 3, 4, 5] {
         batch
             .with_document(account_id)
-            .add(
-                ValueClass::Directory(DirectoryClass::UsedQuota(account_id)),
-                rand::random(),
-            )
-            .set(
-                ValueClass::Directory(DirectoryClass::NameToId(random_bytes(
-                    2 + account_id as usize,
-                ))),
-                random_bytes(4),
-            )
-            .set(
-                ValueClass::Directory(DirectoryClass::EmailToId(random_bytes(
-                    4 + account_id as usize,
-                ))),
-                random_bytes(4),
-            )
-            .set(
-                ValueClass::Directory(DirectoryClass::Principal(account_id)),
-                random_bytes(30),
-            )
-            .set(
-                ValueClass::Directory(DirectoryClass::MemberOf {
-                    principal_id: account_id,
-                    member_of: rand::random(),
-                }),
-                random_bytes(15),
-            )
-            .set(
-                ValueClass::Directory(DirectoryClass::Members {
-                    principal_id: account_id,
-                    has_member: rand::random(),
-                }),
-                random_bytes(15),
-            );
+            .add(ValueClass::Quota, account_id as i64 * 1000);
     }
     db.write(batch.build_all()).await.unwrap();
 
@@ -212,7 +173,10 @@ pub async fn test(db: Store) {
     // Export store
     println!("Exporting store...");
     let temp_dir = TempDir::new("art_vandelay_tests", true);
-    core.backup(BackupParams::new(temp_dir.path.clone())).await;
+    test.server
+        .core
+        .backup(BackupParams::new(temp_dir.path.clone()))
+        .await;
 
     // Destroy store
     println!("Destroying store...");
@@ -221,7 +185,7 @@ pub async fn test(db: Store) {
 
     // Import store
     println!("Importing store...");
-    core.restore(temp_dir.path.clone()).await;
+    test.server.core.restore(temp_dir.path.clone()).await;
 
     // Verify hash
     print!("Verifying store hash...");
@@ -266,6 +230,8 @@ impl Snapshot {
             (SUBSPACE_IN_MEMORY_VALUE, true),
             (SUBSPACE_PROPERTY, true),
             (SUBSPACE_REGISTRY, true),
+            (SUBSPACE_REGISTRY_IDX, !is_sql),
+            (SUBSPACE_REGISTRY_PK, true),
             (SUBSPACE_QUEUE_MESSAGE, true),
             (SUBSPACE_QUEUE_EVENT, true),
             (SUBSPACE_QUOTA, !is_sql),

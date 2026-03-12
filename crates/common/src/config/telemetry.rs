@@ -178,6 +178,7 @@ impl Tracers {
             let lossy;
             let events;
             let events_policy;
+            let enable;
 
             let typ = match tracer {
                 Tracer::Log(tracer) if tracer.enable => {
@@ -185,6 +186,7 @@ impl Tracers {
                     lossy = tracer.lossy;
                     events = tracer.events;
                     events_policy = tracer.events_policy;
+                    enable = tracer.enable;
 
                     TelemetrySubscriberType::LogTracer(LogTracer {
                         path: tracer.path,
@@ -204,6 +206,7 @@ impl Tracers {
                     lossy = tracer.lossy;
                     events = tracer.events;
                     events_policy = tracer.events_policy;
+                    enable = tracer.enable;
 
                     if !tracers
                         .iter()
@@ -226,6 +229,7 @@ impl Tracers {
                         lossy = tracer.lossy;
                         events = tracer.events;
                         events_policy = tracer.events_policy;
+                        enable = tracer.enable;
 
                         if !tracers
                             .iter()
@@ -260,6 +264,7 @@ impl Tracers {
                     lossy = tracer.lossy;
                     events = tracer.events;
                     events_policy = tracer.events_policy;
+                    enable = tracer.enable;
 
                     let headers = match tracer
                         .http_auth
@@ -328,6 +333,7 @@ impl Tracers {
                     lossy = tracer.lossy;
                     events = tracer.events;
                     events_policy = tracer.events_policy;
+                    enable = tracer.enable;
 
                     let mut span_exporter = SpanExporter::builder()
                         .with_tonic()
@@ -373,6 +379,10 @@ impl Tracers {
                 }
                 _ => continue,
             };
+
+            if !enable {
+                continue;
+            }
 
             // Create tracer
             let mut tracer = TelemetrySubscriber {

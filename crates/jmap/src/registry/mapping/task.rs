@@ -104,10 +104,10 @@ pub(crate) async fn task_set(
                         object_id: foreign_id,
                         ..
                     } = key
-                        && set
+                        && !set
                             .server
                             .store()
-                            .get_value::<()>(ValueKey::from(ValueClass::Registry(
+                            .key_exists(ValueKey::from(ValueClass::Registry(
                                 RegistryClass::IndexId {
                                     object_id: foreign_id.object().to_id(),
                                     item_id: foreign_id.id().id(),
@@ -115,7 +115,6 @@ pub(crate) async fn task_set(
                             )))
                             .await
                             .caused_by(trc::location!())?
-                            .is_none()
                     {
                         set.response.not_created.append(
                             id,

@@ -29,10 +29,10 @@ pub mod jmap;
 #[cfg(test)]
 pub mod smtp;
 #[cfg(test)]
-pub mod store;
-#[cfg(test)]
 pub mod webdav;
 */
+#[cfg(test)]
+pub mod store;
 #[cfg(test)]
 pub mod system;
 #[cfg(test)]

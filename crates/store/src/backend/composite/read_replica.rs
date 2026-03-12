@@ -121,6 +121,23 @@ impl SQLReadReplica {
         .await
     }
 
+    pub(crate) async fn key_exists(&self, key: impl Key) -> trc::Result<bool> {
+        self.run_op(move |store| {
+            let key = key.clone();
+
+            async move {
+                match store {
+                    #[cfg(feature = "postgres")]
+                    Store::PostgreSQL(store) => store.key_exists(key).await,
+                    #[cfg(feature = "mysql")]
+                    Store::MySQL(store) => store.key_exists(key).await,
+                    _ => panic!("Invalid store type"),
+                }
+            }
+        })
+        .await
+    }
+
     pub async fn iterate<T: Key>(
         &self,
         params: IterateParams<T>,

@@ -7,4 +7,6 @@
 pub mod account;
 pub mod cleanup;
 pub mod jmap;
+pub mod registry;
+pub mod server;
 pub mod storage;

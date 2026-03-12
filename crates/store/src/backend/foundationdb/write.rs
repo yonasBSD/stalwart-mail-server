@@ -11,8 +11,8 @@ use super::{
 use crate::{
     backend::deserialize_i64_le,
     write::{
-        AssignedIds, Batch, DirectoryClass, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME, MergeResult,
-        Operation, TaskQueueClass, TelemetryClass, ValueClass, ValueOp, key::KeySerializer,
+        AssignedIds, Batch, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME, MergeResult, Operation,
+        RegistryClass, TaskQueueClass, TelemetryClass, ValueClass, ValueOp, key::KeySerializer,
     },
     *,
 };
@@ -150,7 +150,6 @@ impl FdbStore {
                                     MergeResult::Skip => (),
                                 }
                             }
-
                             ValueOp::AtomicAdd(by) => {
                                 trx.atomic_op(&key, &by.to_le_bytes()[..], MutationType::Add);
                             }
@@ -181,16 +180,13 @@ impl FdbStore {
                                     class,
                                     ValueClass::Property(_)
                                         | ValueClass::Queue(_)
-                                        | ValueClass::Report(_)
-                                        | ValueClass::Directory(DirectoryClass::Principal(_))
+                                        | ValueClass::Registry(RegistryClass::Item { .. })
                                         | ValueClass::ShareNotification { .. }
                                         | ValueClass::Telemetry(TelemetryClass::Metric { .. })
-                                        | ValueClass::TaskQueue(TaskQueueClass::SendImip {
-                                            is_payload: true,
-                                            ..
-                                        })
+                                        | ValueClass::TaskQueue(TaskQueueClass::Task { .. })
                                         | ValueClass::InMemory(_)
                                 ) {
+                                    // Clear range for potentially chunked values to avoid leaving orphaned chunks
                                     trx.clear_range(
                                         &key,
                                         &KeySerializer::new(key.len() + 1)

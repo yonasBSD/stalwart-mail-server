@@ -37,6 +37,22 @@ impl PostgresStore {
             })
     }
 
+    pub(crate) async fn key_exists(&self, key: impl Key) -> trc::Result<bool> {
+        let conn = self.conn_pool.get().await.map_err(into_pool_error)?;
+        let s = conn
+            .prepare_cached(&format!(
+                "SELECT 1 FROM {} WHERE k = $1",
+                char::from(key.subspace())
+            ))
+            .await
+            .map_err(into_error)?;
+        let key = key.serialize(0);
+        conn.query_opt(&s, &[&key])
+            .await
+            .map_err(into_error)
+            .map(|r| r.is_some())
+    }
+
     pub(crate) async fn iterate<T: Key>(
         &self,
         params: IterateParams<T>,

@@ -29,7 +29,7 @@ pub struct BlobQuota {
 
 impl Store {
     pub async fn blob_exists(&self, hash: impl AsRef<BlobHash> + Sync + Send) -> trc::Result<bool> {
-        self.get_value::<()>(ValueKey {
+        self.key_exists(ValueKey {
             account_id: 0,
             collection: 0,
             document_id: 0,
@@ -38,7 +38,6 @@ impl Store {
             }),
         })
         .await
-        .map(|v| v.is_some())
         .caused_by(trc::location!())
     }
 
@@ -76,7 +75,14 @@ impl Store {
             _ => return Ok(false),
         };
 
-        self.get_value::<()>(key).await.map(|v| v.is_some())
+        self.key_exists(key).await
+    }
+
+    pub async fn purge_blobs_all_shards(&self, blob_store: BlobStore) -> trc::Result<()> {
+        for shard_index in 0u8..=255 {
+            self.purge_blobs(blob_store.clone(), shard_index).await?;
+        }
+        Ok(())
     }
 
     pub async fn purge_blobs(&self, blob_store: BlobStore, shard_index: u8) -> trc::Result<()> {
@@ -270,6 +276,8 @@ impl BlobPurgeState {
                         self.delete_registry
                             .push((account_id, ObjectId::deserialize(value)?));
                     }
+                } else {
+                    self.last_hash_is_linked = true;
                 }
                 Ok(())
             }

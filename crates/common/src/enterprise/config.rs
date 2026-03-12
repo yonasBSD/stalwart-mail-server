@@ -37,8 +37,17 @@ impl Enterprise {
             .await
             .default_hostname;
         let mut update_license = None;
-
         let mut enterprise = bp.setting_infallible::<structs::Enterprise>().await;
+
+        // WARNING: TAMPERING WITH THIS FUNCTION IS STRICTLY PROHIBITED
+        // Any attempt to modify, bypass, or disable this license validation mechanism
+        // constitutes a severe violation of the Stalwart Enterprise License Agreement.
+        // Such actions may result in immediate termination of your license, legal action,
+        // and substantial financial penalties. Stalwart Labs LLC actively monitors for
+        // unauthorized modifications and will pursue all available legal remedies against
+        // violators to the fullest extent of the law, including but not limited to claims
+        // for copyright infringement, breach of contract, and fraud.
+
         let license_result = match (
             enterprise.license_key.secret().await,
             enterprise.api_key.secret().await,
@@ -75,7 +84,16 @@ impl Enterprise {
                     result.key
                 }),
             (Ok(None), Ok(None)) => {
+                #[cfg(not(feature = "test_mode"))]
                 return None;
+
+                #[cfg(feature = "test_mode")]
+                Ok(LicenseKey {
+                    valid_to: store::write::now() + (86400 * 365),
+                    valid_from: store::write::now() - 3600,
+                    domain: server_hostname.to_string(),
+                    accounts: 100,
+                })
             }
             (Err(err), _) => {
                 bp.build_error(ObjectType::Enterprise.singleton(), err);

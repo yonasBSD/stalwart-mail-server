@@ -15,7 +15,6 @@ use crate::{
 };
 use std::{path::PathBuf, time::Duration};
 use trc::AddContext;
-use utils::snowflake::SnowflakeIdGenerator;
 
 const STALE_NODE_TIMEOUT: u64 = 60 * 60; // 1 hour
 const DEAD_NODE_TIMEOUT: u64 = 60 * 60 * 24; // 24 hours
@@ -26,7 +25,18 @@ impl RegistryStore {
         let mut inner = RegistryStoreInner::new(local);
 
         // Build store
-        let store = Store::build(inner.read_data_store().await?).await?;
+        inner.store = Store::build(inner.read_data_store().await?).await?;
+
+        Self::from_inner(inner).await
+    }
+
+    pub async fn from_inner(mut inner: RegistryStoreInner) -> Result<Self, String> {
+        // Create tables (SQL only)
+        inner
+            .store
+            .create_tables()
+            .await
+            .map_err(|err| format!("Failed to create tables: {err}"))?;
 
         // Obtain node id
         let mut retry_count = 0;
@@ -35,7 +45,8 @@ impl RegistryStore {
             let mut batch = BatchBuilder::new();
             let now = now();
             let mut node_ids = Vec::new();
-            store
+            inner
+                .store
                 .iterate(
                     IterateParams::new(
                         ValueKey::from(ValueClass::NodeId(0)),
@@ -113,7 +124,7 @@ impl RegistryStore {
                     );
             }
 
-            match store.write(batch.build_all()).await {
+            match inner.store.write(batch.build_all()).await {
                 Ok(_) => break,
                 Err(err) => {
                     if err.is_assertion_failure() && retry_count < 5 {
@@ -126,7 +137,6 @@ impl RegistryStore {
             }
         }
 
-        inner.id_generator = SnowflakeIdGenerator::new();
         Ok(Self(inner.into()))
     }
 
@@ -157,23 +167,61 @@ impl RegistryStore {
             .map(|_| ())
     }
 
+    #[inline(always)]
     pub fn recovery_admin(&self) -> Option<&(String, String)> {
         self.0.env_recovery_admin.as_ref()
     }
 
+    #[inline(always)]
     pub fn cluster_role(&self) -> Option<&str> {
         self.0.env_cluster_role.as_deref()
     }
 
+    #[inline(always)]
     pub fn cluster_push_shard(&self) -> u32 {
         self.0.env_push_shard_id
     }
 
+    #[inline(always)]
     pub fn local_hostname(&self) -> &str {
         &self.0.env_hostname
     }
 
+    #[inline(always)]
     pub fn is_recovery_mode(&self) -> bool {
         self.0.env_recovery_mode
+    }
+
+    #[inline(always)]
+    pub fn path(&self) -> &PathBuf {
+        &self.0.local_path
+    }
+
+    #[inline(always)]
+    pub fn store(&self) -> &Store {
+        &self.0.store
+    }
+
+    #[cfg(feature = "test_mode")]
+    pub async fn new(
+        path: &str,
+        store: Store,
+        hostname: String,
+        push_shard_id: u32,
+        cluster_role: Option<String>,
+    ) -> Self {
+        Self::from_inner(RegistryStoreInner {
+            local_path: PathBuf::from(path),
+            store,
+            node_id: 0,
+            env_recovery_mode: false,
+            env_recovery_admin: Some(("admin".to_string(), "popolna_zapora".to_string())),
+            env_cluster_role: cluster_role,
+            env_push_shard_id: push_shard_id,
+            env_hostname: hostname,
+            id_generator: utils::snowflake::SnowflakeIdGenerator::new(),
+        })
+        .await
+        .unwrap()
     }
 }
