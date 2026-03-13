@@ -279,8 +279,12 @@ pub async fn store_assert_is_empty(store: &Store, blob_store: BlobStore, include
                 IterateParams::new(from_key, to_key).set_values(with_values),
                 |key, value| {
                     match subspace {
-                        SUBSPACE_COUNTER if key.len() == U32_LEN + 1 || key.len() == U32_LEN => {
-                            // Message ID and change ID counters
+                        SUBSPACE_COUNTER
+                            if key.len() == U32_LEN + 1
+                                || key.len() == U32_LEN
+                                || key.len() == U16_LEN =>
+                        {
+                            // Message ID, change ID counters and registry counters
                             return Ok(true);
                         }
                         SUBSPACE_INDEXES => {

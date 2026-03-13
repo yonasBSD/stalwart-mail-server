@@ -10,13 +10,14 @@ use crate::{
     utils::{
         account::Account,
         cleanup::{search_store_destroy, store_destroy},
-        registry::{RegistryEnvStores, UnwrapRegistryId, build_data_store},
-        storage::assert_is_empty,
+        registry::UnwrapRegistryId,
+        storage::{RegistryEnvStores, assert_is_empty, build_data_store},
     },
 };
 use ahash::AHashMap;
 use common::{
     BuildServer, Caches, Core, Data, Inner, Server,
+    auth::FALLBACK_ADMIN_ID,
     config::{
         server::{Listeners, ServerProtocol},
         storage::Storage,
@@ -32,7 +33,7 @@ use registry::{
     schema::{
         enums::{DataStoreType, EventPolicy, NetworkListenerProtocol, TracingLevel},
         prelude::{Object, SocketAddr},
-        structs::{NetworkListener, Tracer, TracerStdout},
+        structs::{Expression, Http, NetworkListener, Tracer, TracerStdout},
     },
     types::{EnumImpl, map::Map},
 };
@@ -49,9 +50,10 @@ use types::id::Id;
 
 pub struct TestServer {
     pub server: Server,
-    accounts: AHashMap<&'static str, Account>,
+    pub accounts: AHashMap<&'static str, Account>,
     pub temp_dir: TempDir,
     shutdown_tx: watch::Sender<bool>,
+    reset: bool,
 }
 
 pub struct TestServerBuilder {
@@ -61,7 +63,8 @@ pub struct TestServerBuilder {
 }
 
 impl TestServerBuilder {
-    pub async fn new(test_name: &str, reset: bool) -> Self {
+    pub async fn new(test_name: &str) -> Self {
+        let reset = std::env::var("NO_INSERT").is_err();
         let temp_dir = TempDir::new(test_name, reset);
         let path = temp_dir.path.to_string_lossy().to_string();
         let data_store = build_data_store(
@@ -92,18 +95,43 @@ impl TestServerBuilder {
         }
     }
 
+    pub async fn with_default_listeners(self) -> Self {
+        let mut this = self;
+        for (protocol, name, port, use_tls) in [
+            (NetworkListenerProtocol::Http, "jmap", 8899, true),
+            (NetworkListenerProtocol::Imap, "imap", 9991, false),
+            (NetworkListenerProtocol::Imap, "imaptls", 9992, true),
+            (NetworkListenerProtocol::ManageSieve, "sieve", 4190, true),
+            (NetworkListenerProtocol::Pop3, "pop3", 4110, true),
+            (NetworkListenerProtocol::Lmtp, "lmtp-debug", 11201, false),
+        ] {
+            this = this.with_listener(protocol, name, port, use_tls).await;
+        }
+        this.with_object(Http {
+            base_url: Expression {
+                else_: "'https://127.0.0.1:8899'".to_string(),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .await
+    }
+
     pub async fn with_listener(
         self,
         protocol: NetworkListenerProtocol,
         name: &str,
         port: u16,
-        use_tls: bool,
+        tls_implicit: bool,
     ) -> Self {
         self.insert_object(NetworkListener {
-            bind: Map::new(vec![SocketAddr::from_str(&format!("[::]:{port}")).unwrap()]),
+            bind: Map::new(vec![
+                SocketAddr::from_str(&format!("127.0.0.1:{port}")).unwrap(),
+            ]),
             name: name.to_string(),
             protocol,
-            use_tls,
+            use_tls: true,
+            tls_implicit,
             ..Default::default()
         })
         .await;
@@ -245,11 +273,17 @@ impl TestServerBuilder {
         // Start broadcast subscriber
         spawn_broadcast_subscriber(inner.clone(), shutdown_rx);
 
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
         TestServer {
             server: inner.build_server(),
             temp_dir: self.temp_dir,
-            accounts: Default::default(),
+            accounts: AHashMap::from_iter([(
+                "admin",
+                Account::new("admin", "popolna_zapora", &[], Id::from(FALLBACK_ADMIN_ID)).await,
+            )]),
             shutdown_tx,
+            reset: self.reset,
         }
     }
 }
@@ -265,6 +299,10 @@ impl TestServer {
 
     pub async fn destroy_store(&self) {
         store_destroy(self.server.store()).await;
+    }
+
+    pub fn is_reset(&self) -> bool {
+        self.reset
     }
 
     pub fn shutdown(&self) {

@@ -305,7 +305,7 @@ impl ValueClass {
                     serializer.write(*object_id).write_leb128(*item_id)
                 }
                 RegistryClass::IndexId { object_id, item_id } => {
-                    serializer.write(*object_id).write(*item_id)
+                    serializer.write(u16::MAX).write(*object_id).write(*item_id)
                 }
                 RegistryClass::Index {
                     index_id,

@@ -94,13 +94,15 @@ impl EmailConfig {
         {
             default_domain.name
         } else {
-            bp.build_error(
-                ObjectType::SystemSettings.singleton(),
-                format!(
-                    "Default domain with ID {} not found",
-                    system.default_domain_id
-                ),
-            );
+            if system.default_domain_id.is_valid() {
+                bp.build_error(
+                    ObjectType::SystemSettings.singleton(),
+                    format!(
+                        "Default domain with ID {} not found",
+                        system.default_domain_id
+                    ),
+                );
+            }
             "localhost.local".to_string()
         };
 

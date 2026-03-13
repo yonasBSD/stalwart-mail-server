@@ -7594,6 +7594,7 @@ dependencies = [
  "jemallocator",
  "jmap",
  "jmap-client",
+ "jmap-tools",
  "jmap_proto",
  "mail-auth 0.7.5",
  "mail-builder",

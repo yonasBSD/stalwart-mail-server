@@ -20,7 +20,7 @@ use types::{blob::BlobClass, blob_hash::BlobHash, collection::Collection, field:
 
 #[tokio::test]
 pub async fn blob_tests() {
-    let test = TestServerBuilder::new("blob_tests", true)
+    let test = TestServerBuilder::new("blob_tests")
         .await
         .with_object(Jmap {
             upload_quota: 1024,

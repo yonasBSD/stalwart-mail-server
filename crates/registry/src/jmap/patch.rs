@@ -324,22 +324,24 @@ impl<T: RegistryJsonPropertyPatch> RegistryJsonPatch for T {
             let mut unpatched = VecMap::new();
             for (key, value) in object.into_vec() {
                 if let Some(property) = key.as_property() {
-                    ptr.as_mut_slice()[0] = JsonPointerItem::Key(Key::Property(*property));
-                    match self.patch_property(JsonPointerPatch::new(&ptr), value) {
-                        Ok(MaybeUnpatched::Patched) => {}
-                        Ok(MaybeUnpatched::Unpatched { property, value }) => {
-                            unpatched.append(property, value);
-                        }
-                        Ok(MaybeUnpatched::UnpatchedMany { properties }) => {
-                            unpatched.extend(properties.into_iter());
-                        }
-                        Err(mut e) => {
-                            if !e.path.is_empty() {
-                                e.path = format!("{}/{}", e.path, property.as_str());
-                            } else {
-                                e.path = property.as_str().to_string();
+                    if *property != Property::Type {
+                        ptr.as_mut_slice()[0] = JsonPointerItem::Key(Key::Property(*property));
+                        match self.patch_property(JsonPointerPatch::new(&ptr), value) {
+                            Ok(MaybeUnpatched::Patched) => {}
+                            Ok(MaybeUnpatched::Unpatched { property, value }) => {
+                                unpatched.append(property, value);
                             }
-                            return Err(e);
+                            Ok(MaybeUnpatched::UnpatchedMany { properties }) => {
+                                unpatched.extend(properties.into_iter());
+                            }
+                            Err(mut e) => {
+                                if !e.path.is_empty() {
+                                    e.path = format!("{}/{}", e.path, property.as_str());
+                                } else {
+                                    e.path = property.as_str().to_string();
+                                }
+                                return Err(e);
+                            }
                         }
                     }
                 } else {

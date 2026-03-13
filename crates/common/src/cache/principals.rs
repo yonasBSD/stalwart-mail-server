@@ -11,8 +11,8 @@ use crate::{
         ACCOUNT_FLAG_ENCRYPT_APPEND, ACCOUNT_FLAG_ENCRYPT_METHOD_PGP,
         ACCOUNT_FLAG_ENCRYPT_METHOD_SMIME, ACCOUNT_FLAG_ENCRYPT_TRAIN_SPAM_FILTER, ACCOUNT_IS_USER,
         AccountCache, AccountInfo, AccountTenantIds, DOMAIN_FLAG_RELAY, DOMAIN_FLAG_SUB_ADDRESSING,
-        DomainCache, EmailAddress, EmailAddressRef, EmailCache, MailingListCache, PermissionsGroup,
-        RoleCache, TenantCache, permissions::BuildPermissions,
+        DomainCache, EmailAddress, EmailAddressRef, EmailCache, FALLBACK_ADMIN_ID,
+        MailingListCache, PermissionsGroup, RoleCache, TenantCache, permissions::BuildPermissions,
     },
     config::smtp::auth::DkimSigner,
     expr::if_block::BootstrapExprExt,
@@ -224,13 +224,34 @@ impl Server {
     }
 
     pub async fn account(&self, account_id: u32) -> trc::Result<Arc<AccountCache>> {
-        self.try_account(account_id).await?.ok_or_else(|| {
-            trc::AuthEvent::Error
+        if let Some(account) = self.try_account(account_id).await? {
+            Ok(account)
+        } else if account_id == FALLBACK_ADMIN_ID {
+            Ok(Arc::new(AccountCache {
+                name: self
+                    .registry()
+                    .recovery_admin()
+                    .map(|(name, _)| name.as_str())
+                    .unwrap_or("recovery-admin")
+                    .into(),
+                id: FALLBACK_ADMIN_ID,
+                addresses: Default::default(),
+                id_tenant: Default::default(),
+                id_member_of: Default::default(),
+                quota_disk: Default::default(),
+                quota_objects: Default::default(),
+                description: Some("Recovery admin account".into()),
+                encryption_key: Default::default(),
+                locale: Default::default(),
+                flags: Default::default(),
+            }))
+        } else {
+            Err(trc::AuthEvent::Error
                 .into_err()
                 .details("Account not found.")
                 .ctx(trc::Key::AccountId, account_id)
-                .caused_by(trc::location!())
-        })
+                .caused_by(trc::location!()))
+        }
     }
 
     pub async fn try_account(&self, account_id: u32) -> trc::Result<Option<Arc<AccountCache>>> {

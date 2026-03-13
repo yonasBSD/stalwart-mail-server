@@ -295,9 +295,7 @@ async fn all_ids<T: RegistryQueryResults>(store: &Store, query: RegistryQuery) -
             .ascending(),
             |key, _| {
                 if offset == 0 {
-                    if key.len() == U64_LEN + U16_LEN {
-                        bm.push(key.deserialize_be_u64(key.len() - U64_LEN)?);
-                    }
+                    bm.push(key.deserialize_be_u64(U16_LEN * 2)?);
                     Ok(query.limit.is_none_or(|limit| bm.count() < limit))
                 } else {
                     offset -= 1;
@@ -318,27 +316,27 @@ async fn index_range<T: RegistryQueryResults>(
     op: RegistryFilterOp,
     results: &mut ResultsPagination<T>,
 ) -> trc::Result<()> {
-    let object_id = object.to_id();
     let ((from_value, from_doc_id, from_index_id), (end_value, end_doc_id, end_index_id)) = match op
     {
-        RegistryFilterOp::LowerThan => ((&[][..], 0, object_id), (match_value, 0, object_id)),
+        RegistryFilterOp::LowerThan => ((&[][..], 0, index_id), (match_value, 0, index_id)),
         RegistryFilterOp::LowerEqualThan => {
-            ((&[][..], 0, object_id), (match_value, u64::MAX, object_id))
+            ((&[][..], 0, index_id), (match_value, u64::MAX, index_id))
         }
         RegistryFilterOp::GreaterThan => (
-            (match_value, u64::MAX, object_id),
-            (&[][..], u64::MAX, object_id + 1),
+            (match_value, u64::MAX, index_id),
+            (&[][..], u64::MAX, index_id + 1),
         ),
         RegistryFilterOp::GreaterEqualThan => (
-            (match_value, 0, object_id),
-            (&[][..], u64::MAX, object_id + 1),
+            (match_value, 0, index_id),
+            (&[][..], u64::MAX, index_id + 1),
         ),
         RegistryFilterOp::Equal | RegistryFilterOp::TextMatch => (
-            (match_value, 0, object_id),
-            (match_value, u64::MAX, object_id),
+            (match_value, 0, index_id),
+            (match_value, u64::MAX, index_id),
         ),
     };
 
+    let object_id = object.to_id();
     let begin = ValueKey::from(ValueClass::Any(AnyClass {
         subspace: SUBSPACE_REGISTRY_IDX,
         key: KeySerializer::new((U16_LEN * 2) + U64_LEN + from_value.len())
@@ -362,7 +360,6 @@ async fn index_range<T: RegistryQueryResults>(
         .write(object_id)
         .write(index_id)
         .finalize();
-    let prefix_len = prefix.len();
 
     store
         .iterate(
@@ -374,7 +371,7 @@ async fn index_range<T: RegistryQueryResults>(
 
                 let id_pos = key.len() - U64_LEN;
                 let value = key
-                    .get(prefix_len..id_pos)
+                    .get(U16_LEN * 2..id_pos)
                     .ok_or_else(|| trc::Error::corrupted_key(key, None, trc::location!()))?;
 
                 let matches = match op {
@@ -405,17 +402,17 @@ async fn pk_range<T: RegistryQueryResults>(
     op: RegistryFilterOp,
     results: &mut ResultsPagination<T>,
 ) -> trc::Result<()> {
-    let object_id = object.to_id();
     let ((from_value, from_index_id), (end_value, end_index_id)) = match op {
-        RegistryFilterOp::LowerThan => ((&[][..], object_id), (match_value, object_id)),
-        RegistryFilterOp::LowerEqualThan => ((&[][..], object_id), (match_value, object_id)),
-        RegistryFilterOp::GreaterThan => ((match_value, object_id), (&[][..], object_id + 1)),
-        RegistryFilterOp::GreaterEqualThan => ((match_value, object_id), (&[][..], object_id + 1)),
+        RegistryFilterOp::LowerThan => ((&[][..], index_id), (match_value, index_id)),
+        RegistryFilterOp::LowerEqualThan => ((&[][..], index_id), (match_value, index_id)),
+        RegistryFilterOp::GreaterThan => ((match_value, index_id), (&[][..], index_id + 1)),
+        RegistryFilterOp::GreaterEqualThan => ((match_value, index_id), (&[][..], index_id + 1)),
         RegistryFilterOp::Equal | RegistryFilterOp::TextMatch => {
-            ((match_value, object_id), (match_value, object_id))
+            ((match_value, index_id), (match_value, index_id))
         }
     };
 
+    let object_id = object.to_id();
     let begin = ValueKey::from(ValueClass::Any(AnyClass {
         subspace: SUBSPACE_REGISTRY_PK,
         key: KeySerializer::new((U16_LEN * 2) + from_value.len())
@@ -437,25 +434,23 @@ async fn pk_range<T: RegistryQueryResults>(
         .write(object_id)
         .write(index_id)
         .finalize();
-    let prefix_len = prefix.len();
 
     store
-        .iterate(IterateParams::new(begin, end).ascending(), |key, _| {
+        .iterate(IterateParams::new(begin, end).ascending(), |key, value| {
             if !key.starts_with(&prefix) {
                 return Ok(false);
             }
 
-            let id_pos = key.len() - U64_LEN;
-            let value = key
-                .get(prefix_len..id_pos)
+            let key = key
+                .get(U16_LEN * 2..)
                 .ok_or_else(|| trc::Error::corrupted_key(key, None, trc::location!()))?;
 
             let matches = match op {
-                RegistryFilterOp::LowerThan => value < match_value,
-                RegistryFilterOp::LowerEqualThan => value <= match_value,
-                RegistryFilterOp::GreaterThan => value > match_value,
-                RegistryFilterOp::GreaterEqualThan => value >= match_value,
-                RegistryFilterOp::Equal | RegistryFilterOp::TextMatch => value == match_value,
+                RegistryFilterOp::LowerThan => key < match_value,
+                RegistryFilterOp::LowerEqualThan => key <= match_value,
+                RegistryFilterOp::GreaterThan => key > match_value,
+                RegistryFilterOp::GreaterEqualThan => key >= match_value,
+                RegistryFilterOp::Equal | RegistryFilterOp::TextMatch => key == match_value,
             };
 
             if matches {

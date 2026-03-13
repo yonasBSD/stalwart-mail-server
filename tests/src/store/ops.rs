@@ -7,8 +7,6 @@
 use crate::utils::{cleanup::store_assert_is_empty, server::TestServer};
 use ahash::AHashSet;
 use std::collections::HashSet;
-use store::Store;
-use store::write::RegistryClass;
 use store::{
     ValueKey,
     rand::{self, Rng},
@@ -34,6 +32,8 @@ pub async fn test(test: &TestServer) {
 
     #[cfg(feature = "foundationdb")]
     if matches!(db, Store::FoundationDb(_)) {
+        use store::Store;
+        use store::write::RegistryClass;
         println!("Running FoundationDB chunked iterator test...");
         let kvs = [
             (1, value_gen([(b'a', 1)])),

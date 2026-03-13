@@ -458,7 +458,7 @@ async fn insert_safe_defaults(bp: &mut Bootstrap) -> trc::Result<()> {
         .await?
         == 0
     {
-        for (protocol, name, port, use_tls) in [
+        for (protocol, name, port, tls_implicit) in [
             (NetworkListenerProtocol::Smtp, "smtp", 25, false),
             (NetworkListenerProtocol::Smtp, "submission", 587, false),
             (NetworkListenerProtocol::Smtp, "submissions", 465, true),
@@ -478,7 +478,8 @@ async fn insert_safe_defaults(bp: &mut Bootstrap) -> trc::Result<()> {
                         ]),
                         name: name.to_string(),
                         protocol,
-                        use_tls,
+                        use_tls: true,
+                        tls_implicit,
                         ..Default::default()
                     }
                     .into(),

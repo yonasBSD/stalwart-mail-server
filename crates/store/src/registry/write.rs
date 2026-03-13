@@ -28,6 +28,7 @@ use std::{borrow::Cow, fmt::Display};
 use trc::AddContext;
 use types::id::Id;
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum RegistryWriteResult {
     Success(Id),
     CannotDeleteLinked {
@@ -122,9 +123,11 @@ impl RegistryStore {
                 let mut old_index = IndexBuilder::default();
                 old_object.index(&mut old_index);
                 for key in &old_index.keys {
-                    set_index.keys.remove(key);
+                    if !set_index.keys.contains(key) {
+                        clear_index.keys.insert(key.clone());
+                    }
                 }
-                clear_index = old_index;
+                set_index.keys.retain(|key| !old_index.keys.contains(key));
 
                 // Validate singleton
                 if object_flags & OBJ_SINGLETON != 0 && !id.is_singleton() {
@@ -177,7 +180,17 @@ impl RegistryStore {
             .account_id()
             .map(|id| id.id())
             .or_else(|| (object_type == ObjectType::Account).then_some(item_id));
-        for key in &set_index.keys {
+
+        #[cfg(not(feature = "test_mode"))]
+        let set_keys = &set_index.keys;
+
+        #[cfg(feature = "test_mode")]
+        let set_keys = set_index
+            .keys
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>();
+
+        for key in set_keys {
             match key {
                 IndexKey::ForeignKey {
                     object_id: foreign_id,
@@ -186,6 +199,7 @@ impl RegistryStore {
                     // Verify that the referenced object exists
                     let item_id = foreign_id.id().id();
                     let object_id = foreign_id.object().to_id();
+                    let object_flags = foreign_id.object().flags();
                     let key = if type_filter != &IndexValue::None {
                         RegistryClass::Index {
                             index_id: Property::Type.to_id(),
@@ -196,6 +210,7 @@ impl RegistryStore {
                     } else {
                         RegistryClass::IndexId { object_id, item_id }
                     };
+
                     if !self
                         .0
                         .store
@@ -301,6 +316,7 @@ impl RegistryStore {
                 vec![],
             );
         }
+
         batch
             .registry_index(object_id, item_id, set_index.keys.iter(), true)
             .registry_index(object_id, item_id, clear_index.keys.iter(), false)

@@ -67,8 +67,14 @@ pub trait RegistrySet: Sync + Send {
 
 #[allow(clippy::large_enum_variant)]
 enum Modification {
-    Create(String),
-    Update { id: Id, object: Object },
+    Create {
+        client_id: String,
+        object: Option<Object>,
+    },
+    Update {
+        id: Id,
+        object: Object,
+    },
 }
 
 impl RegistrySet for Server {
@@ -91,12 +97,7 @@ impl RegistrySet for Server {
         let mut response = SetResponse::from_request(&request, self.core.jmap.set_max_objects)?;
 
         // Initial create validation for singletons
-        let mut create = request.unwrap_create();
-        if is_singleton && !create.is_empty() {
-            response
-                .not_created
-                .extend(create.drain().map(|(id, _)| (id, SetError::singleton())));
-        }
+        let create = request.unwrap_create();
 
         // Initial destroy validation for singletons
         let mut destroy = request.unwrap_destroy().into_valid().collect::<Vec<_>>();
@@ -243,11 +244,31 @@ impl RegistrySet for Server {
                 // Bundle modifications together
                 let mut modifications = Vec::with_capacity(set.create.len() + set.update.len());
                 for (id, value) in set.create.drain() {
-                    modifications.push((
-                        Modification::Create(id),
-                        value,
-                        Object::from(set.object_type),
-                    ));
+                    if is_singleton
+                        && let Some(object) = self
+                            .registry()
+                            .get(ObjectId::new(object_type, Id::singleton()))
+                            .await
+                            .caused_by(trc::location!())?
+                    {
+                        modifications.push((
+                            Modification::Create {
+                                client_id: id,
+                                object: Some(object),
+                            },
+                            value,
+                            Object::from(set.object_type),
+                        ));
+                    } else {
+                        modifications.push((
+                            Modification::Create {
+                                client_id: id,
+                                object: None,
+                            },
+                            value,
+                            Object::from(set.object_type),
+                        ));
+                    }
                 }
                 for (id, value) in set.update.drain(..) {
                     if let Some(object) = self
@@ -292,7 +313,7 @@ impl RegistrySet for Server {
                 let mut cache_invalidator = CacheInvalidationBuilder::default();
                 'outer: for (modification, value, mut new_object) in modifications {
                     // Initial validations
-                    let is_create = matches!(modification, Modification::Create(_));
+                    let is_create = matches!(modification, Modification::Create { .. });
                     let mut unpatched_properties = VecMap::new();
 
                     for (key, value) in value.into_expanded_object() {
@@ -306,7 +327,7 @@ impl RegistrySet for Server {
                             (Key::Owned(other), Modification::Update { .. }) => {
                                 JsonPointer::parse(&other)
                             }
-                            (key, Modification::Create(_)) => {
+                            (key, Modification::Create { .. }) => {
                                 set.failed(
                                     modification,
                                     SetError::invalid_properties().with_property(key.into_owned()),
@@ -442,13 +463,28 @@ impl RegistrySet for Server {
 
                     // Save object
                     let result = match &modification {
-                        Modification::Create(_) => {
-                            self.registry()
-                                .write(RegistryWrite::Insert {
-                                    object: &new_object,
-                                    id: response.id,
-                                })
-                                .await?
+                        Modification::Create { client_id, object } => {
+                            if let Some(object) = object {
+                                if object.inner != new_object.inner {
+                                    self.registry()
+                                        .write(RegistryWrite::update(
+                                            Id::singleton(),
+                                            &new_object,
+                                            object,
+                                        ))
+                                        .await?
+                                } else {
+                                    set.response.created(client_id.to_string(), Id::singleton());
+                                    continue;
+                                }
+                            } else {
+                                self.registry()
+                                    .write(RegistryWrite::Insert {
+                                        object: &new_object,
+                                        id: response.id,
+                                    })
+                                    .await?
+                            }
                         }
                         Modification::Update { id, object } => {
                             if object.inner != new_object.inner {
@@ -474,7 +510,10 @@ impl RegistrySet for Server {
                                 },
                             );
                         }
-                        (Modification::Create(client_id), RegistryWriteResult::Success(id)) => {
+                        (
+                            Modification::Create { client_id, .. },
+                            RegistryWriteResult::Success(id),
+                        ) => {
                             response.object.insert(Property::Id, RegistryValue::Id(id));
                             set.response
                                 .created
@@ -483,7 +522,7 @@ impl RegistrySet for Server {
                         (Modification::Update { id, .. }, err) => {
                             set.response.not_updated.append(id, map_write_error(err));
                         }
-                        (Modification::Create(client_id), err) => {
+                        (Modification::Create { client_id, .. }, err) => {
                             set.response
                                 .not_created
                                 .append(client_id, map_write_error(err));
@@ -580,7 +619,9 @@ impl RegistrySet for Server {
 impl RegistrySetResponse<'_> {
     fn failed(&mut self, modification: Modification, error: SetError<Property>) {
         match modification {
-            Modification::Create(id) => self.response.not_created.append(id, error),
+            Modification::Create { client_id, .. } => {
+                self.response.not_created.append(client_id, error)
+            }
             Modification::Update { id, .. } => self.response.not_updated.append(id, error),
         }
     }
@@ -633,7 +674,7 @@ impl RegistrySetResponse<'_> {
 impl Modification {
     fn as_account(&self) -> Option<&Account> {
         match self {
-            Modification::Create(_) => None,
+            Modification::Create { .. } => None,
             Modification::Update { object, .. } => match &object.inner {
                 ObjectInner::Account(account) => Some(account),
                 _ => None,
@@ -643,7 +684,7 @@ impl Modification {
 
     fn as_role(&self) -> Option<&Role> {
         match self {
-            Modification::Create(_) => None,
+            Modification::Create { .. } => None,
             Modification::Update { object, .. } => match &object.inner {
                 ObjectInner::Role(role) => Some(role),
                 _ => None,
@@ -653,7 +694,7 @@ impl Modification {
 
     fn as_public_key(&self) -> Option<&PublicKey> {
         match self {
-            Modification::Create(_) => None,
+            Modification::Create { .. } => None,
             Modification::Update { object, .. } => match &object.inner {
                 ObjectInner::PublicKey(key) => Some(key),
                 _ => None,
@@ -663,7 +704,7 @@ impl Modification {
 
     fn as_dkim_signature(&self) -> Option<&DkimSignature> {
         match self {
-            Modification::Create(_) => None,
+            Modification::Create { .. } => None,
             Modification::Update { object, .. } => match &object.inner {
                 ObjectInner::DkimSignature(key) => Some(key),
                 _ => None,

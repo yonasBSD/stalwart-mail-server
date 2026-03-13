@@ -5,8 +5,8 @@ edition = "2024"
 
 [features]
 #default = ["sqlite", "postgres", "mysql", "rocks", "s3", "redis", "nats", "azure", "foundationdb"]
-default = ["sqlite", "postgres", "mysql", "rocks", "s3", "redis", "foundationdb"]
-#default = ["postgres"]
+#default = ["sqlite", "postgres", "mysql", "rocks", "s3", "redis", "foundationdb"]
+default = ["rocks"]
 sqlite = ["store/sqlite", "directory/sqlite"]
 foundationdb = ["store/foundation", "common/foundation"]
 postgres = ["store/postgres", "directory/postgres"]
@@ -80,6 +80,7 @@ form_urlencoded = "1.1.0"
 rkyv = { version = "0.8.10", features = ["little_endian"] }
 compact_str = "0.9.0"
 quick-xml = "0.38"
+jmap-tools = { version = "0.1" }
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 jemallocator = "0.5.0"

@@ -4,148 +4,115 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::utils::{account::Account, jmap::JmapResponse};
 use registry::{
-    schema::{
-        enums::{BlobStoreType, DataStoreType, InMemoryStoreType, SearchStoreType},
-        prelude::Object,
-        structs::{
-            BlobStore, DataStore, ElasticSearchStore, FileSystemStore, FoundationDbStore, HttpAuth,
-            HttpAuthBasic, InMemoryStore, MeilisearchStore, MySqlStore, PostgreSqlStore,
-            RedisStore, RocksDbStore, S3Store, S3StoreCustomRegion, S3StoreRegion, SearchStore,
-            SecretKey, SecretKeyOptional, SecretKeyValue, SqliteStore,
-        },
-    },
-    types::{EnumImpl, duration::Duration},
+    schema::prelude::ObjectType,
+    types::{EnumImpl, ObjectImpl},
 };
-use store::{
-    RegistryStore,
-    registry::write::{RegistryWrite, RegistryWriteResult},
-};
+use serde_json::{Value, json};
+use std::fmt::Display;
+use store::registry::write::RegistryWriteResult;
 use types::id::Id;
 
-pub trait RegistryEnvStores {
-    fn insert_stores_from_env(&self) -> impl Future<Output = ()>;
-}
+impl Account {
+    pub async fn registry_create<T: ObjectImpl>(
+        &self,
+        items: impl IntoIterator<Item = T>,
+    ) -> JmapResponse {
+        let name = T::OBJECT.as_str();
 
-impl RegistryEnvStores for RegistryStore {
-    async fn insert_stores_from_env(&self) {
-        let path = self.path().as_os_str().to_str().unwrap();
-        let search_store = std::env::var("SEARCH_STORE")
-            .map(|store| SearchStoreType::parse(&store).expect("Invalid store type"))
-            .map(|store| build_search_store(store, path))
-            .map(Object::from)
-            .ok();
-        let blob_store = std::env::var("BLOB_STORE")
-            .map(|store| BlobStoreType::parse(&store).expect("Invalid store type"))
-            .map(|store| build_blob_store(store, path))
-            .map(Object::from)
-            .ok();
-        let in_memory = std::env::var("MEMORY_STORE")
-            .map(|store| InMemoryStoreType::parse(&store).expect("Invalid store type"))
-            .map(|store| build_in_memory_store(store, path))
-            .map(Object::from)
-            .ok();
+        self.jmap_create_account(
+            self,
+            format!("x:{name}"),
+            items.into_iter().map(|item| {
+                let mut item =
+                    serde_json::to_value(item).expect("Failed to serialize item to JSON");
+                item.as_object_mut()
+                    .unwrap()
+                    .retain(|k, _| !["createdAt", "credentialId"].contains(&k.as_str()));
+                item
+            }),
+            Vec::<(&str, &str)>::new(),
+        )
+        .await
+    }
 
-        for store in [search_store, blob_store, in_memory].into_iter().flatten() {
-            self.write(RegistryWrite::insert(&store))
-                .await
-                .expect("Failed to insert store into registry")
-                .unwrap_id(trc::location!());
-        }
+    pub async fn registry_update(
+        &self,
+        object: ObjectType,
+        items: impl IntoIterator<Item = (impl Display, Value)>,
+    ) -> JmapResponse {
+        let name = object.as_str();
+
+        self.jmap_update_account(self, format!("x:{name}"), items, Vec::<(&str, &str)>::new())
+            .await
+    }
+
+    pub async fn registry_query(
+        &self,
+        object: ObjectType,
+        filter: impl IntoIterator<Item = (impl Display, impl Into<Value>)>,
+        sort_by: impl IntoIterator<Item = impl Display>,
+    ) -> JmapResponse {
+        let name = object.as_str();
+
+        self.jmap_query(
+            format!("x:{name}"),
+            filter,
+            sort_by,
+            Vec::<(&str, &str)>::new(),
+        )
+        .await
+    }
+
+    pub async fn registry_destroy(
+        &self,
+        object: ObjectType,
+        items: impl IntoIterator<Item = impl Display>,
+    ) -> JmapResponse {
+        let name = object.as_str();
+
+        self.jmap_destroy_account(self, format!("x:{name}"), items, Vec::<(&str, &str)>::new())
+            .await
+    }
+
+    pub async fn registry_destroy_all(&self, object: ObjectType) {
+        let name = object.as_str();
+        self.jmap_method_calls(json!([[
+            format!("{name}/get"),
+            {
+              "ids" : (),
+              "properties" : [
+                "id"
+              ]
+            },
+            "R1"
+          ],
+          [
+            format!("{name}/set"),
+            {
+              "#destroy" : {
+                    "resultOf": "R1",
+                    "name": format!("{name}/get"),
+                    "path": "/list/*/id"
+                },
+            },
+            "R2"
+          ]
+        ]))
+        .await;
+    }
+
+    pub async fn registry_create_object<T: ObjectImpl>(&self, item: T) -> Id {
+        self.registry_create([item]).await.created_id(0)
     }
 }
 
-pub fn build_data_store(typ: DataStoreType, path: &str) -> DataStore {
-    match typ {
-        DataStoreType::RocksDb => DataStore::RocksDb(RocksDbStore {
-            path: format!("{path}/rocks.db"),
-            ..Default::default()
-        }),
-        DataStoreType::Sqlite => DataStore::Sqlite(SqliteStore {
-            path: format!("{path}/sqlite.db"),
-            ..Default::default()
-        }),
-        DataStoreType::FoundationDb => DataStore::FoundationDb(FoundationDbStore::default()),
-        DataStoreType::PostgreSql => DataStore::PostgreSql(PostgreSqlStore {
-            host: "localhost".into(),
-            port: 5432,
-            auth_username: "postgres".to_string().into(),
-            auth_secret: SecretKeyOptional::Value(SecretKeyValue {
-                secret: "mysecretpassword".into(),
-            }),
-            database: "stalwart".into(),
-            use_tls: false,
-            allow_invalid_certs: true,
-            ..Default::default()
-        }),
-        DataStoreType::MySql => DataStore::MySql(MySqlStore {
-            host: "localhost".into(),
-            port: 3307,
-            auth_username: "root".to_string().into(),
-            auth_secret: SecretKeyOptional::Value(SecretKeyValue {
-                secret: "password".into(),
-            }),
-            database: "stalwart".into(),
-            use_tls: false,
-            allow_invalid_certs: true,
-            ..Default::default()
-        }),
-    }
-}
-
-fn build_blob_store(typ: BlobStoreType, path: &str) -> BlobStore {
-    match typ {
-        BlobStoreType::S3 => BlobStore::S3(S3Store {
-            access_key: "minioadmin".to_string().into(),
-            bucket: "tmp".into(),
-            region: S3StoreRegion::Custom(S3StoreCustomRegion {
-                custom_endpoint: "http://localhost:9000".into(),
-                custom_region: "eu-central-1".into(),
-            }),
-            secret_key: SecretKeyOptional::Value(SecretKeyValue {
-                secret: "minioadmin".into(),
-            }),
-            allow_invalid_certs: true,
-            ..Default::default()
-        }),
-        BlobStoreType::FileSystem => BlobStore::FileSystem(FileSystemStore {
-            path: path.to_string(),
-            ..Default::default()
-        }),
-        _ => unreachable!(),
-    }
-}
-
-fn build_in_memory_store(typ: InMemoryStoreType, _path: &str) -> InMemoryStore {
-    match typ {
-        InMemoryStoreType::Redis => InMemoryStore::Redis(RedisStore {
-            url: "redis://127.0.0.1".into(),
-            ..Default::default()
-        }),
-        _ => unreachable!(),
-    }
-}
-
-fn build_search_store(typ: SearchStoreType, _path: &str) -> SearchStore {
-    match typ {
-        SearchStoreType::ElasticSearch => SearchStore::ElasticSearch(ElasticSearchStore {
-            url: "https://localhost:9200".into(),
-            allow_invalid_certs: true,
-            http_auth: HttpAuth::Basic(HttpAuthBasic {
-                username: "elastic".into(),
-                secret: SecretKey::Value(SecretKeyValue {
-                    secret: "changeme".into(),
-                }),
-            }),
-            ..Default::default()
-        }),
-        SearchStoreType::Meilisearch => SearchStore::Meilisearch(MeilisearchStore {
-            url: "http://localhost:7700".into(),
-            allow_invalid_certs: true,
-            poll_interval: Duration::from_millis(100),
-            ..Default::default()
-        }),
-        _ => unreachable!(),
+impl JmapResponse {
+    pub fn objects<T: ObjectImpl>(&self) -> impl Iterator<Item = T> {
+        self.list()
+            .iter()
+            .map(|item| serde_json::from_value(item.clone()).expect("Failed to deserialize item"))
     }
 }
 

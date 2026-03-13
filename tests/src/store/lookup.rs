@@ -14,11 +14,7 @@ use store::{InMemoryStore, dispatch::lookup::KeyValue};
 
 #[tokio::test]
 pub async fn lookup_tests() {
-    let insert = std::env::var("NO_INSERT").is_err();
-    let test = TestServerBuilder::new("lookup_tests", insert)
-        .await
-        .build()
-        .await;
+    let test = TestServerBuilder::new("lookup_tests").await.build().await;
     let store = test.server.in_memory_store().clone();
     let rate = Rate {
         count: 1,

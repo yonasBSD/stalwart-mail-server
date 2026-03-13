@@ -9,6 +9,7 @@ pub mod import_export;
 pub mod lookup;
 pub mod ops;
 pub mod query;
+pub mod registry;
 
 use crate::utils::server::TestServerBuilder;
 use std::io::Read;
@@ -19,28 +20,24 @@ pub struct TempDir {
 
 #[tokio::test(flavor = "multi_thread")]
 pub async fn store_tests() {
-    let insert = std::env::var("NO_INSERT").is_err();
-    let test = TestServerBuilder::new("store_tests", insert)
-        .await
-        .build()
-        .await;
+    let test = TestServerBuilder::new("store_tests").await.build().await;
 
     println!("Testing store {}...", std::env::var("STORE").unwrap());
 
     test.destroy_store().await;
 
+    registry::test(&test).await;
     import_export::test(&test).await;
     ops::test(&test).await;
 
-    if insert {
+    if test.is_reset() {
         test.temp_dir.delete();
     }
 }
 
 #[tokio::test(flavor = "multi_thread")]
 pub async fn search_tests() {
-    let insert = std::env::var("NO_INSERT").is_err();
-    let test = TestServerBuilder::new("search_store_tests", insert)
+    let test = TestServerBuilder::new("search_store_tests")
         .await
         .build()
         .await;
@@ -50,9 +47,9 @@ pub async fn search_tests() {
         std::env::var("SEARCH_STORE").unwrap_or("default".to_string())
     );
 
-    query::test(&test, insert).await;
+    query::test(&test).await;
 
-    if insert {
+    if test.is_reset() {
         test.temp_dir.delete();
     }
 }

@@ -105,7 +105,7 @@ const ALL_IDS: &[&str] = &[
 ];
 
 #[allow(clippy::mutex_atomic)]
-pub async fn test(test: &TestServer, do_insert: bool) {
+pub async fn test(test: &TestServer) {
     let store = test.server.search_store().clone();
     println!("Running Store query tests...");
 
@@ -295,7 +295,7 @@ pub async fn test(test: &TestServer, do_insert: bool) {
         chunks.push(chunk);
     }
 
-    if do_insert {
+    if test.is_reset() {
         let mut tasks = Vec::new();
         for chunk in chunks {
             let chunk_instance = Instant::now();

@@ -12,7 +12,7 @@ use ahash::AHashSet;
 use std::borrow::Cow;
 use types::id::Id;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum IndexKey<'x> {
     Unique {
         property: Property,
@@ -36,7 +36,7 @@ pub struct ObjectFilter<'x> {
     pub value: IndexValue<'x>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum IndexValue<'x> {
     Text(Cow<'x, str>),
     Bytes(Vec<u8>),

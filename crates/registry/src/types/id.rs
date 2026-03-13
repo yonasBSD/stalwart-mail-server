@@ -49,7 +49,7 @@ impl ObjectId {
 
 impl Display for ObjectId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:{}", self.object.as_str(), self.id)
+        write!(f, "{} with id {}", self.object.as_str(), self.id)
     }
 }
 
@@ -163,5 +163,20 @@ impl IntoValue for Id {
 impl IntoValue for BlobId {
     fn into_value(self) -> JmapValue<'static> {
         JmapValue::Element(RegistryValue::BlobId(self))
+    }
+}
+
+impl Ord for ObjectId {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match self.object.to_id().cmp(&other.object.to_id()) {
+            std::cmp::Ordering::Equal => self.id.cmp(&other.id),
+            ord => ord,
+        }
+    }
+}
+
+impl PartialOrd for ObjectId {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
