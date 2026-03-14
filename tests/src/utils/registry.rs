@@ -4,7 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::utils::{account::Account, jmap::JmapResponse};
+use crate::utils::{
+    account::Account,
+    jmap::{JmapResponse, JmapSetError},
+};
 use registry::{
     schema::prelude::ObjectType,
     types::{EnumImpl, ObjectImpl},
@@ -27,9 +30,7 @@ impl Account {
             items.into_iter().map(|item| {
                 let mut item =
                     serde_json::to_value(item).expect("Failed to serialize item to JSON");
-                item.as_object_mut()
-                    .unwrap()
-                    .retain(|k, _| !["createdAt", "credentialId"].contains(&k.as_str()));
+                remove_server_set_props(&mut item);
                 item
             }),
             Vec::<(&str, &str)>::new(),
@@ -53,7 +54,7 @@ impl Account {
         object: ObjectType,
         filter: impl IntoIterator<Item = (impl Display, impl Into<Value>)>,
         sort_by: impl IntoIterator<Item = impl Display>,
-    ) -> JmapResponse {
+    ) -> Vec<Id> {
         let name = object.as_str();
 
         self.jmap_query(
@@ -63,6 +64,8 @@ impl Account {
             Vec::<(&str, &str)>::new(),
         )
         .await
+        .object_ids()
+        .collect()
     }
 
     pub async fn registry_destroy(
@@ -106,6 +109,35 @@ impl Account {
     pub async fn registry_create_object<T: ObjectImpl>(&self, item: T) -> Id {
         self.registry_create([item]).await.created_id(0)
     }
+
+    pub async fn registry_create_object_expect_err<T: ObjectImpl>(&self, item: T) -> JmapSetError {
+        let v = self
+            .registry_create([item])
+            .await
+            .not_created(0)
+            .to_string();
+        serde_json::from_str(&v).expect("Failed to deserialize set error")
+    }
+
+    pub async fn registry_update_object(&self, object: ObjectType, id: Id, item: Value) {
+        self.registry_update(object, [(id, item)])
+            .await
+            .updated_id(id);
+    }
+
+    pub async fn registry_update_object_expect_err(
+        &self,
+        object: ObjectType,
+        id: Id,
+        item: Value,
+    ) -> JmapSetError {
+        let v = self
+            .registry_update(object, [(id, item)])
+            .await
+            .not_updated(&id.to_string())
+            .to_string();
+        serde_json::from_str(&v).expect("Failed to deserialize set error")
+    }
 }
 
 impl JmapResponse {
@@ -125,6 +157,21 @@ impl UnwrapRegistryId for RegistryWriteResult {
         match self {
             RegistryWriteResult::Success(id) => id,
             err => panic!("Expected success at {location} but got {err}"),
+        }
+    }
+}
+
+fn remove_server_set_props(value: &mut serde_json::Value) {
+    if let Value::Object(obj) = value {
+        let is_app_pass = obj
+            .get("@type")
+            .and_then(|v| v.as_str())
+            .is_some_and(|t| ["AppPassword", "ApiKey"].contains(&t));
+        obj.retain(|k, _| {
+            !(["createdAt", "credentialId"].contains(&k.as_str()) || (is_app_pass && k == "secret"))
+        });
+        for v in obj.values_mut() {
+            remove_server_set_props(v);
         }
     }
 }

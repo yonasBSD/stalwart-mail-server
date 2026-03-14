@@ -5,734 +5,399 @@
  */
 
 use crate::utils::server::TestServer;
+use common::auth::{ACCOUNT_IS_USER, EmailAddress, EmailCache};
+use jmap_proto::error::set::SetErrorType;
+use registry::{
+    schema::{
+        enums::{AccountType, StorageQuota},
+        prelude::{ObjectType, Property},
+        structs::{
+            Account, Credential, Domain, EmailAlias, GroupAccount, MailingList, PasswordCredential,
+            UserAccount,
+        },
+    },
+    types::{EnumImpl, list::List, map::Map},
+};
+use serde_json::json;
+use std::sync::Arc;
+use utils::map::vec_map::VecMap;
 
 pub async fn test(test: &TestServer) {
-    // A principal without name should fail
-    /*assert_eq!(
-        store
-            .create_principal(PrincipalSet::default(), None, None)
-            .await,
-        Err(manage::err_missing(PrincipalField::Name))
-    );
+    let account = test.account("admin@example.org");
 
-    // Basic account creation
-    let john_id = store
-        .create_principal(
-            TestPrincipal {
-                name: "john".into(),
-                description: Some("John Doe".into()),
-                secrets: vec!["secret".into(), "$app$secret2".into()],
-                ..Default::default()
-            }
-            .into(),
-            None,
-            None,
-        )
-        .await
-        .unwrap()
-        .id;
-
-    // Two accounts with the same name should fail
-    assert_eq!(
-        store
-            .create_principal(
-                TestPrincipal {
-                    name: "john".into(),
-                    ..Default::default()
-                }
-                .into(),
-                None,
-                None
-            )
-            .await,
-        Err(manage::err_exists(PrincipalField::Name, "john"))
-    );
-
-    // An account using a non-existent domain should fail
-    assert_eq!(
-        store
-            .create_principal(
-                TestPrincipal {
-                    name: "jane".into(),
-                    emails: vec!["jane@example.org".into()],
-                    ..Default::default()
-                }
-                .into(),
-                None,
-                None
-            )
-            .await,
-        Err(manage::not_found("example.org"))
-    );
-
-    // Create a domain name
-    store
-        .create_principal(
-            TestPrincipal {
-                name: "example.org".into(),
-                typ: Type::Domain,
-                ..Default::default()
-            }
-            .into(),
-            None,
-            None,
-        )
-        .await
-        .unwrap();
-    assert!(store.is_local_domain("example.org").await.unwrap());
-    assert!(!store.is_local_domain("otherdomain.org").await.unwrap());
-
-    // Add an email address
-    assert!(
-        store
-            .update_principal(UpdatePrincipal::by_name("john").with_updates(vec![
-                PrincipalUpdate::add_item(
-                    PrincipalField::Emails,
-                    PrincipalValue::String("john@example.org".into()),
-                )
-            ]))
-            .await
-            .is_ok()
-    );
-    assert_eq!(
-        store.rcpt("john@example.org").await.unwrap(),
-        RcptType::Mailbox
-    );
-    assert_eq!(
-        store.email_to_id("john@example.org").await.unwrap(),
-        Some(john_id)
-    );
-
-    // Using non-existent domain should fail
-    assert_eq!(
-        store
-            .update_principal(UpdatePrincipal::by_name("john").with_updates(vec![
-                PrincipalUpdate::add_item(
-                    PrincipalField::Emails,
-                    PrincipalValue::String("john@otherdomain.org".into()),
-                )
-            ]))
-            .await,
-        Err(manage::not_found("otherdomain.org"))
-    );
-
-    // Create an account with an email address
-    let jane_id = store
-        .create_principal(
-            TestPrincipal {
-                name: "jane".into(),
-                description: Some("Jane Doe".into()),
-                secrets: vec!["my_secret".into(), "$app$my_secret2".into()],
-                emails: vec!["jane@example.org".into()],
-                quota: 123,
-                ..Default::default()
-            }
-            .into(),
-            None,
-            None,
-        )
-        .await
-        .unwrap()
-        .id;
-
-    assert_eq!(
-        store.rcpt("jane@example.org").await.unwrap(),
-        RcptType::Mailbox
-    );
-    assert_eq!(
-        store.rcpt("jane@otherdomain.org").await.unwrap(),
-        RcptType::Invalid
-    );
-    assert_eq!(
-        store.email_to_id("jane@example.org").await.unwrap(),
-        Some(jane_id)
-    );
-    assert_eq!(store.vrfy("jane").await.unwrap(), vec!["jane@example.org"]);
-    assert_eq!(
-        store
-            .query(
-                QueryParams::credentials(&Credentials::new("jane".into(), "my_secret".into()))
-                    .with_return_member_of(true)
-            )
-            .await
-            .unwrap()
-            .map(|p| p.into_test()),
-        Some(TestPrincipal {
-            id: jane_id,
-            name: "jane".into(),
-            description: Some("Jane Doe".into()),
-            emails: vec!["jane@example.org".into()],
-            secrets: vec!["my_secret".into(), "$app$my_secret2".into()],
-            quota: 123,
+    // Create a domain and make sure it's in the cache
+    let domain_id = account
+        .registry_create_object(Domain {
+            name: "example.com".to_string(),
+            aliases: Map::new(vec!["beispiel.de".to_string()]),
+            is_enabled: true,
+            catch_all_address: Some("catchy@example.com".to_string()),
             ..Default::default()
         })
-    );
+        .await;
+    let domain_cache = test
+        .server
+        .domain_by_id(domain_id.document_id())
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(
-        store
-            .query(
-                QueryParams::credentials(&Credentials::new("jane".into(), "wrong_password".into()))
-                    .with_return_member_of(true)
-            )
-            .await
-            .unwrap(),
-        None
+        &domain_cache.names,
+        &Box::from_iter(["example.com".into(), "beispiel.de".into()])
+    );
+    assert_eq!(domain_cache.id, domain_id.document_id());
+    assert_eq!(
+        domain_cache.catch_all.as_deref(),
+        Some("catchy@example.com")
     );
 
-    // Duplicate email address should fail
+    // Multiple domains with the same name should not be allowed
+    account
+        .registry_create_object_expect_err(Domain {
+            name: "example.com".to_string(),
+            ..Default::default()
+        })
+        .await
+        .assert_type(SetErrorType::PrimaryKeyViolation);
+
+    // Invalid local part should not be allowed
+    account
+        .registry_create_object_expect_err(Account::User(UserAccount {
+            name: "!invalid".to_string(),
+            domain_id,
+            credentials: List::from_iter([Credential::Password(PasswordCredential {
+                secret: "hello world".to_string(),
+                ..Default::default()
+            })]),
+            aliases: List::from_iter([EmailAlias {
+                name: "!invalid".to_string(),
+                domain_id,
+                enabled: true,
+                ..Default::default()
+            }]),
+            ..Default::default()
+        }))
+        .await
+        .assert_type(SetErrorType::InvalidPatch)
+        .assert_description_contains("Invalid email local part");
+
+    // Valid account creation with local part sanitization
+    let account_id = account
+        .registry_create_object(Account::User(UserAccount {
+            name: " john doe".to_string(),
+            domain_id,
+            description: "John 'Johnny-D' Doe".to_string().into(),
+            credentials: List::from_iter([Credential::Password(PasswordCredential {
+                secret: "hello world".to_string(),
+                ..Default::default()
+            })]),
+            aliases: List::from_iter([EmailAlias {
+                name: "jdoe".to_string(),
+                domain_id,
+                enabled: true,
+                ..Default::default()
+            }]),
+            quotas: VecMap::from_iter([
+                (StorageQuota::MaxDiskQuota, 1024u64),
+                (StorageQuota::MaxEmails, 100u64),
+            ]),
+            ..Default::default()
+        }))
+        .await;
+    let account_cache = test.server.account(account_id.document_id()).await.unwrap();
+    assert_eq!(account_cache.name.as_ref(), "johndoe@example.com");
     assert_eq!(
-        store
-            .create_principal(
-                TestPrincipal {
-                    name: "janeth".into(),
-                    description: Some("Janeth Doe".into()),
-                    emails: vec!["jane@example.org".into()],
-                    ..Default::default()
-                }
-                .into(),
-                None,
-                None
-            )
-            .await,
-        Err(manage::err_exists(
-            PrincipalField::Emails,
-            "jane@example.org"
-        ))
+        account_cache.description.as_deref(),
+        Some("John 'Johnny-D' Doe")
     );
+    assert_eq!(account_cache.id, account_id.document_id());
+    assert_eq!(account_cache.quota_disk, 1024);
+    assert_eq!(
+        account_cache
+            .quota_objects
+            .as_ref()
+            .unwrap()
+            .get(StorageQuota::MaxEmails),
+        100
+    );
+    assert_eq!(
+        account_cache.addresses,
+        vec![
+            EmailAddress {
+                local_part: "johndoe".into(),
+                domain_id: domain_id.document_id(),
+            },
+            EmailAddress {
+                local_part: "jdoe".into(),
+                domain_id: domain_id.document_id(),
+            }
+        ]
+        .into_boxed_slice()
+    );
+    assert!(account_cache.flags & ACCOUNT_IS_USER != 0);
+
+    // Duplicate account names should not be allowed
+    account
+        .registry_create_object_expect_err(Account::User(UserAccount {
+            name: "johndoe".to_string(),
+            domain_id,
+            ..Default::default()
+        }))
+        .await
+        .assert_type(SetErrorType::PrimaryKeyViolation);
+    account
+        .registry_create_object_expect_err(Account::User(UserAccount {
+            name: "jdoe".to_string(),
+            domain_id,
+            ..Default::default()
+        }))
+        .await
+        .assert_type(SetErrorType::PrimaryKeyViolation);
+    account
+        .registry_create_object_expect_err(Account::Group(GroupAccount {
+            name: "jdoe".to_string(),
+            domain_id,
+            ..Default::default()
+        }))
+        .await
+        .assert_type(SetErrorType::PrimaryKeyViolation);
+    account
+        .registry_create_object_expect_err(MailingList {
+            name: "jdoe".to_string(),
+            domain_id,
+            ..Default::default()
+        })
+        .await
+        .assert_type(SetErrorType::PrimaryKeyViolation);
+
+    // Create a group and add it to the account
+    let group_id = account
+        .registry_create_object(Account::Group(GroupAccount {
+            name: "sales".to_string(),
+            domain_id,
+            ..Default::default()
+        }))
+        .await;
+    let account_cache = test.server.account(group_id.document_id()).await.unwrap();
+    assert_eq!(account_cache.name.as_ref(), "sales@example.com");
+    assert!(account_cache.flags & ACCOUNT_IS_USER == 0);
+    account
+        .registry_update_object(
+            ObjectType::Account,
+            account_id,
+            json!({
+                Property::MemberGroupIds: {
+                    group_id: true
+                }
+            }),
+        )
+        .await;
+    let account_cache = test.server.account(account_id.document_id()).await.unwrap();
+    assert_eq!(
+        account_cache.id_member_of.as_ref(),
+        &[group_id.document_id()]
+    );
+
+    // Linking invalid groups should not be allowed
+    account
+        .registry_update_object_expect_err(
+            ObjectType::Account,
+            account_id,
+            json!({
+                Property::MemberGroupIds: {
+                    account_id: true
+                }
+            }),
+        )
+        .await
+        .assert_type(SetErrorType::InvalidForeignKey);
+
+    // Remove the group membership and make sure it's gone
+    account
+        .registry_update_object(
+            ObjectType::Account,
+            account_id,
+            json!({
+                Property::MemberGroupIds: {
+                    group_id: false
+                }
+            }),
+        )
+        .await;
+    let account_cache = test.server.account(account_id.document_id()).await.unwrap();
+    assert!(account_cache.id_member_of.as_ref().is_empty());
 
     // Create a mailing list
-    let list_id = store
-        .create_principal(
-            TestPrincipal {
-                name: "list".into(),
-                typ: Type::List,
-                emails: vec!["list@example.org".into()],
-                ..Default::default()
-            }
-            .into(),
-            None,
-            None,
+    let list_id = account
+        .registry_create_object(MailingList {
+            name: "newsletter".to_string(),
+            domain_id,
+            recipients: Map::new(vec!["jdoe@example.com".to_string()]),
+            ..Default::default()
+        })
+        .await;
+    let list_cache = test
+        .server
+        .try_list(list_id.document_id())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        &list_cache.recipients,
+        &Arc::from(Box::from_iter(["jdoe@example.com".into()]))
+    );
+
+    // Update mailing list
+    account
+        .registry_update_object(
+            ObjectType::MailingList,
+            list_id,
+            json!({
+                "recipients/sales@example.com": true
+            }),
         )
-        .await
-        .unwrap()
-        .id;
-    assert!(
-        store
-            .update_principal(UpdatePrincipal::by_name("list").with_updates(vec![
-                PrincipalUpdate::set(
-                    PrincipalField::Members,
-                    PrincipalValue::StringList(vec!["john".into(), "jane".into()]),
-                ),
-                PrincipalUpdate::set(
-                    PrincipalField::ExternalMembers,
-                    PrincipalValue::StringList(vec![
-                        "mike@other.org".into(),
-                        "lucy@foobar.net".into()
-                    ]),
-                )
-            ]))
-            .await
-            .is_ok()
-    );
-
-    assert_list_members(
-        &store,
-        "list@example.org",
-        [
-            "john@example.org",
-            "mike@other.org",
-            "lucy@foobar.net",
-            "jane@example.org",
-        ],
-    )
-    .await;
-
-    assert_eq!(
-        store
-            .query(QueryParams::name("list").with_return_member_of(true))
-            .await
-            .unwrap()
-            .unwrap()
-            .into_test(),
-        TestPrincipal {
-            name: "list".into(),
-            id: list_id,
-            typ: Type::List,
-            emails: vec!["list@example.org".into()],
-            ..Default::default()
-        }
-    );
-    assert_eq!(
-        store
-            .expn("list@example.org")
-            .await
-            .unwrap()
-            .into_iter()
-            .collect::<AHashSet<_>>(),
-        [
-            "john@example.org",
-            "mike@other.org",
-            "lucy@foobar.net",
-            "jane@example.org"
-        ]
-        .into_iter()
-        .map(|s| s.into())
-        .collect::<AHashSet<_>>()
-    );
-
-    // Create groups
-    store
-        .create_principal(
-            TestPrincipal {
-                name: "sales".into(),
-                description: Some("Sales Team".into()),
-                typ: Type::Group,
-                ..Default::default()
-            }
-            .into(),
-            None,
-            None,
-        )
-        .await
-        .unwrap();
-    store
-        .create_principal(
-            TestPrincipal {
-                name: "support".into(),
-                description: Some("Support Team".into()),
-                typ: Type::Group,
-                ..Default::default()
-            }
-            .into(),
-            None,
-            None,
-        )
-        .await
-        .unwrap();
-
-    // Add John to the Sales and Support groups
-    assert!(
-        store
-            .update_principal(UpdatePrincipal::by_name("john").with_updates(vec![
-                PrincipalUpdate::add_item(
-                    PrincipalField::MemberOf,
-                    PrincipalValue::String("sales".into()),
-                ),
-                PrincipalUpdate::add_item(
-                    PrincipalField::MemberOf,
-                    PrincipalValue::String("support".into()),
-                )
-            ]))
-            .await
-            .is_ok()
-    );
-    let principal = store
-        .query(QueryParams::name("john").with_return_member_of(true))
+        .await;
+    let list_cache = test
+        .server
+        .try_list(list_id.document_id())
         .await
         .unwrap()
         .unwrap();
-    let principal = store.map_principal(principal, &[]).await.unwrap();
     assert_eq!(
-        principal.into_test().into_sorted(),
-        TestPrincipal {
-            id: john_id,
-            name: "john".into(),
-            description: Some("John Doe".into()),
-            secrets: vec!["secret".into(), "$app$secret2".into()],
-            emails: vec!["john@example.org".into()],
-            member_of: vec!["sales".into(), "support".into()],
-            lists: vec!["list".into()],
-            ..Default::default()
-        }
+        &list_cache.recipients,
+        &Arc::from(Box::from_iter([
+            "jdoe@example.com".into(),
+            "sales@example.com".into()
+        ]))
     );
 
-    // Adding a non-existent user should fail
-    assert_eq!(
-        store
-            .update_principal(UpdatePrincipal::by_name("john").with_updates(vec![
-                PrincipalUpdate::add_item(
-                    PrincipalField::MemberOf,
-                    PrincipalValue::String("accounting".into()),
-                )
-            ]))
-            .await,
-        Err(manage::not_found("accounting"))
-    );
-
-    // Remove a member from a group
-    assert!(
-        store
-            .update_principal(UpdatePrincipal::by_name("john").with_updates(vec![
-                PrincipalUpdate::remove_item(
-                    PrincipalField::MemberOf,
-                    PrincipalValue::String("support".into()),
-                )
-            ]))
-            .await
-            .is_ok()
-    );
-    let principal = store
-        .query(QueryParams::name("john").with_return_member_of(true))
-        .await
-        .unwrap()
-        .unwrap();
-    let principal = store.map_principal(principal, &[]).await.unwrap();
-    assert_eq!(
-        principal.into_test().into_sorted(),
-        TestPrincipal {
-            id: john_id,
-            name: "john".into(),
-            description: Some("John Doe".into()),
-            secrets: vec!["secret".into(), "$app$secret2".into()],
-            emails: vec!["john@example.org".into()],
-            member_of: vec!["sales".into()],
-            lists: vec!["list".into()],
-            ..Default::default()
-        }
-    );
-
-    // Update multiple fields
-    assert!(
-        store
-            .update_principal(UpdatePrincipal::by_name("john").with_updates(vec![
-                PrincipalUpdate::set(
-                    PrincipalField::Name,
-                    PrincipalValue::String("john.doe".into())
-                ),
-                PrincipalUpdate::set(
-                    PrincipalField::Description,
-                    PrincipalValue::String("Johnny Doe".into())
-                ),
-                PrincipalUpdate::set(
-                    PrincipalField::Secrets,
-                    PrincipalValue::StringList(vec!["12345".into()])
-                ),
-                PrincipalUpdate::set(PrincipalField::Quota, PrincipalValue::Integer(1024)),
-                PrincipalUpdate::remove_item(
-                    PrincipalField::Emails,
-                    PrincipalValue::String("john@example.org".into()),
-                ),
-                PrincipalUpdate::add_item(
-                    PrincipalField::Emails,
-                    PrincipalValue::String("john.doe@example.org".into()),
-                )
-            ]))
-            .await
-            .is_ok()
-    );
-
-    let principal = store
-        .query(QueryParams::name("john.doe").with_return_member_of(true))
-        .await
-        .unwrap()
-        .unwrap();
-    let principal = store.map_principal(principal, &[]).await.unwrap();
-    assert_eq!(
-        principal.into_test().into_sorted(),
-        TestPrincipal {
-            id: john_id,
-            name: "john.doe".into(),
-            description: Some("Johnny Doe".into()),
-            secrets: vec!["12345".into()],
-            emails: vec!["john.doe@example.org".into()],
-            quota: 1024,
-            typ: Type::Individual,
-            member_of: vec!["sales".into()],
-            lists: vec!["list".into()],
-            ..Default::default()
-        }
-    );
-    assert_eq!(store.get_principal_id("john").await.unwrap(), None);
-    assert_eq!(
-        store.rcpt("john@example.org").await.unwrap(),
-        RcptType::Invalid
-    );
-    assert_eq!(
-        store.rcpt("john.doe@example.org").await.unwrap(),
-        RcptType::Mailbox
-    );
-
-    // Remove a member from a mailing list and then add it back
-    assert!(
-        store
-            .update_principal(UpdatePrincipal::by_name("list").with_updates(vec![
-                PrincipalUpdate::remove_item(
-                    PrincipalField::Members,
-                    PrincipalValue::String("john.doe".into()),
-                )
-            ]))
-            .await
-            .is_ok()
-    );
-    assert_list_members(
-        &store,
-        "list@example.org",
-        ["jane@example.org", "mike@other.org", "lucy@foobar.net"],
-    )
-    .await;
-    assert!(
-        store
-            .update_principal(UpdatePrincipal::by_name("list").with_updates(vec![
-                PrincipalUpdate::add_item(
-                    PrincipalField::Members,
-                    PrincipalValue::String("john.doe".into()),
-                )
-            ]))
-            .await
-            .is_ok()
-    );
-    assert_list_members(
-        &store,
-        "list@example.org",
-        [
-            "john.doe@example.org",
-            "jane@example.org",
-            "mike@other.org",
-            "lucy@foobar.net",
-        ],
-    )
-    .await;
-
-    // Field validation
-    assert_eq!(
-        store
-            .update_principal(UpdatePrincipal::by_name("john.doe").with_updates(vec![
-                PrincipalUpdate::set(PrincipalField::Name, PrincipalValue::String("jane".into())),
-            ]))
-            .await,
-        Err(manage::err_exists(PrincipalField::Name, "jane"))
-    );
-    assert_eq!(
-        store
-            .update_principal(UpdatePrincipal::by_name("john.doe").with_updates(vec![
-                PrincipalUpdate::add_item(
-                    PrincipalField::Emails,
-                    PrincipalValue::String("jane@example.org".into())
-                ),
-            ]))
-            .await,
-        Err(manage::err_exists(
-            PrincipalField::Emails,
-            "jane@example.org"
-        ))
-    );
-
-    // List accounts
-    assert_eq!(
-        store
-            .list_principals(
-                None,
-                None,
-                &[Type::Individual, Type::Group, Type::List],
-                true,
-                0,
-                0
-            )
-            .await
-            .unwrap()
-            .items
-            .into_iter()
-            .map(|p| p.name)
-            .collect::<AHashSet<_>>(),
-        ["jane", "john.doe", "list", "sales", "support"]
-            .into_iter()
-            .map(|s| s.into())
-            .collect::<AHashSet<_>>()
-    );
-    assert_eq!(
-        store
-            .list_principals("john".into(), None, &[], true, 0, 0)
-            .await
-            .unwrap()
-            .items
-            .into_iter()
-            .map(|p| p.name)
-            .collect::<Vec<_>>(),
-        vec!["john.doe"]
-    );
-    assert_eq!(
-        store
-            .list_principals(None, None, &[Type::Individual], true, 0, 0)
-            .await
-            .unwrap()
-            .items
-            .into_iter()
-            .map(|p| p.name)
-            .collect::<AHashSet<_>>(),
-        ["jane", "john.doe"]
-            .into_iter()
-            .map(|s| s.into())
-            .collect::<AHashSet<_>>()
-    );
-    assert_eq!(
-        store
-            .list_principals(None, None, &[Type::Group], true, 0, 0)
-            .await
-            .unwrap()
-            .items
-            .into_iter()
-            .map(|p| p.name)
-            .collect::<AHashSet<_>>(),
-        ["sales", "support"]
-            .into_iter()
-            .map(|s| s.into())
-            .collect::<AHashSet<_>>()
-    );
-    assert_eq!(
-        store
-            .list_principals(None, None, &[Type::List], true, 0, 0)
-            .await
-            .unwrap()
-            .items
-            .into_iter()
-            .map(|p| p.name)
-            .collect::<Vec<_>>(),
-        vec!["list"]
-    );
-    assert_eq!(
-        store
-            .list_principals("example.org".into(), None, &[], true, 0, 0)
-            .await
-            .unwrap()
-            .items
-            .into_iter()
-            .map(|p| p.name)
-            .collect::<Vec<_>>(),
-        vec!["example.org", "jane", "john.doe", "list"]
-    );
-    assert_eq!(
-        store
-            .list_principals("johnny doe".into(), None, &[], true, 0, 0)
-            .await
-            .unwrap()
-            .items
-            .into_iter()
-            .map(|p| p.name)
-            .collect::<Vec<_>>(),
-        vec!["john.doe"]
-    );
-
-    // Write records on John's and Jane's accounts
-    let mut document_id = u32::MAX;
-    for account_id in [john_id, jane_id] {
-        document_id = store
-            .assign_document_ids(u32::MAX, Collection::Principal, 1)
-            .await
-            .unwrap();
-        store
-            .write(
-                BatchBuilder::new()
-                    .with_account_id(account_id)
-                    .with_collection(Collection::Email)
-                    .with_document(document_id)
-                    .set(ValueClass::Property(0), "hello".as_bytes())
-                    .build_all(),
-            )
-            .await
-            .unwrap();
+    // Verify RCPT expansion
+    for (address, expected) in [
+        (
+            "johndoe@example.com",
+            EmailCache::Account(account_id.document_id()),
+        ),
+        (
+            "jdoe@example.com",
+            EmailCache::Account(account_id.document_id()),
+        ),
+        (
+            "johndoe@beispiel.de",
+            EmailCache::Account(account_id.document_id()),
+        ),
+        (
+            "jdoe@beispiel.de",
+            EmailCache::Account(account_id.document_id()),
+        ),
+        (
+            "sales@example.com",
+            EmailCache::Account(group_id.document_id()),
+        ),
+        (
+            "sales@beispiel.de",
+            EmailCache::Account(group_id.document_id()),
+        ),
+        (
+            "newsletter@example.com",
+            EmailCache::MailingList(list_id.document_id()),
+        ),
+        (
+            "newsletter@beispiel.de",
+            EmailCache::MailingList(list_id.document_id()),
+        ),
+    ] {
         assert_eq!(
-            store
-                .get_value::<String>(ValueKey {
-                    account_id,
-                    collection: Collection::Email.into(),
-                    document_id,
-                    class: ValueClass::Property(0)
-                })
-                .await
-                .unwrap(),
-            Some("hello".into())
+            test.server.rcpt_id_from_email(address).await.unwrap(),
+            Some(expected),
+            "Unexpected result for address: {address}"
         );
     }
-
-    // Delete John's account and make sure his records are gone
-    let server = Server {
-        inner: Arc::new(Inner::default()),
-        core: Arc::new(Core {
-            storage: Storage {
-                data: store.clone(),
-                blob: store.clone().into(),
-                fts: store.clone().into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        }),
-    };
-    store.delete_principal(QueryBy::Id(john_id)).await.unwrap();
-    destroy_account_data(&server, john_id, true).await.unwrap();
-    assert_eq!(store.get_principal_id("john.doe").await.unwrap(), None);
     assert_eq!(
-        store.email_to_id("john.doe@example.org").await.unwrap(),
+        test.server
+            .rcpt_id_from_email("unknown@example.com")
+            .await
+            .unwrap(),
         None
     );
     assert_eq!(
-        store.rcpt("john.doe@example.org").await.unwrap(),
-        RcptType::Invalid
+        test.server
+            .rcpt_id_from_email("unknown@unknown.com")
+            .await
+            .unwrap(),
+        None
+    );
+
+    // Query tests
+    assert_eq!(
+        account
+            .registry_query(
+                ObjectType::Domain,
+                [(Property::Name, "example.com")],
+                [Property::Name]
+            )
+            .await,
+        vec![domain_id]
     );
     assert_eq!(
-        store
-            .list_principals(
-                None,
-                None,
-                &[Type::Individual, Type::Group, Type::List],
-                true,
-                0,
-                0
+        account
+            .registry_query(
+                ObjectType::Account,
+                [
+                    (Property::Name, "johndoe"),
+                    (Property::Type, AccountType::User.as_str()),
+                    (Property::Text, "johnny")
+                ],
+                [Property::Name]
             )
+            .await,
+        vec![account_id]
+    );
+
+    // Delete everything
+    assert_eq!(
+        account
+            .registry_destroy(ObjectType::MailingList, [list_id])
+            .await
+            .destroyed_ids()
+            .collect::<Vec<_>>(),
+        vec![list_id]
+    );
+    assert_eq!(
+        account
+            .registry_destroy(ObjectType::Account, [group_id, account_id])
+            .await
+            .destroyed_ids()
+            .collect::<Vec<_>>(),
+        vec![group_id, account_id]
+    );
+    assert_eq!(
+        account
+            .registry_destroy(ObjectType::Domain, [domain_id])
+            .await
+            .destroyed_ids()
+            .collect::<Vec<_>>(),
+        vec![domain_id]
+    );
+    assert!(
+        test.server
+            .try_list(list_id.document_id())
             .await
             .unwrap()
-            .items
-            .into_iter()
-            .map(|p| p.name)
-            .collect::<AHashSet<_>>(),
-        ["jane", "list", "sales", "support"]
-            .into_iter()
-            .map(|s| s.into())
-            .collect::<AHashSet<_>>()
+            .is_none()
     );
-    assert!(!account_has_emails(&store, john_id).await);
-    assert_eq!(
-        store
-            .get_value::<String>(ValueKey {
-                account_id: john_id,
-                collection: Collection::Email.into(),
-                document_id: 0,
-                class: ValueClass::Property(0)
-            })
+    assert!(
+        test.server
+            .try_account(account_id.document_id())
             .await
-            .unwrap(),
-        None
+            .unwrap()
+            .is_none()
     );
-
-    // Make sure Jane's records are still there
-    assert_eq!(store.get_principal_id("jane").await.unwrap(), Some(jane_id));
-    assert_eq!(
-        store.email_to_id("jane@example.org").await.unwrap(),
-        Some(jane_id)
-    );
-    assert_eq!(
-        store.rcpt("jane@example.org").await.unwrap(),
-        RcptType::Mailbox
-    );
-    assert!(account_has_emails(&store, jane_id).await);
-    assert_eq!(
-        store
-            .get_value::<String>(ValueKey {
-                account_id: jane_id,
-                collection: Collection::Email.into(),
-                document_id,
-                class: ValueClass::Property(0)
-            })
+    assert!(
+        test.server
+            .try_account(group_id.document_id())
             .await
-            .unwrap(),
-        Some("hello".into())
+            .unwrap()
+            .is_none()
     );
-
-    // Clean up
-    destroy_account_data(&server, jane_id, true).await.unwrap();
-    for principal_name in ["jane", "list", "sales", "support", "example.org"] {
-        store
-            .delete_principal(QueryBy::Name(principal_name))
-            .await
-            .unwrap();
-    }
-    store_assert_is_empty(&store, store.clone().into(), true).await;*/
+    assert!(test.server.domain("example.com").await.unwrap().is_none());
 }

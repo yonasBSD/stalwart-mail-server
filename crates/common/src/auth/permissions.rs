@@ -229,6 +229,8 @@ impl Default for DefaultPermissions {
                 | Permission::AuthenticateWithAlias
                 | Permission::InteractAi => {
                     default.user.push(permission);
+                    default.superuser.push(permission);
+                    default.tenant.push(permission);
                 }
                 Permission::Impersonate
                 | Permission::UnlimitedRequests
@@ -250,7 +252,10 @@ impl Default for DefaultPermissions {
                         || name.starts_with("email")
                         || name.starts_with("dav")
                         || name.starts_with("sieve")
-                        || name.starts_with("sysMaskedEmail")
+                    {
+                        default.user.push(permission);
+                        default.group.push(permission);
+                    } else if name.starts_with("sysMaskedEmail")
                         || name.starts_with("sysArchivedItem")
                         || name.starts_with("sysAccountSettings")
                         || name.starts_with("sysPublicKey")
@@ -258,8 +263,10 @@ impl Default for DefaultPermissions {
                     {
                         default.user.push(permission);
                         default.group.push(permission);
+                        default.superuser.push(permission);
                     } else if name.starts_with("sysCredential") {
                         default.user.push(permission);
+                        default.superuser.push(permission);
                     } else if name.starts_with("sysDomain")
                         || name.starts_with("sysDkimSignature")
                         || name.starts_with("sysAccount")

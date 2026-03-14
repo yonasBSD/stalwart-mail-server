@@ -10,7 +10,6 @@ use crate::{
     config::server::ServerProtocol,
     expr::{functions::ResolveVariable, *},
 };
-use arcstr::ArcStr;
 use compact_str::ToCompactString;
 use registry::{schema::enums::ExpressionVariable, types::ipmask::IpAddrOrMask};
 use rustls::ServerConfig;
@@ -39,7 +38,7 @@ pub mod tls;
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
 pub enum RcptResolution {
     Accept,
-    Expand(Arc<[ArcStr]>),
+    Expand(Arc<[Box<str>]>),
     Rewrite(String),
     #[default]
     UnknownRecipient,

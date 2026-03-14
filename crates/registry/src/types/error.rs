@@ -11,7 +11,7 @@ use crate::{
 };
 use std::{borrow::Cow, fmt::Display};
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "type")]
 pub enum ValidationError {
     Invalid { property: Property, value: String },

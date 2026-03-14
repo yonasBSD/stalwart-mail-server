@@ -90,8 +90,9 @@ impl RegistrySet for Server {
         let has_account_id = (object_flags & OBJ_FILTER_ACCOUNT) != 0;
         let is_tenant_filtered =
             (object_flags & OBJ_FILTER_TENANT) != 0 && access_token.tenant_id().is_some();
-        let is_account_filtered =
-            has_account_id && !access_token.has_permission(Permission::Impersonate);
+        let can_set_tenant = access_token.tenant_id().is_none();
+        let can_set_account = access_token.has_permission(Permission::Impersonate);
+        let is_account_filtered = has_account_id && !can_set_account;
 
         // Build response
         let mut response = SetResponse::from_request(&request, self.core.jmap.set_max_objects)?;
@@ -316,77 +317,28 @@ impl RegistrySet for Server {
                     let is_create = matches!(modification, Modification::Create { .. });
                     let mut unpatched_properties = VecMap::new();
 
-                    for (key, value) in value.into_expanded_object() {
-                        let ptr = match (key, &modification) {
-                            (Key::Property(prop), _) => {
-                                JsonPointer::new(vec![JsonPointerItem::Key(Key::Property(prop))])
-                            }
-                            (Key::Borrowed(other), Modification::Update { .. }) => {
-                                JsonPointer::parse(other)
-                            }
-                            (Key::Owned(other), Modification::Update { .. }) => {
-                                JsonPointer::parse(&other)
-                            }
-                            (key, Modification::Create { .. }) => {
-                                set.failed(
-                                    modification,
-                                    SetError::invalid_properties().with_property(key.into_owned()),
-                                );
-                                continue 'outer;
-                            }
-                        };
-
-                        if is_tenant_filtered || is_account_filtered {
-                            match ptr.last().and_then(|p| p.as_property_key()) {
-                                Some(Property::MemberTenantId) => {
-                                    // SPDX-SnippetBegin
-                                    // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
-                                    // SPDX-License-Identifier: LicenseRef-SEL
-                                    #[cfg(feature = "enterprise")]
-                                    if access_token.tenant_id().is_some() {
-                                        continue;
-                                    }
-                                    // SPDX-SnippetEnd
-
-                                    #[cfg(not(feature = "enterprise"))]
-                                    continue;
-                                }
-                                Some(Property::AccountId) => {
-                                    set.failed(
-                                        modification,
-                                        SetError::forbidden()
-                                            .with_property(Property::AccountId)
-                                            .with_description("Cannot change server-set property"),
-                                    );
-                                    continue 'outer;
-                                }
-                                _ => {}
-                            }
-                        }
-
+                    if is_create {
                         // Patch object
-                        match new_object
-                            .patch(JsonPointerPatch::new(&ptr).with_create(is_create), value)
-                        {
+                        match new_object.patch(
+                            JsonPointerPatch::new(&JsonPointer::new(vec![]))
+                                .with_create(true)
+                                .with_can_set_tenant(can_set_tenant)
+                                .with_can_set_account(can_set_account),
+                            value,
+                        ) {
                             Ok(MaybeUnpatched::Patched) => {}
                             Ok(MaybeUnpatched::Unpatched { property, value }) => {
                                 unpatched_properties.append(property, value);
                             }
                             Ok(MaybeUnpatched::UnpatchedMany { properties }) => {
-                                if unpatched_properties.is_empty() {
-                                    unpatched_properties = properties;
-                                } else {
-                                    unpatched_properties.extend(properties);
-                                }
+                                unpatched_properties = properties;
                             }
                             Err(err) => {
                                 set.failed(modification, err.into());
                                 continue 'outer;
                             }
                         }
-                    }
 
-                    if is_create {
                         // Add tenantId for tenant filtered objects
                         if is_tenant_filtered && let Some(tenant_id) = set.access_token.tenant_id()
                         {
@@ -396,6 +348,43 @@ impl RegistrySet for Server {
                         // Add accountId
                         if has_account_id {
                             new_object.inner.set_account_id(set.account_id.into());
+                        }
+                    } else {
+                        for (key, value) in value.into_expanded_object() {
+                            let ptr = match key {
+                                Key::Property(prop) => {
+                                    JsonPointer::new(vec![JsonPointerItem::Key(Key::Property(
+                                        prop,
+                                    ))])
+                                }
+                                Key::Borrowed(other) => JsonPointer::parse(other),
+                                Key::Owned(other) => JsonPointer::parse(&other),
+                            };
+
+                            // Patch object
+                            match new_object.patch(
+                                JsonPointerPatch::new(&ptr)
+                                    .with_create(false)
+                                    .with_can_set_tenant(can_set_tenant)
+                                    .with_can_set_account(can_set_account),
+                                value,
+                            ) {
+                                Ok(MaybeUnpatched::Patched) => {}
+                                Ok(MaybeUnpatched::Unpatched { property, value }) => {
+                                    unpatched_properties.append(property, value);
+                                }
+                                Ok(MaybeUnpatched::UnpatchedMany { properties }) => {
+                                    if unpatched_properties.is_empty() {
+                                        unpatched_properties = properties;
+                                    } else {
+                                        unpatched_properties.extend(properties);
+                                    }
+                                }
+                                Err(err) => {
+                                    set.failed(modification, err.into());
+                                    continue 'outer;
+                                }
+                            }
                         }
                     }
 

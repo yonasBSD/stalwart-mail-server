@@ -45,6 +45,8 @@ pub struct JsonPointerPatch<'x> {
     pos: usize,
     validators: &'x [StringValidator],
     is_create: bool,
+    can_set_tenant: bool,
+    can_set_account: bool,
 }
 
 pub trait RegistryJsonPatch: Debug + Default {

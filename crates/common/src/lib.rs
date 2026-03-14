@@ -24,7 +24,6 @@ use crate::{
 };
 use ahash::{AHashMap, AHashSet};
 use arc_swap::ArcSwap;
-use arcstr::ArcStr;
 use auth::oauth::config::OAuthConfig;
 use calcard::common::timezone::Tz;
 use config::{
@@ -182,7 +181,7 @@ pub struct Caches {
 
     pub emails: Cache<EmailAddress, EmailCache>,
     pub emails_negative: CacheWithTtl<EmailAddress, ()>,
-    pub domain_names: Cache<ArcStr, u32>,
+    pub domain_names: Cache<Box<str>, u32>,
     pub domain_names_negative: CacheWithTtl<Box<str>, ()>,
 
     pub domains: Cache<u32, Arc<DomainCache>>,

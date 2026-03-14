@@ -129,3 +129,9 @@ impl Object {
         Object { inner, revision }
     }
 }
+
+impl From<Property> for String {
+    fn from(value: Property) -> Self {
+        value.as_str().to_string()
+    }
+}

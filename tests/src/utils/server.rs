@@ -160,34 +160,28 @@ impl TestServerBuilder {
         let level = std::env::var("LOG")
             .map(|log| TracingLevel::parse(&log).expect("Invalid log level"))
             .ok();
-        self.bootstrap
-            .registry
-            .write(RegistryWrite::insert(
-                &Tracer::Stdout(TracerStdout {
-                    enable: level.is_some(),
-                    level: level.unwrap_or(TracingLevel::Info),
-                    ansi: true,
-                    multiline: false,
-                    events: Map::new(
-                        EventType::variants()
-                            .iter()
-                            .filter(|ev| {
-                                let ev = ev.as_str();
-                                ev.starts_with("network.")
-                                    || ev == "telemetry.webhook-error"
-                                    || ev == "http.request-body"
-                            })
-                            .copied()
-                            .collect(),
-                    ),
-                    events_policy: EventPolicy::Exclude,
-                    ..Default::default()
-                })
-                .into(),
-            ))
-            .await
-            .unwrap()
-            .unwrap_id(trc::location!());
+
+        self.insert_object(Tracer::Stdout(TracerStdout {
+            enable: level.is_some(),
+            level: level.unwrap_or(TracingLevel::Info),
+            ansi: true,
+            multiline: false,
+            events: Map::new(
+                EventType::variants()
+                    .iter()
+                    .filter(|ev| {
+                        let ev = ev.as_str();
+                        ev.starts_with("network.")
+                            || ev == "telemetry.webhook-error"
+                            || ev == "http.request-body"
+                    })
+                    .copied()
+                    .collect(),
+            ),
+            events_policy: EventPolicy::Exclude,
+            ..Default::default()
+        }))
+        .await;
 
         // Start listeners
         let mut servers = Listeners::parse(&mut self.bootstrap).await;

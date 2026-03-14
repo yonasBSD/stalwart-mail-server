@@ -7,6 +7,9 @@
 use crate::utils::account::Account;
 use base64::{Engine, engine::general_purpose};
 use hyper::header;
+use jmap_proto::error::set::SetErrorType;
+use registry::types::error::ValidationError;
+use registry::types::id::ObjectId;
 use serde_json::{Value, json};
 use std::{fmt::Display, str::FromStr, time::Duration};
 use types::id::Id;
@@ -427,6 +430,10 @@ impl JmapResponse {
             .unwrap_or_else(|| panic!("Missing updated item {id}: {self:?}"))
     }
 
+    pub fn updated_id(&self, id: Id) -> &Value {
+        self.updated(&id.to_string())
+    }
+
     pub fn not_updated(&self, id: &str) -> &Value {
         self.0
             .pointer(&format!("/methodResponses/0/1/notUpdated/{id}"))
@@ -491,6 +498,12 @@ impl JmapResponse {
             .map(|v| v.as_str().unwrap())
     }
 
+    pub fn destroyed_ids(&self) -> impl Iterator<Item = Id> {
+        self.destroyed().map(move |id| {
+            Id::from_str(id).unwrap_or_else(|_| panic!("Invalid id {id} in response: {self:?}"))
+        })
+    }
+
     pub fn not_destroyed(&self, id: &str) -> &Value {
         self.0
             .pointer(&format!("/methodResponses/0/1/notDestroyed/{id}"))
@@ -533,6 +546,68 @@ impl JmapResponse {
 
     pub fn into_inner(self) -> Value {
         self.0
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, serde::Deserialize)]
+pub struct JmapSetError {
+    #[serde(rename = "type")]
+    pub type_: SetErrorType,
+
+    #[serde(default)]
+    pub description: Option<String>,
+
+    #[serde(default)]
+    pub properties: Option<Vec<String>>,
+
+    #[serde(rename = "existingId")]
+    #[serde(default)]
+    pub existing_id: Option<Id>,
+
+    #[serde(rename = "objectId")]
+    #[serde(default)]
+    pub object_id: Option<ObjectId>,
+
+    #[serde(default)]
+    #[serde(rename = "linkedObjects")]
+    pub linked_objects: Vec<ObjectId>,
+
+    #[serde(default)]
+    #[serde(rename = "validationErrors")]
+    pub validation_errors: Vec<ValidationError>,
+}
+
+impl JmapSetError {
+    pub fn assert_type(&self, expected: SetErrorType) -> &Self {
+        if self.type_ != expected {
+            panic!("Expected error type {expected:?} but got {self:?}");
+        }
+        self
+    }
+
+    pub fn assert_description_contains(&self, expected: &str) -> &Self {
+        if let Some(description) = &self.description {
+            if !description.contains(expected) {
+                panic!("Expected error description to contain {expected} but got {description}");
+            }
+        } else {
+            panic!("Expected error description to contain {expected} but got no description");
+        }
+        self
+    }
+
+    pub fn assert_properties(&self, expected: &[&str]) -> &Self {
+        let properties = self.properties.as_ref().unwrap_or_else(|| {
+            panic!("Expected error to have properties {expected:?} but got no properties: {self:?}")
+        });
+        for expected in expected {
+            if !properties.contains(&expected.to_string()) {
+                panic!(
+                    "Expected error to have property {expected} but got properties {properties:?}: {self:?}"
+                );
+            }
+        }
+        self
     }
 }
 

@@ -27,6 +27,19 @@ impl<'x> JsonPointerPatch<'x> {
             pos: 0,
             validators: &[],
             is_create: false,
+            can_set_tenant: false,
+            can_set_account: false,
+        }
+    }
+
+    pub fn cloned_with_ptr(&self, ptr: &'x JsonPointer<Property>) -> Self {
+        Self {
+            ptr,
+            pos: 0,
+            validators: &[],
+            is_create: self.is_create,
+            can_set_tenant: self.can_set_tenant,
+            can_set_account: self.can_set_account,
         }
     }
 
@@ -35,12 +48,24 @@ impl<'x> JsonPointerPatch<'x> {
             ptr: self.ptr,
             pos: 0,
             validators: &[],
-            is_create: false,
+            is_create: self.is_create,
+            can_set_tenant: self.can_set_tenant,
+            can_set_account: self.can_set_account,
         }
     }
 
     pub fn with_create(mut self, is_create: bool) -> Self {
         self.is_create = is_create;
+        self
+    }
+
+    pub fn with_can_set_tenant(mut self, can_set_tenant: bool) -> Self {
+        self.can_set_tenant = can_set_tenant;
+        self
+    }
+
+    pub fn with_can_set_account(mut self, can_set_account: bool) -> Self {
+        self.can_set_account = can_set_account;
         self
     }
 
@@ -98,8 +123,30 @@ impl<'x> JsonPointerPatch<'x> {
     pub fn assert_server_set(self) -> PatchResult<'static> {
         Err(PatchError::new(
             self.cloned(),
-            "Cannot modify server-set property",
+            "Cannot modify server set property",
         ))
+    }
+
+    pub fn assert_can_set_tenant(self) -> Result<Self, PatchError> {
+        if self.can_set_tenant {
+            Ok(self)
+        } else {
+            Err(PatchError::new(
+                self.cloned(),
+                "Cannot modify memberTenantId property",
+            ))
+        }
+    }
+
+    pub fn assert_can_set_account(self) -> Result<Self, PatchError> {
+        if self.can_set_account {
+            Ok(self)
+        } else {
+            Err(PatchError::new(
+                self.cloned(),
+                "Cannot modify accountId property",
+            ))
+        }
     }
 }
 
@@ -326,7 +373,7 @@ impl<T: RegistryJsonPropertyPatch> RegistryJsonPatch for T {
                 if let Some(property) = key.as_property() {
                     if *property != Property::Type {
                         ptr.as_mut_slice()[0] = JsonPointerItem::Key(Key::Property(*property));
-                        match self.patch_property(JsonPointerPatch::new(&ptr), value) {
+                        match self.patch_property(pointer.cloned_with_ptr(&ptr), value) {
                             Ok(MaybeUnpatched::Patched) => {}
                             Ok(MaybeUnpatched::Unpatched { property, value }) => {
                                 unpatched.append(property, value);
@@ -336,9 +383,20 @@ impl<T: RegistryJsonPropertyPatch> RegistryJsonPatch for T {
                             }
                             Err(mut e) => {
                                 if !e.path.is_empty() {
-                                    e.path = format!("{}/{}", e.path, property.as_str());
+                                    if !pointer.ptr.as_slice().is_empty() {
+                                        e.path = format!("{}/{}", pointer.path(), e.path);
+                                    }
                                 } else {
-                                    e.path = property.as_str().to_string();
+                                    e.path = JsonPointer::new(
+                                        pointer
+                                            .ptr
+                                            .as_slice()
+                                            .iter()
+                                            .cloned()
+                                            .chain([JsonPointerItem::Key(Key::Property(*property))])
+                                            .collect(),
+                                    )
+                                    .to_string();
                                 }
                                 return Err(e);
                             }

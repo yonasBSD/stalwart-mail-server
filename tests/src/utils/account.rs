@@ -10,9 +10,12 @@ use jmap_client::client::{Client, Credentials};
 use registry::{
     schema::{
         prelude::{ObjectType, Property},
-        structs::{self, Credential, Domain, EmailAlias, PasswordCredential, UserAccount},
+        structs::{
+            self, Credential, CustomRoles, Domain, EmailAlias, PasswordCredential, Roles,
+            UserAccount,
+        },
     },
-    types::list::List,
+    types::{list::List, map::Map},
 };
 use serde_json::json;
 use std::time::Duration;
@@ -144,9 +147,8 @@ impl Account {
                 [(Property::Name, name)],
                 Vec::<&str>::new(),
             )
-            .await
-            .object_ids()
-            .collect::<Vec<_>>();
+            .await;
+
         match ids.len() {
             0 => self.create_domain(name).await,
             1 => ids[0],
@@ -163,30 +165,32 @@ impl Account {
         .await
     }
 
-    pub async fn assign_role_to_account(&self, account_id: Id, name: &str) {
-        let role_id = self
-            .registry_query(
-                ObjectType::Role,
-                [(Property::Description, name)],
-                Vec::<&str>::new(),
-            )
-            .await
-            .object_ids()
-            .next()
-            .unwrap_or_else(|| panic!("Role {name} not found"));
+    pub async fn assign_roles_to_account(&self, account_id: Id, names: &[&str]) {
+        let mut role_ids = Vec::new();
+        for name in names {
+            let role_id = *self
+                .registry_query(
+                    ObjectType::Role,
+                    [(Property::Description, *name)],
+                    Vec::<&str>::new(),
+                )
+                .await
+                .first()
+                .unwrap_or_else(|| panic!("Role {name} not found"));
+            role_ids.push(role_id);
+        }
 
         self.registry_update(
             ObjectType::Account,
             [(
                 account_id,
                 json!({
-                    "roleIds": {
-                        role_id: true
-                    }
+                    Property::Roles: Roles::Custom(CustomRoles { role_ids: Map::new(role_ids) })
                 }),
             )],
         )
-        .await;
+        .await
+        .updated_id(account_id);
     }
 
     pub async fn client_owned(&self) -> Client {

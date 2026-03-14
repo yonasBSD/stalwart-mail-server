@@ -104,22 +104,20 @@ pub(crate) async fn validate_account(
                                 }
 
                                 if credential.secret != old_credential.secret {
-                                    if !credential.secret.is_empty() {
-                                        credential.secret = hash_secret(
-                                            set.server
-                                                .core
-                                                .network
-                                                .security
-                                                .password_hash_algorithm,
-                                            std::mem::take(&mut credential.secret),
-                                        )
-                                        .await
-                                        .caused_by(trc::location!())?;
-                                    } else {
+                                    if let Err(err) =
+                                        set.server.is_secure_password(&credential.secret, &[])
+                                    {
                                         return Ok(Err(SetError::invalid_properties()
                                             .with_property(Property::Secret)
-                                            .with_description("Password cannot be empty.")));
+                                            .with_description(err)));
                                     }
+
+                                    credential.secret = hash_secret(
+                                        set.server.core.network.security.password_hash_algorithm,
+                                        std::mem::take(&mut credential.secret),
+                                    )
+                                    .await
+                                    .caused_by(trc::location!())?;
                                 }
                             }
                             (
@@ -240,7 +238,11 @@ async fn validate_credential_creation(
                     .with_description("Only one password credential is allowed.")));
             }
 
-            if credential.secret.is_empty() {
+            if let Err(err) = server.is_secure_password(&credential.secret, &[]) {
+                Ok(Err(SetError::invalid_properties()
+                    .with_property(Property::Secret)
+                    .with_description(err)))
+            } else {
                 credential.secret = hash_secret(
                     server.core.network.security.password_hash_algorithm,
                     std::mem::take(&mut credential.secret),
@@ -248,10 +250,6 @@ async fn validate_credential_creation(
                 .await
                 .caused_by(trc::location!())?;
                 Ok(Ok(()))
-            } else {
-                Ok(Err(SetError::invalid_properties()
-                    .with_property(Property::Secret)
-                    .with_description("Password cannot be empty.")))
             }
         }
         Credential::AppPassword(_) | Credential::ApiKey(_) => {

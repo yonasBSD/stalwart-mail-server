@@ -49,6 +49,9 @@ pub struct Security {
     pub default_role_ids_tenant: Vec<Id>,
 
     pub password_hash_algorithm: PasswordHashAlgorithm,
+    pub password_max_length: u32,
+    pub password_min_length: u32,
+    pub password_min_strength: u8,
 }
 
 #[derive(Default)]
@@ -148,6 +151,9 @@ impl Security {
             default_role_ids_group: auth.default_group_role_ids.into_inner(),
             default_role_ids_tenant: auth.default_tenant_role_ids.into_inner(),
             password_hash_algorithm: auth.password_hash_algorithm,
+            password_max_length: auth.password_max_length as u32,
+            password_min_length: auth.password_min_length as u32,
+            password_min_strength: auth.password_min_strength as u8,
         }
     }
 }
@@ -323,6 +329,31 @@ impl Server {
                     .allowed_ip_networks
                     .iter()
                     .any(|network| network.matches(ip)))
+    }
+
+    pub fn is_secure_password(&self, password: &str, user_inputs: &[&str]) -> Result<(), String> {
+        if (password.len() as u32) > self.core.network.security.password_max_length {
+            Err(format!(
+                "Password must be at most {} characters long.",
+                self.core.network.security.password_max_length
+            ))
+        } else if (password.len() as u32) < self.core.network.security.password_min_length {
+            Err(format!(
+                "Password must be at least {} characters long.",
+                self.core.network.security.password_min_length
+            ))
+        } else if self.core.network.security.password_min_strength > 0 {
+            let entropy = zxcvbn::zxcvbn(password, user_inputs);
+            if u8::from(entropy.score()) >= self.core.network.security.password_min_strength {
+                Ok(())
+            } else if let Some(feedback) = entropy.feedback() {
+                Err(format!("Password is too weak. {feedback}"))
+            } else {
+                Err("Password is too weak.".to_string())
+            }
+        } else {
+            Ok(())
+        }
     }
 }
 

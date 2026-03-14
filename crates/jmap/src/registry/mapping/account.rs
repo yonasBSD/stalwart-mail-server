@@ -437,19 +437,6 @@ pub(crate) async fn account_set(
                                         }
                                     }
 
-                                    if credential.secret != old_credential.secret {
-                                        credential.secret = hash_secret(
-                                            set.server
-                                                .core
-                                                .network
-                                                .security
-                                                .password_hash_algorithm,
-                                            std::mem::take(&mut credential.secret),
-                                        )
-                                        .await
-                                        .caused_by(trc::location!())?;
-                                    }
-
                                     if credential.otp_auth != old_credential.otp_auth
                                         && !verify_otp_auth(
                                             credential.otp_auth.as_deref(),
@@ -462,6 +449,30 @@ pub(crate) async fn account_set(
                                                 .with_description("OTP URL or token is invalid."),
                                         );
                                         continue 'outer;
+                                    }
+
+                                    if credential.secret != old_credential.secret {
+                                        if let Err(err) =
+                                            set.server.is_secure_password(&credential.secret, &[])
+                                        {
+                                            set.response.not_updated.append(
+                                                id,
+                                                SetError::invalid_properties()
+                                                    .with_property(Property::Secret)
+                                                    .with_description(err),
+                                            );
+                                            continue 'outer;
+                                        }
+                                        credential.secret = hash_secret(
+                                            set.server
+                                                .core
+                                                .network
+                                                .security
+                                                .password_hash_algorithm,
+                                            std::mem::take(&mut credential.secret),
+                                        )
+                                        .await
+                                        .caused_by(trc::location!())?;
                                     }
                                 } else {
                                     set.response.not_updated.append(

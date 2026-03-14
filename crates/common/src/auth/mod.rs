@@ -9,7 +9,6 @@ use crate::{
     network::limiter::ConcurrencyLimiter,
     storage::{ObjectQuota, TenantQuota},
 };
-use arcstr::ArcStr;
 use directory::Credentials;
 use quick_cache::Equivalent;
 use registry::{
@@ -49,7 +48,7 @@ pub struct EmailAddressRef<'x> {
     domain_id: u32,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EmailCache {
     Account(u32),
     MailingList(u32),
@@ -57,7 +56,7 @@ pub enum EmailCache {
 
 #[derive(Debug, Clone)]
 pub struct DomainCache {
-    pub names: Box<[ArcStr]>,
+    pub names: Box<[Box<str>]>,
     pub id: u32,
     pub id_directory: Option<u32>,
     pub id_tenant: Option<u32>,
@@ -102,8 +101,7 @@ pub struct RoleCache {
 
 #[derive(Debug, Clone)]
 pub struct MailingListCache {
-    //pub addresses: Box<[Box<str>]>,
-    pub recipients: Arc<[ArcStr]>,
+    pub recipients: Arc<[Box<str>]>,
 }
 
 #[derive(Debug, Clone)]

@@ -20,7 +20,7 @@ use types::{
     id::Id,
 };
 
-#[derive(Debug, PartialEq, Clone, Copy, Eq, Hash, serde::Serialize)]
+#[derive(Debug, PartialEq, Clone, Copy, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ObjectId {
     object: ObjectType,
     id: Id,

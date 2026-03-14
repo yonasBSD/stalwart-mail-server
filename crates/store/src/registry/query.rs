@@ -18,8 +18,8 @@ use crate::{
 };
 use ahash::AHashSet;
 use registry::{
-    schema::prelude::{OBJ_FILTER_ACCOUNT, OBJ_FILTER_TENANT, ObjectType, Property},
-    types::EnumImpl,
+    schema::prelude::{OBJ_FILTER_ACCOUNT, OBJ_FILTER_TENANT, OBJ_SINGLETON, ObjectType, Property},
+    types::{EnumImpl, id::ObjectId},
 };
 use roaring::RoaringBitmap;
 use std::{borrow::Cow, ops::BitAndAssign};
@@ -144,9 +144,37 @@ impl RegistryStore {
     }
 
     pub async fn count_object(&self, object_type: ObjectType) -> trc::Result<usize> {
-        self.query::<RegistryObjectCounter>(RegistryQuery::new(object_type))
+        if object_type.flags() & OBJ_SINGLETON == 0 {
+            self.query::<RegistryObjectCounter>(RegistryQuery::new(object_type))
+                .await
+                .map(|r| r.0)
+        } else {
+            self.store()
+                .key_exists(ValueKey::from(RegistryClass::Item {
+                    object_id: object_type.to_id(),
+                    item_id: Id::singleton().id(),
+                }))
+                .await
+                .caused_by(trc::location!())
+                .map(|exists| if exists { 1 } else { 0 })
+        }
+    }
+
+    pub async fn primary_key(
+        &self,
+        object_type: Option<ObjectType>,
+        property: Property,
+        key: Vec<u8>,
+    ) -> trc::Result<Option<ObjectId>> {
+        self.store()
+            .get_value::<ObjectId>(ValueKey::from(ValueClass::Registry(
+                RegistryClass::PrimaryKey {
+                    object_id: object_type.map(|obj| obj.to_id()),
+                    index_id: property.to_id(),
+                    key,
+                },
+            )))
             .await
-            .map(|r| r.0)
     }
 
     pub async fn sort_by_index(

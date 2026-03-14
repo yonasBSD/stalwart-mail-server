@@ -266,37 +266,79 @@ impl ServerCertVerifier for DummyVerifier {
     }
 }
 
+static NIL_CHAR: char = char::from_u32(0).unwrap();
+
 // Basic email sanitizer
 pub fn sanitize_email(email: &str) -> Option<String> {
     let mut result = String::with_capacity(email.len());
-    let mut found_local = false;
-    let mut found_domain = false;
-    let mut last_ch = char::from(0);
+    let mut last_ch = NIL_CHAR;
+    let mut chars = email.chars();
 
-    for ch in email.chars() {
-        if !ch.is_whitespace() {
-            if ch == '@' {
-                if !result.is_empty() && !found_local {
-                    found_local = true;
+    for ch in chars.by_ref() {
+        match ch {
+            '.' | '+' | '-' | '_' => {
+                if !last_ch.is_alphanumeric() {
+                    return None;
+                }
+                result.push(ch);
+            }
+            ' ' | '\x09'..='\x0d' => continue,
+            '@' => {
+                if result.is_empty() || last_ch == '.' {
+                    return None;
+                }
+                last_ch = ch;
+                result.push(ch);
+                break;
+            }
+            _ => {
+                if ch.is_uppercase() {
+                    for ch in ch.to_lowercase() {
+                        result.push(ch);
+                    }
+                } else if ch.is_alphanumeric() {
+                    result.push(ch);
                 } else {
                     return None;
                 }
-            } else if ch == '.' {
-                if !(last_ch.is_alphanumeric() || last_ch == '-' || last_ch == '_') {
-                    return None;
-                } else if found_local {
-                    found_domain = true;
-                }
-            }
-            last_ch = ch;
-            for ch in ch.to_lowercase() {
-                result.push(ch);
             }
         }
+
+        last_ch = ch;
     }
 
-    if found_domain
-        && last_ch != '.'
+    if last_ch != '@' {
+        return None;
+    }
+
+    last_ch = NIL_CHAR;
+
+    for ch in chars {
+        match ch {
+            '.' | '-' | '_' => {
+                if !last_ch.is_alphanumeric() {
+                    return None;
+                }
+                result.push(ch);
+            }
+            ' ' | '\x09'..='\x0d' => continue,
+            _ => {
+                if ch.is_uppercase() {
+                    for ch in ch.to_lowercase() {
+                        result.push(ch);
+                    }
+                } else if ch.is_alphanumeric() {
+                    result.push(ch);
+                } else {
+                    return None;
+                }
+            }
+        }
+
+        last_ch = ch;
+    }
+
+    if last_ch.is_alphanumeric()
         && psl::domain(result.as_bytes()).is_some_and(|d| d.suffix().typ().is_some())
     {
         Some(result)
@@ -307,23 +349,34 @@ pub fn sanitize_email(email: &str) -> Option<String> {
 
 pub fn sanitize_email_local(local: &str) -> Option<String> {
     let mut result = String::with_capacity(local.len());
-    let mut last_ch = char::from(0);
+    let mut last_ch = NIL_CHAR;
 
     for ch in local.chars() {
-        if !ch.is_whitespace() {
-            if ch.is_alphanumeric() {
-                for ch in ch.to_lowercase() {
-                    result.push(ch);
+        match ch {
+            '.' | '+' | '-' | '_' => {
+                if !last_ch.is_alphanumeric() {
+                    return None;
                 }
-            } else if result.is_empty() || !last_ch.is_alphanumeric() {
-                return None;
+                result.push(ch);
             }
-
-            last_ch = ch;
+            ' ' | '\x09'..='\x0d' => continue,
+            _ => {
+                if ch.is_uppercase() {
+                    for ch in ch.to_lowercase() {
+                        result.push(ch);
+                    }
+                } else if ch.is_alphanumeric() {
+                    result.push(ch);
+                } else {
+                    return None;
+                }
+            }
         }
+
+        last_ch = ch;
     }
 
-    if last_ch.is_alphanumeric() {
+    if !result.is_empty() && last_ch != '.' {
         Some(result)
     } else {
         None

@@ -22,7 +22,6 @@ use crate::{
         encryption::{EncryptionMethod, parse_public_key},
     },
 };
-use arcstr::ArcStr;
 use registry::{
     schema::{
         enums::{Locale, StorageQuota, TenantStorageQuota},
@@ -32,13 +31,13 @@ use registry::{
             Permissions, PublicKey, Role, SubAddressing, Tenant,
         },
     },
-    types::{EnumImpl, id::ObjectId},
+    types::id::ObjectId,
 };
 use std::{borrow::Cow, sync::Arc};
 use store::{
-    U64_LEN, ValueKey,
+    U64_LEN,
     registry::{RegistryQuery, bootstrap::Bootstrap},
-    write::{RegistryClass, ValueClass, key::KeySerializer, now},
+    write::{key::KeySerializer, now},
 };
 use trc::AddContext;
 use types::id::Id;
@@ -57,17 +56,18 @@ impl Server {
         } else {
             let domain_names_negative = &self.inner.cache.domain_names_negative;
             if domain_names_negative.get(domain).is_none() {
-                if let Some(domain_id) = self
+                if let Some(domain) = self
                     .registry()
-                    .query::<Vec<Id>>(
-                        RegistryQuery::new(ObjectType::Domain).equal(Property::Name, domain),
+                    .primary_key(
+                        ObjectType::Domain.into(),
+                        Property::Name,
+                        domain.as_bytes().to_vec(),
                     )
-                    .await?
-                    .into_iter()
-                    .next()
+                    .await
+                    .caused_by(trc::location!())?
                 {
                     // Cache positive result
-                    let domain_id = domain_id.document_id();
+                    let domain_id = domain.id().document_id();
                     let domain = self.domain_by_id(domain_id).await?;
                     if let Some(domain) = &domain {
                         for name in domain.names.iter() {
@@ -131,9 +131,14 @@ impl Server {
                 };
 
                 let cache = Arc::new(DomainCache {
-                    names: [ArcStr::from(domain.name)]
+                    names: [domain.name.into_boxed_str()]
                         .into_iter()
-                        .chain(domain.aliases.into_iter().map(ArcStr::from))
+                        .chain(
+                            domain
+                                .aliases
+                                .into_iter()
+                                .map(|alias| alias.into_boxed_str()),
+                        )
                         .collect(),
                     id: domain_id,
                     id_directory: domain.directory_id.map(|id| id.document_id()),
@@ -164,18 +169,16 @@ impl Server {
                 .get(&EmailAddressRef::new(local_part, domain_id))
                 .is_none()
             {
-                let key = ValueKey::from(ValueClass::Registry(RegistryClass::PrimaryKey {
-                    object_id: None,
-                    index_id: Property::Email.to_id(),
-                    key: KeySerializer::new(local_part.len() + U64_LEN)
-                        .write(local_part.as_bytes())
-                        .write(domain_id as u64)
-                        .finalize(),
-                }));
-
                 if let Some(object) = self
-                    .store()
-                    .get_value::<ObjectId>(key)
+                    .registry()
+                    .primary_key(
+                        None,
+                        Property::Email,
+                        KeySerializer::new(local_part.len() + U64_LEN)
+                            .write(local_part.as_bytes())
+                            .write(domain_id as u64)
+                            .finalize(),
+                    )
                     .await
                     .caused_by(trc::location!())?
                 {
