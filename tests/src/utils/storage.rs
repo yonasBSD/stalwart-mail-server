@@ -21,6 +21,7 @@ use registry::{
     },
     types::{EnumImpl, duration::Duration},
 };
+use store::U64_LEN;
 use store::{
     Deserialize, IterateParams, ValueKey,
     write::{TaskQueueClass, ValueClass},
@@ -167,8 +168,10 @@ pub async fn wait_for_index(server: &Server) {
                     ValueKey::from(ValueClass::TaskQueue(TaskQueueClass::Task { id: u64::MAX })),
                 )
                 .ascending(),
-                |_, value| {
-                    has_index_tasks = Some(Task::deserialize(value)?);
+                |key, value| {
+                    if key.len() == U64_LEN {
+                        has_index_tasks = Some(Task::deserialize(value)?);
+                    }
 
                     Ok(false)
                 },

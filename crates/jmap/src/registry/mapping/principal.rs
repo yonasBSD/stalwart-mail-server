@@ -51,9 +51,7 @@ pub(crate) async fn validate_account(
         set.server
             .domain_by_id(account.domain_id.document_id())
             .await?
-            .and_then(|domain| domain.id_directory)
-            .and_then(|domain_id| set.server.get_directory(&domain_id))
-            .or_else(|| set.server.get_default_directory())
+            .and_then(|domain| set.server.get_directory_for_cached_domain(&domain))
             .is_some()
     } else {
         false
@@ -114,7 +112,7 @@ pub(crate) async fn validate_account(
 
                                     credential.secret = hash_secret(
                                         set.server.core.network.security.password_hash_algorithm,
-                                        std::mem::take(&mut credential.secret),
+                                        std::mem::take(&mut credential.secret).into_bytes(),
                                     )
                                     .await
                                     .caused_by(trc::location!())?;
@@ -245,7 +243,7 @@ async fn validate_credential_creation(
             } else {
                 credential.secret = hash_secret(
                     server.core.network.security.password_hash_algorithm,
-                    std::mem::take(&mut credential.secret),
+                    std::mem::take(&mut credential.secret).into_bytes(),
                 )
                 .await
                 .caused_by(trc::location!())?;

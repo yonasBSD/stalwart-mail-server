@@ -14,18 +14,15 @@ use common::{
     },
 };
 use http_proto::{request::fetch_body, *};
-use registry::{
-    schema::{
-        enums::Permission,
-        prelude::{ObjectType, Property},
-        structs::OAuthClient,
-    },
-    types::datetime::UTCDateTime,
+use registry::schema::{
+    enums::Permission,
+    prelude::{ObjectType, Property},
+    structs::OAuthClient,
 };
 use std::future::Future;
 use store::{
     rand::{Rng, distr::Alphanumeric, rng},
-    registry::{RegistryQuery, write::RegistryWrite},
+    registry::write::{RegistryWrite, RegistryWriteResult},
 };
 use trc::{AddContext, AuthEvent};
 use types::id::Id;
@@ -79,11 +76,11 @@ impl ClientRegistrationHandler for Server {
             .map(|ch| char::from(ch.to_ascii_lowercase()))
             .collect::<String>();
 
-        self.registry()
+        let result = self
+            .registry()
             .write(RegistryWrite::insert(
                 &OAuthClient {
                     client_id: client_id.clone(),
-                    created_at: UTCDateTime::now(),
                     description: request.client_name.clone(),
                     contacts: request.contacts.clone().into(),
                     member_tenant_id: tenant_id.map(|id| Id::new(id as u64)),
@@ -95,6 +92,14 @@ impl ClientRegistrationHandler for Server {
             ))
             .await
             .caused_by(trc::location!())?;
+
+        if !matches!(result, RegistryWriteResult::Success(_)) {
+            return Err(trc::StoreEvent::UnexpectedError
+                .into_err()
+                .details("Failed to register OAuth client.")
+                .reason(result.to_string())
+                .caused_by(trc::location!()));
+        }
 
         trc::event!(
             Auth(AuthEvent::ClientRegistration),
@@ -124,23 +129,24 @@ impl ClientRegistrationHandler for Server {
         // Fetch client registration
         let found_registration = if let Some(client_id) = self
             .registry()
-            .query::<Vec<Id>>(
-                RegistryQuery::new(ObjectType::OAuthClient).equal(Property::ClientId, client_id),
+            .primary_key(
+                ObjectType::OAuthClient.into(),
+                Property::ClientId,
+                client_id.as_bytes().to_vec(),
             )
             .await?
-            .first()
         {
             if let Some(redirect_uri) = redirect_uri {
                 let client = self
                     .registry()
-                    .object::<OAuthClient>(*client_id)
+                    .object::<OAuthClient>(client_id.id())
                     .await?
                     .ok_or_else(|| {
                         trc::StoreEvent::UnexpectedError
                             .into_err()
                             .details("OAuth client not found.")
                             .caused_by(trc::location!())
-                            .ctx(trc::Key::Id, client_id.id())
+                            .ctx(trc::Key::Id, client_id.id().id())
                     })?;
                 if client.redirect_uris.iter().any(|uri| uri == redirect_uri) {
                     return Ok(None);

@@ -332,6 +332,16 @@ impl ParseHttp for Server {
                 _ => (),
             },
             "auth" => match (path.next().unwrap_or_default(), req.method()) {
+                ("login", &Method::POST) => {
+                    self.is_http_anonymous_request_allowed(&session.remote_ip)
+                        .await?;
+
+                    let bytes = fetch_body(&mut req, 4096, session.session_id)
+                        .await
+                        .ok_or_else(|| trc::LimitEvent::SizeRequest.into_err())?;
+
+                    return self.handle_login_request(session, bytes).await;
+                }
                 ("device", &Method::POST) => {
                     self.is_http_anonymous_request_allowed(&session.remote_ip)
                         .await?;

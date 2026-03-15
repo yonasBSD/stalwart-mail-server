@@ -13,8 +13,8 @@ use crate::{
     },
 };
 use directory::{
-    Credentials,
-    core::secret::{verify_mfa_secret_hash, verify_secret_hash},
+    Credentials, Directory,
+    core::secret::{SecretVerificationResult, verify_mfa_secret_hash, verify_secret_hash},
 };
 use registry::schema::{
     enums::Permission,
@@ -63,7 +63,11 @@ impl Server {
 
     async fn route_auth_request(&self, req: &AuthRequest) -> trc::Result<AccessToken> {
         match &req.credentials {
-            Credentials::Basic { username, secret } => {
+            Credentials::Basic {
+                username,
+                secret,
+                mfa_token,
+            } => {
                 let username = UsernameParts::new(username);
 
                 // Try to authenticate as fallback admin if configured
@@ -140,13 +144,8 @@ impl Server {
                 }
 
                 // Obtain external directory, if any
-                let directory = domain
-                    .id_directory
-                    .and_then(|domain_id| self.core.storage.directories.get(&domain_id))
-                    .or_else(|| self.get_default_directory());
-
                 let mut is_alias_login = false;
-                let token = if let Some(directory) = directory {
+                let token = if let Some(directory) = self.get_directory_for_cached_domain(&domain) {
                     let directory_account = directory.authenticate(&req.credentials).await?;
 
                     is_alias_login = directory_account.email != auth_as_address;
@@ -160,37 +159,55 @@ impl Server {
                         .await?
                         .and_then(|account| account.into_user())
                     {
-                        if let Some(credential) = account.password_credential()
-                            && verify_mfa_secret_hash(
-                                credential.otp_auth.as_deref(),
-                                credential.secret.as_str(),
-                                secret,
-                            )
-                            .await?
-                        {
-                            if credential
-                                .expires_at
-                                .as_ref()
-                                .is_none_or(|exp| exp.timestamp() > now() as i64)
-                            {
-                                is_alias_login = account.name != auth_as_address;
-                                self.access_token(account_id).await.map(AccessToken::new)
-                            } else {
-                                Err(trc::AuthEvent::Failed
-                                    .into_err()
-                                    .ctx(trc::Key::AccountName, account.name.to_string())
-                                    .ctx(trc::Key::AccountId, account_id)
-                                    .ctx(trc::Key::Id, credential.credential_id.id())
-                                    .ctx(trc::Key::SpanId, req.session_id)
-                                    .reason("Password credential has expired"))
-                            }
-                        } else {
-                            Err(trc::AuthEvent::Failed
+                        let Some(credential) = account.password_credential() else {
+                            return Err(trc::AuthEvent::Failed
                                 .into_err()
                                 .ctx(trc::Key::AccountName, auth_as_address.to_string())
                                 .ctx(trc::Key::AccountId, account_id)
                                 .ctx(trc::Key::SpanId, req.session_id)
-                                .reason("Authentication failed"))
+                                .reason("Password credential not found for account"));
+                        };
+
+                        match verify_mfa_secret_hash(
+                            credential.otp_auth.as_deref(),
+                            mfa_token.as_deref(),
+                            credential.secret.as_str(),
+                            secret,
+                        )
+                        .await?
+                        {
+                            SecretVerificationResult::Valid => {
+                                if credential
+                                    .expires_at
+                                    .as_ref()
+                                    .is_none_or(|exp| exp.timestamp() > now() as i64)
+                                {
+                                    is_alias_login = account.name != auth_as_address;
+                                    self.access_token(account_id).await.map(AccessToken::new)
+                                } else {
+                                    Err(trc::AuthEvent::Failed
+                                        .into_err()
+                                        .ctx(trc::Key::AccountName, account.name.to_string())
+                                        .ctx(trc::Key::AccountId, account_id)
+                                        .ctx(trc::Key::Id, credential.credential_id.id())
+                                        .ctx(trc::Key::SpanId, req.session_id)
+                                        .reason("Password credential has expired"))
+                                }
+                            }
+                            SecretVerificationResult::Invalid => Err(trc::AuthEvent::Failed
+                                .into_err()
+                                .ctx(trc::Key::AccountName, auth_as_address.to_string())
+                                .ctx(trc::Key::AccountId, account_id)
+                                .ctx(trc::Key::SpanId, req.session_id)
+                                .reason("Authentication failed")),
+                            SecretVerificationResult::MissingMfaToken => {
+                                Err(trc::AuthEvent::MfaRequired
+                                    .into_err()
+                                    .ctx(trc::Key::AccountName, auth_as_address.to_string())
+                                    .ctx(trc::Key::AccountId, account_id)
+                                    .ctx(trc::Key::SpanId, req.session_id)
+                                    .reason("MFA token required"))
+                            }
                         }
                     } else {
                         Err(trc::AuthEvent::Error
@@ -270,11 +287,7 @@ impl Server {
                 let directory = if let Some(username) = username.as_deref().map(UsernameParts::new)
                 {
                     if let Some(domain_name) = username.auth_as().domain() {
-                        self.domain(domain_name)
-                            .await
-                            .caused_by(trc::location!())?
-                            .and_then(|domain| self.core.storage.directories.get(&domain.id))
-                            .or_else(|| self.get_default_directory())
+                        self.get_directory_for_domain(domain_name).await?
                     } else {
                         self.get_default_directory()
                     }
@@ -434,6 +447,43 @@ impl Server {
             .await
             .map(AccessToken::new)
     }
+
+    pub async fn get_directory_for_domain(
+        &self,
+        domain_name: &str,
+    ) -> trc::Result<Option<&Arc<Directory>>> {
+        // SPDX-SnippetBegin
+        // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
+        // SPDX-License-Identifier: LicenseRef-SEL
+        #[cfg(feature = "enterprise")]
+        if self.core.is_enterprise_edition() {
+            return Ok(self
+                .domain(domain_name)
+                .await
+                .caused_by(trc::location!())?
+                .and_then(|domain| self.core.storage.directories.get(&domain.id))
+                .or_else(|| self.get_default_directory()));
+        }
+        // SPDX-SnippetEnd
+
+        Ok(self.get_default_directory())
+    }
+
+    pub fn get_directory_for_cached_domain(&self, domain: &DomainCache) -> Option<&Arc<Directory>> {
+        // SPDX-SnippetBegin
+        // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
+        // SPDX-License-Identifier: LicenseRef-SEL
+        #[cfg(feature = "enterprise")]
+        if self.core.is_enterprise_edition() {
+            return domain
+                .id_directory
+                .and_then(|domain_id| self.core.storage.directories.get(&domain_id))
+                .or_else(|| self.get_default_directory());
+        }
+        // SPDX-SnippetEnd
+
+        self.get_default_directory()
+    }
 }
 
 impl UsernameParts {
@@ -517,6 +567,7 @@ impl AuthRequest {
             Credentials::Basic {
                 username: user.into(),
                 secret: pass.into(),
+                mfa_token: None,
             },
             session_id,
             remote_ip,

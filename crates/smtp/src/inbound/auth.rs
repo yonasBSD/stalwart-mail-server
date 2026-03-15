@@ -26,6 +26,7 @@ impl SaslToken {
                 credentials: Credentials::Basic {
                     username: String::new(),
                     secret: String::new(),
+                    mfa_token: None,
                 },
             }
             .into(),
@@ -54,7 +55,12 @@ impl<T: SessionStream> Session<T> {
                     self.write(b"334 Go ahead.\r\n").await?;
                     return Ok(true);
                 }
-                (AUTH_LOGIN, Credentials::Basic { username, secret }) => {
+                (
+                    AUTH_LOGIN,
+                    Credentials::Basic {
+                        username, secret, ..
+                    },
+                ) => {
                     if username.is_empty() && secret.is_empty() {
                         self.write(b"334 VXNlcm5hbWU6\r\n").await?;
                         return Ok(true);
@@ -69,7 +75,12 @@ impl<T: SessionStream> Session<T> {
                         return self.authenticate(credentials).await;
                     }
                 }
-                (AUTH_LOGIN, Credentials::Basic { username, secret }) => {
+                (
+                    AUTH_LOGIN,
+                    Credentials::Basic {
+                        username, secret, ..
+                    },
+                ) => {
                     return if username.is_empty() {
                         *username = response.into_string();
                         self.write(b"334 UGFzc3dvcmQ6\r\n").await?;
@@ -81,6 +92,7 @@ impl<T: SessionStream> Session<T> {
                             Credentials::Basic {
                                 username: String::new(),
                                 secret: String::new(),
+                                mfa_token: None,
                             },
                         ))
                         .await
@@ -137,10 +149,14 @@ impl<T: SessionStream> Session<T> {
                     trc::EventType::Auth(trc::AuthEvent::TokenExpired) => {
                         return self.auth_error(b"535 5.7.8 OAuth token expired.\r\n").await;
                     }
-                    trc::EventType::Auth(trc::AuthEvent::MissingTotp) => {
+                    trc::EventType::Auth(trc::AuthEvent::MfaRequired) => {
                         return self
                             .auth_error(
-                                b"334 5.7.8 Missing TOTP token, try with 'secret$totp_code'.\r\n",
+                                concat!(
+                                    "334 5.7.8 This account requires multi-factor authentication. ",
+                                    "Alternatively, you can use an app password if your account has one.\r\n"
+                                )
+                                .as_bytes(),
                             )
                             .await;
                     }

@@ -22,27 +22,35 @@ use sha2::Sha512;
 use tokio::sync::oneshot;
 use totp_rs::TOTP;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SecretVerificationResult {
+    Valid,
+    Invalid,
+    MissingMfaToken,
+}
+
 pub async fn verify_mfa_secret_hash(
-    otp_auth: Option<&str>,
+    totp_uri: Option<&str>,
+    totp_token: Option<&str>,
     hashed_secret: &str,
     secret: &str,
-) -> trc::Result<bool> {
-    if let Some(otp_auth) = otp_auth {
-        if let Some((code, totp_token)) = secret.rsplit_once('$').filter(|(c, t)| {
-            !c.is_empty()
-                && (6..=8).contains(&t.len())
-                && t.as_bytes().iter().all(|b| b.is_ascii_digit())
-        }) {
-            let result = verify_secret_hash(hashed_secret, code.as_bytes()).await?
-                && TOTP::from_url(otp_auth)
+) -> trc::Result<SecretVerificationResult> {
+    if let Some(totp_uri) = totp_uri {
+        if let Some(totp_token) = totp_token {
+            let result = verify_secret_hash(hashed_secret, secret.as_bytes()).await?
+                && TOTP::from_url(totp_uri)
                     .map_err(|err| {
                         trc::AuthEvent::Error
                             .reason(err)
-                            .details(otp_auth.to_string())
+                            .details(totp_uri.to_string())
                     })?
                     .check_current(totp_token)
                     .unwrap_or(false);
-            Ok(result)
+            Ok(if result {
+                SecretVerificationResult::Valid
+            } else {
+                SecretVerificationResult::Invalid
+            })
         } else if !hashed_secret.is_empty()
             && !secret.is_empty()
             && verify_secret_hash(hashed_secret, secret.as_bytes()).await?
@@ -50,18 +58,22 @@ pub async fn verify_mfa_secret_hash(
             // Only let the client know if the TOTP code is missing
             // if the password is correct
 
-            Err(trc::AuthEvent::MissingTotp.into_err())
+            Ok(SecretVerificationResult::MissingMfaToken)
         } else {
-            Ok(false)
+            Ok(SecretVerificationResult::Invalid)
         }
     } else if !hashed_secret.is_empty() && !secret.is_empty() {
-        verify_secret_hash(hashed_secret, secret.as_bytes()).await
+        if verify_secret_hash(hashed_secret, secret.as_bytes()).await? {
+            Ok(SecretVerificationResult::Valid)
+        } else {
+            Ok(SecretVerificationResult::Invalid)
+        }
     } else {
-        Ok(false)
+        Ok(SecretVerificationResult::Invalid)
     }
 }
 
-pub fn verify_otp_auth(otp_auth: Option<&str>, otp_code: Option<&str>) -> trc::Result<bool> {
+/*pub fn verify_otp_auth(otp_auth: Option<&str>, otp_code: Option<&str>) -> trc::Result<bool> {
     if let Some(otp_auth) = otp_auth {
         if let Some(otp_code) = otp_code {
             TOTP::from_url(otp_auth)
@@ -82,7 +94,7 @@ pub fn verify_otp_auth(otp_auth: Option<&str>, otp_code: Option<&str>) -> trc::R
     } else {
         Ok(true)
     }
-}
+}*/
 
 async fn verify_hash_prefix(hashed_secret: &str, secret: &[u8]) -> trc::Result<bool> {
     if hashed_secret.starts_with("$argon2")
@@ -247,7 +259,7 @@ pub async fn verify_secret_hash(hashed_secret: &str, secret: &[u8]) -> trc::Resu
     }
 }
 
-pub async fn hash_secret(algorithm: PasswordHashAlgorithm, secret: String) -> trc::Result<String> {
+pub async fn hash_secret(algorithm: PasswordHashAlgorithm, secret: Vec<u8>) -> trc::Result<String> {
     let (tx, rx) = oneshot::channel();
 
     tokio::task::spawn_blocking(move || {
@@ -257,12 +269,12 @@ pub async fn hash_secret(algorithm: PasswordHashAlgorithm, secret: String) -> tr
             PasswordHashAlgorithm::Argon2id => {
                 let hasher = Argon2::default();
                 hasher
-                    .hash_password(secret.as_bytes(), &salt)
+                    .hash_password(secret.as_slice(), &salt)
                     .map(|h| h.to_string())
             }
             PasswordHashAlgorithm::Bcrypt => {
                 return tx
-                    .send(bcrypt::hash(secret.as_bytes()).map_err(|err| {
+                    .send(bcrypt::hash(secret.as_slice()).map_err(|err| {
                         trc::AuthEvent::Error
                             .reason(err)
                             .details("Bcrypt hash failed")
@@ -271,10 +283,10 @@ pub async fn hash_secret(algorithm: PasswordHashAlgorithm, secret: String) -> tr
                     .unwrap_or(());
             }
             PasswordHashAlgorithm::Scrypt => Scrypt
-                .hash_password(secret.as_bytes(), &salt)
+                .hash_password(secret.as_slice(), &salt)
                 .map(|h| h.to_string()),
             PasswordHashAlgorithm::Pbkdf2 => Pbkdf2
-                .hash_password(secret.as_bytes(), &salt)
+                .hash_password(secret.as_slice(), &salt)
                 .map(|h| h.to_string()),
         };
 

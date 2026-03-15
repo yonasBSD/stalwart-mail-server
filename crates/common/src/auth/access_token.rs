@@ -28,7 +28,7 @@ use std::{
 };
 use store::{query::acl::AclQuery, rand, write::now};
 use tinyvec::TinyVec;
-use trc::AddContext;
+use trc::{AddContext, StoreEvent};
 use types::{acl::Acl, collection::Collection};
 use utils::map::bitmap::{Bitmap, BitmapItem};
 
@@ -249,25 +249,40 @@ impl Server {
             .get_value_or_guard_async(&account_id)
             .await
         {
-            Ok(token) => Ok(token),
+            Ok(token) => {
+                trc::event!(
+                    Store(StoreEvent::CacheHit),
+                    Key = account_id,
+                    Collection = "accessToken",
+                );
+
+                Ok(token)
+            }
             Err(guard) => {
-                let account = self
-                    .registry()
-                    .object::<Account>(account_id.into())
-                    .await?
-                    .ok_or_else(|| {
-                        trc::SecurityEvent::Unauthorized
-                            .into_err()
-                            .details("Account not found")
-                            .account_id(account_id)
-                            .caused_by(trc::location!())
-                    })?;
-                let revision = rand::random::<u64>();
-                let revision_account = hash_account(&account);
-                let token: Arc<AccessTokenInner> = self
-                    .build_access_token(account, account_id, revision, revision_account)
-                    .await?
-                    .into();
+                trc::event!(
+                    Store(StoreEvent::CacheMiss),
+                    Key = account_id,
+                    Collection = "accessToken",
+                );
+
+                let token: Arc<AccessTokenInner> = if let Some(account) =
+                    self.registry().object::<Account>(account_id.into()).await?
+                {
+                    let revision = rand::random::<u64>();
+                    let revision_account = hash_account(&account);
+                    self.build_access_token(account, account_id, revision, revision_account)
+                        .await?
+                        .into()
+                } else if account_id == FALLBACK_ADMIN_ID {
+                    AccessTokenInner::new_admin().into()
+                } else {
+                    return Err(trc::SecurityEvent::Unauthorized
+                        .into_err()
+                        .details("Account not found")
+                        .account_id(account_id)
+                        .caused_by(trc::location!()));
+                };
+
                 let _ = guard.insert(token.clone());
                 Ok(token)
             }
@@ -289,9 +304,21 @@ impl Server {
         {
             Ok(token) => {
                 if token.revision_account == revision_account {
+                    trc::event!(
+                        Store(StoreEvent::CacheHit),
+                        Key = account_id,
+                        Collection = "accessToken",
+                    );
+
                     Ok(token)
                 } else {
                     // Token is stale, rebuild it
+                    trc::event!(
+                        Store(StoreEvent::CacheStale),
+                        Key = account_id,
+                        Collection = "accessToken",
+                    );
+
                     debug_assert!(
                         false,
                         "Token is stale, invalidation should have been triggered"
@@ -309,6 +336,12 @@ impl Server {
                 }
             }
             Err(guard) => {
+                trc::event!(
+                    Store(StoreEvent::CacheMiss),
+                    Key = account_id,
+                    Collection = "accessToken",
+                );
+
                 let revision = rand::random::<u64>();
                 let token: Arc<AccessTokenInner> = self
                     .build_access_token(account, account_id, revision, revision_account)
@@ -598,19 +631,7 @@ impl AccessToken {
     pub fn new_admin() -> AccessToken {
         AccessToken {
             scope_idx: 0,
-            inner: Arc::new(AccessTokenInner {
-                account_id: FALLBACK_ADMIN_ID,
-                tenant_id: Default::default(),
-                member_of: Default::default(),
-                access_to: Default::default(),
-                scopes: Box::new([AccessScope::new(Permissions::all(), u32::MAX)]),
-                concurrent_http_requests: Default::default(),
-                concurrent_imap_requests: Default::default(),
-                concurrent_uploads: Default::default(),
-                revision: Default::default(),
-                revision_account: Default::default(),
-                obj_size: Default::default(),
-            }),
+            inner: Arc::new(AccessTokenInner::new_admin()),
         }
     }
 
@@ -665,6 +686,30 @@ impl AccessTokenInner {
             + (self.scopes.len() * std::mem::size_of::<AccessScope>()))
             as u64;
         self
+    }
+
+    pub fn new_admin() -> Self {
+        AccessTokenInner {
+            account_id: FALLBACK_ADMIN_ID,
+            tenant_id: Default::default(),
+            member_of: Default::default(),
+            access_to: Default::default(),
+            scopes: Box::new([AccessScope::new(Permissions::all(), u32::MAX)]),
+            concurrent_http_requests: Default::default(),
+            concurrent_imap_requests: Default::default(),
+            concurrent_uploads: Default::default(),
+            revision: Default::default(),
+            revision_account: Default::default(),
+            obj_size: Default::default(),
+        }
+    }
+
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    pub fn revision_account(&self) -> u64 {
+        self.revision_account
     }
 }
 

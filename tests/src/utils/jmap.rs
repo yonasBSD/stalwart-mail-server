@@ -616,6 +616,12 @@ pub trait JmapUtils {
         self.text_field("id")
     }
 
+    fn object_id(&self) -> Id {
+        self.id()
+            .parse()
+            .unwrap_or_else(|_| panic!("Invalid id {} in object", self.id()))
+    }
+
     fn blob_id(&self) -> &str {
         self.text_field("blobId")
     }

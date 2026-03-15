@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{
-    imap::{
-        ImapConnection, Type,
-        pop::{self, Pop3Connection},
-    },
-    jmap::{JMAPTest, ManagementApi, mail::delivery::SmtpConnection},
+use crate::utils::{
+    http::HttpRequest,
+    imap::{ImapConnection, Type},
+    pop3::Pop3Connection,
+    server::TestServer,
+    smtp::SmtpConnection,
 };
 use base64::{Engine, engine::general_purpose};
 use biscuit::{JWT, SingleOrMultiple, jwk::JWKSet};
@@ -20,7 +20,8 @@ use common::auth::oauth::{
     registration::{ClientRegistrationRequest, ClientRegistrationResponse},
 };
 use http::auth::oauth::{
-    DeviceAuthResponse, ErrorType, OAuthCodeRequest, TokenResponse, auth::OAuthMetadata,
+    DeviceAuthResponse, ErrorType, TokenResponse,
+    auth::{LoginRequest, LoginResponse, OAuthMetadata},
     openid::OpenIdMetadata,
 };
 use imap_proto::ResponseType;
@@ -28,27 +29,77 @@ use jmap_client::{
     client::{Client, Credentials},
     mailbox::query::Filter,
 };
+use registry::{
+    schema::{
+        enums::JwtSignatureAlgorithm,
+        prelude::{ObjectType, Property},
+        structs::{
+            Account, Credential, OidcProvider, PasswordCredential, SecretText, SecretTextValue,
+            UserAccount,
+        },
+    },
+    types::list::List,
+};
 use serde::{Serialize, de::DeserializeOwned};
 use std::time::{Duration, Instant};
 use store::ahash::AHashMap;
 
-#[derive(serde::Deserialize, Debug)]
-#[allow(dead_code)]
-struct OAuthCodeResponse {
-    pub code: String,
-    #[serde(rename = "isEnterprise")]
-    pub is_enterprise: bool,
-}
+pub async fn test(test: &mut TestServer) {
+    println!("Running OIDC tests...");
 
-pub async fn test(params: &mut JMAPTest) {
-    println!("Running OAuth tests...");
+    let admin = test.account("admin@example.org");
+    let domain_id = admin.find_or_create_domain("example.org").await;
+
+    // Set test parameters
+    let settings = OidcProvider {
+        access_token_expiry: registry::schema::prelude::Duration::from_millis(1000),
+        auth_code_expiry: registry::schema::prelude::Duration::from_millis(1000),
+        auth_code_max_attempts: 1,
+        user_code_expiry: registry::schema::prelude::Duration::from_millis(1000),
+        refresh_token_expiry: registry::schema::prelude::Duration::from_millis(3000),
+        refresh_token_renewal: registry::schema::prelude::Duration::from_millis(2000),
+        anonymous_client_registration: true,
+        require_client_registration: true,
+        signature_algorithm: JwtSignatureAlgorithm::Rs256,
+        signature_key: SecretText::Text(SecretTextValue {
+            secret: OIDC_SIGNATURE_KEY_RS256.to_string(),
+        }),
+        ..Default::default()
+    };
+    admin
+        .registry_update_setting(
+            settings,
+            &[
+                Property::AccessTokenExpiry,
+                Property::AuthCodeExpiry,
+                Property::AuthCodeMaxAttempts,
+                Property::UserCodeExpiry,
+                Property::RefreshTokenExpiry,
+                Property::RefreshTokenRenewal,
+                Property::AnonymousClientRegistration,
+                Property::RequireClientRegistration,
+                Property::SignatureAlgorithm,
+                Property::SignatureKey,
+            ],
+        )
+        .await;
+    admin.reload_settings().await;
 
     // Create test account
-    let server = params.server.clone();
-    let account = params.account("jdoe@example.com");
+    let user_id = admin
+        .registry_create_object(Account::User(UserAccount {
+            name: "user".to_string(),
+            domain_id,
+            credentials: List::from_iter([Credential::Password(PasswordCredential {
+                secret: "this is a very strong password".to_string(),
+                ..Default::default()
+            })]),
+            ..Default::default()
+        }))
+        .await;
 
     // Build API
-    let api = ManagementApi::new(8899, "jdoe@example.com", "12345");
+    let http = HttpRequest::new();
 
     // Obtain OAuth metadata
     let metadata: OAuthMetadata =
@@ -78,25 +129,27 @@ pub async fn test(params: &mut JMAPTest) {
     // ------------------------
 
     // Authenticate with the correct password
-    let response = api
-        .post::<OAuthCodeResponse>(
-            "/api/oauth",
-            &OAuthCodeRequest::Code {
+    let response = http
+        .post::<LoginResponse>(
+            "/auth/login",
+            &LoginRequest::AuthCode {
+                account_name: "user@example.org".to_string(),
+                account_secret: "this is a very strong password".to_string(),
+                mfa_token: None,
                 client_id: client_id.to_string(),
                 redirect_uri: "https://localhost".to_string().into(),
                 nonce: "abc1234".to_string().into(),
             },
         )
         .await
-        .unwrap()
-        .unwrap_data();
+        .unwrap();
 
     // Both client_id and redirect_uri have to match
     let mut token_params = AHashMap::from_iter([
         ("client_id".to_string(), "invalid_client".to_string()),
         ("redirect_uri".to_string(), "https://localhost".to_string()),
         ("grant_type".to_string(), "authorization_code".to_string()),
-        ("code".to_string(), response.code),
+        ("code".to_string(), response.unwrap_code()),
     ]);
     assert_eq!(
         post::<TokenResponse>(&metadata.token_endpoint, &token_params).await,
@@ -129,7 +182,7 @@ pub async fn test(params: &mut JMAPTest) {
         .connect("https://127.0.0.1:8899")
         .await
         .unwrap();
-    assert_eq!(john_client.default_account_id(), account.id_string());
+    assert_eq!(john_client.default_account_id(), user_id.to_string());
     assert!(
         !john_client
             .mailbox_query(None::<Filter>, None::<Vec<_>>)
@@ -149,7 +202,7 @@ pub async fn test(params: &mut JMAPTest) {
     assert_eq!(registered_claims.issuer, Some(oidc_metadata.issuer));
     assert_eq!(
         registered_claims.subject,
-        Some(account.id().document_id().to_string())
+        Some(user_id.document_id().to_string())
     );
     assert_eq!(
         registered_claims.audience,
@@ -158,9 +211,9 @@ pub async fn test(params: &mut JMAPTest) {
     assert_eq!(private_claims.nonce, Some("abc1234".into()));
     assert_eq!(
         private_claims.preferred_username,
-        Some("jdoe@example.com".into())
+        Some("user@example.org".into())
     );
-    assert_eq!(private_claims.email, Some("jdoe@example.com".into()));
+    assert_eq!(private_claims.email, Some("user@example.org".into()));
 
     // Introspect token
     let access_introspect: OAuthIntrospect = post_with_auth::<OAuthIntrospect>(
@@ -169,7 +222,7 @@ pub async fn test(params: &mut JMAPTest) {
         &AHashMap::from_iter([("token".to_string(), token.to_string())]),
     )
     .await;
-    assert_eq!(access_introspect.username.unwrap(), "jdoe@example.com");
+    assert_eq!(access_introspect.username.unwrap(), "user@example.org");
     assert_eq!(access_introspect.token_type.unwrap(), "bearer");
     assert_eq!(access_introspect.client_id.unwrap(), client_id);
     assert!(access_introspect.active);
@@ -179,7 +232,7 @@ pub async fn test(params: &mut JMAPTest) {
         &AHashMap::from_iter([("token".to_string(), refresh_token.unwrap())]),
     )
     .await;
-    assert_eq!(refresh_introspect.username.unwrap(), "jdoe@example.com");
+    assert_eq!(refresh_introspect.username.unwrap(), "user@example.org");
     assert_eq!(refresh_introspect.client_id.unwrap(), client_id);
     assert!(refresh_introspect.active);
     assert_eq!(
@@ -213,10 +266,10 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Try POP3 OAUTHBEARER auth
     let mut pop3 = Pop3Connection::connect().await;
-    pop3.assert_read(pop::ResponseType::Ok).await;
+    pop3.assert_read(crate::utils::pop3::ResponseType::Ok).await;
     pop3.send(&format!("AUTH OAUTHBEARER {oauth_bearer_sasl}"))
         .await;
-    pop3.assert_read(pop::ResponseType::Ok).await;
+    pop3.assert_read(crate::utils::pop3::ResponseType::Ok).await;
 
     // ------------------------
     // Device code flow
@@ -250,17 +303,19 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Let the code expire and make sure it's invalidated
     tokio::time::sleep(Duration::from_secs(1)).await;
-    assert!(
-        !api.post::<bool>(
-            "/api/oauth",
-            &OAuthCodeRequest::Device {
+    assert_eq!(
+        http.post::<LoginResponse>(
+            "/auth/login",
+            &LoginRequest::AuthDevice {
+                account_name: "user@example.org".to_string(),
+                account_secret: "this is a very strong password".to_string(),
+                mfa_token: None,
                 code: device_response.user_code.clone(),
             },
         )
         .await
-        .unwrap()
-        .unwrap_data(),
-        "Code should be expired"
+        .unwrap(),
+        LoginResponse::Failure
     );
     assert_eq!(
         post::<TokenResponse>(&metadata.token_endpoint, &token_params).await,
@@ -276,17 +331,19 @@ pub async fn test(params: &mut JMAPTest) {
         "device_code".to_string(),
         device_response.device_code.to_string(),
     );
-    assert!(
-        api.post::<bool>(
-            "/api/oauth",
-            &OAuthCodeRequest::Device {
+    assert_eq!(
+        http.post::<LoginResponse>(
+            "/auth/login",
+            &LoginRequest::AuthDevice {
+                account_name: "user@example.org".to_string(),
+                account_secret: "this is a very strong password".to_string(),
+                mfa_token: None,
                 code: device_response.user_code.clone(),
             },
         )
         .await
-        .unwrap()
-        .unwrap_data(),
-        "Code is invalid"
+        .unwrap(),
+        LoginResponse::Verified
     );
 
     // Obtain token
@@ -311,7 +368,7 @@ pub async fn test(params: &mut JMAPTest) {
         .connect("https://127.0.0.1:8899")
         .await
         .unwrap();
-    assert_eq!(john_client.default_account_id(), account.id_string());
+    assert_eq!(john_client.default_account_id(), user_id.to_string());
     assert!(
         !john_client
             .mailbox_query(None::<Filter>, None::<Vec<_>>)
@@ -378,16 +435,16 @@ pub async fn test(params: &mut JMAPTest) {
         }
     );
 
-    // Destroy test accounts
-    server
-        .core
-        .storage
-        .lookup
-        .purge_in_memory_store()
-        .await
-        .unwrap();
-    params.destroy_all_mailboxes(account).await;
-    params.assert_is_empty().await;
+    // Clean up
+    assert_eq!(
+        admin
+            .registry_destroy(ObjectType::Account, [user_id])
+            .await
+            .destroyed_ids()
+            .collect::<Vec<_>>(),
+        vec![user_id]
+    );
+    test.assert_is_empty().await;
 }
 
 async fn post_bytes(
@@ -518,3 +575,54 @@ fn unwrap_oidc_token_response(response: TokenResponse) -> (String, Option<String
         TokenResponse::Error { error } => panic!("Expected granted, got {:?}", error),
     }
 }
+
+pub trait LoginResponseTest {
+    fn unwrap_code(self) -> String;
+}
+
+impl LoginResponseTest for LoginResponse {
+    fn unwrap_code(self) -> String {
+        match self {
+            LoginResponse::Authenticated { client_code } => client_code,
+            _ => panic!("Expected auth code response, got {:?}", self),
+        }
+    }
+}
+
+const OIDC_SIGNATURE_KEY_RS256: &str = "-----BEGIN PRIVATE KEY-----
+MIIEuwIBADANBgkqhkiG9w0BAQEFAASCBKUwggShAgEAAoIBAQDMXJI1bL3z8gaF
+Ze/6493VjL+jHkFMP2Pc7fLwRF1fhkuIdYTp69LabzrSEJCRCz0UI2NHqPOgtOta
++zRHKAMr7c7Z6uKO0K+aXiQYHw4Y70uSG8CnmNl7kb4OM/CAcoO6fePmvBsyESfn
+TmkJ5bfHEZQFDQEAoDlDjtjxuwYsAQQVQXuAydi8j8pyTWKAJ1RDgnUT+HbOub7j
+JrQ7sPe6MPCjXv5N76v9RMHKktfYwRNMlkLkxImQU55+vlvghNztgFlIlJDFfNiy
+UQPV5FTEZJli9BzMoj1JQK3sZyV8WV0W1zN41QQ+glAAC6+K7iTDPRMINBSwbHyn
+6Lb9Q6U7AgMBAAECggEAB93qZ5xrhYgEFeoyKO4mUdGsu4qZyJB0zNeWGgdaXCfZ
+zC4l8zFM+R6osix0EY6lXRtC95+6h9hfFQNa5FWseupDzmIQiEnim1EowjWef87l
+Eayi0nDRB8TjqZKjR/aLOUhzrPlXHKrKEUk/RDkacCiDklwz9S0LIfLOSXlByBDM
+/n/eczfX2gUATexMHSeIXs8vN2jpuiVv0r+FPXcRvqdzDZnYSzS8BJ9k6RYXVQ4o
+NzCbfqgFIpVryB7nHgSTrNX9G7299If8/dXmesXWSFEJvvDSSpcBoINKbfgSlrxd
+6ubjiotcEIBUSlbaanRrydwShhLHnXyupNAb7tlvyQKBgQDsIipSK4+H9FGl1rAk
+Gg9DLJ7P/94sidhoq1KYnj/CxwGLoRq22khZEUYZkSvYXDu1Qkj9Avi3TRhw8uol
+l2SK1VylL5FQvTLKhWB7b2hjrUd5llMRgS3/NIdLhOgDMB7w3UxJnCA/df/Rj+dM
+WhkyS1f0x3t7XPLwWGurW0nJcwKBgQDdjhrNfabrK7OQvDpAvNJizuwZK9WUL7CD
+rR0V0MpDGYW12BTEOY6tUK6XZgiRitAXf4EkEI6R0Q0bFzwDDLrg7TvGdTuzNeg/
+8vm8IlRlOkrdihtHZI4uRB7Ytmz24vzywEBE0p6enA7v4oniscUks/KKmDGr0V90
+yT9gIVrjGQKBgQCjnWC5otlHGLDiOgm+WhgtMWOxN9dYAQNkMyF+Alinu4CEoVKD
+VGhA3sk1ufMpbW8pvw4X0dFIITFIQeift3DBCemxw23rBc2FqjkaDi3EszINO22/
+eUTHyjvcxfCFFPi7aHsNnhJyJm7lY9Kegudmg/Ij93zGE7d5darVBuHvpQKBgBBY
+YovUgFMLR1UfPeD2zUKy52I4BKrJFemxBNtOKw3mPSIcTfPoFymcMTVENs+eARoq
+svlZK1uAo8ni3e+Pqd3cQrOyhHQFPxwwrdH+amGJemp7vOV4erDZH7l3Q/S27Fhw
+bI1nSIKFGukBupB58wRxLiyha9C0QqmYC0/pRg5JAn8Rbj5tP26oVCXjZEfWJL8J
+axxSxsGA4Vol6i6LYnVgZG+1ez2rP8vUORo1lRzmdeP4o1BSJf9TPwXkuppE5J+t
+UZVKtYGlEn1RqwGNd8I9TiWvU84rcY9nsxlDR86xwKRWFvYqVOiGYtzRyewYRdjU
+rTs9aqB3v1+OVxGxR6Na
+-----END PRIVATE KEY-----
+";
+
+#[allow(dead_code)]
+const OIDC_SIGNATURE_KEY_ES256: &str = "-----BEGIN PRIVATE KEY-----
+MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQggybcqc86ulFFiOon
+WiYrLO4z8/kmkqvA7wGElBok9IqhRANCAAQxZK68FnQtHC0eyh8CA05xRIvxhVHn
+0ymka6XBh9aFtW4wfeoKhTkSKjHc/zjh9Rr2dr3kvmYe80fMGhW4ycGA
+-----END PRIVATE KEY-----
+";

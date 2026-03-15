@@ -245,23 +245,6 @@ pub async fn spam_training_samples(server: &Server) -> TrainingSamples {
     samples
 }
 
-impl ImapConnection {
-    async fn append(&mut self, mailbox: &str, message: &str) {
-        self.send_ok(&format!(
-            "APPEND {:?} {{{}+}}\r\n{}",
-            mailbox,
-            message.len(),
-            message
-        ))
-        .await;
-    }
-
-    async fn send_ok(&mut self, cmd: &str) {
-        self.send(cmd).await;
-        self.assert_read(Type::Tagged, ResponseType::Ok).await;
-    }
-}
-
 pub const SPAM: [&str; 10] = [
     concat!(
         "Subject: save up to = on life insurance\r\n\r\n wh",

@@ -117,6 +117,10 @@ impl Account {
         }
     }
 
+    pub fn update_secret(&mut self, new_secret: &'static str) {
+        self.secret = new_secret;
+    }
+
     pub fn id(&self) -> &Id {
         &self.id
     }

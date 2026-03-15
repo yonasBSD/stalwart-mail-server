@@ -9,7 +9,10 @@ use crate::utils::{
     jmap::{JmapResponse, JmapSetError},
 };
 use registry::{
-    schema::prelude::ObjectType,
+    schema::{
+        prelude::{ObjectType, Property},
+        structs::Action,
+    },
     types::{EnumImpl, ObjectImpl},
 };
 use serde_json::{Value, json};
@@ -125,6 +128,29 @@ impl Account {
             .updated_id(id);
     }
 
+    pub async fn registry_update_setting<T: ObjectImpl>(
+        &self,
+        setting: T,
+        properties: &[Property],
+    ) {
+        let mut item = serde_json::to_value(setting).expect("Failed to serialize setting to JSON");
+
+        if !properties.is_empty() {
+            // Only include the specified properties in the update
+            if let Value::Object(obj) = &mut item {
+                obj.retain(|k, _| properties.iter().any(|p| p.as_str() == k));
+            }
+        }
+
+        self.registry_update(T::OBJECT, [(Id::singleton(), item)])
+            .await
+            .updated_id(Id::singleton());
+    }
+
+    pub async fn reload_settings(&self) {
+        self.registry_create_object(Action::ReloadSettings).await;
+    }
+
     pub async fn registry_update_object_expect_err(
         &self,
         object: ObjectType,
@@ -135,6 +161,19 @@ impl Account {
             .registry_update(object, [(id, item)])
             .await
             .not_updated(&id.to_string())
+            .to_string();
+        serde_json::from_str(&v).expect("Failed to deserialize set error")
+    }
+
+    pub async fn registry_destroy_object_expect_err(
+        &self,
+        object: ObjectType,
+        id: Id,
+    ) -> JmapSetError {
+        let v = self
+            .registry_destroy(object, [id])
+            .await
+            .not_destroyed(&id.to_string())
             .to_string();
         serde_json::from_str(&v).expect("Failed to deserialize set error")
     }

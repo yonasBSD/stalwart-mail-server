@@ -168,9 +168,9 @@ pub struct AccountTenantIds {
 }
 
 pub struct AuthRequest {
-    credentials: Credentials,
-    session_id: u64,
-    remote_ip: IpAddr,
+    pub credentials: Credentials,
+    pub session_id: u64,
+    pub remote_ip: IpAddr,
 }
 
 impl CacheItemWeight for AccessTokenInner {

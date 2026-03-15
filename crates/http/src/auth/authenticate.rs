@@ -31,7 +31,7 @@ impl Authenticator for Server {
             // Check if the credentials are cached
             if let Some(http_cache) = self.inner.cache.http_auth.get(token) {
                 // Make sure the revision is still valid
-                if http_cache.expires <= Instant::now() {
+                if http_cache.expires > Instant::now() {
                     let access_token = AccessToken::renew(
                         self.access_token(http_cache.account_id).await?,
                         http_cache.credential_id,
@@ -152,6 +152,7 @@ fn decode_plain_auth(token: &str) -> Option<Credentials> {
                 .map(|(login, secret)| Credentials::Basic {
                     username: login.trim().to_lowercase(),
                     secret: secret.to_string(),
+                    mfa_token: None,
                 })
         })
 }

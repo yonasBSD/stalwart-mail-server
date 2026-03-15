@@ -103,6 +103,7 @@ impl<T: SessionStream> Session<T> {
                             self.handle_auth(Credentials::Basic {
                                 username,
                                 secret: string,
+                                mfa_token: None,
                             })
                             .await
                             .map(|_| SessionResult::Continue)

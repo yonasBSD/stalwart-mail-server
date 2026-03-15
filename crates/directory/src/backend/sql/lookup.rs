@@ -13,7 +13,9 @@ use utils::sanitize_email;
 impl SqlDirectory {
     pub async fn authenticate(&self, credentials: &Credentials) -> trc::Result<Account> {
         let (username, secret) = match credentials {
-            Credentials::Basic { username, secret } => (username, secret),
+            Credentials::Basic {
+                username, secret, ..
+            } => (username, secret),
             Credentials::Bearer { .. } => {
                 return Err(trc::AuthEvent::Error
                     .into_err()

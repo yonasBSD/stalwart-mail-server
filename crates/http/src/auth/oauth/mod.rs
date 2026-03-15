@@ -152,21 +152,6 @@ pub enum ErrorType {
     ExpiredToken,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(tag = "type")]
-#[serde(rename_all = "camelCase")]
-pub enum OAuthCodeRequest {
-    Code {
-        client_id: String,
-        redirect_uri: Option<String>,
-        #[serde(default)]
-        nonce: Option<String>,
-    },
-    Device {
-        code: String,
-    },
-}
-
 impl TokenResponse {
     pub fn error(error: ErrorType) -> Self {
         TokenResponse::Error { error }

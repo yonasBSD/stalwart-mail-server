@@ -4,8 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::borrow::Cow;
-
 use crate::registry::mapping::{
     ObjectResponse, RegistrySetResponse,
     account::account_set,
@@ -47,6 +45,7 @@ use registry::{
     },
     types::id::ObjectId,
 };
+use std::borrow::Cow;
 use store::registry::{
     bootstrap::Bootstrap,
     write::{RegistryWrite, RegistryWriteResult},

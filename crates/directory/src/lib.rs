@@ -20,6 +20,7 @@ pub enum Credentials {
     Basic {
         username: String,
         secret: String,
+        mfa_token: Option<String>,
     },
     Bearer {
         username: Option<String>,

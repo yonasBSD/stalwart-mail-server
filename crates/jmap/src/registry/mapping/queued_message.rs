@@ -4,8 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::str::FromStr;
-
 use crate::{
     api::query::QueryResponseBuilder,
     registry::{
@@ -38,6 +36,7 @@ use smtp::queue::{
     FROM_UNAUTHENTICATED_DMARC, Message, MessageWrapper, RCPT_DSN_SENT, RCPT_SPAM_PAYLOAD,
     Schedule, Status, spool::SmtpSpool,
 };
+use std::str::FromStr;
 use store::{
     Deserialize, IterateParams, U64_LEN, ValueKey,
     ahash::AHashSet,

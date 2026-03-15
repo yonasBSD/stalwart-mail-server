@@ -16,7 +16,9 @@ use utils::sanitize_email;
 impl LdapDirectory {
     pub async fn authenticate(&self, credentials: &Credentials) -> trc::Result<Account> {
         let (username, secret) = match credentials {
-            Credentials::Basic { username, secret } => (username, secret),
+            Credentials::Basic {
+                username, secret, ..
+            } => (username, secret),
             Credentials::Bearer { token, .. } => (token, token),
         };
         let mut conn = self.pool.get().await.map_err(|err| err.into_error())?;

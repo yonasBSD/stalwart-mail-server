@@ -51,19 +51,12 @@ pub(crate) async fn task_set(
     // Process creations
     'outer: for (id, value) in set.create.drain() {
         let mut task = Task::default();
-        for (key, value) in value.into_expanded_object() {
-            let Key::Property(prop) = key else {
-                set.response.not_created.append(
-                    id,
-                    SetError::invalid_properties().with_property(key.into_owned()),
-                );
-                continue 'outer;
-            };
-            let ptr = JsonPointer::new(vec![JsonPointerItem::Key(Key::Property(prop))]);
-            if let Err(err) = task.patch(JsonPointerPatch::new(&ptr).with_create(true), value) {
-                set.response.not_created.append(id, err.into());
-                continue 'outer;
-            }
+        if let Err(err) = task.patch(
+            JsonPointerPatch::new(&JsonPointer::new(vec![])).with_create(true),
+            value,
+        ) {
+            set.response.not_created.append(id, err.into());
+            continue 'outer;
         }
 
         let mut validation_errors = Vec::new();

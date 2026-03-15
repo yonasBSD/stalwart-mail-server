@@ -106,7 +106,7 @@ pub enum AuthEvent {
     Success = 37,
     Failed = 35,
     TokenExpired = 554,
-    MissingTotp = 36,
+    MfaRequired = 36,
     TooManyAttempts = 38,
     ClientRegistration = 555,
     Error = 34,

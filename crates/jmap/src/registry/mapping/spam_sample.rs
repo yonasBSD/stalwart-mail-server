@@ -4,8 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::str::FromStr;
-
 use crate::{
     api::query::QueryResponseBuilder,
     blob::download::BlobDownload,
@@ -15,7 +13,7 @@ use crate::{
     },
 };
 use jmap_proto::{error::set::SetError, types::state::State};
-use jmap_tools::{JsonPointer, JsonPointerItem, Key};
+use jmap_tools::JsonPointer;
 use mail_parser::{MessageParser, parsers::fields::thread::thread_name};
 use registry::{
     jmap::{IntoValue, JsonPointerPatch, RegistryJsonPatch},
@@ -27,6 +25,7 @@ use registry::{
     },
     types::{EnumImpl, datetime::UTCDateTime, id::ObjectId},
 };
+use std::str::FromStr;
 use store::{
     SerializeInfallible, ValueKey,
     registry::RegistryQuery,
@@ -63,27 +62,13 @@ pub(crate) async fn spam_sample_set(
             );
             continue;
         };
-
-        for (key, value) in value.into_expanded_object() {
-            let Key::Property(prop) = key else {
-                set.response.not_created.append(
-                    id,
-                    SetError::invalid_properties().with_property(key.into_owned()),
-                );
-                continue 'outer;
-            };
-
-            if let Err(err) = sample.patch(
-                JsonPointerPatch::new(&JsonPointer::new(vec![JsonPointerItem::Key(
-                    Key::Property(prop),
-                )]))
-                .with_create(true),
-                value,
-            ) {
-                set.response.not_created.append(id, err.into());
-                continue 'outer;
-            };
-        }
+        if let Err(err) = sample.patch(
+            JsonPointerPatch::new(&JsonPointer::new(vec![])).with_create(true),
+            value,
+        ) {
+            set.response.not_created.append(id, err.into());
+            continue 'outer;
+        };
 
         if sample.blob_id.hash.is_empty() {
             set.response.not_created.append(

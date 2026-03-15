@@ -103,7 +103,7 @@ impl TestServerBuilder {
             (NetworkListenerProtocol::Imap, "imaptls", 9992, true),
             (NetworkListenerProtocol::ManageSieve, "sieve", 4190, true),
             (NetworkListenerProtocol::Pop3, "pop3", 4110, true),
-            (NetworkListenerProtocol::Lmtp, "lmtp-debug", 11201, false),
+            (NetworkListenerProtocol::Lmtp, "lmtp-debug", 11200, false),
         ] {
             this = this.with_listener(protocol, name, port, use_tls).await;
         }

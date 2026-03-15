@@ -12,7 +12,7 @@ use common::{
     psl,
 };
 use jmap_proto::error::set::{SetError, SetErrorType};
-use jmap_tools::{JsonPointer, JsonPointerItem, Key};
+use jmap_tools::{JsonPointer, Key};
 use mail_auth::{
     AuthenticatedMessage, DkimResult, DmarcResult, dmarc::verify::DmarcParameters,
     spf::verify::SpfParameters,
@@ -45,19 +45,12 @@ pub(crate) async fn action_set(
     // Process creations
     'outer: for (id, value) in set.create.drain() {
         let mut action = Action::default();
-        for (key, value) in value.into_expanded_object() {
-            let Key::Property(prop) = key else {
-                set.response.not_created.append(
-                    id,
-                    SetError::invalid_properties().with_property(key.into_owned()),
-                );
-                continue 'outer;
-            };
-            let ptr = JsonPointer::new(vec![JsonPointerItem::Key(Key::Property(prop))]);
-            if let Err(err) = action.patch(JsonPointerPatch::new(&ptr).with_create(true), value) {
-                set.response.not_created.append(id, err.into());
-                continue 'outer;
-            }
+        if let Err(err) = action.patch(
+            JsonPointerPatch::new(&JsonPointer::new(vec![])).with_create(true),
+            value,
+        ) {
+            set.response.not_created.append(id, err.into());
+            continue 'outer;
         }
 
         let mut validation_errors = Vec::new();

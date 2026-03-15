@@ -26,7 +26,11 @@ impl Credentials {
 
         match (String::from_utf8(username), String::from_utf8(secret)) {
             (Ok(username), Ok(secret)) if !username.is_empty() && !secret.is_empty() => {
-                Some(Credentials::Basic { username, secret })
+                Some(Credentials::Basic {
+                    username,
+                    secret,
+                    mfa_token: None,
+                })
             }
             _ => None,
         }

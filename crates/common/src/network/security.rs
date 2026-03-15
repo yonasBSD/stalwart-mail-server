@@ -12,7 +12,7 @@ use crate::{
 use ahash::AHashSet;
 use registry::{
     schema::{
-        enums::{BlockReason, PasswordHashAlgorithm},
+        enums::{BlockReason, PasswordHashAlgorithm, PasswordStrength},
         prelude::{Object, ObjectType},
         structs::{self, AllowedIp, BlockedIp, Rate, SystemSettings},
     },
@@ -29,6 +29,7 @@ use store::{
 use trc::AddContext;
 use types::id::Id;
 use utils::glob::{GlobPattern, MatchType};
+use zxcvbn::Score;
 
 #[derive(Debug, Clone)]
 pub struct Security {
@@ -51,7 +52,7 @@ pub struct Security {
     pub password_hash_algorithm: PasswordHashAlgorithm,
     pub password_max_length: u32,
     pub password_min_length: u32,
-    pub password_min_strength: u8,
+    pub password_min_strength: Score,
 }
 
 #[derive(Default)]
@@ -153,7 +154,13 @@ impl Security {
             password_hash_algorithm: auth.password_hash_algorithm,
             password_max_length: auth.password_max_length as u32,
             password_min_length: auth.password_min_length as u32,
-            password_min_strength: auth.password_min_strength as u8,
+            password_min_strength: match auth.password_min_strength {
+                PasswordStrength::Zero => Score::Zero,
+                PasswordStrength::One => Score::One,
+                PasswordStrength::Two => Score::Two,
+                PasswordStrength::Three => Score::Three,
+                PasswordStrength::Four => Score::Four,
+            },
         }
     }
 }
@@ -342,9 +349,9 @@ impl Server {
                 "Password must be at least {} characters long.",
                 self.core.network.security.password_min_length
             ))
-        } else if self.core.network.security.password_min_strength > 0 {
+        } else if self.core.network.security.password_min_strength > Score::Zero {
             let entropy = zxcvbn::zxcvbn(password, user_inputs);
-            if u8::from(entropy.score()) >= self.core.network.security.password_min_strength {
+            if entropy.score() >= self.core.network.security.password_min_strength {
                 Ok(())
             } else if let Some(feedback) = entropy.feedback() {
                 Err(format!("Password is too weak. {feedback}"))

@@ -17,6 +17,7 @@ impl<T: SessionStream> Session<T> {
             Credentials::Basic {
                 username: arguments.username.to_string(),
                 secret: arguments.password.to_string(),
+                mfa_token: None,
             },
             arguments.tag,
         )

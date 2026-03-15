@@ -132,10 +132,8 @@ impl Server {
         }
 
         // Obtain external directory, if configured
-        if let Some(directory) = domain
-            .id_directory
-            .and_then(|id| self.core.storage.directories.get(&id))
-            .or_else(|| self.get_default_directory())
+        if let Some(directory) = self
+            .get_directory_for_cached_domain(&domain)
             .filter(|directory| directory.can_lookup_recipients())
         {
             let address = if local_part.as_ref() == local_part_orig {

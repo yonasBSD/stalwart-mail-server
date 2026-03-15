@@ -33,4 +33,9 @@ impl Directory {
     pub fn can_lookup_recipients(&self) -> bool {
         !matches!(self, Directory::OpenId(_))
     }
+
+    pub fn oidc_authorization_endpoint(&self) -> Option<String> {
+        let todo = "implement";
+        None
+    }
 }

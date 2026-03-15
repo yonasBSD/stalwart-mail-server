@@ -4,18 +4,17 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use super::{DeviceAuthResponse, FormData, MAX_POST_LEN, OAuthCode, OAuthCodeRequest};
+use super::{DeviceAuthResponse, FormData, MAX_POST_LEN, OAuthCode};
 use crate::auth::oauth::OAuthStatus;
 use common::{
     KV_OAUTH, Server,
     auth::{
-        AccessToken,
+        AuthRequest,
         oauth::{CLIENT_ID_MAX_LEN, DEVICE_CODE_LEN, USER_CODE_ALPHABET, USER_CODE_LEN},
     },
 };
+use directory::Credentials;
 use http_proto::*;
-use serde::Deserialize;
-use serde_json::json;
 use std::future::Future;
 use store::{
     Serialize,
@@ -31,8 +30,9 @@ use store::{
     write::AlignedBytes,
 };
 use trc::AddContext;
+use utils::DomainPart;
 
-#[derive(Debug, serde::Serialize, Deserialize)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct OAuthMetadata {
     pub issuer: String,
     pub token_endpoint: String,
@@ -46,10 +46,10 @@ pub struct OAuthMetadata {
 }
 
 pub trait OAuthApiHandler: Sync + Send {
-    fn handle_oauth_api_request(
+    fn handle_login_request(
         &self,
-        access_token: &AccessToken,
-        body: Option<Vec<u8>>,
+        session: HttpSessionData,
+        body: Vec<u8>,
     ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
 
     fn handle_device_auth(
@@ -65,20 +65,78 @@ pub trait OAuthApiHandler: Sync + Send {
     ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
 }
 
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "type")]
+#[serde(rename_all = "camelCase")]
+pub enum LoginRequest {
+    Discovery {
+        account_name: String,
+    },
+    AuthCode {
+        account_name: String,
+        account_secret: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
+        mfa_token: Option<String>,
+        client_id: String,
+        #[serde(default)]
+        redirect_uri: Option<String>,
+        #[serde(default)]
+        nonce: Option<String>,
+    },
+    AuthDevice {
+        account_name: String,
+        account_secret: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
+        mfa_token: Option<String>,
+        code: String,
+    },
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[serde(tag = "type")]
+#[serde(rename_all = "camelCase")]
+pub enum LoginResponse {
+    Local,
+    External { endpoint: String },
+    Authenticated { client_code: String },
+    Verified,
+    MfaRequired,
+    Failure,
+}
+
 impl OAuthApiHandler for Server {
-    async fn handle_oauth_api_request(
+    async fn handle_login_request(
         &self,
-        access_token: &AccessToken,
-        body: Option<Vec<u8>>,
+        session: HttpSessionData,
+        body: Vec<u8>,
     ) -> trc::Result<HttpResponse> {
-        let request =
-            serde_json::from_slice::<OAuthCodeRequest>(body.as_deref().unwrap_or_default())
-                .map_err(|err| {
-                    trc::EventType::Resource(trc::ResourceEvent::BadParameters).from_json_error(err)
-                })?;
+        let request = serde_json::from_slice::<LoginRequest>(&body).map_err(|err| {
+            trc::EventType::Resource(trc::ResourceEvent::BadParameters).from_json_error(err)
+        })?;
 
         let response = match request {
-            OAuthCodeRequest::Code {
+            LoginRequest::Discovery { account_name } => {
+                let account_name = account_name.trim().to_lowercase();
+                if let Some(domain_name) = account_name.try_domain_part() {
+                    if let Some(endpoint) = self
+                        .get_directory_for_domain(domain_name)
+                        .await?
+                        .and_then(|directory| directory.oidc_authorization_endpoint())
+                    {
+                        LoginResponse::External { endpoint }
+                    } else {
+                        LoginResponse::Local
+                    }
+                } else {
+                    LoginResponse::Local
+                }
+            }
+            LoginRequest::AuthCode {
+                account_name,
+                account_secret,
+                mfa_token,
                 client_id,
                 redirect_uri,
                 nonce,
@@ -97,56 +155,76 @@ impl OAuthApiHandler for Server {
                         .details("Redirect URI must be HTTPS."));
                 }
 
-                // Generate client code
-                let client_code = rng()
-                    .sample_iter(Alphanumeric)
-                    .take(DEVICE_CODE_LEN)
-                    .map(char::from)
-                    .collect::<String>();
+                // Authenticate
+                match self
+                    .authenticate(&AuthRequest {
+                        credentials: Credentials::Basic {
+                            username: account_name,
+                            secret: account_secret,
+                            mfa_token,
+                        },
+                        session_id: session.session_id,
+                        remote_ip: session.remote_ip,
+                    })
+                    .await
+                {
+                    Ok(access_token) => {
+                        // Generate client code
+                        let client_code = rng()
+                            .sample_iter(Alphanumeric)
+                            .take(DEVICE_CODE_LEN)
+                            .map(char::from)
+                            .collect::<String>();
 
-                // Serialize OAuth code
-                let value = Archiver::new(OAuthCode {
-                    status: OAuthStatus::Authorized,
-                    account_id: access_token.account_id(),
-                    client_id,
-                    nonce,
-                    params: redirect_uri.unwrap_or_default(),
-                })
-                .untrusted()
-                .serialize()
-                .caused_by(trc::location!())?;
+                        // Serialize OAuth code
+                        let value = Archiver::new(OAuthCode {
+                            status: OAuthStatus::Authorized,
+                            account_id: access_token.account_id(),
+                            client_id,
+                            nonce,
+                            params: redirect_uri.unwrap_or_default(),
+                        })
+                        .untrusted()
+                        .serialize()
+                        .caused_by(trc::location!())?;
 
-                // Insert client code
-                self.in_memory_store()
-                    .key_set(
-                        KeyValue::with_prefix(KV_OAUTH, client_code.as_bytes(), value)
-                            .expires(self.core.oauth.oauth_expiry_auth_code),
-                    )
-                    .await?;
+                        // Insert client code
+                        self.in_memory_store()
+                            .key_set(
+                                KeyValue::with_prefix(KV_OAUTH, client_code.as_bytes(), value)
+                                    .expires(self.core.oauth.oauth_expiry_auth_code),
+                            )
+                            .await?;
 
-                #[cfg(not(feature = "enterprise"))]
-                let is_enterprise = false;
-
-                // SPDX-SnippetBegin
-                // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
-                // SPDX-License-Identifier: LicenseRef-SEL
-                #[cfg(feature = "enterprise")]
-                let is_enterprise = self.core.is_enterprise_edition();
-                // SPDX-SnippetEnd
-
-                json!({
-                    "data": {
-                        "code": client_code,
-                        "permissions": access_token.permissions(),
-                        "version": env!("CARGO_PKG_VERSION"),
-                        "isEnterprise": is_enterprise,
+                        LoginResponse::Authenticated { client_code }
+                    }
+                    Err(err) => match *err.as_ref() {
+                        trc::EventType::Auth(trc::AuthEvent::MfaRequired) => {
+                            trc::error!(err.span_id(session.session_id));
+                            LoginResponse::MfaRequired
+                        }
+                        trc::EventType::Auth(_) => {
+                            trc::error!(err.span_id(session.session_id));
+                            LoginResponse::Failure
+                        }
+                        trc::EventType::Security(_) => {
+                            trc::error!(err.span_id(session.session_id));
+                            LoginResponse::Failure
+                        }
+                        _ => {
+                            return Err(err);
+                        }
                     },
-                })
+                }
             }
-            OAuthCodeRequest::Device { code } => {
-                let mut success = false;
-
+            LoginRequest::AuthDevice {
+                account_name,
+                account_secret,
+                mfa_token,
+                code,
+            } => {
                 // Obtain code
+                let mut result = LoginResponse::Failure;
                 if let Some(auth_code_) = self
                     .in_memory_store()
                     .key_get::<Archive<AlignedBytes>>(KeyValue::<()>::build_key(
@@ -159,40 +237,75 @@ impl OAuthApiHandler for Server {
                         .unarchive::<OAuthCode>()
                         .caused_by(trc::location!())?;
                     if oauth.status == OAuthStatus::Pending {
-                        let new_oauth_code = OAuthCode {
-                            status: OAuthStatus::Authorized,
-                            account_id: access_token.account_id(),
-                            client_id: oauth.client_id.to_string(),
-                            nonce: oauth.nonce.as_ref().map(|s| s.to_string()),
-                            params: Default::default(),
-                        };
-                        success = true;
+                        // Authenticate
+                        match self
+                            .authenticate(&AuthRequest {
+                                credentials: Credentials::Basic {
+                                    username: account_name,
+                                    secret: account_secret,
+                                    mfa_token,
+                                },
+                                session_id: session.session_id,
+                                remote_ip: session.remote_ip,
+                            })
+                            .await
+                        {
+                            Ok(access_token) => {
+                                let new_oauth_code = OAuthCode {
+                                    status: OAuthStatus::Authorized,
+                                    account_id: access_token.account_id(),
+                                    client_id: oauth.client_id.to_string(),
+                                    nonce: oauth.nonce.as_ref().map(|s| s.to_string()),
+                                    params: Default::default(),
+                                };
 
-                        // Delete issued user code
-                        self.in_memory_store()
-                            .key_delete(KeyValue::<()>::build_key(KV_OAUTH, code.as_bytes()))
-                            .await?;
+                                // Delete issued user code
+                                self.in_memory_store()
+                                    .key_delete(KeyValue::<()>::build_key(
+                                        KV_OAUTH,
+                                        code.as_bytes(),
+                                    ))
+                                    .await?;
 
-                        // Update device code status
-                        self.in_memory_store()
-                            .key_set(
-                                KeyValue::with_prefix(
-                                    KV_OAUTH,
-                                    oauth.params.as_bytes(),
-                                    Archiver::new(new_oauth_code)
-                                        .untrusted()
-                                        .serialize()
-                                        .caused_by(trc::location!())?,
-                                )
-                                .expires(self.core.oauth.oauth_expiry_auth_code),
-                            )
-                            .await?;
+                                // Update device code status
+                                self.in_memory_store()
+                                    .key_set(
+                                        KeyValue::with_prefix(
+                                            KV_OAUTH,
+                                            oauth.params.as_bytes(),
+                                            Archiver::new(new_oauth_code)
+                                                .untrusted()
+                                                .serialize()
+                                                .caused_by(trc::location!())?,
+                                        )
+                                        .expires(self.core.oauth.oauth_expiry_auth_code),
+                                    )
+                                    .await?;
+
+                                result = LoginResponse::Verified;
+                            }
+                            Err(err) => match *err.as_ref() {
+                                trc::EventType::Auth(trc::AuthEvent::MfaRequired) => {
+                                    trc::error!(err.span_id(session.session_id));
+                                    result = LoginResponse::MfaRequired;
+                                }
+                                trc::EventType::Auth(_) => {
+                                    trc::error!(err.span_id(session.session_id));
+                                    result = LoginResponse::Failure;
+                                }
+                                trc::EventType::Security(_) => {
+                                    trc::error!(err.span_id(session.session_id));
+                                    result = LoginResponse::Failure;
+                                }
+                                _ => {
+                                    return Err(err);
+                                }
+                            },
+                        }
                     }
                 }
 
-                json!({
-                    "data": success,
-                })
+                result
             }
         };
 
@@ -256,6 +369,8 @@ impl OAuthApiHandler for Server {
                     .expires(self.core.oauth.oauth_expiry_user_code),
             )
             .await?;
+
+        let c = println!("Expires in: {}", self.core.oauth.oauth_expiry_user_code);
 
         // Insert user code
         self.in_memory_store()

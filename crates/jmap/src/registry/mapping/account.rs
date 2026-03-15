@@ -24,7 +24,7 @@ use common::{
     cache::invalidate::CacheInvalidationBuilder,
     ipc::CacheInvalidation,
 };
-use directory::core::secret::{hash_secret, verify_otp_auth, verify_secret_hash};
+use directory::core::secret::{SecretVerificationResult, hash_secret, verify_mfa_secret_hash};
 use jmap_proto::{error::set::SetError, types::state::State};
 use jmap_tools::{JsonPointer, JsonPointerItem, Key, Map, Value};
 use registry::{
@@ -143,36 +143,25 @@ pub(crate) async fn account_set(
                 'outer: for (id, value) in set.create.drain() {
                     let mut credential = Credential::default();
 
-                    for (key, value) in value.into_expanded_object() {
-                        let Key::Property(prop) = key else {
+                    // Patch object
+                    match credential.patch(
+                        JsonPointerPatch::new(&JsonPointer::new(vec![])).with_create(true),
+                        value,
+                    ) {
+                        Ok(MaybeUnpatched::Patched) => {}
+                        Ok(
+                            MaybeUnpatched::Unpatched { .. } | MaybeUnpatched::UnpatchedMany { .. },
+                        ) => {
                             set.response.not_created.append(
                                 id,
-                                SetError::invalid_properties().with_property(key.into_owned()),
+                                SetError::invalid_properties()
+                                    .with_description("Cannot set property during creation."),
                             );
                             continue 'outer;
-                        };
-                        let ptr = JsonPointer::new(vec![JsonPointerItem::Key(Key::Property(prop))]);
-
-                        // Patch object
-                        match credential.patch(JsonPointerPatch::new(&ptr).with_create(true), value)
-                        {
-                            Ok(MaybeUnpatched::Patched) => {}
-                            Ok(
-                                MaybeUnpatched::Unpatched { .. }
-                                | MaybeUnpatched::UnpatchedMany { .. },
-                            ) => {
-                                set.response.not_created.append(
-                                    id,
-                                    SetError::invalid_properties()
-                                        .with_property(prop)
-                                        .with_description("Cannot set property during creation."),
-                                );
-                                continue 'outer;
-                            }
-                            Err(err) => {
-                                set.response.not_created.append(id, err.into());
-                                continue 'outer;
-                            }
+                        }
+                        Err(err) => {
+                            set.response.not_created.append(id, err.into());
+                            continue 'outer;
                         }
                     }
 
@@ -202,23 +191,27 @@ pub(crate) async fn account_set(
                             credential.credential_id = last_credential_id.into();
 
                             // Generate App password and hash secret
-                            let app_ass = AppPassword::new(last_credential_id as u32).build();
+                            let app_pass = AppPassword::new(last_credential_id as u32);
                             credential.secret = hash_secret(
                                 set.server.core.network.security.password_hash_algorithm,
-                                app_ass.clone(),
+                                app_pass.secret.to_vec(),
                             )
                             .await
                             .caused_by(trc::location!())?;
+
                             set.response.created.insert(
                                 id,
                                 Value::Object(Map::from(vec![
                                     (
-                                        Key::Property(Property::Secret),
+                                        Key::Property(Property::Id),
                                         Value::Element(RegistryValue::Id(
                                             last_credential_id.into(),
                                         )),
                                     ),
-                                    (Key::Property(Property::Secret), Value::Str(app_ass.into())),
+                                    (
+                                        Key::Property(Property::Secret),
+                                        Value::Str(app_pass.build().into()),
+                                    ),
                                 ])),
                             );
                         }
@@ -246,24 +239,27 @@ pub(crate) async fn account_set(
                             credential.credential_id = last_credential_id.into();
 
                             // Generate API key and hash secret
-                            let api_key =
-                                ApiKey::new(set.account_id, last_credential_id as u32).build();
+                            let api_key = ApiKey::new(set.account_id, last_credential_id as u32);
                             credential.secret = hash_secret(
                                 set.server.core.network.security.password_hash_algorithm,
-                                api_key.clone(),
+                                api_key.secret.to_vec(),
                             )
                             .await
                             .caused_by(trc::location!())?;
+
                             set.response.created.insert(
                                 id,
                                 Value::Object(Map::from(vec![
                                     (
-                                        Key::Property(Property::Secret),
+                                        Key::Property(Property::Id),
                                         Value::Element(RegistryValue::Id(
                                             last_credential_id.into(),
                                         )),
                                     ),
-                                    (Key::Property(Property::Secret), Value::Str(api_key.into())),
+                                    (
+                                        Key::Property(Property::Secret),
+                                        Value::Str(api_key.build().into()),
+                                    ),
                                 ])),
                             );
                         }
@@ -273,19 +269,23 @@ pub(crate) async fn account_set(
                                 SetError::forbidden()
                                     .with_description("Cannot create a password credential."),
                             );
+                            continue 'outer;
                         }
                     }
+
+                    // Add credential to account
+                    account.credentials.push(credential);
                 }
             }
 
             // Process updates
             'outer: for (id, value) in set.update.drain(..) {
-                if let Some(credential) = account
+                if let Some(mut old_credential) = account
                     .credentials
                     .values_mut()
                     .find(|credential| credential.credential_id() == id)
                 {
-                    let old_credential = credential.clone();
+                    let mut credential = old_credential.clone();
                     let mut unpatched_properties = VecMap::new();
 
                     for (key, value) in value.into_expanded_object() {
@@ -318,12 +318,12 @@ pub(crate) async fn account_set(
                         }
                     }
 
-                    if credential == &old_credential {
+                    if &credential == old_credential {
                         set.response.updated.append(id, None);
                         continue 'outer;
                     }
 
-                    match (credential, old_credential) {
+                    match (&mut credential, &mut old_credential) {
                         (
                             Credential::Password(credential),
                             Credential::Password(old_credential),
@@ -361,9 +361,9 @@ pub(crate) async fn account_set(
                                     .server
                                     .domain_by_id(account.domain_id.document_id())
                                     .await?
-                                    .and_then(|domain| domain.id_directory)
-                                    .and_then(|domain_id| set.server.get_directory(&domain_id))
-                                    .or_else(|| set.server.get_default_directory())
+                                    .and_then(|domain| {
+                                        set.server.get_directory_for_cached_domain(&domain)
+                                    })
                                     .is_some()
                             {
                                 set.response.not_updated.append(
@@ -396,59 +396,56 @@ pub(crate) async fn account_set(
                                     .and_then(|v| v.as_str())
                                     .filter(|v| !v.is_empty())
                                 {
-                                    if !verify_secret_hash(
+                                    match verify_mfa_secret_hash(
+                                        old_credential.otp_auth.as_deref(),
+                                        current_otp_code.as_deref(),
                                         &old_credential.secret,
-                                        current_secret.as_bytes(),
+                                        current_secret.as_ref(),
                                     )
                                     .await?
-                                        || !verify_otp_auth(
-                                            old_credential.otp_auth.as_deref(),
-                                            current_otp_code.as_deref(),
-                                        )?
                                     {
-                                        let account = set.server.account(set.account_id).await?;
-                                        if set.server.has_auth_fail2ban()
-                                            && set
-                                                .server
-                                                .is_auth_fail2banned(
-                                                    set.remote_ip,
-                                                    account.name().into(),
-                                                )
-                                                .await?
-                                        {
-                                            return Err(trc::SecurityEvent::AuthenticationBan
-                                                .into_err()
-                                                .details(
-                                                    "Too many failed password change attempts.",
-                                                )
-                                                .ctx(trc::Key::RemoteIp, set.remote_ip)
-                                                .ctx(
-                                                    trc::Key::AccountName,
-                                                    account.name().to_string(),
-                                                ));
-                                        } else {
+                                        SecretVerificationResult::Valid => {}
+                                        SecretVerificationResult::Invalid => {
+                                            let account =
+                                                set.server.account(set.account_id).await?;
+                                            if set.server.has_auth_fail2ban()
+                                                && set
+                                                    .server
+                                                    .is_auth_fail2banned(
+                                                        set.remote_ip,
+                                                        account.name().into(),
+                                                    )
+                                                    .await?
+                                            {
+                                                return Err(trc::SecurityEvent::AuthenticationBan
+                                                    .into_err()
+                                                    .details(
+                                                        "Too many failed password change attempts.",
+                                                    )
+                                                    .ctx(trc::Key::RemoteIp, set.remote_ip)
+                                                    .ctx(
+                                                        trc::Key::AccountName,
+                                                        account.name().to_string(),
+                                                    ));
+                                            } else {
+                                                set.response.not_updated.append(
+                                                    id,
+                                                    SetError::forbidden().with_description(
+                                                        "Current secret is incorrect.",
+                                                    ),
+                                                );
+                                                continue 'outer;
+                                            }
+                                        }
+                                        SecretVerificationResult::MissingMfaToken => {
                                             set.response.not_updated.append(
                                                 id,
                                                 SetError::forbidden().with_description(
-                                                    "Current secret is incorrect.",
+                                                    "Current OTP code is required to change the password or OTP auth.",
                                                 ),
                                             );
                                             continue 'outer;
                                         }
-                                    }
-
-                                    if credential.otp_auth != old_credential.otp_auth
-                                        && !verify_otp_auth(
-                                            credential.otp_auth.as_deref(),
-                                            current_otp_code.as_deref(),
-                                        )?
-                                    {
-                                        set.response.not_updated.append(
-                                            id,
-                                            SetError::forbidden()
-                                                .with_description("OTP URL or token is invalid."),
-                                        );
-                                        continue 'outer;
                                     }
 
                                     if credential.secret != old_credential.secret {
@@ -469,7 +466,7 @@ pub(crate) async fn account_set(
                                                 .network
                                                 .security
                                                 .password_hash_algorithm,
-                                            std::mem::take(&mut credential.secret),
+                                            std::mem::take(&mut credential.secret).into_bytes(),
                                         )
                                         .await
                                         .caused_by(trc::location!())?;
@@ -504,6 +501,8 @@ pub(crate) async fn account_set(
                         _ => {}
                     }
 
+                    *old_credential = credential;
+
                     set.response.updated.append(id, None);
                 } else {
                     set.response.not_updated.append(id, SetError::not_found());
@@ -512,11 +511,25 @@ pub(crate) async fn account_set(
 
             // Process deletions
             for id in set.destroy.drain(..) {
-                if let Some(idx) = account.credentials.0.inner.iter_mut().position(|c| {
-                    c.value.credential_id() == id && !matches!(c.value, Credential::Password(_))
-                }) {
-                    account.credentials.inner_mut().inner.remove(idx);
-                    set.response.destroyed.push(id);
+                if let Some(idx) = account
+                    .credentials
+                    .0
+                    .inner
+                    .iter_mut()
+                    .position(|c| c.value.credential_id() == id)
+                {
+                    let credentials = &mut account.credentials.inner_mut().inner;
+                    if !matches!(credentials[idx].value, Credential::Password(_)) {
+                        credentials.remove(idx);
+                        set.response.destroyed.push(id);
+                    } else {
+                        set.response.not_destroyed.append(
+                            id,
+                            SetError::forbidden().with_description(
+                                "Users are not allowed to destroy their own credentials.",
+                            ),
+                        );
+                    }
                 } else {
                     set.response.not_destroyed.append(id, SetError::not_found());
                 }

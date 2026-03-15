@@ -6,6 +6,7 @@
 
 pub mod authentication;
 pub mod directory;
+pub mod oidc;
 
 use crate::utils::server::TestServerBuilder;
 
@@ -32,5 +33,6 @@ pub async fn system_tests() {
         .await;
 
     //directory::test(&test).await;
-    authentication::test(&test).await;
+    //authentication::test(&test).await;
+    oidc::test(&mut test).await;
 }
