@@ -15,7 +15,7 @@ use registry::{
             Account, Credential, CredentialPermissions, CredentialPermissionsList, CustomRoles,
             Domain, EmailAlias, EncryptionAtRest, EncryptionSettings, GroupAccount, MailingList,
             PasswordCredential, Permissions, PermissionsList, PublicKey, Roles,
-            SecondaryCredential, UserAccount,
+            SecondaryCredential, UserAccount, UserRoles,
         },
     },
     types::{
@@ -99,7 +99,7 @@ pub async fn test(test: &TestServer) {
             (StorageQuota::MaxDiskQuota, 1024u64),
             (StorageQuota::MaxApiKeys, 3u64),
         ]),
-        roles: Roles::Custom(CustomRoles {
+        roles: UserRoles::Custom(CustomRoles {
             role_ids: Map::new(vec![5000u64.into()]),
         }),
     });

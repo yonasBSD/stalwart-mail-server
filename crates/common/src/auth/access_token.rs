@@ -17,7 +17,7 @@ use ahash::AHasher;
 use registry::{
     schema::{
         enums::Permission,
-        structs::{self, Account, Roles},
+        structs::{self, Account, Roles, UserRoles},
     },
     types::EnumImpl,
 };
@@ -46,10 +46,18 @@ impl Server {
                 let permissions = self
                     .effective_permissions(
                         &account.permissions,
-                        account
-                            .roles
-                            .role_ids()
-                            .unwrap_or(self.core.network.security.default_role_ids_user.as_slice()),
+                        match &account.roles {
+                            UserRoles::User => {
+                                self.core.network.security.default_role_ids_user.as_slice()
+                            }
+                            UserRoles::TenantAdmin => self
+                                .core
+                                .network
+                                .security
+                                .default_role_ids_tenant
+                                .as_slice(),
+                            UserRoles::Custom(custom_roles) => custom_roles.role_ids.as_slice(),
+                        },
                         tenant_id,
                     )
                     .await?;
@@ -731,8 +739,14 @@ fn hash_account(account: &Account) -> u64 {
         Account::User(account) => {
             account.member_tenant_id.hash(&mut s);
             match &account.roles {
-                Roles::Default => {}
-                Roles::Custom(custom_roles) => {
+                UserRoles::User => {
+                    0u8.hash(&mut s);
+                }
+                UserRoles::TenantAdmin => {
+                    1u8.hash(&mut s);
+                }
+                UserRoles::Custom(custom_roles) => {
+                    2u8.hash(&mut s);
                     custom_roles.role_ids.as_slice().hash(&mut s);
                 }
             }

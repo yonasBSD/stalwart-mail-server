@@ -420,6 +420,9 @@ impl RegistrySet for Server {
                         ObjectInner::OAuthClient(_) if is_create => {
                             validate_tenant_quota(&set, TenantStorageQuota::MaxOauthClients).await?
                         }
+                        ObjectInner::DnsServer(_) if is_create => {
+                            validate_tenant_quota(&set, TenantStorageQuota::MaxDnsServers).await?
+                        }
                         _ => Ok(ObjectResponse::default()),
                     };
 

@@ -260,12 +260,20 @@ impl RegistryGet for Server {
                                 || get.properties.contains(&Property::DnsZoneFile) =>
                         {
                             let todo = "domain dns zone file";
-                            todo!()
                         }
                         _ => {}
                     }
 
-                    get.insert(id, object.into_value());
+                    let mut object = object.into_value();
+                    if !extra_properties.is_empty()
+                        && let JmapValue::Object(obj) = &mut object
+                    {
+                        for (key, value) in extra_properties {
+                            obj.insert_unchecked(key, value);
+                        }
+                    }
+
+                    get.insert(id, object);
                 }
 
                 Ok(get.into_response())
@@ -300,30 +308,9 @@ impl RegistryGetResponse<'_> {
     pub fn insert(&mut self, id: Id, mut object: JmapValue<'static>) {
         let object_map = object.as_object_mut().unwrap();
 
-        if self.is_tenant_filtered
-            && let Some(tenant_id) = self.access_token.tenant_id()
-        {
-            let expected_value = JmapValue::Element(RegistryValue::Id(Id::from(tenant_id)));
-            for (key, value) in object_map.iter() {
-                if matches!(key, Key::Property(Property::MemberTenantId))
-                    && (value != &expected_value
-                        || value
-                            .as_array()
-                            .is_none_or(|arr| !arr.contains(&expected_value)))
-                {
-                    self.not_found(id);
-                    return;
-                }
-            }
+        if self.is_tenant_filtered && self.access_token.tenant_id().is_some() {
             object_map.remove(&Key::Property(Property::MemberTenantId));
         } else if self.is_account_filtered {
-            let expected_value = JmapValue::Element(RegistryValue::Id(self.account_id.into()));
-            for (key, value) in object_map.iter() {
-                if matches!(key, Key::Property(Property::AccountId)) && value != &expected_value {
-                    self.not_found(id);
-                    return;
-                }
-            }
             object_map.remove(&Key::Property(Property::AccountId));
         }
 

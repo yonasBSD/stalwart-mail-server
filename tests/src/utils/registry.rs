@@ -41,6 +41,31 @@ impl Account {
         .await
     }
 
+    pub async fn registry_get<T: ObjectImpl>(&self, id: Id) -> T {
+        let name = T::OBJECT.as_str();
+
+        let value = self
+            .jmap_get_account(self, format!("x:{name}"), Vec::<&str>::new(), vec![id])
+            .await
+            .list()[0]
+            .to_string();
+        serde_json::from_str(&value).expect("Failed to deserialize item")
+    }
+
+    pub async fn registry_get_many(
+        &self,
+        object_type: ObjectType,
+        ids: impl IntoIterator<Item = impl Display>,
+    ) -> JmapResponse {
+        self.jmap_get_account(
+            self,
+            format!("x:{}", object_type.as_str()),
+            Vec::<&str>::new(),
+            ids,
+        )
+        .await
+    }
+
     pub async fn registry_update(
         &self,
         object: ObjectType,
@@ -206,8 +231,10 @@ fn remove_server_set_props(value: &mut serde_json::Value) {
             .get("@type")
             .and_then(|v| v.as_str())
             .is_some_and(|t| ["AppPassword", "ApiKey"].contains(&t));
-        obj.retain(|k, _| {
-            !(["createdAt", "credentialId"].contains(&k.as_str()) || (is_app_pass && k == "secret"))
+        obj.retain(|k, v| {
+            !(["createdAt", "credentialId", "retireAt"].contains(&k.as_str())
+                || (is_app_pass && k == "secret")
+                || (k == "memberTenantId" && v.is_null()))
         });
         for v in obj.values_mut() {
             remove_server_set_props(v);

@@ -370,8 +370,6 @@ impl OAuthApiHandler for Server {
             )
             .await?;
 
-        let c = println!("Expires in: {}", self.core.oauth.oauth_expiry_user_code);
-
         // Insert user code
         self.in_memory_store()
             .key_set(

@@ -197,10 +197,10 @@ impl CacheInvalidationBuilder {
 impl Server {
     pub async fn invalidate_caches(&self, changes: CacheInvalidationBuilder) -> trc::Result<()> {
         let mut changes = changes.changes;
-        let c = println!("Invalidating caches for changes: {:?}", changes);
         if changes.is_empty() {
             return Ok(());
         }
+        let c = println!("Invalidating caches for changes: {:?}", changes);
 
         // Invalidate objects linking roles
         let mut role_ids = changes

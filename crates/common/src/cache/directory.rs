@@ -12,6 +12,7 @@ use registry::{
         prelude::{Object, ObjectType},
         structs::{
             Account, Credential, EmailAlias, GroupAccount, PasswordCredential, Roles, UserAccount,
+            UserRoles,
         },
     },
     types::{datetime::UTCDateTime, id::ObjectId, list::List},
@@ -180,7 +181,7 @@ impl Server {
                     description: account.description,
                     member_group_ids: member_group_ids.into(),
                     member_tenant_id: domain.id_tenant.map(Id::from),
-                    roles: Roles::Default,
+                    roles: UserRoles::User,
                     credentials: List::from_iter([Credential::Password(PasswordCredential {
                         secret: account.secret.unwrap_or_default(),
                         ..Default::default()

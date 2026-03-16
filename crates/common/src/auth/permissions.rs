@@ -12,7 +12,7 @@ use ahash::AHashSet;
 use registry::{
     schema::{
         enums::Permission,
-        structs::{self, Account, PermissionsList},
+        structs::{self, Account, PermissionsList, UserRoles},
     },
     types::EnumImpl,
 };
@@ -112,10 +112,16 @@ impl Server {
         let (permissions, role_ids, tenant_id) = match account {
             Account::User(account) => (
                 &account.permissions,
-                account
-                    .roles
-                    .role_ids()
-                    .unwrap_or(self.core.network.security.default_role_ids_user.as_slice()),
+                match &account.roles {
+                    UserRoles::User => self.core.network.security.default_role_ids_user.as_slice(),
+                    UserRoles::TenantAdmin => self
+                        .core
+                        .network
+                        .security
+                        .default_role_ids_tenant
+                        .as_slice(),
+                    UserRoles::Custom(custom_roles) => custom_roles.role_ids.as_slice(),
+                },
                 account.member_tenant_id.map(|t| t.document_id()),
             ),
             Account::Group(account) => (

@@ -796,7 +796,7 @@ pub(crate) async fn credential_query(
     Ok(response)
 }
 
-fn validate_credential_permissions(
+pub(crate) fn validate_credential_permissions(
     access_token: &AccessToken,
     credential: &SecondaryCredential,
 ) -> Result<(), SetError<Property>> {
