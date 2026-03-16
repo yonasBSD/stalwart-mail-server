@@ -83,13 +83,7 @@ impl OAuthConfig {
             SignatureAlgorithm::None
             | SignatureAlgorithm::HS256
             | SignatureAlgorithm::HS384
-            | SignatureAlgorithm::HS512 => (
-                Secret::Bytes(signature_key.as_bytes().to_vec()),
-                AlgorithmParameters::OctetKey(OctetKeyParameters {
-                    key_type: OctetKeyType::Octet,
-                    value: signature_key.as_bytes().to_vec(),
-                }),
-            ),
+            | SignatureAlgorithm::HS512 => (Secret::Bytes(signature_key.as_bytes().to_vec()), None),
             SignatureAlgorithm::RS256
             | SignatureAlgorithm::RS384
             | SignatureAlgorithm::RS512
@@ -100,13 +94,15 @@ impl OAuthConfig {
                 .map_err(|err| {
                     bp.build_error(ObjectType::OidcProvider.singleton(), err);
                 })
+                .map(|(secret, alg)| (secret, Some(alg)))
                 .unwrap_or_else(|_| {
                     (
                         Secret::Bytes(rand_key.clone()),
                         AlgorithmParameters::OctetKey(OctetKeyParameters {
                             key_type: OctetKeyType::Octet,
                             value: rand_key,
-                        }),
+                        })
+                        .into(),
                     )
                 }),
             SignatureAlgorithm::ES256 | SignatureAlgorithm::ES384 | SignatureAlgorithm::ES512 => {
@@ -115,13 +111,15 @@ impl OAuthConfig {
                     .map_err(|err| {
                         bp.build_error(ObjectType::OidcProvider.singleton(), err);
                     })
+                    .map(|(secret, alg)| (secret, Some(alg)))
                     .unwrap_or_else(|_| {
                         (
                             Secret::Bytes(rand_key.clone()),
                             AlgorithmParameters::OctetKey(OctetKeyParameters {
                                 key_type: OctetKeyType::Octet,
                                 value: rand_key,
-                            }),
+                            })
+                            .into(),
                         )
                     })
             }
@@ -130,16 +128,19 @@ impl OAuthConfig {
         let oidc_jwks = Resource {
             content_type: "application/json".into(),
             contents: serde_json::to_string(&JWKSet {
-                keys: vec![JWK {
-                    common: CommonParameters {
-                        public_key_use: PublicKeyUse::Signature.into(),
-                        algorithm: Algorithm::Signature(oidc_signature_algorithm).into(),
-                        key_id: "default".to_string().into(),
-                        ..Default::default()
-                    },
-                    algorithm,
-                    additional: (),
-                }],
+                keys: algorithm
+                    .into_iter()
+                    .map(|algorithm| JWK {
+                        common: CommonParameters {
+                            public_key_use: PublicKeyUse::Signature.into(),
+                            algorithm: Algorithm::Signature(oidc_signature_algorithm).into(),
+                            key_id: "default".to_string().into(),
+                            ..Default::default()
+                        },
+                        algorithm,
+                        additional: (),
+                    })
+                    .collect(),
             })
             .unwrap_or_default()
             .into_bytes(),
