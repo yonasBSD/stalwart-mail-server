@@ -169,5 +169,5 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Cleanup
     account.destroy_all_calendars().await;
-    params.assert_is_empty().await;
+    test.assert_is_empty().await;;
 }

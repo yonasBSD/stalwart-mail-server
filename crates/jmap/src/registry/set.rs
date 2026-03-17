@@ -479,9 +479,15 @@ impl RegistrySet for Server {
                         }
                         Modification::Update { id, object } => {
                             if object.inner != new_object.inner {
-                                self.registry()
-                                    .write(RegistryWrite::update(*id, &new_object, object))
-                                    .await?
+                                if !(is_singleton && object.revision == 0) {
+                                    self.registry()
+                                        .write(RegistryWrite::update(*id, &new_object, object))
+                                        .await?
+                                } else {
+                                    self.registry()
+                                        .write(RegistryWrite::insert(&new_object))
+                                        .await?
+                                }
                             } else {
                                 set.response.updated.append(*id, None);
                                 continue;

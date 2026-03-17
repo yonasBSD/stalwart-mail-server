@@ -111,6 +111,7 @@ pub enum AuthEvent {
     ClientRegistration = 555,
     Error = 34,
     Warning = 595,
+    CredentialExpired = 276,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -401,8 +402,6 @@ pub enum MailAuthEvent {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u16)]
 pub enum ManageEvent {
-    Reserved3 = 276,
-    Reserved4 = 279,
     Reserved5 = 280,
     Reserved6 = 277,
 }
@@ -608,6 +607,7 @@ pub enum SecurityEvent {
     IpBlocked = 318,
     IpBlockExpired = 593,
     IpAllowExpired = 594,
+    IpUnauthorized = 279,
     Unauthorized = 552,
 }
 

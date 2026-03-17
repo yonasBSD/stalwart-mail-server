@@ -271,14 +271,14 @@ impl ParseHttp for Server {
                 }
                 ("oauth-authorization-server", &Method::GET) => {
                     // Limit anonymous requests
-                    self.is_http_anonymous_request_allowed(&session.remote_ip)
+                    self.is_http_anonymous_request_allowed(session.remote_ip)
                         .await?;
 
                     return self.handle_oauth_metadata(req, session).await;
                 }
                 ("openid-configuration", &Method::GET) => {
                     // Limit anonymous requests
-                    self.is_http_anonymous_request_allowed(&session.remote_ip)
+                    self.is_http_anonymous_request_allowed(session.remote_ip)
                         .await?;
 
                     return self.handle_oidc_metadata(req, session).await;
@@ -298,7 +298,7 @@ impl ParseHttp for Server {
                 }
                 ("mta-sts.txt", &Method::GET) => {
                     // Limit anonymous requests
-                    self.is_http_anonymous_request_allowed(&session.remote_ip)
+                    self.is_http_anonymous_request_allowed(session.remote_ip)
                         .await?;
 
                     return if let Some(policy) = self.build_mta_sts_policy() {
@@ -310,7 +310,7 @@ impl ParseHttp for Server {
                 }
                 ("mail-v1.xml", &Method::GET) => {
                     // Limit anonymous requests
-                    self.is_http_anonymous_request_allowed(&session.remote_ip)
+                    self.is_http_anonymous_request_allowed(session.remote_ip)
                         .await?;
 
                     return self.handle_autoconfig_request(&req).await;
@@ -320,7 +320,7 @@ impl ParseHttp for Server {
                         && path.next().unwrap_or_default() == "config-v1.1.xml"
                     {
                         // Limit anonymous requests
-                        self.is_http_anonymous_request_allowed(&session.remote_ip)
+                        self.is_http_anonymous_request_allowed(session.remote_ip)
                             .await?;
 
                         return self.handle_autoconfig_request(&req).await;
@@ -333,7 +333,7 @@ impl ParseHttp for Server {
             },
             "auth" => match (path.next().unwrap_or_default(), req.method()) {
                 ("login", &Method::POST) => {
-                    self.is_http_anonymous_request_allowed(&session.remote_ip)
+                    self.is_http_anonymous_request_allowed(session.remote_ip)
                         .await?;
 
                     let bytes = fetch_body(&mut req, 4096, session.session_id)
@@ -343,13 +343,13 @@ impl ParseHttp for Server {
                     return self.handle_login_request(session, bytes).await;
                 }
                 ("device", &Method::POST) => {
-                    self.is_http_anonymous_request_allowed(&session.remote_ip)
+                    self.is_http_anonymous_request_allowed(session.remote_ip)
                         .await?;
 
                     return self.handle_device_auth(&mut req, session).await;
                 }
                 ("token", &Method::POST) => {
-                    self.is_http_anonymous_request_allowed(&session.remote_ip)
+                    self.is_http_anonymous_request_allowed(session.remote_ip)
                         .await?;
 
                     return self.handle_token_request(&mut req, session).await;
@@ -379,7 +379,7 @@ impl ParseHttp for Server {
                 }
                 ("jwks.json", &Method::GET) => {
                     // Limit anonymous requests
-                    self.is_http_anonymous_request_allowed(&session.remote_ip)
+                    self.is_http_anonymous_request_allowed(session.remote_ip)
                         .await?;
 
                     return Ok(self.core.oauth.oidc_jwks.clone().into_http_response());
@@ -440,7 +440,7 @@ impl ParseHttp for Server {
                     && path.next().unwrap_or_default() == "config-v1.1.xml"
                 {
                     // Limit anonymous requests
-                    self.is_http_anonymous_request_allowed(&session.remote_ip)
+                    self.is_http_anonymous_request_allowed(session.remote_ip)
                         .await?;
 
                     return self.handle_autoconfig_request(&req).await;
@@ -448,7 +448,7 @@ impl ParseHttp for Server {
             }
             "calendar" => {
                 // Limit anonymous requests
-                self.is_http_anonymous_request_allowed(&session.remote_ip)
+                self.is_http_anonymous_request_allowed(session.remote_ip)
                     .await?;
 
                 if self.core.groupware.itip_http_rsvp_url.is_some()
@@ -483,7 +483,7 @@ impl ParseHttp for Server {
                         .eq_ignore_ascii_case("autodiscover.xml")
                 {
                     // Limit anonymous requests
-                    self.is_http_anonymous_request_allowed(&session.remote_ip)
+                    self.is_http_anonymous_request_allowed(session.remote_ip)
                         .await?;
 
                     return self
@@ -495,7 +495,7 @@ impl ParseHttp for Server {
             }
             "robots.txt" => {
                 // Limit anonymous requests
-                self.is_http_anonymous_request_allowed(&session.remote_ip)
+                self.is_http_anonymous_request_allowed(session.remote_ip)
                     .await?;
 
                 return Ok(
@@ -505,7 +505,7 @@ impl ParseHttp for Server {
             }
             "healthz" => {
                 // Limit anonymous requests
-                self.is_http_anonymous_request_allowed(&session.remote_ip)
+                self.is_http_anonymous_request_allowed(session.remote_ip)
                     .await?;
 
                 match path.next().unwrap_or_default() {
@@ -586,7 +586,7 @@ impl ParseHttp for Server {
                 if let Some(form) = &self.core.network.contact_form {
                     match *req.method() {
                         Method::POST => {
-                            self.is_http_anonymous_request_allowed(&session.remote_ip)
+                            self.is_http_anonymous_request_allowed(session.remote_ip)
                                 .await?;
 
                             let form_data =
@@ -696,7 +696,7 @@ async fn handle_session<T: SessionStream>(inner: Arc<Inner>, session: SessionDat
                         })
                     {
                         // Check if the forwarded IP has been blocked
-                        if server.is_ip_blocked(&forwarded_for) {
+                        if server.is_ip_blocked(forwarded_for) {
                             trc::event!(
                                 Security(trc::SecurityEvent::IpBlocked),
                                 ListenerId = instance.id.clone(),

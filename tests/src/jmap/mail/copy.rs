@@ -98,5 +98,5 @@ pub async fn test(params: &mut JMAPTest) {
     // Empty store
     destroy_all_mailboxes_for_account(1).await;
     destroy_all_mailboxes_for_account(2).await;
-    params.assert_is_empty().await;
+    test.assert_is_empty().await;;
 }

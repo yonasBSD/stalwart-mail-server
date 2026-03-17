@@ -39,9 +39,12 @@ use registry::{
     types::{EnumImpl, datetime::UTCDateTime, id::ObjectId},
 };
 use std::str::FromStr;
-use store::registry::{
-    RegistryFilterOp,
-    write::{RegistryWrite, RegistryWriteResult},
+use store::{
+    registry::{
+        RegistryFilterOp,
+        write::{RegistryWrite, RegistryWriteResult},
+    },
+    write::now,
 };
 use trc::AddContext;
 use types::id::Id;
@@ -99,6 +102,8 @@ pub(crate) async fn account_set(
                         break 'outer;
                     }
                 }
+
+                set.response.updated.append(id, None);
             }
         }
         ObjectType::Credential => {
@@ -460,6 +465,25 @@ pub(crate) async fn account_set(
                                             );
                                             continue 'outer;
                                         }
+
+                                        if let Some(expires_at) = set
+                                            .server
+                                            .core
+                                            .network
+                                            .security
+                                            .password_default_expiration
+                                        {
+                                            credential.expires_at =
+                                                Some(UTCDateTime::from_timestamp(
+                                                    (now() + expires_at) as i64,
+                                                ));
+                                        } else if credential
+                                            .expires_at
+                                            .is_some_and(|exp| exp.timestamp() <= now() as i64)
+                                        {
+                                            credential.expires_at = None;
+                                        }
+
                                         credential.secret = hash_secret(
                                             set.server
                                                 .core

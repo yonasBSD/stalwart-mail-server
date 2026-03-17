@@ -11,7 +11,7 @@ use common::{
 };
 use directory::core::secret::hash_secret;
 use jmap_proto::error::set::SetError;
-use registry::schema::structs::TaskStatus;
+use registry::{schema::structs::TaskStatus, types::datetime::UTCDateTime};
 use registry::{
     schema::{
         enums::{AccountType, Permission, TenantStorageQuota},
@@ -22,7 +22,7 @@ use registry::{
 };
 use store::{
     registry::{RegistryObjectCounter, RegistryQuery},
-    write::BatchBuilder,
+    write::{BatchBuilder, now},
 };
 use trc::AddContext;
 use types::id::Id;
@@ -108,6 +108,22 @@ pub(crate) async fn validate_account(
                                         return Ok(Err(SetError::invalid_properties()
                                             .with_property(Property::Secret)
                                             .with_description(err)));
+                                    }
+
+                                    if credential.expires_at == old_credential.expires_at
+                                        && credential
+                                            .expires_at
+                                            .is_some_and(|exp| exp.timestamp() <= now() as i64)
+                                        && let Some(expires_at) = set
+                                            .server
+                                            .core
+                                            .network
+                                            .security
+                                            .password_default_expiration
+                                    {
+                                        credential.expires_at = Some(UTCDateTime::from_timestamp(
+                                            (now() + expires_at) as i64,
+                                        ));
                                     }
 
                                     credential.secret = hash_secret(
@@ -241,6 +257,14 @@ async fn validate_credential_creation(
                     .with_property(Property::Secret)
                     .with_description(err)))
             } else {
+                if credential.expires_at.is_none()
+                    && let Some(expires_at) =
+                        server.core.network.security.password_default_expiration
+                {
+                    credential.expires_at =
+                        Some(UTCDateTime::from_timestamp((now() + expires_at) as i64));
+                }
+
                 credential.secret = hash_secret(
                     server.core.network.security.password_hash_algorithm,
                     std::mem::take(&mut credential.secret).into_bytes(),

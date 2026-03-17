@@ -4,445 +4,230 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::utils::server::TestServer;
+use common::auth::{BuildAccessToken, permissions::DefaultPermissions};
+use jmap_proto::error::set::SetErrorType;
+use registry::{
+    schema::{
+        enums::Permission,
+        prelude::{ObjectType, Property},
+        structs::{
+            self, AccountSettings, Credential, CustomRoles, PasswordCredential, Role, UserAccount,
+            UserRoles,
+        },
+    },
+    types::{EnumImpl, list::List, map::Map},
+};
+use serde_json::json;
+use types::id::Id;
+
+use crate::utils::{jmap::JmapUtils, server::TestServer};
 
 pub async fn test(test: &mut TestServer) {
     println!("Running authorization tests...");
 
-    /*
+    let admin = test.account("admin@example.org");
+    let domain_id = admin.find_or_create_domain("example.org").await;
 
-        pub async fn test(params: &JMAPTest) {
-        println!("Running permissions tests...");
-        let server = params.server.clone();
+    // Create nested roles
+    let l3_role_id = admin
+        .registry_create_object(Role {
+            description: "Level 3 role".to_string(),
+            enabled_permissions: Map::new(vec![Permission::SysAccountSettingsGet]),
+            ..Default::default()
+        })
+        .await;
+    let l2_role_id = admin
+        .registry_create_object(Role {
+            description: "Level 2 role".to_string(),
+            enabled_permissions: Map::new(vec![
+                Permission::AuthenticateWithAlias,
+                Permission::SysAccountSettingsUpdate,
+            ]),
+            role_ids: Map::new(vec![l3_role_id]),
+            ..Default::default()
+        })
+        .await;
+    let l1_role_id = admin
+        .registry_create_object(Role {
+            description: "Level 1 role".to_string(),
+            enabled_permissions: Map::new(vec![Permission::Authenticate]),
+            role_ids: Map::new(vec![l2_role_id]),
+            ..Default::default()
+        })
+        .await;
 
-        // Disable spam filtering to avoid adding extra headers
-        let old_core = params.server.core.clone();
-        let mut new_core = old_core.as_ref().clone();
-        new_core.spam.enabled = false;
-        new_core.smtp.session.data.add_delivered_to = false;
-        params.server.inner.shared_core.store(Arc::new(new_core));
+    // Create a user with the nested role
+    let user_id = admin
+        .registry_create_object(structs::Account::User(UserAccount {
+            name: "user".to_string(),
+            domain_id,
+            credentials: List::from_iter([Credential::Password(PasswordCredential {
+                secret: "this is a very strong password".to_string(),
+                ..Default::default()
+            })]),
+            roles: UserRoles::Custom(CustomRoles {
+                role_ids: Map::new(vec![l1_role_id]),
+            }),
+            ..Default::default()
+        }))
+        .await;
+    let user = crate::utils::account::Account::new(
+        "user@example.org",
+        "this is a very strong password",
+        &[],
+        user_id,
+    )
+    .await;
 
-        // Remove unlimited requests permission
-        for &account in params.accounts.keys() {
-            params
-                .server
-                .store()
-                .remove_permissions(account, [Permission::UnlimitedRequests])
-                .await;
-        }
-
-        // Prepare management API
-        let api = ManagementApi::new(8899, "admin", "secret");
-
-        // Create a user with the default 'user' role
-        let account_id = api
-            .post::<u32>(
-                "/api/principal",
-                &PrincipalSet::new(u32::MAX, Type::Individual)
-                    .with_field(PrincipalField::Name, "role_player")
-                    .with_field(PrincipalField::Roles, vec!["user".to_string()])
-                    .with_field(
-                        PrincipalField::DisabledPermissions,
-                        vec![Permission::Pop3Dele.name().to_string()],
-                    ),
-            )
+    // Verify user permissions include all permissions from the nested roles
+    user.registry_update_object(
+        ObjectType::AccountSettings,
+        Id::singleton(),
+        json!({
+            Property::Description: "Updated description"
+        }),
+    )
+    .await;
+    assert_eq!(
+        user.registry_get::<AccountSettings>(Id::singleton())
             .await
-            .unwrap()
-            .unwrap_data();
-        let revision = server
-            .get_access_token(account_id)
-            .await
-            .unwrap()
-            .validate_permissions(
-                Permission::all().filter(|p| p.is_user_permission() && *p != Permission::Pop3Dele),
-            )
-            .revision;
-
-        // Create multiple roles
-        for (role, permissions, parent_role) in &[
-            (
-                "pop3_user",
-                vec![Permission::Pop3Authenticate, Permission::Pop3List],
-                vec![],
-            ),
-            (
-                "imap_user",
-                vec![Permission::ImapAuthenticate, Permission::ImapList],
-                vec![],
-            ),
-            (
-                "jmap_user",
-                vec![
-                    Permission::JmapEmailQuery,
-                    Permission::AuthenticateOauth,
-                    Permission::ManageEncryption,
-                ],
-                vec![],
-            ),
-            (
-                "email_user",
-                vec![Permission::EmailSend, Permission::EmailReceive],
-                vec!["pop3_user", "imap_user", "jmap_user"],
-            ),
-        ] {
-            api.post::<u32>(
-                "/api/principal",
-                &PrincipalSet::new(u32::MAX, Type::Role)
-                    .with_field(PrincipalField::Name, role.to_string())
-                    .with_field(
-                        PrincipalField::EnabledPermissions,
-                        permissions
-                            .iter()
-                            .map(|p| p.name().to_string())
-                            .collect::<Vec<_>>(),
-                    )
-                    .with_field(
-                        PrincipalField::Roles,
-                        parent_role
-                            .iter()
-                            .map(|r| r.to_string())
-                            .collect::<Vec<_>>(),
-                    ),
-            )
-            .await
-            .unwrap()
-            .unwrap_data();
-        }
-
-        // Update email_user role
-        api.patch::<()>(
-            "/api/principal/email_user",
-            &vec![PrincipalUpdate::add_item(
-                PrincipalField::DisabledPermissions,
-                PrincipalValue::String(Permission::ManageEncryption.name().to_string()),
-            )],
-        )
-        .await
-        .unwrap()
-        .unwrap_data();
-
-        // Update the user role to the nested 'email_user' role
-        api.patch::<()>(
-            "/api/principal/role_player",
-            &vec![PrincipalUpdate::set(
-                PrincipalField::Roles,
-                PrincipalValue::StringList(vec!["email_user".to_string()]),
-            )],
-        )
-        .await
-        .unwrap()
-        .unwrap_data();
-        assert_ne!(
-            server
-                .get_access_token(account_id)
-                .await
-                .unwrap()
-                .validate_permissions([
-                    Permission::EmailSend,
-                    Permission::EmailReceive,
-                    Permission::JmapEmailQuery,
-                    Permission::AuthenticateOauth,
-                    Permission::ImapAuthenticate,
-                    Permission::ImapList,
-                    Permission::Pop3Authenticate,
-                    Permission::Pop3List,
-                ])
-                .revision,
-            revision
-        );
-
-        // Query all principals
-        api.get::<List<PrincipalSet>>("/api/principal")
-            .await
-            .unwrap()
-            .unwrap_data()
-            .assert_count(12)
-            .assert_exists(
-                "admin",
-                Type::Individual,
-                [
-                    (PrincipalField::Roles, &["admin"][..]),
-                    (PrincipalField::Members, &[][..]),
-                    (PrincipalField::EnabledPermissions, &[][..]),
-                    (PrincipalField::DisabledPermissions, &[][..]),
-                ],
-            )
-            .assert_exists(
-                "role_player",
-                Type::Individual,
-                [
-                    (PrincipalField::Roles, &["email_user"][..]),
-                    (PrincipalField::Members, &[][..]),
-                    (PrincipalField::EnabledPermissions, &[][..]),
-                    (
-                        PrincipalField::DisabledPermissions,
-                        &[Permission::Pop3Dele.name()][..],
-                    ),
-                ],
-            )
-            .assert_exists(
-                "email_user",
-                Type::Role,
-                [
-                    (
-                        PrincipalField::Roles,
-                        &["pop3_user", "imap_user", "jmap_user"][..],
-                    ),
-                    (PrincipalField::Members, &["role_player"][..]),
-                    (
-                        PrincipalField::EnabledPermissions,
-                        &[
-                            Permission::EmailReceive.name(),
-                            Permission::EmailSend.name(),
-                        ][..],
-                    ),
-                    (
-                        PrincipalField::DisabledPermissions,
-                        &[Permission::ManageEncryption.name()][..],
-                    ),
-                ],
-            )
-            .assert_exists(
-                "pop3_user",
-                Type::Role,
-                [
-                    (PrincipalField::Roles, &[][..]),
-                    (PrincipalField::Members, &["email_user"][..]),
-                    (
-                        PrincipalField::EnabledPermissions,
-                        &[
-                            Permission::Pop3Authenticate.name(),
-                            Permission::Pop3List.name(),
-                        ][..],
-                    ),
-                    (PrincipalField::DisabledPermissions, &[][..]),
-                ],
-            )
-            .assert_exists(
-                "imap_user",
-                Type::Role,
-                [
-                    (PrincipalField::Roles, &[][..]),
-                    (PrincipalField::Members, &["email_user"][..]),
-                    (
-                        PrincipalField::EnabledPermissions,
-                        &[
-                            Permission::ImapAuthenticate.name(),
-                            Permission::ImapList.name(),
-                        ][..],
-                    ),
-                    (PrincipalField::DisabledPermissions, &[][..]),
-                ],
-            )
-            .assert_exists(
-                "jmap_user",
-                Type::Role,
-                [
-                    (PrincipalField::Roles, &[][..]),
-                    (PrincipalField::Members, &["email_user"][..]),
-                    (
-                        PrincipalField::EnabledPermissions,
-                        &[
-                            Permission::JmapEmailQuery.name(),
-                            Permission::AuthenticateOauth.name(),
-                            Permission::ManageEncryption.name(),
-                        ][..],
-                    ),
-                    (PrincipalField::DisabledPermissions, &[][..]),
-                ],
-            );
-
-        // Verify permissions
-        server
-            .get_access_token(tenant_admin_id)
-            .await
-            .unwrap()
-            .validate_permissions(Permission::all().filter(|p| p.is_tenant_admin_permission()))
-            .validate_tenant(tenant_id, TENANT_QUOTA);
-
-        // Prepare tenant admin API
-        let tenant_api = ManagementApi::new(8899, "admin@foobar.org", "mytenantpass");
-
-        // John should not be allowed to receive email
-        let (message_blob, _) = server
-            .put_temporary_blob(tenant_user_id, TEST_MESSAGE.as_bytes(), 60)
-            .await
-            .unwrap();
-        assert_eq!(
-            server
-                .deliver_message(IngestMessage {
-                    sender_address: "bill@foobar.org".to_string(),
-                    sender_authenticated: true,
-                    recipients: vec![IngestRecipient {
-                        address: "john@foobar.org".to_string(),
-                        is_spam: false
-                    }],
-                    message_blob: message_blob.clone(),
-                    message_size: TEST_MESSAGE.len() as u64,
-                    session_id: 0,
-                })
-                .await
-                .status,
-            vec![LocalDeliveryStatus::PermanentFailure {
-                code: [5, 5, 0],
-                reason: "This account is not authorized to receive email.".into()
-            }]
-        );
-
-        // Remove the restriction
-        tenant_api
-            .patch::<()>(
-                "/api/principal/john.doe@foobar.org",
-                &vec![PrincipalUpdate::remove_item(
-                    PrincipalField::Roles,
-                    PrincipalValue::String("no-mail-for-you@foobar.com".to_string()),
-                )],
-            )
-            .await
-            .unwrap()
-            .unwrap_data();
-        server
-            .get_access_token(tenant_user_id)
-            .await
-            .unwrap()
-            .validate_permissions(
-                Permission::all().filter(|p| p.is_tenant_admin_permission() || p.is_user_permission()),
-            );
-    }
-
-    const TENANT_QUOTA: u64 = TEST_MESSAGE.len() as u64;
-    const TEST_MESSAGE: &str = concat!(
-        "From: bill@foobar.org\r\n",
-        "To: jdoe@foobar.com\r\n",
-        "Subject: TPS Report\r\n",
-        "\r\n",
-        "I'm going to need those TPS reports ASAP. ",
-        "So, if you could do that, that'd be great."
+            .description
+            .as_deref(),
+        Some("Updated description")
     );
 
-    trait ValidatePrincipalList {
-        fn assert_exists<'x>(
-            self,
-            name: &str,
-            typ: Type,
-            items: impl IntoIterator<Item = (PrincipalField, &'x [&'x str])>,
-        ) -> Self;
-        fn assert_count(self, count: usize) -> Self;
-    }
+    // Remove read permissions from the l3 role and verify the user can no longer read account settings
+    admin
+        .registry_update_object(
+            ObjectType::Role,
+            l3_role_id,
+            json!({
+                Property::EnabledPermissions: {}
+            }),
+        )
+        .await;
+    assert_eq!(
+        user.registry_get_many(ObjectType::AccountSettings, [Id::singleton()])
+            .await
+            .method_response()
+            .text_field("type"),
+        "forbidden"
+    );
 
-    impl ValidatePrincipalList for List<PrincipalSet> {
-        fn assert_exists<'x>(
-            self,
-            name: &str,
-            typ: Type,
-            items: impl IntoIterator<Item = (PrincipalField, &'x [&'x str])>,
-        ) -> Self {
-            for item in &self.items {
-                if item.name() == name {
-                    item.validate(typ, items);
-                    return self;
-                }
-            }
+    // User should still be able to update account settings due to permissions from the l2 role
+    user.registry_update_object(
+        ObjectType::AccountSettings,
+        Id::singleton(),
+        json!({
+            Property::Description: "Updated description v2"
+        }),
+    )
+    .await;
 
-            panic!("Principal not found: {}", name);
-        }
-
-        fn assert_count(self, count: usize) -> Self {
-            assert_eq!(self.items.len(), count, "Principal count failed validation");
-            assert_eq!(self.total, count, "Principal total failed validation");
-            self
-        }
-    }
-
-    trait ValidatePrincipal {
-        fn validate<'x>(
-            &self,
-            typ: Type,
-            items: impl IntoIterator<Item = (PrincipalField, &'x [&'x str])>,
-        );
-    }
-
-    impl ValidatePrincipal for PrincipalSet {
-        fn validate<'x>(
-            &self,
-            typ: Type,
-            items: impl IntoIterator<Item = (PrincipalField, &'x [&'x str])>,
-        ) {
-            assert_eq!(self.typ(), typ, "Type failed validation");
-
-            for (field, values) in items {
-                match (
-                    self.get_str_array(field).filter(|v| !v.is_empty()),
-                    (!values.is_empty()).then_some(values),
-                ) {
-                    (Some(values), Some(expected)) => {
-                        assert_eq!(
-                            values.iter().map(|s| s.as_str()).collect::<AHashSet<_>>(),
-                            expected.iter().copied().collect::<AHashSet<_>>(),
-                            "Field {field:?} failed validation: {values:?} != {expected:?}"
-                        );
-                    }
-                    (None, None) => {}
-                    (values, expected) => {
-                        panic!("Field {field:?} failed validation: {values:?} != {expected:?}");
-                    }
-                }
-            }
-        }
-    }
-
-    trait ValidatePermissions {
-        fn validate_permissions(
-            self,
-            expected_permissions: impl IntoIterator<Item = Permission>,
-        ) -> Self;
-        fn validate_tenant(self, tenant_id: u32, tenant_quota: u64) -> Self;
-    }
-
-    impl ValidatePermissions for Arc<AccessToken> {
-        fn validate_permissions(
-            self,
-            expected_permissions: impl IntoIterator<Item = Permission>,
-        ) -> Self {
-            let expected_permissions: AHashSet<_> = expected_permissions.into_iter().collect();
-
-            let permissions = self.permissions();
-            for permission in &permissions {
-                assert!(
-                    expected_permissions.contains(permission),
-                    "Permission {:?} failed validation",
-                    permission
-                );
-            }
-            assert_eq!(
-                permissions.into_iter().collect::<AHashSet<_>>(),
-                expected_permissions
-            );
-
-            for permission in Permission::all() {
-                if self.has_permission(permission) {
-                    assert!(
-                        expected_permissions.contains(&permission),
-                        "Permission {:?} failed validation",
-                        permission
-                    );
-                }
-            }
-            self
-        }
-
-        fn validate_tenant(self, tenant_id: u32, tenant_quota: u64) -> Self {
-            assert_eq!(
-                self.tenant,
-                Some(TenantInfo {
-                    id: tenant_id,
-                    quota: tenant_quota
+    // Disable account settings update permission in the l3 role
+    admin
+        .registry_update_object(
+            ObjectType::Role,
+            l3_role_id,
+            json!({
+                Property::DisabledPermissions: Map::new(vec![Permission::SysAccountSettingsUpdate]),
+            }),
+        )
+        .await;
+    assert_eq!(
+        user.registry_update(
+            ObjectType::AccountSettings,
+            [(
+                Id::singleton(),
+                json!({
+                    Property::Description: "Updated description v3"
                 })
+            )]
+        )
+        .await
+        .method_response()
+        .text_field("type"),
+        "forbidden"
+    );
+
+    // Assign user to the default user role
+    admin
+        .registry_update_object(
+            ObjectType::Account,
+            user_id,
+            json!({
+                Property::Roles: UserRoles::User
+            }),
+        )
+        .await;
+
+    // Make sure the user does not have any administrator permissions
+    let permissions = DefaultPermissions::default();
+    let mut num_permissions_verified = 0;
+    let mut num_objects_verified = 0;
+    let user_access_token = test
+        .server
+        .access_token(user_id.document_id())
+        .await
+        .unwrap()
+        .build();
+    for permission in permissions.superuser {
+        if permissions.user.contains(&permission) {
+            continue;
+        }
+        num_permissions_verified += 1;
+        assert!(
+            !user_access_token.has_permission(permission),
+            "User should not have {:?} permission",
+            permission
+        );
+
+        if let Some(name) = permission
+            .as_str()
+            .strip_prefix("sys")
+            .and_then(|perm| perm.strip_suffix("Get"))
+        {
+            let object_type = ObjectType::parse(name).unwrap();
+
+            assert_eq!(
+                user.registry_get_many(object_type, Vec::<&str>::new())
+                    .await
+                    .method_response()
+                    .text_field("type"),
+                "forbidden",
+                "User should not have permission to read {:?} objects",
+                object_type
             );
-            self
+
+            num_objects_verified += 1;
         }
     }
+    assert_ne!(
+        num_permissions_verified, 0,
+        "No permissions were verified in the test"
+    );
+    assert_ne!(
+        num_objects_verified, 0,
+        "No object read permissions were verified in the test"
+    );
 
+    // Deleting a linked role should not be allowed
+    admin
+        .registry_destroy_object_expect_err(ObjectType::Role, l2_role_id)
+        .await
+        .assert_type(SetErrorType::ObjectIsLinked);
 
-         */
+    // Delete the account and roles in the correct order
+    admin
+        .registry_destroy(ObjectType::Account, [user_id])
+        .await
+        .assert_destroyed(&[user_id]);
+    for role_id in [l1_role_id, l2_role_id, l3_role_id] {
+        admin
+            .registry_destroy(ObjectType::Role, [role_id])
+            .await
+            .assert_destroyed(&[role_id]);
+    }
+
+    test.assert_is_empty().await;
 }

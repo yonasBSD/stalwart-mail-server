@@ -9,9 +9,9 @@ use crate::{
     store::TempDir,
     utils::{
         account::Account,
-        cleanup::{search_store_destroy, store_destroy},
+        cleanup::{search_store_destroy, store_blob_expire_all, store_destroy},
         registry::UnwrapRegistryId,
-        storage::{RegistryEnvStores, assert_is_empty, build_data_store},
+        storage::{RegistryEnvStores, assert_is_empty, build_data_store, wait_for_tasks},
     },
 };
 use ahash::AHashMap;
@@ -27,6 +27,7 @@ use common::{
 };
 use http::HttpSessionManager;
 use imap::core::ImapSessionManager;
+use jmap_client::client::{Client, Credentials};
 use managesieve::core::ManageSieveSessionManager;
 use pop3::Pop3SessionManager;
 use registry::{
@@ -38,13 +39,20 @@ use registry::{
     types::{EnumImpl, map::Map},
 };
 use services::{SpawnServices, broadcast::subscriber::spawn_broadcast_subscriber};
-use smtp::{SpawnQueueManager, core::SmtpSessionManager};
-use std::{str::FromStr, sync::Arc};
+use smtp::{
+    SpawnQueueManager,
+    core::SmtpSessionManager,
+    queue::{
+        manager::Queue,
+        spool::{QueuedMessages, SmtpSpool},
+    },
+};
+use std::{str::FromStr, sync::Arc, time::Duration};
 use store::{
     RegistryStore, Store,
     registry::{bootstrap::Bootstrap, write::RegistryWrite},
 };
-use tokio::sync::watch;
+use tokio::sync::{mpsc, watch};
 use trc::EventType;
 use types::id::Id;
 
@@ -287,6 +295,14 @@ impl TestServer {
         self.accounts.get(name).unwrap()
     }
 
+    pub async fn wait_for_tasks(&self) {
+        wait_for_tasks(&self.server).await;
+    }
+
+    pub async fn blob_expire_all(&self) {
+        store_blob_expire_all(&self.server.core.storage.data).await;
+    }
+
     pub async fn assert_is_empty(&self) {
         assert_is_empty(&self.server).await;
     }
@@ -301,5 +317,42 @@ impl TestServer {
 
     pub fn shutdown(&self) {
         let _ = self.shutdown_tx.send(true);
+    }
+
+    pub async fn all_queued_messages(&self) -> QueuedMessages {
+        self.server
+            .next_event(&mut Queue::new(
+                self.server.inner.clone(),
+                mpsc::channel(100).1,
+            ))
+            .await
+    }
+
+    pub async fn destroy_all_mailboxes(&self, account: &Account) {
+        self.wait_for_tasks().await;
+        destroy_all_mailboxes_no_wait(account.client()).await;
+    }
+}
+
+pub async fn destroy_all_mailboxes_for_account(account_id: u32) {
+    let mut client = Client::new()
+        .credentials(Credentials::basic("admin", "secret"))
+        .follow_redirects(["127.0.0.1"])
+        .timeout(Duration::from_secs(3600))
+        .accept_invalid_certs(true)
+        .connect("https://127.0.0.1:8899")
+        .await
+        .unwrap();
+    client.set_default_account_id(Id::from(account_id));
+    destroy_all_mailboxes_no_wait(&client).await;
+}
+
+async fn destroy_all_mailboxes_no_wait(client: &Client) {
+    let mut request = client.build();
+    request.query_mailbox().arguments().sort_as_tree(true);
+    let mut ids = request.send_query_mailbox().await.unwrap().take_ids();
+    ids.reverse();
+    for id in ids {
+        client.mailbox_destroy(&id, true).await.unwrap();
     }
 }

@@ -287,6 +287,7 @@ impl Server {
             match change {
                 CacheInvalidation::AccessToken(id) => {
                     cache.access_tokens.remove(id);
+                    cache.http_auth.inner().retain(|_, v| v.account_id != *id);
                 }
                 CacheInvalidation::DavResources(id) => {
                     cache.files.remove(id);

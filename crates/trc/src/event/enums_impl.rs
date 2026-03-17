@@ -49,6 +49,7 @@ impl EventType {
             b"auth.client-registration" => EventType::Auth(AuthEvent::ClientRegistration),
             b"auth.error" => EventType::Auth(AuthEvent::Error),
             b"auth.warning" => EventType::Auth(AuthEvent::Warning),
+            b"auth.credential-expired" => EventType::Auth(AuthEvent::CredentialExpired),
             b"calendar.rule-expansion-error" => EventType::Calendar(CalendarEvent::RuleExpansionError),
             b"calendar.alarm-sent" => EventType::Calendar(CalendarEvent::AlarmSent),
             b"calendar.alarm-skipped" => EventType::Calendar(CalendarEvent::AlarmSkipped),
@@ -259,8 +260,6 @@ impl EventType {
             b"mail-auth.dns-record-not-found" => EventType::MailAuth(MailAuthEvent::DnsRecordNotFound),
             b"mail-auth.dns-invalid-record-type" => EventType::MailAuth(MailAuthEvent::DnsInvalidRecordType),
             b"mail-auth.policy-not-aligned" => EventType::MailAuth(MailAuthEvent::PolicyNotAligned),
-            b"manage.reserved3" => EventType::Manage(ManageEvent::Reserved3),
-            b"manage.reserved4" => EventType::Manage(ManageEvent::Reserved4),
             b"manage.reserved5" => EventType::Manage(ManageEvent::Reserved5),
             b"manage.reserved6" => EventType::Manage(ManageEvent::Reserved6),
             b"manage-sieve.connection-start" => EventType::ManageSieve(ManageSieveEvent::ConnectionStart),
@@ -401,6 +400,7 @@ impl EventType {
             b"security.ip-blocked" => EventType::Security(SecurityEvent::IpBlocked),
             b"security.ip-block-expired" => EventType::Security(SecurityEvent::IpBlockExpired),
             b"security.ip-allow-expired" => EventType::Security(SecurityEvent::IpAllowExpired),
+            b"security.ip-unauthorized" => EventType::Security(SecurityEvent::IpUnauthorized),
             b"security.unauthorized" => EventType::Security(SecurityEvent::Unauthorized),
             b"server.startup" => EventType::Server(ServerEvent::Startup),
             b"server.shutdown" => EventType::Server(ServerEvent::Shutdown),
@@ -651,6 +651,7 @@ impl EventType {
             EventType::Auth(AuthEvent::ClientRegistration) => "auth.client-registration",
             EventType::Auth(AuthEvent::Error) => "auth.error",
             EventType::Auth(AuthEvent::Warning) => "auth.warning",
+            EventType::Auth(AuthEvent::CredentialExpired) => "auth.credential-expired",
             EventType::Calendar(CalendarEvent::RuleExpansionError) => {
                 "calendar.rule-expansion-error"
             }
@@ -917,8 +918,6 @@ impl EventType {
                 "mail-auth.dns-invalid-record-type"
             }
             EventType::MailAuth(MailAuthEvent::PolicyNotAligned) => "mail-auth.policy-not-aligned",
-            EventType::Manage(ManageEvent::Reserved3) => "manage.reserved3",
-            EventType::Manage(ManageEvent::Reserved4) => "manage.reserved4",
             EventType::Manage(ManageEvent::Reserved5) => "manage.reserved5",
             EventType::Manage(ManageEvent::Reserved6) => "manage.reserved6",
             EventType::ManageSieve(ManageSieveEvent::ConnectionStart) => {
@@ -1109,6 +1108,7 @@ impl EventType {
             EventType::Security(SecurityEvent::IpBlocked) => "security.ip-blocked",
             EventType::Security(SecurityEvent::IpBlockExpired) => "security.ip-block-expired",
             EventType::Security(SecurityEvent::IpAllowExpired) => "security.ip-allow-expired",
+            EventType::Security(SecurityEvent::IpUnauthorized) => "security.ip-unauthorized",
             EventType::Security(SecurityEvent::Unauthorized) => "security.unauthorized",
             EventType::Server(ServerEvent::Startup) => "server.startup",
             EventType::Server(ServerEvent::Shutdown) => "server.shutdown",
@@ -1378,6 +1378,7 @@ impl EventType {
             EventType::Auth(AuthEvent::ClientRegistration) => 555,
             EventType::Auth(AuthEvent::Error) => 34,
             EventType::Auth(AuthEvent::Warning) => 595,
+            EventType::Auth(AuthEvent::CredentialExpired) => 276,
             EventType::Calendar(CalendarEvent::RuleExpansionError) => 576,
             EventType::Calendar(CalendarEvent::AlarmSent) => 579,
             EventType::Calendar(CalendarEvent::AlarmSkipped) => 580,
@@ -1588,8 +1589,6 @@ impl EventType {
             EventType::MailAuth(MailAuthEvent::DnsRecordNotFound) => 250,
             EventType::MailAuth(MailAuthEvent::DnsInvalidRecordType) => 249,
             EventType::MailAuth(MailAuthEvent::PolicyNotAligned) => 255,
-            EventType::Manage(ManageEvent::Reserved3) => 276,
-            EventType::Manage(ManageEvent::Reserved4) => 279,
             EventType::Manage(ManageEvent::Reserved5) => 280,
             EventType::Manage(ManageEvent::Reserved6) => 277,
             EventType::ManageSieve(ManageSieveEvent::ConnectionStart) => 259,
@@ -1730,6 +1729,7 @@ impl EventType {
             EventType::Security(SecurityEvent::IpBlocked) => 318,
             EventType::Security(SecurityEvent::IpBlockExpired) => 593,
             EventType::Security(SecurityEvent::IpAllowExpired) => 594,
+            EventType::Security(SecurityEvent::IpUnauthorized) => 279,
             EventType::Security(SecurityEvent::Unauthorized) => 552,
             EventType::Server(ServerEvent::Startup) => 393,
             EventType::Server(ServerEvent::Shutdown) => 392,
@@ -1979,6 +1979,7 @@ impl EventType {
             555 => Some(EventType::Auth(AuthEvent::ClientRegistration)),
             34 => Some(EventType::Auth(AuthEvent::Error)),
             595 => Some(EventType::Auth(AuthEvent::Warning)),
+            276 => Some(EventType::Auth(AuthEvent::CredentialExpired)),
             576 => Some(EventType::Calendar(CalendarEvent::RuleExpansionError)),
             579 => Some(EventType::Calendar(CalendarEvent::AlarmSent)),
             580 => Some(EventType::Calendar(CalendarEvent::AlarmSkipped)),
@@ -2207,8 +2208,6 @@ impl EventType {
             250 => Some(EventType::MailAuth(MailAuthEvent::DnsRecordNotFound)),
             249 => Some(EventType::MailAuth(MailAuthEvent::DnsInvalidRecordType)),
             255 => Some(EventType::MailAuth(MailAuthEvent::PolicyNotAligned)),
-            276 => Some(EventType::Manage(ManageEvent::Reserved3)),
-            279 => Some(EventType::Manage(ManageEvent::Reserved4)),
             280 => Some(EventType::Manage(ManageEvent::Reserved5)),
             277 => Some(EventType::Manage(ManageEvent::Reserved6)),
             259 => Some(EventType::ManageSieve(ManageSieveEvent::ConnectionStart)),
@@ -2369,6 +2368,7 @@ impl EventType {
             318 => Some(EventType::Security(SecurityEvent::IpBlocked)),
             593 => Some(EventType::Security(SecurityEvent::IpBlockExpired)),
             594 => Some(EventType::Security(SecurityEvent::IpAllowExpired)),
+            279 => Some(EventType::Security(SecurityEvent::IpUnauthorized)),
             552 => Some(EventType::Security(SecurityEvent::Unauthorized)),
             393 => Some(EventType::Server(ServerEvent::Startup)),
             392 => Some(EventType::Server(ServerEvent::Shutdown)),
@@ -2770,6 +2770,7 @@ impl EventType {
             EventType::Security(SecurityEvent::IpBlocked) => Level::Info,
             EventType::Security(SecurityEvent::IpBlockExpired) => Level::Info,
             EventType::Security(SecurityEvent::IpAllowExpired) => Level::Info,
+            EventType::Security(SecurityEvent::IpUnauthorized) => Level::Info,
             EventType::Security(SecurityEvent::Unauthorized) => Level::Info,
             EventType::Server(ServerEvent::Startup) => Level::Info,
             EventType::Server(ServerEvent::Shutdown) => Level::Info,
@@ -2960,6 +2961,7 @@ impl EventType {
             EventType::Auth(AuthEvent::ClientRegistration) => "OAuth Client registration",
             EventType::Auth(AuthEvent::Error) => "Authentication error",
             EventType::Auth(AuthEvent::Warning) => "Authentication warning",
+            EventType::Auth(AuthEvent::CredentialExpired) => "Credential expired",
             EventType::Calendar(CalendarEvent::RuleExpansionError) => {
                 "Calendar rule expansion error"
             }
@@ -3224,8 +3226,6 @@ impl EventType {
             EventType::MailAuth(MailAuthEvent::DnsRecordNotFound) => "DNS record not found",
             EventType::MailAuth(MailAuthEvent::DnsInvalidRecordType) => "Invalid DNS record type",
             EventType::MailAuth(MailAuthEvent::PolicyNotAligned) => "Policy not aligned",
-            EventType::Manage(ManageEvent::Reserved3) => "Assertion failed",
-            EventType::Manage(ManageEvent::Reserved4) => "Resource not found",
             EventType::Manage(ManageEvent::Reserved5) => "Management operation not supported",
             EventType::Manage(ManageEvent::Reserved6) => "Management error",
             EventType::ManageSieve(ManageSieveEvent::ConnectionStart) => {
@@ -3430,6 +3430,7 @@ impl EventType {
             EventType::Security(SecurityEvent::IpBlocked) => "Blocked IP address",
             EventType::Security(SecurityEvent::IpBlockExpired) => "IP block expired",
             EventType::Security(SecurityEvent::IpAllowExpired) => "IP allow expired",
+            EventType::Security(SecurityEvent::IpUnauthorized) => "Unauthorized IP address",
             EventType::Security(SecurityEvent::Unauthorized) => "Unauthorized access",
             EventType::Server(ServerEvent::Startup) => "Starting Stalwart Server v0.15.4",
             EventType::Server(ServerEvent::Shutdown) => "Shutting down Stalwart Server v0.15.4",
@@ -3709,6 +3710,7 @@ impl EventType {
             }
             EventType::Auth(AuthEvent::Error) => "An error occurred with authentication",
             EventType::Auth(AuthEvent::Warning) => "A warning occurred with authentication",
+            EventType::Auth(AuthEvent::CredentialExpired) => "A credential has expired",
             EventType::Calendar(CalendarEvent::RuleExpansionError) => {
                 "An error occurred while expanding calendar recurrences"
             }
@@ -4093,8 +4095,6 @@ impl EventType {
                 "The DNS record type is invalid"
             }
             EventType::MailAuth(MailAuthEvent::PolicyNotAligned) => "The policy is not aligned",
-            EventType::Manage(ManageEvent::Reserved3) => "A management assertion has failed",
-            EventType::Manage(ManageEvent::Reserved4) => "The managed resource was not found",
             EventType::Manage(ManageEvent::Reserved5) => {
                 "The management operation is not supported"
             }
@@ -4386,6 +4386,9 @@ impl EventType {
             }
             EventType::Security(SecurityEvent::IpAllowExpired) => {
                 "A previously allowed IP address allow has expired"
+            }
+            EventType::Security(SecurityEvent::IpUnauthorized) => {
+                "IP address is not authorized to authenticate using this credential"
             }
             EventType::Security(SecurityEvent::Unauthorized) => {
                 "Account does not have permission to access resource"
@@ -4789,6 +4792,7 @@ impl EventType {
             EventType::Auth(AuthEvent::TooManyAttempts) => "Too many authentication attempts",
             EventType::Auth(AuthEvent::ClientRegistration) => "Authentication error",
             EventType::Auth(AuthEvent::Error) => "Authentication error",
+            EventType::Auth(AuthEvent::CredentialExpired) => "Credential expired",
             EventType::Imap(ImapEvent::ConnectionStart) => "IMAP error",
             EventType::Imap(ImapEvent::ConnectionEnd) => "IMAP error",
             EventType::Imap(ImapEvent::GetAcl) => "IMAP error",
@@ -4858,8 +4862,6 @@ impl EventType {
             EventType::Limit(LimitEvent::BlobQuota) => "Blob quota exceeded",
             EventType::Limit(LimitEvent::TenantQuota) => "Tenant quota exceeded",
             EventType::Limit(LimitEvent::TooManyRequests) => "Too many requests",
-            EventType::Manage(ManageEvent::Reserved3) => "Assertion failed",
-            EventType::Manage(ManageEvent::Reserved4) => "Not found",
             EventType::Manage(ManageEvent::Reserved5) => "Operation not supported",
             EventType::Manage(ManageEvent::Reserved6) => "Management API Error",
             EventType::ManageSieve(ManageSieveEvent::ConnectionStart) => "ManageSieve error",
@@ -4923,6 +4925,7 @@ impl EventType {
             EventType::Security(SecurityEvent::IpBlocked) => "Insufficient permissions",
             EventType::Security(SecurityEvent::IpBlockExpired) => "Insufficient permissions",
             EventType::Security(SecurityEvent::IpAllowExpired) => "Insufficient permissions",
+            EventType::Security(SecurityEvent::IpUnauthorized) => "Unauthorized IP address",
             EventType::Security(SecurityEvent::Unauthorized) => "Insufficient permissions",
             EventType::Smtp(SmtpEvent::ConnectionStart) => "SMTP error",
             EventType::Smtp(SmtpEvent::ConnectionEnd) => "SMTP error",
@@ -5085,6 +5088,7 @@ impl EventType {
             EventType::Auth(AuthEvent::ClientRegistration),
             EventType::Auth(AuthEvent::Error),
             EventType::Auth(AuthEvent::Warning),
+            EventType::Auth(AuthEvent::CredentialExpired),
             EventType::Calendar(CalendarEvent::RuleExpansionError),
             EventType::Calendar(CalendarEvent::AlarmSent),
             EventType::Calendar(CalendarEvent::AlarmSkipped),
@@ -5295,8 +5299,6 @@ impl EventType {
             EventType::MailAuth(MailAuthEvent::DnsRecordNotFound),
             EventType::MailAuth(MailAuthEvent::DnsInvalidRecordType),
             EventType::MailAuth(MailAuthEvent::PolicyNotAligned),
-            EventType::Manage(ManageEvent::Reserved3),
-            EventType::Manage(ManageEvent::Reserved4),
             EventType::Manage(ManageEvent::Reserved5),
             EventType::Manage(ManageEvent::Reserved6),
             EventType::ManageSieve(ManageSieveEvent::ConnectionStart),
@@ -5437,6 +5439,7 @@ impl EventType {
             EventType::Security(SecurityEvent::IpBlocked),
             EventType::Security(SecurityEvent::IpBlockExpired),
             EventType::Security(SecurityEvent::IpAllowExpired),
+            EventType::Security(SecurityEvent::IpUnauthorized),
             EventType::Security(SecurityEvent::Unauthorized),
             EventType::Server(ServerEvent::Startup),
             EventType::Server(ServerEvent::Shutdown),

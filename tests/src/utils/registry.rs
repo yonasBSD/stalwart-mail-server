@@ -77,12 +77,24 @@ impl Account {
             .await
     }
 
-    pub async fn registry_query(
+    pub async fn registry_query_ids(
         &self,
         object: ObjectType,
         filter: impl IntoIterator<Item = (impl Display, impl Into<Value>)>,
         sort_by: impl IntoIterator<Item = impl Display>,
     ) -> Vec<Id> {
+        self.registry_query(object, filter, sort_by)
+            .await
+            .object_ids()
+            .collect()
+    }
+
+    pub async fn registry_query(
+        &self,
+        object: ObjectType,
+        filter: impl IntoIterator<Item = (impl Display, impl Into<Value>)>,
+        sort_by: impl IntoIterator<Item = impl Display>,
+    ) -> JmapResponse {
         let name = object.as_str();
 
         self.jmap_query(
@@ -92,8 +104,6 @@ impl Account {
             Vec::<(&str, &str)>::new(),
         )
         .await
-        .object_ids()
-        .collect()
     }
 
     pub async fn registry_destroy(

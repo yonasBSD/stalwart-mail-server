@@ -18,7 +18,7 @@ use registry::{
     },
     types::{datetime::UTCDateTime, ipmask::IpAddrOrMask},
 };
-use std::{fmt::Debug, net::IpAddr};
+use std::{fmt::Debug, hash::Hash, net::IpAddr};
 use store::{
     registry::{
         bootstrap::Bootstrap,
@@ -33,8 +33,8 @@ use zxcvbn::Score;
 
 #[derive(Debug, Clone)]
 pub struct Security {
-    pub allowed_ip_addresses: AHashSet<IpAddr>,
-    pub allowed_ip_networks: Vec<IpAddrOrMask>,
+    pub allowed_ip_addresses: AHashSet<IpWithTtl<IpAddr>>,
+    pub allowed_ip_networks: Vec<IpWithTtl<IpAddrOrMask>>,
     pub has_allowed_networks: bool,
     pub blocked_ip_expiration: Option<u64>,
 
@@ -48,18 +48,26 @@ pub struct Security {
     pub default_role_ids_user: Vec<Id>,
     pub default_role_ids_group: Vec<Id>,
     pub default_role_ids_tenant: Vec<Id>,
+    pub default_role_ids_admin: Vec<Id>,
 
     pub password_hash_algorithm: PasswordHashAlgorithm,
     pub password_max_length: u32,
     pub password_min_length: u32,
     pub password_min_strength: Score,
+    pub password_default_expiration: Option<u64>,
 }
 
 #[derive(Default)]
 pub struct BlockedIps {
-    pub blocked_ip_addresses: AHashSet<IpAddr>,
-    pub blocked_ip_networks: Vec<IpAddrOrMask>,
+    pub blocked_ip_addresses: AHashSet<IpWithTtl<IpAddr>>,
+    pub blocked_ip_networks: Vec<IpWithTtl<IpAddrOrMask>>,
     pub has_blocked_networks: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct IpWithTtl<T: PartialEq + Eq + Hash> {
+    pub ip: T,
+    pub expires_at: u64,
 }
 
 impl Security {
@@ -67,18 +75,27 @@ impl Security {
         let mut allowed_ip_addresses = AHashSet::new();
         let mut allowed_ip_networks = Vec::new();
         let mut expired_allows = Vec::new();
-        let now = now() as i64;
+        let now = now();
 
         for ip in bp.list_infallible::<AllowedIp>().await {
             let id = ip.id;
             let revision = ip.revision;
             let ip = ip.object;
+            let expires_at = ip
+                .expires_at
+                .as_ref()
+                .map(|dt| dt.timestamp() as u64)
+                .unwrap_or(u64::MAX);
 
-            if ip.expires_at.as_ref().is_none_or(|ip| ip.timestamp() > now) {
+            if expires_at > now {
                 if let Some(ip) = ip.address.try_to_ip() {
-                    allowed_ip_addresses.insert(ip);
-                } else if !allowed_ip_networks.contains(&ip.address) {
-                    allowed_ip_networks.push(ip.address);
+                    allowed_ip_addresses.insert(IpWithTtl::new(ip, expires_at));
+                } else {
+                    let ip_with_ttl = IpWithTtl::new(ip.address, expires_at);
+
+                    if !allowed_ip_networks.contains(&ip_with_ttl) {
+                        allowed_ip_networks.push(ip_with_ttl);
+                    }
                 }
             } else {
                 expired_allows.push((
@@ -96,9 +113,12 @@ impl Security {
         let system = bp.setting_infallible::<SystemSettings>().await;
         for ip in system.proxy_trusted_networks {
             if let Some(ip) = ip.try_to_ip() {
-                allowed_ip_addresses.insert(ip);
-            } else if !allowed_ip_networks.contains(&ip) {
-                allowed_ip_networks.push(ip);
+                allowed_ip_addresses.insert(IpWithTtl::new(ip, u64::MAX));
+            } else {
+                let ip_with_ttl = IpWithTtl::new(ip, u64::MAX);
+                if !allowed_ip_networks.contains(&ip_with_ttl) {
+                    allowed_ip_networks.push(ip_with_ttl);
+                }
             }
         }
 
@@ -151,6 +171,7 @@ impl Security {
             default_role_ids_user: auth.default_user_role_ids.into_inner(),
             default_role_ids_group: auth.default_group_role_ids.into_inner(),
             default_role_ids_tenant: auth.default_tenant_role_ids.into_inner(),
+            default_role_ids_admin: auth.default_admin_role_ids.into_inner(),
             password_hash_algorithm: auth.password_hash_algorithm,
             password_max_length: auth.password_max_length as u32,
             password_min_length: auth.password_min_length as u32,
@@ -161,6 +182,7 @@ impl Security {
                 PasswordStrength::Three => Score::Three,
                 PasswordStrength::Four => Score::Four,
             },
+            password_default_expiration: auth.password_default_expiry.map(|v| v.as_secs()),
         }
     }
 }
@@ -168,7 +190,7 @@ impl Security {
 impl Server {
     pub async fn is_rcpt_fail2banned(&self, ip: IpAddr, rcpt: &str) -> trc::Result<bool> {
         if let Some(rate) = &self.core.network.security.rcpt_fail_rate {
-            let is_allowed = self.is_ip_allowed(&ip)
+            let is_allowed = self.is_ip_allowed(ip)
                 || (self
                     .in_memory_store()
                     .is_rate_allowed(KV_RATE_LIMIT_RCPT, &ip_to_bytes(&ip), rate, false)
@@ -193,7 +215,7 @@ impl Server {
 
     pub async fn is_scanner_fail2banned(&self, ip: IpAddr) -> trc::Result<bool> {
         if let Some(rate) = &self.core.network.security.scanner_fail_rate {
-            let is_allowed = self.is_ip_allowed(&ip)
+            let is_allowed = self.is_ip_allowed(ip)
                 || self
                     .in_memory_store()
                     .is_rate_allowed(KV_RATE_LIMIT_SCAN, &ip_to_bytes(&ip), rate, false)
@@ -214,7 +236,7 @@ impl Server {
     pub async fn is_http_banned_path(&self, path: &str, ip: IpAddr) -> trc::Result<bool> {
         let paths = &self.core.network.security.http_banned_paths;
 
-        if !paths.is_empty() && paths.iter().any(|p| p.matches(path)) && !self.is_ip_allowed(&ip) {
+        if !paths.is_empty() && paths.iter().any(|p| p.matches(path)) && !self.is_ip_allowed(ip) {
             self.block_ip(ip, BlockReason::PortScanning)
                 .await
                 .map(|_| true)
@@ -225,7 +247,7 @@ impl Server {
 
     pub async fn is_loiter_fail2banned(&self, ip: IpAddr) -> trc::Result<bool> {
         if let Some(rate) = &self.core.network.security.loiter_fail_rate {
-            let is_allowed = self.is_ip_allowed(&ip)
+            let is_allowed = self.is_ip_allowed(ip)
                 || self
                     .in_memory_store()
                     .is_rate_allowed(KV_RATE_LIMIT_LOITER, &ip_to_bytes(&ip), rate, false)
@@ -246,7 +268,7 @@ impl Server {
     pub async fn is_auth_fail2banned(&self, ip: IpAddr, login: Option<&str>) -> trc::Result<bool> {
         if let Some(rate) = &self.core.network.security.auth_fail_rate {
             let login = login.unwrap_or_default();
-            let is_allowed = self.is_ip_allowed(&ip)
+            let is_allowed = self.is_ip_allowed(ip)
                 || (self
                     .in_memory_store()
                     .is_rate_allowed(KV_RATE_LIMIT_AUTH, &ip_to_bytes(&ip), rate, false)
@@ -271,27 +293,28 @@ impl Server {
 
     pub async fn block_ip(&self, ip: IpAddr, reason: BlockReason) -> trc::Result<()> {
         // Add IP to blocked list
+        let now = now();
+        let expires_at = self
+            .core
+            .network
+            .security
+            .blocked_ip_expiration
+            .map(|v| now + v);
         self.inner
             .data
             .blocked_ips
             .write()
             .blocked_ip_addresses
-            .insert(ip);
+            .insert(IpWithTtl::new(ip, expires_at.unwrap_or(u64::MAX)));
 
         // Write blocked IP to config
-        let now = now() as i64;
         let RegistryWriteResult::Success(id) = self
             .registry()
             .write(RegistryWrite::insert(
                 &BlockedIp {
                     address: IpAddrOrMask::from_ip(ip),
-                    created_at: UTCDateTime::from_timestamp(now),
-                    expires_at: self
-                        .core
-                        .network
-                        .security
-                        .blocked_ip_expiration
-                        .map(|v| UTCDateTime::from_timestamp(now + v as i64)),
+                    created_at: UTCDateTime::from_timestamp(now as i64),
+                    expires_at: expires_at.map(|ts| UTCDateTime::from_timestamp(ts as i64)),
                     reason,
                 }
                 .into(),
@@ -315,19 +338,27 @@ impl Server {
         self.core.network.security.auth_fail_rate.is_some()
     }
 
-    pub fn is_ip_blocked(&self, ip: &IpAddr) -> bool {
+    pub fn is_ip_blocked(&self, ip: IpAddr) -> bool {
         let blocked_ips = self.inner.data.blocked_ips.read();
-        (blocked_ips.blocked_ip_addresses.contains(ip)
+        (blocked_ips
+            .blocked_ip_addresses
+            .get(&IpWithTtl::new(ip, 0))
+            .is_some_and(|v| !v.is_expired())
             || (blocked_ips.has_blocked_networks
                 && blocked_ips
                     .blocked_ip_networks
                     .iter()
-                    .any(|network| network.matches(ip))))
+                    .any(|network| network.ip.matches(&ip) && !network.is_expired())))
             && !self.is_ip_allowed(ip)
     }
 
-    pub fn is_ip_allowed(&self, ip: &IpAddr) -> bool {
-        self.core.network.security.allowed_ip_addresses.contains(ip)
+    pub fn is_ip_allowed(&self, ip: IpAddr) -> bool {
+        self.core
+            .network
+            .security
+            .allowed_ip_addresses
+            .get(&IpWithTtl::new(ip, 0))
+            .is_some_and(|v| !v.is_expired())
             || (self.core.network.security.has_allowed_networks
                 && self
                     .core
@@ -335,7 +366,7 @@ impl Server {
                     .security
                     .allowed_ip_networks
                     .iter()
-                    .any(|network| network.matches(ip)))
+                    .any(|network| network.ip.matches(&ip) && !network.is_expired()))
     }
 
     pub fn is_secure_password(&self, password: &str, user_inputs: &[&str]) -> Result<(), String> {
@@ -374,12 +405,19 @@ impl BlockedIps {
             let id = ip.id;
             let revision = ip.revision;
             let ip = ip.object;
+            let expires_at = ip
+                .expires_at
+                .as_ref()
+                .map(|dt| dt.timestamp() as u64)
+                .unwrap_or(u64::MAX);
 
             if ip.expires_at.as_ref().is_none_or(|ip| ip.timestamp() > now) {
                 if let Some(ip) = ip.address.try_to_ip() {
-                    ips.blocked_ip_addresses.insert(ip);
+                    ips.blocked_ip_addresses
+                        .insert(IpWithTtl::new(ip, expires_at));
                 } else {
-                    ips.blocked_ip_networks.push(ip.address);
+                    ips.blocked_ip_networks
+                        .push(IpWithTtl::new(ip.address, expires_at));
                 }
             } else {
                 expired_blocks.push((
@@ -417,5 +455,29 @@ impl BlockedIps {
 
         ips.has_blocked_networks = !ips.blocked_ip_networks.is_empty();
         ips
+    }
+}
+
+impl<T: PartialEq + Eq + Hash> Hash for IpWithTtl<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.ip.hash(state);
+    }
+}
+
+impl<T: PartialEq + Eq + Hash> PartialEq for IpWithTtl<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.ip == other.ip
+    }
+}
+
+impl<T: PartialEq + Eq + Hash> Eq for IpWithTtl<T> {}
+
+impl<T: PartialEq + Eq + Hash> IpWithTtl<T> {
+    pub fn new(ip: T, expires_at: u64) -> Self {
+        Self { ip, expires_at }
+    }
+
+    pub fn is_expired(&self) -> bool {
+        self.expires_at <= now()
     }
 }

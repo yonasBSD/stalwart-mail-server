@@ -50,12 +50,17 @@ impl Server {
                             UserRoles::User => {
                                 self.core.network.security.default_role_ids_user.as_slice()
                             }
-                            UserRoles::TenantAdmin => self
-                                .core
-                                .network
-                                .security
-                                .default_role_ids_tenant
-                                .as_slice(),
+                            UserRoles::Admin => {
+                                if tenant_id.is_none() {
+                                    self.core.network.security.default_role_ids_admin.as_slice()
+                                } else {
+                                    self.core
+                                        .network
+                                        .security
+                                        .default_role_ids_tenant
+                                        .as_slice()
+                                }
+                            }
                             UserRoles::Custom(custom_roles) => custom_roles.role_ids.as_slice(),
                         },
                         tenant_id,
@@ -363,14 +368,22 @@ impl Server {
 }
 
 impl AccessToken {
-    pub fn new(inner: Arc<AccessTokenInner>) -> Self {
+    pub fn new(inner: Arc<AccessTokenInner>, remote_ip: IpAddr) -> trc::Result<Self> {
+        AccessToken {
+            scope_idx: 0,
+            inner,
+        }
+        .assert_is_valid(remote_ip)
+    }
+
+    pub fn new_maybe_invalid(inner: Arc<AccessTokenInner>) -> Self {
         AccessToken {
             scope_idx: 0,
             inner,
         }
     }
 
-    pub fn scoped(
+    pub fn new_scoped(
         inner: Arc<AccessTokenInner>,
         credential_id: u32,
         remote_ip: IpAddr,
@@ -396,7 +409,7 @@ impl AccessToken {
         remote_ip: IpAddr,
     ) -> trc::Result<Self> {
         if let Some(credential_id) = credential_id {
-            Self::scoped(inner, credential_id, remote_ip)
+            Self::new_scoped(inner, credential_id, remote_ip)
         } else {
             Ok(AccessToken {
                 scope_idx: 0,
@@ -475,30 +488,92 @@ impl AccessToken {
     }
 
     pub fn assert_is_valid(self, remote_ip: IpAddr) -> trc::Result<Self> {
-        if let Some(scope) = self
-            .inner
-            .scopes
-            .get(self.scope_idx)
-            .filter(|scope| scope.expires_at > now())
-        {
-            if scope.allowed_ips.is_empty()
+        if let Some(scope) = self.inner.scopes.get(self.scope_idx) {
+            let has_expired = scope.expires_at <= now();
+            let is_valid_ip = scope.allowed_ips.is_empty()
                 || scope
                     .allowed_ips
                     .iter()
-                    .any(|ip_mask| ip_mask.matches(&remote_ip))
-            {
-                Ok(self)
+                    .any(|ip_mask| ip_mask.matches(&remote_ip));
+
+            let mut access_token = self;
+            if has_expired {
+                if access_token.scope_idx > 0 {
+                    return Err(trc::AuthEvent::CredentialExpired
+                        .into_err()
+                        .ctx(trc::Key::AccountId, access_token.inner.account_id)
+                        .reason("Credential expired."));
+                } else {
+                    trc::event!(
+                        Auth(trc::AuthEvent::CredentialExpired),
+                        AccountId = access_token.inner.account_id,
+                        Reason = "Main credential expired, downgrading permissions.",
+                    );
+                }
+
+                // Downgrade permissions to allow password change
+                let mut scopes = Vec::with_capacity(access_token.inner.scopes.len());
+                for (idx, scope) in access_token.inner.scopes.iter().enumerate() {
+                    if idx == 0 {
+                        let mut permissions = Permissions::new();
+
+                        for permission in [
+                            Permission::Authenticate,
+                            Permission::AuthenticateWithAlias,
+                            Permission::SysCredentialGet,
+                            Permission::SysCredentialQuery,
+                            Permission::SysCredentialUpdate,
+                            Permission::EmailReceive,
+                        ] {
+                            if scope.permissions.get(permission as usize) {
+                                permissions.set(permission as usize);
+                            }
+                        }
+
+                        scopes.push(AccessScope {
+                            permissions,
+                            credential_id: scope.credential_id,
+                            expires_at: u64::MAX,
+                            allowed_ips: scope.allowed_ips.clone(),
+                        });
+                    } else {
+                        scopes.push(scope.clone());
+                    }
+                }
+                let old_inner = &access_token.inner;
+                let inner = AccessTokenInner {
+                    scopes: scopes.into_boxed_slice(),
+                    account_id: old_inner.account_id,
+                    tenant_id: old_inner.tenant_id,
+                    member_of: old_inner.member_of.clone(),
+                    access_to: old_inner.access_to.clone(),
+                    concurrent_http_requests: old_inner.concurrent_http_requests.clone(),
+                    concurrent_imap_requests: old_inner.concurrent_imap_requests.clone(),
+                    concurrent_uploads: old_inner.concurrent_uploads.clone(),
+                    revision_account: old_inner.revision_account,
+                    revision: old_inner.revision,
+                    obj_size: old_inner.obj_size,
+                };
+
+                access_token = AccessToken {
+                    scope_idx: access_token.scope_idx,
+                    inner: Arc::new(inner),
+                };
+            }
+
+            if is_valid_ip {
+                Ok(access_token)
             } else {
-                Err(trc::SecurityEvent::Unauthorized
+                Err(trc::SecurityEvent::IpUnauthorized
                     .into_err()
-                    .ctx(trc::Key::AccountId, self.inner.account_id)
+                    .ctx(trc::Key::AccountId, access_token.inner.account_id)
                     .reason("IP address not allowed."))
             }
         } else {
             Err(trc::SecurityEvent::Unauthorized
                 .into_err()
                 .ctx(trc::Key::AccountId, self.inner.account_id)
-                .reason("Credential expired."))
+                .reason("Credential not valid."))
         }
     }
 
@@ -669,8 +744,8 @@ impl AccessToken {
         }
     }
 
-    pub fn from_id(account_id: u32) -> Self {
-        AccessToken::new(Arc::new(AccessTokenInner::from_id(account_id)))
+    pub fn from_id_maybe_invalid(account_id: u32) -> Self {
+        AccessToken::new_maybe_invalid(Arc::new(AccessTokenInner::from_id(account_id)))
     }
 }
 
@@ -742,7 +817,7 @@ fn hash_account(account: &Account) -> u64 {
                 UserRoles::User => {
                     0u8.hash(&mut s);
                 }
-                UserRoles::TenantAdmin => {
+                UserRoles::Admin => {
                     1u8.hash(&mut s);
                 }
                 UserRoles::Custom(custom_roles) => {

@@ -165,8 +165,8 @@ pub async fn test(params: &mut JMAPTest) {
         }
     }
 
-    params.destroy_all_mailboxes(account).await;
-    params.assert_is_empty().await;
+    test.destroy_all_mailboxes(account).await;
+    test.assert_is_empty().await;;
 }
 
 pub fn all_headers() -> Vec<email::Property> {

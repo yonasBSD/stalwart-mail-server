@@ -69,6 +69,7 @@ pub enum IndexSchemaValueType {
     Enum,
     Boolean,
     Id,
+    IpMask,
 }
 
 #[derive(Debug, Default)]
@@ -192,20 +193,7 @@ impl From<&i64> for IndexValue<'_> {
 
 impl<'x> From<&'x IpAddrOrMask> for IndexValue<'x> {
     fn from(value: &'x IpAddrOrMask) -> Self {
-        match value {
-            IpAddrOrMask::V4 { addr, mask } => {
-                let mut bytes = Vec::with_capacity(8);
-                bytes.extend_from_slice(&addr.octets());
-                bytes.extend_from_slice(&mask.to_be_bytes());
-                IndexValue::Bytes(bytes)
-            }
-            IpAddrOrMask::V6 { addr, mask } => {
-                let mut bytes = Vec::with_capacity(24);
-                bytes.extend_from_slice(&addr.octets());
-                bytes.extend_from_slice(&mask.to_be_bytes());
-                IndexValue::Bytes(bytes)
-            }
-        }
+        IndexValue::Bytes(value.to_index_key())
     }
 }
 

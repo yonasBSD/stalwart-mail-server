@@ -28,13 +28,13 @@ use utils::map::vec_map::VecMap;
 
 pub async fn test(test: &mut TestServer) {
     println!("Running multi-tenancy tests...");
-    let account = test.account("admin@example.org");
+    let admin_system = test.account("admin@example.org");
 
     // Create tenants
     let mut tenant_x_ids = AHashMap::new();
     let mut tenant_y_ids = AHashMap::new();
     for (tenant_ids, name) in [(&mut tenant_x_ids, "x"), (&mut tenant_y_ids, "y")] {
-        let tenant_id = account
+        let tenant_id = admin_system
             .registry_create_object(Tenant {
                 name: format!("Tenant {}", name),
                 quotas: VecMap::from_iter([
@@ -52,7 +52,7 @@ pub async fn test(test: &mut TestServer) {
             })
             .await;
 
-        let domain_id = account
+        let domain_id = admin_system
             .registry_create_object(Domain {
                 name: format!("tenant{name}.org"),
                 member_tenant_id: tenant_id.into(),
@@ -60,12 +60,12 @@ pub async fn test(test: &mut TestServer) {
             })
             .await;
 
-        let tenant_admin_id = account
+        let tenant_admin_id = admin_system
             .registry_create_object(Account::User(UserAccount {
                 name: "admin".to_string(),
                 domain_id,
                 member_tenant_id: tenant_id.into(),
-                roles: UserRoles::TenantAdmin,
+                roles: UserRoles::Admin,
                 description: format!("Tenant {name} Admin").into(),
                 credentials: List::from_iter([Credential::Password(PasswordCredential {
                     secret: format!("tenant {name} secret"),
@@ -333,7 +333,7 @@ pub async fn test(test: &mut TestServer) {
                 let expected = vec![tenant_y_ids[&ObjectType::TaskManager], expected_id];
                 assert_eq!(
                     admin_y
-                        .registry_query(
+                        .registry_query_ids(
                             ObjectType::Account,
                             [(Property::Type, AccountType::User.as_str())],
                             Vec::<&str>::new()
@@ -353,7 +353,7 @@ pub async fn test(test: &mut TestServer) {
             ObjectType::AccountSettings => {
                 assert_eq!(
                     admin_y
-                        .registry_query(
+                        .registry_query_ids(
                             ObjectType::Account,
                             [(Property::Type, AccountType::Group.as_str())],
                             Vec::<&str>::new()
@@ -379,7 +379,11 @@ pub async fn test(test: &mut TestServer) {
             _ => {
                 assert_eq!(
                     admin_y
-                        .registry_query(object_type, Vec::<(&str, &str)>::new(), Vec::<&str>::new())
+                        .registry_query_ids(
+                            object_type,
+                            Vec::<(&str, &str)>::new(),
+                            Vec::<&str>::new()
+                        )
                         .await,
                     vec![expected_id]
                 );
@@ -603,7 +607,7 @@ pub async fn test(test: &mut TestServer) {
                 object_type
             };
             assert_eq!(
-                account
+                admin_system
                     .registry_destroy(object_type, [id])
                     .await
                     .destroyed_ids()

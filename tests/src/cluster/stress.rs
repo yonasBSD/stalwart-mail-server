@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::jmap::{assert_is_empty, mail::mailbox::destroy_all_mailboxes_no_wait, wait_for_index};
+use crate::jmap::{assert_is_empty, mail::mailbox::destroy_all_mailboxes_no_wait, wait_for_tasks};
 use common::Server;
 use email::{
     cache::{MessageCacheFetch, email::MessageCacheAccess},
@@ -264,7 +264,7 @@ async fn email_tests(server: Server, client: Arc<Client>) {
             }
         }
 
-        wait_for_index(&server).await;
+        test.wait_for_tasks().await;
         destroy_all_mailboxes_no_wait(&client).await;
         assert_is_empty(&server).await;
     }
@@ -344,7 +344,7 @@ async fn mailbox_tests(server: Server, client: Arc<Client>) {
 
     join_all(futures).await;
 
-    wait_for_index(&server).await;
+    test.wait_for_tasks().await;
     for mailbox_id in client
         .mailbox_query(None::<mailbox::query::Filter>, None::<Vec<_>>)
         .await

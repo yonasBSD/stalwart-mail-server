@@ -32,6 +32,7 @@ use registry::{
     types::{
         EnumImpl,
         index::{IndexSchemaType, IndexSchemaValueType},
+        ipmask::IpAddrOrMask,
     },
 };
 use std::str::FromStr;
@@ -188,6 +189,11 @@ impl RegistryQuery for Server {
                                 Id::from_str(&value)
                                     .ok()
                                     .map(|id| RegistryFilterValue::from(id.id()))
+                            }
+                            (IndexSchemaValueType::IpMask, serde_json::Value::String(value)) => {
+                                IpAddrOrMask::from_str(&value)
+                                    .ok()
+                                    .map(|ip| RegistryFilterValue::Bytes(ip.to_index_key()))
                             }
                             _ => None,
                         };

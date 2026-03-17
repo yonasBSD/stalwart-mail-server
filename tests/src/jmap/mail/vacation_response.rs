@@ -161,6 +161,6 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Remove test data
     client.vacation_response_destroy().await.unwrap();
-    params.destroy_all_mailboxes(account).await;
-    params.assert_is_empty().await;
+    test.destroy_all_mailboxes(account).await;
+    test.assert_is_empty().await;;
 }

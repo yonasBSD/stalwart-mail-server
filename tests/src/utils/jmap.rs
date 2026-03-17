@@ -504,6 +504,18 @@ impl JmapResponse {
         })
     }
 
+    pub fn assert_destroyed(&self, expected: &[Id]) -> &Self {
+        let destroyed_ids = self.destroyed_ids().collect::<Vec<_>>();
+        for expected in expected {
+            if !destroyed_ids.contains(expected) {
+                panic!(
+                    "Expected id {expected} to be destroyed but got destroyed ids {destroyed_ids:?}: {self:?}"
+                );
+            }
+        }
+        self
+    }
+
     pub fn not_destroyed(&self, id: &str) -> &Value {
         self.0
             .pointer(&format!("/methodResponses/0/1/notDestroyed/{id}"))
@@ -638,6 +650,8 @@ pub trait JmapUtils {
 
     fn text_field(&self, field: &str) -> &str;
 
+    fn integer_field(&self, field: &str) -> i64;
+
     fn assert_is_equal(&self, other: Value);
 }
 
@@ -647,6 +661,13 @@ impl JmapUtils for Value {
             .and_then(|v| v.as_str())
             .unwrap_or_else(|| panic!("Missing {field} in object: {self:?}"))
     }
+
+    fn integer_field(&self, field: &str) -> i64 {
+        self.pointer(&format!("/{field}"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or_else(|| panic!("Missing {field} in object: {self:?}"))
+    }
+
     fn assert_is_equal(&self, expected: Value) {
         if self != &expected {
             panic!(
@@ -656,6 +677,7 @@ impl JmapUtils for Value {
             );
         }
     }
+
     fn with_property(mut self, field: impl Display, value: impl Into<Value>) -> Self {
         if let Value::Object(map) = &mut self {
             map.insert(field.to_string(), value.into());

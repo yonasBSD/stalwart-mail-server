@@ -220,7 +220,7 @@ impl BuildSession for Arc<ServerInstance> {
         let remote_port = remote_addr.port();
 
         // Check if blocked
-        if server.is_ip_blocked(&remote_ip) {
+        if server.is_ip_blocked(remote_ip) {
             trc::event!(
                 Security(trc::SecurityEvent::IpBlocked),
                 ListenerId = self.id.clone(),

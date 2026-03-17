@@ -5,7 +5,7 @@
  */
 
 use crate::{
-    jmap::{ChangeType, IntoJmapSet, JMAPTest, JmapUtils, wait_for_index},
+    jmap::{ChangeType, IntoJmapSet, JMAPTest, JmapUtils, wait_for_tasks},
     webdav::DummyWebDavClient,
 };
 use ahash::AHashSet;
@@ -452,7 +452,7 @@ pub async fn test(params: &mut JMAPTest) {
     }));
 
     // Query tests
-    wait_for_index(&params.server).await;
+    wait_for_tasks(&params.server).await;
     assert_eq!(
         account
             .jmap_query(
@@ -716,7 +716,7 @@ END:VCALENDAR
 
     // Clean up
     account.destroy_all_calendars().await;
-    params.assert_is_empty().await;
+    test.assert_is_empty().await;;
 }
 
 pub fn test_jscalendar_1() -> Value {

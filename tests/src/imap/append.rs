@@ -8,7 +8,7 @@ use std::{fs, io};
 
 use imap_proto::ResponseType;
 
-use crate::jmap::wait_for_index;
+use crate::jmap::wait_for_tasks;
 
 use super::{AssertResult, IMAPTest, ImapConnection, Type, resources_dir};
 
@@ -64,7 +64,7 @@ pub async fn test(imap: &mut ImapConnection, _imap_check: &mut ImapConnection, h
         expected_uid += 1;
     }
 
-    wait_for_index(&handle.server).await;
+    wait_for_tasks(&handle.server).await;
 }
 
 pub async fn assert_append_message(

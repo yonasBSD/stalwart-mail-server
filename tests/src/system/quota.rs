@@ -4,12 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{
-    directory::internal::TestInternalDirectory,
-    jmap::{JMAPTest, mail::delivery::SmtpConnection, wait_for_index},
-    smtp::queue::QueuedEvents,
-    store::cleanup::store_blob_expire_all,
-};
+use crate::utils::{account::Account, jmap::JmapUtils, server::TestServer, smtp::SmtpConnection};
 use common::config::smtp::queue::QueueName;
 use email::{cache::MessageCacheFetch, mailbox::INBOX_ID};
 use jmap::blob::upload::DISABLE_UPLOAD_QUOTA;
@@ -17,33 +12,106 @@ use jmap_client::{
     core::set::{SetErrorType, SetObject},
     email::EmailBodyPart,
 };
+use registry::{
+    schema::{
+        enums::{Permission, StorageQuota, TaskAccountMaintenanceType},
+        prelude::{ObjectType, Property},
+        structs::{
+            self, Credential, Expression, Jmap, MtaStageAuth, PasswordCredential, PermissionsList,
+            Task, TaskAccountMaintenance, TaskStatus, UserAccount,
+        },
+    },
+    types::{EnumImpl, list::List, map::Map},
+};
 use serde_json::json;
 use smtp::queue::spool::SmtpSpool;
 use types::id::Id;
+use utils::map::vec_map::VecMap;
 
-pub async fn test(params: &mut JMAPTest) {
+pub async fn test(test: &mut TestServer) {
     println!("Running quota tests...");
-    let server = params.server.clone();
+    let admin = test.account("admin@example.org");
+    let domain_id = admin.find_or_create_domain("example.org").await;
 
-    let account = params.account("robert@example.com");
-    let other_account = params.account("jdoe@example.com");
+    // Set test settings
+    admin
+        .registry_update_setting(
+            Jmap {
+                upload_quota: 50000,
+                max_upload_count: 3,
+                upload_ttl: registry::types::duration::Duration::from_millis(1000),
+                ..Default::default()
+            },
+            &[
+                Property::UploadQuota,
+                Property::MaxUploadCount,
+                Property::UploadTtl,
+            ],
+        )
+        .await;
+    admin
+        .registry_update_setting(
+            MtaStageAuth {
+                require: Expression {
+                    else_: "false".to_string(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            &[Property::Require],
+        )
+        .await;
+    admin.reload_settings().await;
 
-    server
-        .core
-        .storage
-        .data
-        .set_test_quota("robert@example.com", 1024)
+    // Create test accounts
+    let account_id = admin
+        .registry_create_object(structs::Account::User(UserAccount {
+            name: "user1".to_string(),
+            domain_id,
+            credentials: List::from_iter([Credential::Password(PasswordCredential {
+                secret: "this is a very strong password1".to_string(),
+                ..Default::default()
+            })]),
+            quotas: VecMap::from_iter([(StorageQuota::MaxDiskQuota, 1024)]),
+            permissions: structs::Permissions::Merge(PermissionsList {
+                enabled_permissions: Map::new(vec![Permission::Impersonate]),
+                disabled_permissions: Default::default(),
+            }),
+            ..Default::default()
+        }))
         .await;
-    server
-        .core
-        .storage
-        .data
-        .add_to_group("robert@example.com", "jdoe@example.com")
+    let other_account_id = admin
+        .registry_create_object(structs::Account::User(UserAccount {
+            name: "user2".to_string(),
+            domain_id,
+            credentials: List::from_iter([Credential::Password(PasswordCredential {
+                secret: "this is a very strong password2".to_string(),
+                ..Default::default()
+            })]),
+            permissions: structs::Permissions::Merge(PermissionsList {
+                enabled_permissions: Map::new(vec![Permission::Impersonate]),
+                disabled_permissions: Default::default(),
+            }),
+            ..Default::default()
+        }))
         .await;
-    server.inner.cache.access_tokens.clear();
+    let account = Account::new(
+        "user1@example.org",
+        "this is a very strong password1",
+        &[],
+        account_id,
+    )
+    .await;
+    let other_account = Account::new(
+        "user2@example.org",
+        "this is a very strong password2",
+        &[],
+        other_account_id,
+    )
+    .await;
 
     // Delete temporary blobs from previous tests
-    store_blob_expire_all(&server.core.storage.data).await;
+    test.blob_expire_all().await;
 
     // Test temporary blob quota (3 files)
     DISABLE_UPLOAD_QUOTA.store(false, std::sync::atomic::Ordering::Relaxed);
@@ -66,9 +134,10 @@ pub async fn test(params: &mut JMAPTest) {
         jmap_client::Error::Problem(err) if err.detail().unwrap().contains("quota") => (),
         other => panic!("Unexpected error: {:?}", other),
     }
-    store_blob_expire_all(&server.core.storage.data).await;
+    test.blob_expire_all().await;
 
     // Test temporary blob quota (50000 bytes)
+    tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
     for i in 0..2 {
         assert_eq!(
             client
@@ -87,7 +156,8 @@ pub async fn test(params: &mut JMAPTest) {
         jmap_client::Error::Problem(err) if err.detail().unwrap().contains("quota") => (),
         other => panic!("Unexpected error: {:?}", other),
     }
-    store_blob_expire_all(&server.core.storage.data).await;
+    test.blob_expire_all().await;
+    tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
 
     // Test JMAP Quotas extension
     let response = account
@@ -103,7 +173,7 @@ pub async fn test(params: &mut JMAPTest) {
     assert!(response.contains("\"hardLimit\":1024"), "{}", response);
     assert!(response.contains("\"scope\":\"account\""), "{}", response);
     assert!(
-        response.contains("\"name\":\"robert@example.com\""),
+        response.contains("\"name\":\"user1@example.org\""),
         "{}",
         response
     );
@@ -116,8 +186,8 @@ pub async fn test(params: &mut JMAPTest) {
             client
                 .email_import(
                     create_message_with_size(
-                        "jdoe@example.com",
-                        "robert@example.com",
+                        "user2@example.org",
+                        "user1@example.org",
                         &format!("Test {i}"),
                         512,
                     ),
@@ -134,7 +204,7 @@ pub async fn test(params: &mut JMAPTest) {
     assert_over_quota(
         client
             .email_import(
-                create_message_with_size("test@example.com", "jdoe@example.com", "Test 3", 100),
+                create_message_with_size("test@example.org", "user2@example.org", "Test 3", 100),
                 vec![&inbox_id],
                 None::<Vec<String>>,
                 None,
@@ -155,16 +225,26 @@ pub async fn test(params: &mut JMAPTest) {
     assert!(response.contains("\"used\":1024"), "{}", response);
     assert!(response.contains("\"hardLimit\":1024"), "{}", response);
 
+    // Test registry quota
+    assert_eq!(
+        admin
+            .registry_get_many(ObjectType::Account, [account_id])
+            .await
+            .list()[0]
+            .integer_field(Property::UsedDiskQuota.as_str()),
+        1024
+    );
+
     // Delete messages and check available quota
     for message_id in message_ids {
         client.email_destroy(&message_id).await.unwrap();
     }
 
     // Wait for pending index tasks
-    wait_for_index(&server).await;
+    test.wait_for_tasks().await;
     assert_eq!(
-        server
-            .get_used_quota(account.id().document_id())
+        test.server
+            .get_used_quota_account(account.id().document_id())
             .await
             .unwrap(),
         0
@@ -178,8 +258,8 @@ pub async fn test(params: &mut JMAPTest) {
         create_item
             .mailbox_ids([&inbox_id])
             .subject(format!("Test {i}"))
-            .from(["jdoe@example.com"])
-            .to(["robert@example.com"])
+            .from(["user2@example.org"])
+            .to(["user1@example.org"])
             .body_value("a".to_string(), String::from_utf8(vec![b'A'; 200]).unwrap())
             .text_body(EmailBodyPart::new().part_id("a"));
         let create_id = create_item.create_id().unwrap();
@@ -198,24 +278,30 @@ pub async fn test(params: &mut JMAPTest) {
     create_item
         .mailbox_ids([&inbox_id])
         .subject("Test 3")
-        .from(["jdoe@example.com"])
-        .to(["robert@example.com"])
+        .from(["user2@example.org"])
+        .to(["user1@example.org"])
         .body_value("a".to_string(), String::from_utf8(vec![b'A'; 400]).unwrap())
         .text_body(EmailBodyPart::new().part_id("a"));
     let create_id = create_item.create_id().unwrap();
     assert_over_quota(request.send_set_email().await.unwrap().created(&create_id));
 
     // Recalculate quota
-    let prev_quota = server
-        .get_used_quota(account.id().document_id())
+    let prev_quota = test
+        .server
+        .get_used_quota_account(account.id().document_id())
         .await
         .unwrap();
-    recalculate_quota(&server, account.id().document_id())
-        .await
-        .unwrap();
+    admin
+        .registry_create_object(Task::AccountMaintenance(TaskAccountMaintenance {
+            account_id,
+            maintenance_type: TaskAccountMaintenanceType::RecalculateQuota,
+            status: TaskStatus::now(),
+        }))
+        .await;
+    test.wait_for_tasks().await;
     assert_eq!(
-        server
-            .get_used_quota(account.id().document_id())
+        test.server
+            .get_used_quota_account(account.id().document_id())
             .await
             .unwrap(),
         prev_quota
@@ -226,10 +312,10 @@ pub async fn test(params: &mut JMAPTest) {
         client.email_destroy(&message_id).await.unwrap();
     }
     // Wait for pending index tasks
-    wait_for_index(&server).await;
+    test.wait_for_tasks().await;
     assert_eq!(
-        server
-            .get_used_quota(account.id().document_id())
+        test.server
+            .get_used_quota_account(account.id().document_id())
             .await
             .unwrap(),
         0
@@ -244,8 +330,8 @@ pub async fn test(params: &mut JMAPTest) {
             other_client
                 .email_import(
                     create_message_with_size(
-                        "jane@example.com",
-                        "jdoe@example.com",
+                        "jane@example.org",
+                        "user2@example.org",
                         &format!("Other Test {i}"),
                         512,
                     ),
@@ -290,10 +376,10 @@ pub async fn test(params: &mut JMAPTest) {
         client.email_destroy(&message_id).await.unwrap();
     }
     // Wait for pending index tasks
-    wait_for_index(&server).await;
+    test.wait_for_tasks().await;
     assert_eq!(
-        server
-            .get_used_quota(account.id().document_id())
+        test.server
+            .get_used_quota_account(account.id().document_id())
             .await
             .unwrap(),
         0
@@ -303,11 +389,11 @@ pub async fn test(params: &mut JMAPTest) {
     let mut lmtp = SmtpConnection::connect().await;
     for i in 0..2 {
         lmtp.ingest(
-            "jane@example.com",
-            &["robert@example.com"],
+            "jane@example.org",
+            &["user1@example.org"],
             &String::from_utf8(create_message_with_size(
-                "jane@example.com",
-                "robert@example.com",
+                "jane@example.org",
+                "user1@example.org",
                 &format!("Ingest test {i}"),
                 513,
             ))
@@ -315,13 +401,14 @@ pub async fn test(params: &mut JMAPTest) {
         )
         .await;
     }
-    let quota = server
-        .get_used_quota(account.id().document_id())
+    let quota = test
+        .server
+        .get_used_quota_account(account.id().document_id())
         .await
         .unwrap();
     assert!(quota > 0 && quota <= 1024, "Quota is {}", quota);
     assert_eq!(
-        server
+        test.server
             .get_cached_messages(account.id().document_id())
             .await
             .unwrap()
@@ -334,18 +421,23 @@ pub async fn test(params: &mut JMAPTest) {
     DISABLE_UPLOAD_QUOTA.store(true, std::sync::atomic::Ordering::Relaxed);
 
     // Remove test data
-    params.destroy_all_mailboxes(account).await;
-    params.destroy_all_mailboxes(other_account).await;
+    test.destroy_all_mailboxes(&account).await;
+    test.destroy_all_mailboxes(&other_account).await;
 
-    for event in server.all_queued_messages().await.messages {
-        server
+    for event in test.all_queued_messages().await.messages {
+        test.server
             .read_message(event.queue_id, QueueName::default())
             .await
             .unwrap()
-            .remove(&server, event.due.into())
+            .remove(&test.server, event.due.into())
             .await;
     }
-    params.assert_is_empty().await;
+    test.assert_is_empty().await;
+
+    admin
+        .registry_destroy(ObjectType::Account, [account_id, other_account_id])
+        .await
+        .assert_destroyed(&[account_id, other_account_id]);
 }
 
 fn assert_over_quota<T: std::fmt::Debug>(result: Result<T, jmap_client::Error>) {

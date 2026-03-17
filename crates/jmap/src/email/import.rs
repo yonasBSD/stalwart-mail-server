@@ -56,7 +56,7 @@ impl EmailImport for Server {
         let import_access_token = if account_id != access_token.account_id() {
             #[cfg(feature = "test_mode")]
             {
-                AccessToken::from_id(account_id).into()
+                AccessToken::from_id_maybe_invalid(account_id).into()
             }
 
             #[cfg(not(feature = "test_mode"))]

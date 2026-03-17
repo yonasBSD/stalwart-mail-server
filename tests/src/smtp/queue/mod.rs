@@ -33,14 +33,3 @@ pub fn build_rcpt(address: &str, retry: u64, notify: u64, expires: u64) -> Recip
         queue: QueueName::default(),
     }
 }
-
-pub trait QueuedEvents: Sync + Send {
-    fn all_queued_messages(&self) -> impl Future<Output = QueuedMessages> + Send;
-}
-
-impl QueuedEvents for Server {
-    async fn all_queued_messages(&self) -> QueuedMessages {
-        self.next_event(&mut Queue::new(self.inner.clone(), mpsc::channel(100).1))
-            .await
-    }
-}

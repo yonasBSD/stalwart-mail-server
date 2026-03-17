@@ -5,7 +5,7 @@
  */
 
 use crate::{
-    jmap::{ChangeType, IntoJmapSet, JMAPTest, JmapUtils, wait_for_index},
+    jmap::{ChangeType, IntoJmapSet, JMAPTest, JmapUtils, wait_for_tasks},
     webdav::DummyWebDavClient,
 };
 use ahash::AHashSet;
@@ -336,7 +336,7 @@ pub async fn test(params: &mut JMAPTest) {
     }));
 
     // Query tests
-    wait_for_index(&params.server).await;
+    wait_for_tasks(&params.server).await;
     let email = if !params.server.search_store().is_mysql() {
         "sarah.johnson@example.com"
     } else {
@@ -496,7 +496,7 @@ END:VCARD"#
 
     // Clean up
     account.destroy_all_addressbooks().await;
-    params.assert_is_empty().await;
+    test.assert_is_empty().await;;
 }
 
 fn test_jscontact_1() -> Value {

@@ -330,7 +330,7 @@ pub async fn test(test: &TestServer) {
     // Query tests
     assert_eq!(
         account
-            .registry_query(
+            .registry_query_ids(
                 ObjectType::Domain,
                 [(Property::Name, "example.com")],
                 [Property::Name]
@@ -340,7 +340,7 @@ pub async fn test(test: &TestServer) {
     );
     assert_eq!(
         account
-            .registry_query(
+            .registry_query_ids(
                 ObjectType::Account,
                 [
                     (Property::Name, "johndoe"),

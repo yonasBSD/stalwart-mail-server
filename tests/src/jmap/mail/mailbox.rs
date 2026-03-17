@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::jmap::{Account, JMAPTest, wait_for_index};
+use crate::jmap::{Account, JMAPTest, wait_for_tasks};
 use jmap_client::{
     Error, Set,
     client::{Client, Credentials},
@@ -608,7 +608,7 @@ pub async fn test(params: &mut JMAPTest) {
     );
 
     destroy_all_mailboxes_no_wait(&client).await;
-    params.assert_is_empty().await;
+    test.assert_is_empty().await;
 }
 
 async fn create_test_mailboxes(client: &Client) -> AHashMap<String, String> {
@@ -653,36 +653,6 @@ fn build_create_query(
         if let Some(children) = mailbox.children {
             build_create_query(request, mailbox_map, children, create_mailbox_id.into());
         }
-    }
-}
-
-impl JMAPTest {
-    pub async fn destroy_all_mailboxes(&self, account: &Account) {
-        wait_for_index(&self.server).await;
-        destroy_all_mailboxes_no_wait(account.client()).await;
-    }
-}
-
-pub async fn destroy_all_mailboxes_for_account(account_id: u32) {
-    let mut client = Client::new()
-        .credentials(Credentials::basic("admin", "secret"))
-        .follow_redirects(["127.0.0.1"])
-        .timeout(Duration::from_secs(3600))
-        .accept_invalid_certs(true)
-        .connect("https://127.0.0.1:8899")
-        .await
-        .unwrap();
-    client.set_default_account_id(Id::from(account_id));
-    destroy_all_mailboxes_no_wait(&client).await;
-}
-
-pub async fn destroy_all_mailboxes_no_wait(client: &Client) {
-    let mut request = client.build();
-    request.query_mailbox().arguments().sort_as_tree(true);
-    let mut ids = request.send_query_mailbox().await.unwrap().take_ids();
-    ids.reverse();
-    for id in ids {
-        client.mailbox_destroy(&id, true).await.unwrap();
     }
 }
 

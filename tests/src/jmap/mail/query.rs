@@ -5,7 +5,7 @@
  */
 
 use crate::{
-    jmap::{Account, JMAPTest, wait_for_index},
+    jmap::{Account, JMAPTest, wait_for_tasks},
     store::{deflate_test_resource, query::FIELDS},
 };
 use ::email::{cache::MessageCacheFetch, mailbox::Mailbox};
@@ -89,7 +89,7 @@ pub async fn test(params: &mut JMAPTest, insert: bool) {
         );
 
         // Wait for indexing to complete
-        wait_for_index(&server).await;
+         test.wait_for_tasks().await;
     }
 
     let can_stem = !params.server.search_store().is_mysql();
@@ -112,8 +112,8 @@ pub async fn test(params: &mut JMAPTest, insert: bool) {
         .unwrap_set_email()
         .unwrap();
 
-    params.destroy_all_mailboxes(account).await;
-    params.assert_is_empty().await;
+    test.destroy_all_mailboxes(account).await;
+    test.assert_is_empty().await;;
 }
 
 pub async fn query(client: &Client, can_stem: bool) {
@@ -867,7 +867,7 @@ pub async fn create(server: &Server, account: &Account) {
         task.await.unwrap();
     }
 
-    wait_for_index(server).await;
+    wait_for_tasks(server).await;
 
     println!(
         "Imported {} messages in {} ms (single thread).",

@@ -100,7 +100,7 @@ impl EmailSet for Server {
         let import_access_token = if account_id != access_token.account_id() {
             #[cfg(feature = "test_mode")]
             {
-                std::sync::Arc::new(AccessToken::from_id(account_id)).into()
+                std::sync::Arc::new(AccessToken::from_id_maybe_invalid(account_id)).into()
             }
 
             #[cfg(not(feature = "test_mode"))]

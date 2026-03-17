@@ -44,8 +44,22 @@ impl Server {
         {
             Ok(token) => Ok(token),
             Err(err) => {
-                if err.matches(trc::EventType::Auth(trc::AuthEvent::Failed))
-                    && self.has_auth_fail2ban()
+                // Random delay to mitigate user enumeration attacks
+                #[cfg(not(feature = "test_mode"))]
+                {
+                    use store::rand::{self, Rng};
+
+                    tokio::time::sleep(std::time::Duration::from_millis(
+                        rand::rng().random_range(50..500),
+                    ))
+                    .await;
+                }
+
+                if matches!(
+                    err.as_ref(),
+                    trc::EventType::Auth(trc::AuthEvent::Failed)
+                        | trc::EventType::Security(trc::SecurityEvent::IpUnauthorized)
+                ) && self.has_auth_fail2ban()
                     && self
                         .is_auth_fail2banned(req.remote_ip, req.username())
                         .await?
@@ -88,7 +102,9 @@ impl Server {
                                     Details = fallback_user.to_string(),
                                 );
 
-                                self.access_token(account_id).await.map(AccessToken::new)
+                                self.access_token(account_id)
+                                    .await
+                                    .and_then(|token| AccessToken::new(token, req.remote_ip))
                             } else {
                                 Err(trc::AuthEvent::Failed
                                     .into_err()
@@ -149,7 +165,8 @@ impl Server {
                     let directory_account = directory.authenticate(&req.credentials).await?;
 
                     is_alias_login = directory_account.email != auth_as_address;
-                    self.build_directory_token(directory_account).await
+                    self.build_directory_token(directory_account, req.remote_ip)
+                        .await
                 } else if let Some(account_id) =
                     self.account_id_from_parts(auth_as_local, domain.id).await?
                 {
@@ -177,22 +194,10 @@ impl Server {
                         .await?
                         {
                             SecretVerificationResult::Valid => {
-                                if credential
-                                    .expires_at
-                                    .as_ref()
-                                    .is_none_or(|exp| exp.timestamp() > now() as i64)
-                                {
-                                    is_alias_login = account.name != auth_as_address;
-                                    self.access_token(account_id).await.map(AccessToken::new)
-                                } else {
-                                    Err(trc::AuthEvent::Failed
-                                        .into_err()
-                                        .ctx(trc::Key::AccountName, account.name.to_string())
-                                        .ctx(trc::Key::AccountId, account_id)
-                                        .ctx(trc::Key::Id, credential.credential_id.id())
-                                        .ctx(trc::Key::SpanId, req.session_id)
-                                        .reason("Password credential has expired"))
-                                }
+                                is_alias_login = account.name != auth_as_local;
+                                self.access_token(account_id)
+                                    .await
+                                    .and_then(|token| AccessToken::new(token, req.remote_ip))
                             }
                             SecretVerificationResult::Invalid => Err(trc::AuthEvent::Failed
                                 .into_err()
@@ -250,7 +255,9 @@ impl Server {
                             Details = master_address.to_string(),
                         );
 
-                        self.access_token(account_id).await.map(AccessToken::new)
+                        self.access_token(account_id)
+                            .await
+                            .map(AccessToken::new_maybe_invalid)
                     } else {
                         Err(trc::AuthEvent::Failed
                             .into_err()
@@ -299,7 +306,7 @@ impl Server {
                 {
                     match directory.authenticate(&req.credentials).await {
                         Ok(result) => {
-                            return self.build_directory_token(result).await;
+                            return self.build_directory_token(result, req.remote_ip).await;
                         }
                         Err(err) => {
                             if !err.matches(trc::EventType::Auth(trc::AuthEvent::Failed)) {
@@ -315,7 +322,7 @@ impl Server {
                     .await?;
                 self.access_token(token_info.account_id)
                     .await
-                    .map(AccessToken::new)
+                    .and_then(|token| AccessToken::new(token, req.remote_ip))
             }
         }
     }
@@ -359,7 +366,7 @@ impl Server {
                         .as_ref()
                         .is_some_and(|exp| exp.timestamp() < now() as i64)
                     {
-                        return Err(trc::AuthEvent::Failed
+                        return Err(trc::AuthEvent::CredentialExpired
                             .into_err()
                             .ctx(trc::Key::AccountName, account.name)
                             .ctx(trc::Key::AccountId, account_id)
@@ -391,7 +398,7 @@ impl Server {
                     .access_token_from_account(account_id, structs::Account::User(account))
                     .await?;
 
-                AccessToken::scoped(token, credential_id, remote_ip)
+                AccessToken::new_scoped(token, credential_id, remote_ip)
                     .add_context(|ctx| ctx.span_id(span_id))
             } else {
                 Err(trc::AuthEvent::Failed
@@ -441,11 +448,15 @@ impl Server {
         }
     }
 
-    async fn build_directory_token(&self, account: directory::Account) -> trc::Result<AccessToken> {
+    async fn build_directory_token(
+        &self,
+        account: directory::Account,
+        remote_ip: IpAddr,
+    ) -> trc::Result<AccessToken> {
         let account = self.synchronize_account(account).await?;
         self.access_token_from_account(account.id, account.account)
             .await
-            .map(AccessToken::new)
+            .and_then(|token| AccessToken::new(token, remote_ip))
     }
 
     pub async fn get_directory_for_domain(

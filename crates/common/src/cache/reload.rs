@@ -12,7 +12,7 @@ use crate::{
         telemetry::Telemetry,
     },
     ipc::{QueueEvent, RegistryChange},
-    network::security::BlockedIps,
+    network::security::{BlockedIps, IpWithTtl},
 };
 use ahash::AHashMap;
 use directory::Directories;
@@ -35,14 +35,22 @@ impl Server {
         let object = match change {
             RegistryChange::Insert(id) => {
                 if matches!(id.object(), ObjectType::BlockedIp) {
-                    if let Some(ip) = bootstrap.get_infallible::<BlockedIp>(id.id()).await
-                        && ip.expires_at.is_none_or(|ip| ip.timestamp() > now() as i64)
-                    {
-                        let mut ips = self.inner.data.blocked_ips.write();
-                        if let Some(ip) = ip.address.try_to_ip() {
-                            ips.blocked_ip_addresses.insert(ip);
-                        } else {
-                            ips.blocked_ip_networks.push(ip.address);
+                    if let Some(ip) = bootstrap.get_infallible::<BlockedIp>(id.id()).await {
+                        let expires_at = ip
+                            .expires_at
+                            .as_ref()
+                            .map(|dt| dt.timestamp() as u64)
+                            .unwrap_or(u64::MAX);
+
+                        if expires_at > now() {
+                            let mut ips = self.inner.data.blocked_ips.write();
+                            if let Some(ip) = ip.address.try_to_ip() {
+                                ips.blocked_ip_addresses
+                                    .insert(IpWithTtl::new(ip, expires_at));
+                            } else {
+                                ips.blocked_ip_networks
+                                    .push(IpWithTtl::new(ip.address, expires_at));
+                            }
                         }
                     }
                     return Ok(bootstrap.into());

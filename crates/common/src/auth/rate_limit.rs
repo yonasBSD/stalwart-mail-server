@@ -53,7 +53,7 @@ impl Server {
         }
     }
 
-    pub async fn is_http_anonymous_request_allowed(&self, addr: &IpAddr) -> trc::Result<()> {
+    pub async fn is_http_anonymous_request_allowed(&self, addr: IpAddr) -> trc::Result<()> {
         if let Some(rate) = &self.core.network.http.rate_anonymous
             && !self.is_ip_allowed(addr)
             && self
@@ -62,7 +62,7 @@ impl Server {
                 .memory
                 .is_rate_allowed(
                     KV_RATE_LIMIT_HTTP_ANONYMOUS,
-                    &ip_to_bytes(addr),
+                    &ip_to_bytes(&addr),
                     rate,
                     false,
                 )

@@ -109,7 +109,9 @@ impl ToRequestError for trc::Error {
                 | trc::SecurityEvent::AbuseBan
                 | trc::SecurityEvent::LoiterBan
                 | trc::SecurityEvent::IpBlocked => RequestError::too_many_auth_attempts(),
-                trc::SecurityEvent::Unauthorized => RequestError::forbidden(),
+                trc::SecurityEvent::Unauthorized | trc::SecurityEvent::IpUnauthorized => {
+                    RequestError::forbidden()
+                }
                 trc::SecurityEvent::IpBlockExpired | trc::SecurityEvent::IpAllowExpired => {
                     RequestError::internal_server_error()
                 }

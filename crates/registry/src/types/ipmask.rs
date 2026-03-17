@@ -107,6 +107,23 @@ impl IpAddrOrMask {
             },
         }
     }
+
+    pub fn to_index_key(&self) -> Vec<u8> {
+        match self {
+            IpAddrOrMask::V4 { addr, mask } => {
+                let mut bytes = Vec::with_capacity(8);
+                bytes.extend_from_slice(&addr.octets());
+                bytes.extend_from_slice(&mask.to_be_bytes());
+                bytes
+            }
+            IpAddrOrMask::V6 { addr, mask } => {
+                let mut bytes = Vec::with_capacity(24);
+                bytes.extend_from_slice(&addr.octets());
+                bytes.extend_from_slice(&mask.to_be_bytes());
+                bytes
+            }
+        }
+    }
 }
 
 impl FromStr for IpAddrOrMask {

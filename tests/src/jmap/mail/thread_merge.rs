@@ -5,7 +5,7 @@
  */
 
 use crate::{
-    jmap::{JMAPTest, mail::mailbox::destroy_all_mailboxes_no_wait, wait_for_index},
+    jmap::{JMAPTest, mail::mailbox::destroy_all_mailboxes_no_wait, wait_for_tasks},
     store::deflate_test_resource,
 };
 use ::email::{
@@ -141,7 +141,7 @@ async fn test_single_thread(params: &mut JMAPTest) {
             }
         }
 
-        wait_for_index(&params.server).await;
+        wait_for_tasks(&params.server).await;
 
         for test_num in 0..=5 {
             let result = client
@@ -206,7 +206,7 @@ async fn test_single_thread(params: &mut JMAPTest) {
         }
     }
 
-    params.assert_is_empty().await;
+    test.assert_is_empty().await;;
 }
 
 #[allow(dead_code)]
@@ -277,8 +277,8 @@ async fn test_multi_thread(params: &mut JMAPTest) {
             .len(),
     );
     println!("Deleting all messages...");
-    params.destroy_all_mailboxes(account).await;
-    params.assert_is_empty().await;
+    test.destroy_all_mailboxes(account).await;
+    test.assert_is_empty().await;;
 }
 
 fn build_message(message: usize, in_reply_to: Option<usize>, thread_num: usize) -> String {

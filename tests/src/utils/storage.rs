@@ -154,7 +154,7 @@ fn build_search_store(typ: SearchStoreType, _path: &str) -> SearchStore {
     }
 }
 
-pub async fn wait_for_index(server: &Server) {
+pub async fn wait_for_tasks(server: &Server) {
     let mut count = 0;
     loop {
         let mut has_index_tasks = None;
@@ -193,7 +193,7 @@ pub async fn wait_for_index(server: &Server) {
 
 pub async fn assert_is_empty(server: &Server) {
     // Wait for pending index tasks
-    wait_for_index(server).await;
+    wait_for_tasks(server).await;
 
     // Assert is empty
     store_assert_is_empty(server.store(), server.core.storage.blob.clone(), false).await;

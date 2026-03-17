@@ -147,5 +147,5 @@ pub async fn test(params: &mut JMAPTest) {
         .with_document(0)
         .clear(PrincipalField::ParticipantIdentities);
     params.server.commit_batch(batch).await.unwrap();
-    params.assert_is_empty().await;
+    test.assert_is_empty().await;;
 }

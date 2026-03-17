@@ -329,7 +329,7 @@ async fn insert_safe_defaults(bp: &mut Bootstrap) -> trc::Result<()> {
                 ..Default::default()
             },
             Role {
-                description: "Superuser".into(),
+                description: "System Administrator".into(),
                 enabled_permissions: Map::new(permissions.superuser),
                 ..Default::default()
             },
@@ -356,6 +356,7 @@ async fn insert_safe_defaults(bp: &mut Bootstrap) -> trc::Result<()> {
                         default_user_role_ids: Map::new(vec![role_ids[0]]),
                         default_group_role_ids: Map::new(vec![role_ids[1]]),
                         default_tenant_role_ids: Map::new(vec![role_ids[2], role_ids[0]]),
+                        default_admin_role_ids: Map::new(vec![role_ids[3], role_ids[0]]),
                         ..Default::default()
                     }
                     .into(),

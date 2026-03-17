@@ -146,7 +146,7 @@ impl Account {
 
     pub async fn find_or_create_domain(&self, name: &'static str) -> Id {
         let ids = self
-            .registry_query(
+            .registry_query_ids(
                 ObjectType::Domain,
                 [(Property::Name, name)],
                 Vec::<&str>::new(),
@@ -173,7 +173,7 @@ impl Account {
         let mut role_ids = Vec::new();
         for name in names {
             let role_id = *self
-                .registry_query(
+                .registry_query_ids(
                     ObjectType::Role,
                     [(Property::Description, *name)],
                     Vec::<&str>::new(),

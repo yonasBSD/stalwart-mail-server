@@ -82,6 +82,30 @@ pub async fn test(params: &mut JMAPTest) {
         assert_eq!(identity.name().unwrap(), "John Doe");
     }
 
+    // Users should be allowed to create identities only
+    // using email addresses associated to their principal
+    let iid1 = client
+        .identity_create("John Doe", "jdoe@example.com")
+        .await
+        .unwrap()
+        .take_id();
+    let iid2 = client
+        .identity_create("John Doe (secondary)", "john.doe@example.com")
+        .await
+        .unwrap()
+        .take_id();
+    assert!(matches!(
+        client
+            .identity_create("John the Spammer", "spammy@mcspamface.com")
+            .await,
+        Err(jmap_client::Error::Set(SetError {
+            type_: SetErrorType::InvalidProperties,
+            ..
+        }))
+    ));
+    client.identity_destroy(&iid1).await.unwrap();
+    client.identity_destroy(&iid2).await.unwrap();
+
     // Create an identity without using a valid address should fail
     match client
         .identity_create("John Doe", "someaddress@domain.com")
@@ -476,8 +500,8 @@ pub async fn test(params: &mut JMAPTest) {
             .await;
         client.email_submission_destroy(&id).await.unwrap();
     }
-    params.destroy_all_mailboxes(account).await;
-    params.assert_is_empty().await;
+    test.destroy_all_mailboxes(account).await;
+    test.assert_is_empty().await;;
 }
 
 pub fn spawn_mock_smtp_server() -> (mpsc::Receiver<MockMessage>, Arc<Mutex<MockSMTPSettings>>) {

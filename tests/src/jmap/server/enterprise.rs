@@ -16,7 +16,7 @@ use crate::{
         JMAPTest, ManagementApi,
         mail::delivery::{AssertResult, SmtpConnection},
         server::List,
-        wait_for_index,
+        wait_for_tasks,
     },
 };
 use common::{
@@ -151,7 +151,7 @@ pub async fn test(params: &mut JMAPTest) {
     destroy_account_data(&server, account_id, true)
         .await
         .unwrap();
-    params.assert_is_empty().await;
+    test.assert_is_empty().await;;
 
     params.server.inner.shared_core.store(
         params
@@ -292,7 +292,7 @@ async fn tracing(params: &mut JMAPTest) {
     tokio::time::sleep(Duration::from_millis(300)).await;
 
     params.server.notify_task_queue();
-    wait_for_index(&params.server).await;
+    wait_for_tasks(&params.server).await;
 
     // Purge should not delete anything at this point
     store
@@ -437,7 +437,7 @@ async fn undelete(params: &mut JMAPTest) {
     api.get::<serde_json::Value>("/api/store/purge/account/jdoe@example.com")
         .await
         .unwrap();
-    wait_for_index(&params.server).await;
+    wait_for_tasks(&params.server).await;
     tokio::time::sleep(Duration::from_millis(200)).await;
     let deleted = api
         .get::<List<DeletedBlobResponse>>("/api/store/undelete/jdoe@example.com")

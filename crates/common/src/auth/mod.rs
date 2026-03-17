@@ -125,7 +125,7 @@ pub struct AccessToken {
     inner: Arc<AccessTokenInner>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct AccessTokenInner {
     pub(crate) account_id: u32,
     pub(crate) tenant_id: Option<u32>,
@@ -140,7 +140,7 @@ pub struct AccessTokenInner {
     pub(crate) obj_size: u64,
 }
 
-#[derive(Debug, Default, Hash)]
+#[derive(Debug, Default, Hash, Clone)]
 pub(crate) struct AccessScope {
     pub permissions: Permissions,
     pub credential_id: u32,
@@ -148,7 +148,7 @@ pub(crate) struct AccessScope {
     pub allowed_ips: Box<[IpAddrOrMask]>,
 }
 
-#[derive(Debug, Default, Hash, PartialEq, Eq)]
+#[derive(Debug, Default, Hash, PartialEq, Eq, Clone)]
 pub(crate) struct AccessTo {
     pub account_id: u32,
     pub collections: Bitmap<Collection>,

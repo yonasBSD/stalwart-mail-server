@@ -52,7 +52,9 @@ pub(crate) async fn task_set(
     'outer: for (id, value) in set.create.drain() {
         let mut task = Task::default();
         if let Err(err) = task.patch(
-            JsonPointerPatch::new(&JsonPointer::new(vec![])).with_create(true),
+            JsonPointerPatch::new(&JsonPointer::new(vec![]))
+                .with_create(true)
+                .with_can_set_account(true),
             value,
         ) {
             set.response.not_created.append(id, err.into());
@@ -189,7 +191,12 @@ pub(crate) async fn task_set(
                 Key::Owned(other) => JsonPointer::parse(&other),
             };
 
-            if let Err(err) = task.patch(JsonPointerPatch::new(&ptr).with_create(false), value) {
+            if let Err(err) = task.patch(
+                JsonPointerPatch::new(&ptr)
+                    .with_create(false)
+                    .with_can_set_account(true),
+                value,
+            ) {
                 set.response.not_updated.append(id, err.into());
                 continue 'outer;
             }

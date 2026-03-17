@@ -7,7 +7,7 @@
 use crate::{
     AssertConfig, TEST_USERS, add_test_certs,
     directory::internal::TestInternalDirectory,
-    jmap::{assert_is_empty, wait_for_index},
+    jmap::{assert_is_empty, wait_for_tasks},
     store::{
         TempDir, build_store_config,
         cleanup::{search_store_destroy, store_destroy},
@@ -277,8 +277,8 @@ impl WebDavTest {
         self.clear_cache();
     }
 
-    pub async fn wait_for_index(&self) {
-        wait_for_index(&self.server).await;
+    pub async fn wait_for_tasks(&self) {
+        wait_for_tasks(&self.server).await;
     }
 }
 

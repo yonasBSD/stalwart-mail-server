@@ -55,7 +55,7 @@ impl ClientRegistrationHandler for Server {
             access_token.enforce_permission(Permission::OAuthClientRegistration)?;
             access_token.tenant_id()
         } else {
-            self.is_http_anonymous_request_allowed(&session.remote_ip)
+            self.is_http_anonymous_request_allowed(session.remote_ip)
                 .await?;
             None
         };

@@ -460,5 +460,5 @@ pub async fn test(params: &mut JMAPTest) {
     );
 
     // Destroy all mailboxes
-    params.assert_is_empty().await;
+    test.assert_is_empty().await;
 }

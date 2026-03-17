@@ -170,6 +170,6 @@ pub async fn test(params: &mut JMAPTest) {
     assert_eq!(samples.spam_count, 10);
     assert_eq!(samples.samples.len(), 20);
 
-    params.destroy_all_mailboxes(account).await;
-    params.assert_is_empty().await;
+    test.destroy_all_mailboxes(account).await;
+    test.assert_is_empty().await;;
 }

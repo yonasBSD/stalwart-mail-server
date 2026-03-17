@@ -329,5 +329,5 @@ pub async fn test(params: &mut JMAPTest) {
     );
 
     // Make sure everything is gone
-    params.assert_is_empty().await;
+    test.assert_is_empty().await;
 }

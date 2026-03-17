@@ -15,10 +15,11 @@ use registry::{
             Account, Credential, Http, PasswordCredential, SecondaryCredential, UserAccount,
         },
     },
-    types::{EnumImpl, ipmask::IpAddrOrMask, list::List, map::Map},
+    types::{EnumImpl, datetime::UTCDateTime, ipmask::IpAddrOrMask, list::List, map::Map},
 };
 use serde_json::json;
 use std::str::FromStr;
+use store::write::now;
 
 pub async fn test(test: &TestServer) {
     let admin = test.account("admin@example.org");
@@ -134,7 +135,16 @@ pub async fn test(test: &TestServer) {
     validate_password("user@example.org", "this is a very strong password", false).await;
     validate_password("user@example.org", "very strong password indeed", true).await;
 
-    // Change password as user
+    // Set password expiration in two seconds and verify it works
+    admin
+        .registry_update_object(
+            ObjectType::Account,
+            user_id,
+            json!({
+               "credentials/0/expiresAt": UTCDateTime::from_timestamp((now() + 2) as i64)
+            }),
+        )
+        .await;
     let mut user = crate::utils::account::Account::new(
         "user@example.org",
         "very strong password indeed",
@@ -142,8 +152,28 @@ pub async fn test(test: &TestServer) {
         user_id,
     )
     .await;
+    user.registry_query_ids(
+        ObjectType::PublicKey,
+        Vec::<(&str, &str)>::new(),
+        Vec::<&str>::new(),
+    )
+    .await;
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    assert_eq!(
+        user.registry_query(
+            ObjectType::PublicKey,
+            Vec::<(&str, &str)>::new(),
+            Vec::<&str>::new(),
+        )
+        .await
+        .method_response()
+        .text_field("type"),
+        "forbidden"
+    );
+
+    // Change password as user and reset expiration
     let credential_id = user
-        .registry_query(
+        .registry_query_ids(
             ObjectType::Credential,
             [(Property::Type, CredentialType::Password.as_str())],
             Vec::<&str>::new(),
@@ -191,7 +221,15 @@ pub async fn test(test: &TestServer) {
     validate_password("user@example.org", "user provided strong password", true).await;
     user.update_secret("user provided strong password");
 
-    // Users should not be allowed to change allowedIps of expiration
+    // After a successful password change, the user permissions should be restored
+    user.registry_query_ids(
+        ObjectType::PublicKey,
+        Vec::<(&str, &str)>::new(),
+        Vec::<&str>::new(),
+    )
+    .await;
+
+    // Users should not be allowed to change allowedIps or expiration
     user.registry_update_object_expect_err(
         ObjectType::Credential,
         credential_id,
@@ -306,6 +344,20 @@ pub async fn test(test: &TestServer) {
     .assert_type(SetErrorType::OverQuota)
     .assert_description_contains("You have exceeded your quota of 1 API keys.");
 
+    // Set a credential expiration in the past and verify it is rejected
+    for credential_id in [app_password_id, api_key_id] {
+        user.registry_update_object(
+            ObjectType::Credential,
+            credential_id,
+            json!({
+                Property::ExpiresAt: UTCDateTime::now()
+            }),
+        )
+        .await;
+    }
+    validate_token_with_ip(&api_key_secret, "10.0.0.2", false).await;
+    validate_password_with_ip("user@example.org", &app_password_secret, "10.0.0.2", false).await;
+
     // Destroy the API key and app password, then verify they no longer work
     let response = user
         .registry_destroy(ObjectType::Credential, [app_password_id, api_key_id])
@@ -328,13 +380,25 @@ pub async fn test(test: &TestServer) {
         vec![user_id]
     );
     validate_password("user@example.org", "user provided strong password", false).await;
+
+    // Disable X-Forwarded-For processing
+    admin
+        .registry_update_setting(
+            Http {
+                use_x_forwarded: false,
+                ..Default::default()
+            },
+            &[Property::UseXForwarded],
+        )
+        .await;
+    admin.reload_settings().await;
 }
 
-async fn validate_password(username: &str, password: &str, is_valid: bool) {
+pub async fn validate_password(username: &str, password: &str, is_valid: bool) {
     validate_password_with_ip(username, password, "127.0.0.1", is_valid).await;
 }
 
-async fn validate_password_with_ip(
+pub async fn validate_password_with_ip(
     username: &str,
     password: &str,
     remote_ip: &str,
@@ -367,7 +431,7 @@ async fn validate_password_with_ip(
     }
 }
 
-async fn validate_token_with_ip(token: &str, remote_ip: &str, is_valid: bool) {
+pub async fn validate_token_with_ip(token: &str, remote_ip: &str, is_valid: bool) {
     let response = reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
         .build()

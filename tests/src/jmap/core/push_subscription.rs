@@ -202,8 +202,8 @@ pub async fn test(params: &mut JMAPTest) {
     client.mailbox_destroy(&mailbox_id, true).await.unwrap();
     expect_nothing(&mut event_rx).await;
 
-    params.destroy_all_mailboxes(account).await;
-    params.assert_is_empty().await;
+    test.destroy_all_mailboxes(account).await;
+    test.assert_is_empty().await;
 }
 
 #[derive(Clone)]

@@ -96,8 +96,8 @@ pub async fn test(params: &mut JMAPTest) {
         .unwrap();
     expect_nothing(&mut stream_rx).await;
 
-    params.destroy_all_mailboxes(account).await;
-    params.assert_is_empty().await;
+    test.destroy_all_mailboxes(account).await;
+    test.assert_is_empty().await;
 }
 
 async fn expect_response(

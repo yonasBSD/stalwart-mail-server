@@ -62,7 +62,7 @@ impl Authenticator for Server {
                 })?
             } else if mechanism.eq_ignore_ascii_case("bearer") {
                 // Enforce anonymous rate limit
-                self.is_http_anonymous_request_allowed(&session.remote_ip)
+                self.is_http_anonymous_request_allowed(session.remote_ip)
                     .await?;
 
                 Credentials::Bearer {
@@ -71,7 +71,7 @@ impl Authenticator for Server {
                 }
             } else {
                 // Enforce anonymous rate limit
-                self.is_http_anonymous_request_allowed(&session.remote_ip)
+                self.is_http_anonymous_request_allowed(session.remote_ip)
                     .await?;
 
                 return Err(trc::AuthEvent::Error
@@ -108,7 +108,7 @@ impl Authenticator for Server {
                 .map(|in_flight| (in_flight, access_token))
         } else {
             // Enforce anonymous rate limit
-            self.is_http_anonymous_request_allowed(&session.remote_ip)
+            self.is_http_anonymous_request_allowed(session.remote_ip)
                 .await?;
 
             Err(trc::AuthEvent::Failed

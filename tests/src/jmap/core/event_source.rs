@@ -114,8 +114,8 @@ pub async fn test(params: &mut JMAPTest) {
     assert_ping(&mut event_rx).await;
     assert_ping(&mut event_rx).await;
 
-    params.destroy_all_mailboxes(account).await;
-    params.assert_is_empty().await;
+    test.destroy_all_mailboxes(account).await;
+    test.assert_is_empty().await;;
 }
 
 async fn assert_state(

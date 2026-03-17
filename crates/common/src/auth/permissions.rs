@@ -114,12 +114,17 @@ impl Server {
                 &account.permissions,
                 match &account.roles {
                     UserRoles::User => self.core.network.security.default_role_ids_user.as_slice(),
-                    UserRoles::TenantAdmin => self
-                        .core
-                        .network
-                        .security
-                        .default_role_ids_tenant
-                        .as_slice(),
+                    UserRoles::Admin => {
+                        if access_token.tenant_id().is_none() {
+                            self.core.network.security.default_role_ids_admin.as_slice()
+                        } else {
+                            self.core
+                                .network
+                                .security
+                                .default_role_ids_tenant
+                                .as_slice()
+                        }
+                    }
                     UserRoles::Custom(custom_roles) => custom_roles.role_ids.as_slice(),
                 },
                 account.member_tenant_id.map(|t| t.document_id()),

@@ -434,9 +434,9 @@ END:VCARD
 
     // Remove test data
     for account in [john, jane, bill] {
-        params.destroy_all_mailboxes(account).await;
+        test.destroy_all_mailboxes(account).await;
     }
-    params.assert_is_empty().await;
+    test.assert_is_empty().await;;
 
     // Restore core
     params.server.inner.shared_core.store(old_core);

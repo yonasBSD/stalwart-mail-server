@@ -8,6 +8,8 @@ pub mod authentication;
 pub mod authorization;
 pub mod directory;
 pub mod oidc;
+pub mod quota;
+pub mod security;
 pub mod tenant;
 
 use crate::utils::server::TestServerBuilder;
@@ -31,11 +33,14 @@ pub async fn system_tests() {
         )
         .await;
     test.account("admin")
-        .assign_roles_to_account(admin_id, &["user", "superuser"])
+        .assign_roles_to_account(admin_id, &["user", "system"])
         .await;
 
     //directory::test(&test).await;
     //authentication::test(&test).await;
     //oidc::test(&mut test).await;
-    tenant::test(&mut test).await;
+    //authorization::test(&mut test).await;
+    //tenant::test(&mut test).await;
+    //security::test(&mut test).await;
+    quota::test(&mut test).await;
 }

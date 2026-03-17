@@ -716,9 +716,9 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Destroy test account data
     for id in [john, bill, jane, sales] {
-        params.destroy_all_mailboxes(id).await;
+        test.destroy_all_mailboxes(id).await;
     }
-    params.assert_is_empty().await;
+    test.assert_is_empty().await;;
 }
 
 pub fn assert_forbidden<T: Debug>(result: Result<T, jmap_client::Error>) {
