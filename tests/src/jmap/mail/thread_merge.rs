@@ -23,14 +23,14 @@ use store::{
 };
 use types::id::Id;
 
-pub async fn test(params: &mut JMAPTest) {
+pub async fn test(test: &mut TestServer) {
     test_single_thread(params).await;
     test_multi_thread(params).await;
 }
 
-async fn test_single_thread(params: &mut JMAPTest) {
+async fn test_single_thread(test: &mut TestServer) {
     println!("Running Email Merge Threads tests...");
-    let account = params.account("admin");
+    let account = test.account("admin");
     let mut client = account.client_owned().await;
     let mut all_mailboxes = AHashMap::default();
 
@@ -141,7 +141,7 @@ async fn test_single_thread(params: &mut JMAPTest) {
             }
         }
 
-        wait_for_tasks(&params.server).await;
+        test.wait_for_tasks().await;
 
         for test_num in 0..=5 {
             let result = client
@@ -206,14 +206,14 @@ async fn test_single_thread(params: &mut JMAPTest) {
         }
     }
 
-    test.assert_is_empty().await;;
+    test.assert_is_empty().await;
 }
 
 #[allow(dead_code)]
-async fn test_multi_thread(params: &mut JMAPTest) {
+async fn test_multi_thread(test: &mut TestServer) {
     println!("Running Email Merge Threads tests (multi-threaded)...");
     let mut handles = vec![];
-    let account = params.account("jdoe@example.com");
+    let account = test.account("jdoe@example.com");
     let account_id = account.id().document_id();
     let mailbox_id = INBOX_ID;
 
@@ -278,7 +278,7 @@ async fn test_multi_thread(params: &mut JMAPTest) {
     );
     println!("Deleting all messages...");
     test.destroy_all_mailboxes(account).await;
-    test.assert_is_empty().await;;
+    test.assert_is_empty().await;
 }
 
 fn build_message(message: usize, in_reply_to: Option<usize>, thread_num: usize) -> String {

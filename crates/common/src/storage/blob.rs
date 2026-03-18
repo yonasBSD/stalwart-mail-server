@@ -50,11 +50,6 @@ impl Server {
                     let count = v >> COUNT_SHIFT;
                     let size = v & SIZE_MASK;
 
-                    let c = println!(
-                        "count: {}, size: {}, expires in: {}",
-                        count, size, expires_in
-                    );
-
                     (self.core.jmap.upload_tmp_quota_amount == 0
                         || count <= self.core.jmap.upload_tmp_quota_amount as u64)
                         && (self.core.jmap.upload_tmp_quota_size == 0

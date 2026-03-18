@@ -9,9 +9,9 @@ use serde_json::json;
 
 use crate::jmap::{ChangeType, JMAPTest, JmapUtils};
 
-pub async fn test(params: &mut JMAPTest) {
+pub async fn test(test: &mut TestServer) {
     println!("Running AddressBook tests...");
-    let account = params.account("jdoe@example.com");
+    let account = test.account("jdoe@example.com");
 
     // Make sure the default address book exists
     let response = account

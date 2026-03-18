@@ -17,11 +17,11 @@ use tokio::sync::mpsc;
 
 use crate::jmap::{IntoJmapSet, JMAPTest, JmapUtils};
 
-pub async fn test(params: &mut JMAPTest) {
+pub async fn test(test: &mut TestServer) {
     println!("Running Calendar Alarm tests...");
-    let account = params.account("jdoe@example.com");
+    let account = test.account("jdoe@example.com");
     let account_id = account.id_string();
-    let client = account.client();
+    let client = account.jmap_client().await;
     let client_ws = account.client_owned().await;
 
     // Create test calendar

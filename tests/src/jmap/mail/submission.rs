@@ -58,12 +58,12 @@ pub struct MockSMTPSettings {
 }
 
 #[allow(clippy::disallowed_types)]
-pub async fn test(params: &mut JMAPTest) {
+pub async fn test(test: &mut TestServer) {
     println!("Running E-mail submissions tests...");
     // Start mock SMTP server
     let server = params.server.clone();
-    let account = params.account("jdoe@example.com");
-    let client = account.client();
+    let account = test.account("jdoe@example.com");
+    let client = account.jmap_client().await;
     let (mut smtp_rx, smtp_settings) = spawn_mock_smtp_server();
     server.ipv4_add(
         "localhost",

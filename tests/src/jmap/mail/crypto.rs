@@ -12,7 +12,7 @@ use store::{
     write::{Archive, Archiver},
 };
 
-pub async fn test(params: &mut JMAPTest) {
+pub async fn test(test: &mut TestServer) {
     println!("Running Encryption-at-rest tests...");
 
     // Check encryption
@@ -20,8 +20,8 @@ pub async fn test(params: &mut JMAPTest) {
     import_certs_and_encrypt().await;
 
     // Create test account
-    let account = params.account("jdoe@example.com");
-    let client = account.client();
+    let account = test.account("jdoe@example.com");
+    let client = account.jmap_client().await;
 
     // Build API
     let api = ManagementApi::new(8899, "jdoe@example.com", "12345");

@@ -6,13 +6,16 @@
 
 pub mod authentication;
 pub mod authorization;
+pub mod delivery;
 pub mod directory;
 pub mod oidc;
+pub mod purge;
 pub mod quota;
 pub mod security;
 pub mod tenant;
 
 use crate::utils::server::TestServerBuilder;
+use registry::schema::structs::{Imap, SpamClassifier};
 
 #[tokio::test(flavor = "multi_thread")]
 pub async fn system_tests() {
@@ -20,11 +23,21 @@ pub async fn system_tests() {
         .await
         .with_default_listeners()
         .await
+        .with_object(Imap {
+            allow_plain_text_auth: true,
+            ..Default::default()
+        })
+        .await
+        .with_object(SpamClassifier {
+            hold_samples_for: 1u64.into(),
+            ..Default::default()
+        })
+        .await
         .build()
         .await;
 
     // Create admin account
-    let admin_id = test
+    let admin = test
         .create_user_account(
             "admin",
             "admin@example.org",
@@ -33,8 +46,11 @@ pub async fn system_tests() {
         )
         .await;
     test.account("admin")
-        .assign_roles_to_account(admin_id, &["user", "system"])
+        .assign_roles_to_account(admin.id(), &["user", "system"])
         .await;
+    test.insert_account(admin);
+
+    let todo = "test permissions on account filtered objects";
 
     //directory::test(&test).await;
     //authentication::test(&test).await;
@@ -42,5 +58,7 @@ pub async fn system_tests() {
     //authorization::test(&mut test).await;
     //tenant::test(&mut test).await;
     //security::test(&mut test).await;
-    quota::test(&mut test).await;
+    //quota::test(&mut test).await;
+    //purge::test(&mut test).await;
+    delivery::test(&mut test).await;
 }

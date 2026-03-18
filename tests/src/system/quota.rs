@@ -5,7 +5,6 @@
  */
 
 use crate::utils::{account::Account, jmap::JmapUtils, server::TestServer, smtp::SmtpConnection};
-use common::config::smtp::queue::QueueName;
 use email::{cache::MessageCacheFetch, mailbox::INBOX_ID};
 use jmap::blob::upload::DISABLE_UPLOAD_QUOTA;
 use jmap_client::{
@@ -24,7 +23,6 @@ use registry::{
     types::{EnumImpl, list::List, map::Map},
 };
 use serde_json::json;
-use smtp::queue::spool::SmtpSpool;
 use types::id::Id;
 use utils::map::vec_map::VecMap;
 
@@ -100,22 +98,20 @@ pub async fn test(test: &mut TestServer) {
         "this is a very strong password1",
         &[],
         account_id,
-    )
-    .await;
+    );
     let other_account = Account::new(
         "user2@example.org",
         "this is a very strong password2",
         &[],
         other_account_id,
-    )
-    .await;
+    );
 
     // Delete temporary blobs from previous tests
     test.blob_expire_all().await;
 
     // Test temporary blob quota (3 files)
     DISABLE_UPLOAD_QUOTA.store(false, std::sync::atomic::Ordering::Relaxed);
-    let client = account.client();
+    let client = account.jmap_client().await;
     for i in 0..3 {
         assert_eq!(
             client
@@ -322,7 +318,7 @@ pub async fn test(test: &mut TestServer) {
     );
 
     // Test Email/copy quota
-    let other_client = other_account.client();
+    let other_client = other_account.jmap_client().await;
     let mut other_message_ids = Vec::new();
     let mut message_ids = Vec::new();
     for i in 0..3 {
@@ -423,15 +419,10 @@ pub async fn test(test: &mut TestServer) {
     // Remove test data
     test.destroy_all_mailboxes(&account).await;
     test.destroy_all_mailboxes(&other_account).await;
-
-    for event in test.all_queued_messages().await.messages {
-        test.server
-            .read_message(event.queue_id, QueueName::default())
-            .await
-            .unwrap()
-            .remove(&test.server, event.due.into())
-            .await;
-    }
+    admin.registry_destroy_all(ObjectType::QueuedMessage).await;
+    admin
+        .registry_destroy_all(ObjectType::SpamTrainingSample)
+        .await;
     test.assert_is_empty().await;
 
     admin

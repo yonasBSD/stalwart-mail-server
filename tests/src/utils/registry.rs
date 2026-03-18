@@ -120,7 +120,7 @@ impl Account {
     pub async fn registry_destroy_all(&self, object: ObjectType) {
         let name = object.as_str();
         self.jmap_method_calls(json!([[
-            format!("{name}/get"),
+            format!("x:{name}/get"),
             {
               "ids" : (),
               "properties" : [
@@ -130,11 +130,11 @@ impl Account {
             "R1"
           ],
           [
-            format!("{name}/set"),
+            format!("x:{name}/set"),
             {
               "#destroy" : {
                     "resultOf": "R1",
-                    "name": format!("{name}/get"),
+                    "name": format!("x:{name}/get"),
                     "path": "/list/*/id"
                 },
             },
@@ -211,6 +211,13 @@ impl Account {
             .not_destroyed(&id.to_string())
             .to_string();
         serde_json::from_str(&v).expect("Failed to deserialize set error")
+    }
+
+    pub async fn destroy_account(&self, account: Account) {
+        let account_id = account.id();
+        self.registry_destroy(ObjectType::Account, [account_id])
+            .await
+            .assert_destroyed(&[account_id]);
     }
 }
 

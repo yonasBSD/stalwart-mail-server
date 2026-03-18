@@ -10,26 +10,6 @@ use dav_proto::schema::property::{CalDavProperty, CardDavProperty, DavProperty, 
 use groupware::DavResourceName;
 use hyper::StatusCode;
 
-const MULTIGET_CALENDAR: &str = r#"<?xml version="1.0" encoding="utf-8" ?>
-   <C:calendar-multiget xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
-     <D:prop>
-       <D:getetag/>
-       <C:calendar-data/>
-     </D:prop>
-     $PATH
-   </C:calendar-multiget>
-"#;
-const MULTIGET_ADDRESSBOOK: &str = r#"<?xml version="1.0" encoding="utf-8" ?>
-   <C:addressbook-multiget xmlns:D="DAV:"
-                        xmlns:C="urn:ietf:params:xml:ns:carddav">
-     <D:prop>
-       <D:getetag/>
-       <C:address-data/>
-     </D:prop>
-     $PATH
-   </C:addressbook-multiget>
-"#;
-
 pub async fn test(test: &WebDavTest) {
     let client = test.client("john");
 
@@ -89,34 +69,4 @@ pub async fn test(test: &WebDavTest) {
 
     client.delete_default_containers().await;
     test.assert_is_empty().await;
-}
-
-impl DummyWebDavClient {
-    pub async fn multiget_calendar(&self, path: &str, uris: &[&str]) -> DavMultiStatus {
-        let mut paths = String::new();
-        for uri in uris {
-            paths.push_str(&format!("<D:href>{}</D:href>", uri));
-        }
-
-        self.request("REPORT", path, &MULTIGET_CALENDAR.replace("$PATH", &paths))
-            .await
-            .with_status(StatusCode::MULTI_STATUS)
-            .into_propfind_response(None)
-    }
-
-    pub async fn multiget_addressbook(&self, path: &str, uris: &[&str]) -> DavMultiStatus {
-        let mut paths = String::new();
-        for uri in uris {
-            paths.push_str(&format!("<D:href>{}</D:href>", uri));
-        }
-
-        self.request(
-            "REPORT",
-            path,
-            &MULTIGET_ADDRESSBOOK.replace("$PATH", &paths),
-        )
-        .await
-        .with_status(StatusCode::MULTI_STATUS)
-        .into_propfind_response(None)
-    }
 }

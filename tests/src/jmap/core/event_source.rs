@@ -17,12 +17,12 @@ use store::ahash::AHashSet;
 use tokio::sync::mpsc;
 use types::id::Id;
 
-pub async fn test(params: &mut JMAPTest) {
+pub async fn test(test: &mut TestServer) {
     println!("Running EventSource tests...");
 
     // Create test account
-    let account = params.account("jdoe@example.com");
-    let client = account.client();
+    let account = test.account("jdoe@example.com");
+    let client = account.jmap_client().await;
 
     let mut changes = client
         .event_source(None::<Vec<_>>, false, 1.into(), None)
@@ -115,7 +115,7 @@ pub async fn test(params: &mut JMAPTest) {
     assert_ping(&mut event_rx).await;
 
     test.destroy_all_mailboxes(account).await;
-    test.assert_is_empty().await;;
+    test.assert_is_empty().await;
 }
 
 async fn assert_state(

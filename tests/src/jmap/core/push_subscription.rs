@@ -46,15 +46,15 @@ private-key = '%{file:{PK}}%'
 default = true
 "#;
 
-pub async fn test(params: &mut JMAPTest) {
+pub async fn test(test: &mut TestServer) {
     println!("Running Push Subscription tests...");
 
     // ECE roundtrip test
     ece_roundtrip();
 
     // Create test account
-    let account = params.account("jdoe@example.com");
-    let client = account.client();
+    let account = test.account("jdoe@example.com");
+    let client = account.jmap_client().await;
 
     // Create channels
     let (event_tx, mut event_rx) = mpsc::channel::<PushMessage>(100);

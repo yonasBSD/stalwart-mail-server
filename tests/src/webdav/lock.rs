@@ -202,64 +202,6 @@ pub async fn test(test: &WebDavTest) {
     test.assert_is_empty().await;
 }
 
-const LOCK_REQUEST: &str = r#"<?xml version="1.0" encoding="utf-8" ?>
-     <D:lockinfo xmlns:D='DAV:'>
-       <D:lockscope><D:$TYPE/></D:lockscope>
-       <D:locktype><D:write/></D:locktype>
-       <D:owner>
-         <D:href>$OWNER</D:href>
-       </D:owner>
-     </D:lockinfo>"#;
-
-impl DummyWebDavClient {
-    pub async fn lock_create(
-        &self,
-        path: &str,
-        owner: &str,
-        is_exclusive: bool,
-        depth: &str,
-        timeout: &str,
-    ) -> DavResponse {
-        let lock_request = LOCK_REQUEST
-            .replace("$TYPE", if is_exclusive { "exclusive" } else { "shared" })
-            .replace("$OWNER", owner);
-        self.request_with_headers(
-            "LOCK",
-            path,
-            [("depth", depth), ("timeout", timeout)],
-            &lock_request,
-        )
-        .await
-    }
-
-    pub async fn lock_refresh(
-        &self,
-        path: &str,
-        lock_token: &str,
-        depth: &str,
-        timeout: &str,
-    ) -> DavResponse {
-        let condition = format!("(<{lock_token}>)");
-        self.request_with_headers(
-            "LOCK",
-            path,
-            [
-                ("if", condition.as_str()),
-                ("depth", depth),
-                ("timeout", timeout),
-            ],
-            "",
-        )
-        .await
-    }
-
-    pub async fn unlock(&self, path: &str, lock_token: &str) -> DavResponse {
-        let condition = format!("<{lock_token}>");
-        self.request_with_headers("UNLOCK", path, [("lock-token", condition.as_str())], "")
-            .await
-    }
-}
-
 impl DavResponse {
     pub fn lock_token(&self) -> &str {
         self.value("D:prop.D:lockdiscovery.D:activelock.D:locktoken.D:href")

@@ -399,37 +399,6 @@ pub async fn test(test: &WebDavTest) {
     test.assert_is_empty().await;
 }
 
-impl DummyWebDavClient {
-    pub async fn acl<'x>(
-        &self,
-        query: &str,
-        principal_href: &str,
-        grant: impl IntoIterator<Item = &'x str>,
-    ) -> DavResponse {
-        let body = ACL_QUERY.replace("$HREF", principal_href).replace(
-            "$GRANT",
-            &grant.into_iter().fold(String::new(), |mut output, g| {
-                use std::fmt::Write;
-                let _ = write!(output, "<D:privilege><D:{g}/></D:privilege>");
-                output
-            }),
-        );
-        self.request("ACL", query, &body).await
-    }
-}
-
-const ACL_QUERY: &str = r#"<?xml version="1.0" encoding="utf-8" ?>
-   <D:acl xmlns:D="DAV:">
-     <D:ace>
-       <D:principal>
-         <D:href>$HREF</D:href>
-       </D:principal>
-       <D:grant>
-         $GRANT
-       </D:grant>
-     </D:ace>
-   </D:acl>"#;
-
 const ACL_PRINCIPAL_QUERY: &str = r#"<?xml version="1.0" encoding="utf-8" ?>
    <D:acl-principal-prop-set xmlns:D="DAV:">
      <D:prop>

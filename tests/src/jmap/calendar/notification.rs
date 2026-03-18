@@ -15,11 +15,11 @@ use serde_json::{Value, json};
 use store::write::now;
 use types::id::Id;
 
-pub async fn test(params: &mut JMAPTest) {
+pub async fn test(test: &mut TestServer) {
     println!("Running Calendar Event Notification tests...");
-    let john = params.account("jdoe@example.com");
-    let jane = params.account("jane.smith@example.com");
-    let bill = params.account("bill@example.com");
+    let john = test.account("jdoe@example.com");
+    let jane = test.account("jane.smith@example.com");
+    let bill = test.account("bill@example.com");
 
     let john_id = john.id_string().to_string();
     let jane_id = jane.id_string().to_string();
@@ -73,7 +73,7 @@ pub async fn test(params: &mut JMAPTest) {
     let john_event_id = response.created(0).id().to_string();
 
     tokio::time::sleep(std::time::Duration::from_millis(600)).await;
-    wait_for_tasks(&params.server).await;
+    test.wait_for_tasks().await;
 
     // Verify Jane and Bill received the share notification
     let mut jane_event_id = String::new();

@@ -22,11 +22,9 @@ use registry::{
     schema::{
         enums::BlockReason,
         prelude::{ObjectType, Property},
-        structs::{
-            self, Action, BlockedIp, Credential, Http, Jmap, PasswordCredential, UserAccount,
-        },
+        structs::{Action, BlockedIp, Http, Jmap},
     },
-    types::{ipmask::IpAddrOrMask, list::List},
+    types::ipmask::IpAddrOrMask,
 };
 use serde_json::json;
 use std::{net::Ipv4Addr, sync::Arc, time::Duration};
@@ -37,7 +35,6 @@ pub async fn test(test: &mut TestServer) {
     println!("Running Security tests...");
 
     let admin = test.account("admin@example.org");
-    let domain_id = admin.find_or_create_domain("example.org").await;
 
     // Set security settings
     admin
@@ -66,18 +63,16 @@ pub async fn test(test: &mut TestServer) {
         .await;
     admin.reload_settings().await;
 
-    // Create a user with the nested role
-    let user_id = admin
-        .registry_create_object(structs::Account::User(UserAccount {
-            name: "user".to_string(),
-            domain_id,
-            credentials: List::from_iter([Credential::Password(PasswordCredential {
-                secret: "this is a very strong password".to_string(),
-                ..Default::default()
-            })]),
-            ..Default::default()
-        }))
+    // Create a test user
+    let user = test
+        .create_user_account(
+            "admin@example.org",
+            "user@example.org",
+            "this is a very strong password",
+            &[],
+        )
         .await;
+    let user_id = user.id();
 
     // Incorrect passwords should be rejected with a 401 error
     assert!(matches!(
@@ -311,11 +306,20 @@ pub async fn test(test: &mut TestServer) {
         client.upload(None, b"sleep".to_vec(), None).await,
         Err(jmap_client::Error::Problem(err)) if err.status() == Some(400)));
 
-    // Destroy account
+    // Disable X-Forwarded-For processing
     admin
-        .registry_destroy(ObjectType::Account, [user_id])
-        .await
-        .assert_destroyed(&[user_id]);
+        .registry_update_setting(
+            Http {
+                use_x_forwarded: false,
+                ..Default::default()
+            },
+            &[Property::UseXForwarded],
+        )
+        .await;
+    admin.reload_settings().await;
+
+    // Destroy account
+    admin.destroy_account(user).await;
 
     test.assert_is_empty().await;
 }

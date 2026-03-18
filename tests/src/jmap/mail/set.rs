@@ -17,10 +17,10 @@ use jmap_client::{
 use std::{fs, path::PathBuf};
 use types::id::Id;
 
-pub async fn test(params: &mut JMAPTest) {
+pub async fn test(test: &mut TestServer) {
     println!("Running Email Set tests...");
-    let account = params.account("jdoe@example.com");
-    let client = account.client();
+    let account = test.account("jdoe@example.com");
+    let client = account.jmap_client().await;
     let mailbox_id = Id::from(INBOX_ID).to_string();
 
     create(client, &mailbox_id).await;

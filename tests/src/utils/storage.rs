@@ -21,7 +21,6 @@ use registry::{
     },
     types::{EnumImpl, duration::Duration},
 };
-use store::U64_LEN;
 use store::{
     Deserialize, IterateParams, ValueKey,
     write::{TaskQueueClass, ValueClass},
@@ -168,10 +167,8 @@ pub async fn wait_for_tasks(server: &Server) {
                     ValueKey::from(ValueClass::TaskQueue(TaskQueueClass::Task { id: u64::MAX })),
                 )
                 .ascending(),
-                |key, value| {
-                    if key.len() == U64_LEN {
-                        has_index_tasks = Some(Task::deserialize(value)?);
-                    }
+                |_, value| {
+                    has_index_tasks = Some(Task::deserialize(value)?);
 
                     Ok(false)
                 },
@@ -191,12 +188,17 @@ pub async fn wait_for_tasks(server: &Server) {
     }
 }
 
-pub async fn assert_is_empty(server: &Server) {
+pub async fn assert_is_empty(server: &Server, include_registry: bool) {
     // Wait for pending index tasks
     wait_for_tasks(server).await;
 
     // Assert is empty
-    store_assert_is_empty(server.store(), server.core.storage.blob.clone(), false).await;
+    store_assert_is_empty(
+        server.store(),
+        server.core.storage.blob.clone(),
+        include_registry,
+    )
+    .await;
     search_store_destroy(server.search_store()).await;
 
     // Clean caches

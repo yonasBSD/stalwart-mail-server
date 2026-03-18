@@ -20,9 +20,9 @@ use std::time::Duration;
 use store::ahash::AHashMap;
 use types::id::Id;
 
-pub async fn test(params: &mut JMAPTest) {
+pub async fn test(test: &mut TestServer) {
     println!("Running Mailbox tests...");
-    let account = params.account("admin");
+    let account = test.account("admin");
     let mut client = account.client_owned().await;
 
     // Create test mailboxes

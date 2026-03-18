@@ -27,11 +27,11 @@ use types::{
     id::Id,
 };
 
-pub async fn test(params: &mut JMAPTest) {
+pub async fn test(test: &mut TestServer) {
     println!("Running Email QueryChanges tests...");
     let server = params.server.clone();
-    let account = params.account("jdoe@example.com");
-    let client = account.client();
+    let account = test.account("jdoe@example.com");
+    let client = account.jmap_client().await;
 
     let mailbox1_id = client
         .mailbox_create("JMAP Changes 1", None::<String>, Role::None)

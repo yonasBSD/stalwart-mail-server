@@ -32,11 +32,11 @@ const MAX_THREADS: usize = 100;
 const MAX_MESSAGES: usize = 1000;
 const MAX_MESSAGES_PER_THREAD: usize = 100;
 
-pub async fn test(params: &mut JMAPTest, insert: bool) {
+pub async fn test(test: &mut TestServer, insert: bool) {
     println!("Running Email Query tests...");
     let server = params.server.clone();
-    let account = params.account("jdoe@example.com");
-    let client = account.client();
+    let account = test.account("jdoe@example.com");
+    let client = account.jmap_client().await;
 
     if insert {
         // Add some "virtual" mailbox ids so create doesn't fail

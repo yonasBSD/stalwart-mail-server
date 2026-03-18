@@ -12,9 +12,9 @@ use serde_json::json;
 use store::write::BatchBuilder;
 use types::{collection::Collection, field::PrincipalField};
 
-pub async fn test(params: &mut JMAPTest) {
+pub async fn test(test: &mut TestServer) {
     println!("Running Participant Identity tests...");
-    let account = params.account("jdoe@example.com");
+    let account = test.account("jdoe@example.com");
 
     // Obtain all identities
     let response = account

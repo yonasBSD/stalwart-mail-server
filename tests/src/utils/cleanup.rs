@@ -4,6 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use ::registry::{
+    schema::prelude::{OBJ_SINGLETON, ObjectType},
+    types::EnumImpl,
+};
 use store::{
     ValueKey,
     write::{key::DeserializeBigEndian, *},
@@ -11,6 +15,7 @@ use store::{
 };
 use trc::AddContext;
 use types::blob_hash::{BLOB_HASH_LEN, BlobHash};
+use utils::codec::leb128::Leb128Reader;
 
 pub async fn store_destroy(store: &Store) {
     store_destroy_sql_indexes(store).await;
@@ -220,7 +225,7 @@ pub async fn store_lookup_expire_all(store: &Store) {
 }
 
 #[allow(unused_variables)]
-pub async fn store_assert_is_empty(store: &Store, blob_store: BlobStore, include_directory: bool) {
+pub async fn store_assert_is_empty(store: &Store, blob_store: BlobStore, include_registry: bool) {
     store_blob_expire_all(store).await;
     store_lookup_expire_all(store).await;
     for shard_idx in 0..=u8::MAX {
@@ -240,7 +245,6 @@ pub async fn store_assert_is_empty(store: &Store, blob_store: BlobStore, include
         (SUBSPACE_IN_MEMORY_VALUE, true),
         (SUBSPACE_IN_MEMORY_COUNTER, false),
         (SUBSPACE_PROPERTY, true),
-        (SUBSPACE_REGISTRY, true),
         (SUBSPACE_QUEUE_MESSAGE, true),
         (SUBSPACE_QUEUE_EVENT, true),
         (SUBSPACE_REPORT_OUT, true),
@@ -255,13 +259,12 @@ pub async fn store_assert_is_empty(store: &Store, blob_store: BlobStore, include
         (SUBSPACE_TELEMETRY_SPAN, true),
         (SUBSPACE_TELEMETRY_METRIC, true),
         (SUBSPACE_SEARCH_INDEX, true),
+        (SUBSPACE_REGISTRY, true),
         (SUBSPACE_REGISTRY_IDX, false),
         (SUBSPACE_REGISTRY_PK, true),
         (SUBSPACE_DIRECTORY, true),
     ] {
-        if subspace == SUBSPACE_SEARCH_INDEX && store.is_pg_or_mysql()
-        //|| (subspace == directory && !include_directory)
-        {
+        if subspace == SUBSPACE_SEARCH_INDEX && store.is_pg_or_mysql() {
             continue;
         }
 
@@ -299,6 +302,52 @@ pub async fn store_assert_is_empty(store: &Store, blob_store: BlobStore, include
                                 key[5],
                                 String::from_utf8_lossy(&key[6..key.len() - 4]),
                                 key
+                            );
+                        }
+                        SUBSPACE_REGISTRY | SUBSPACE_DIRECTORY => {
+                            let object_id =
+                                ObjectType::from_id(key.deserialize_be_u16(0).unwrap()).unwrap();
+
+                            if include_registry && is_allowed_registry_type(object_id) {
+                                return Ok(true);
+                            }
+                            let item_id = key.read_leb128::<u64>().unwrap().0;
+
+                            println!(
+                                "Found registry item for object type {:?} and id {}",
+                                object_id, item_id
+                            );
+                        }
+                        SUBSPACE_REGISTRY_IDX => {
+                            let mut id = key.deserialize_be_u16(0).unwrap();
+                            if id == u16::MAX {
+                                id = key.deserialize_be_u16(U16_LEN).unwrap();
+                            }
+
+                            let object_id = ObjectType::from_id(id).unwrap();
+
+                            if include_registry && is_allowed_registry_type(object_id) {
+                                return Ok(true);
+                            }
+
+                            println!(
+                                "Found registry index for object type {:?}: {:?}",
+                                object_id, key
+                            );
+                        }
+                        SUBSPACE_REGISTRY_PK => {
+                            let mut id = key.deserialize_be_u16(0).unwrap();
+                            if id == u16::MAX {
+                                id = value.deserialize_be_u16(0).unwrap();
+                            }
+                            let object_id = ObjectType::from_id(id).unwrap();
+                            if include_registry && is_allowed_registry_type(object_id) {
+                                return Ok(true);
+                            }
+
+                            println!(
+                                "Found registry primary key for object type {:?}: {:?}",
+                                object_id, key
                             );
                         }
                         _ => {
@@ -361,4 +410,20 @@ pub async fn store_assert_is_empty(store: &Store, blob_store: BlobStore, include
     if failed {
         panic!("Store is not empty.");
     }
+}
+
+fn is_allowed_registry_type(object_type: ObjectType) -> bool {
+    (object_type.flags() & OBJ_SINGLETON) != 0
+        || matches!(
+            object_type,
+            ObjectType::Role
+                | ObjectType::Account
+                | ObjectType::NetworkListener
+                | ObjectType::MtaDeliverySchedule
+                | ObjectType::MtaRoute
+                | ObjectType::MtaTlsStrategy
+                | ObjectType::MtaVirtualQueue
+                | ObjectType::Tracer
+                | ObjectType::Domain
+        )
 }

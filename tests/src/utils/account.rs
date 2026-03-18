@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::utils::server::TestServer;
+use crate::utils::{server::TestServer, webdav::DummyWebDavClient};
 use ahash::AHashMap;
 use jmap_client::client::{Client, Credentials};
 use registry::{
@@ -27,17 +27,16 @@ pub struct Account {
     emails: &'static [&'static str],
     id: Id,
     id_string: String,
-    client: Client,
 }
 
 impl TestServer {
     pub async fn create_user_account(
-        &mut self,
+        &self,
         using_account: &str,
         name: &'static str,
         secret: &'static str,
         aliases: &'static [&'static str],
-    ) -> Id {
+    ) -> Account {
         let mut domains = AHashMap::from_iter(
             aliases
                 .iter()
@@ -82,38 +81,27 @@ impl TestServer {
             }))
             .await;
 
-        self.accounts
-            .insert(name, Account::new(name, secret, aliases, account_id).await);
+        Account::new(name, secret, aliases, account_id)
+    }
 
-        account_id
+    pub fn insert_account(&mut self, account: Account) {
+        self.accounts.insert(account.name(), account);
     }
 }
 
 impl Account {
-    pub async fn new(
+    pub fn new(
         name: &'static str,
         secret: &'static str,
         emails: &'static [&'static str],
         id: Id,
     ) -> Self {
-        let id_string = id.to_string();
-
-        let mut client = Client::new()
-            .credentials(Credentials::basic(name, secret))
-            .timeout(Duration::from_secs(3600))
-            .accept_invalid_certs(true)
-            .follow_redirects(["127.0.0.1"])
-            .connect("https://127.0.0.1:8899")
-            .await
-            .unwrap();
-        client.set_default_account_id(id_string.clone());
         Self {
             name,
             secret,
             emails,
             id,
-            id_string,
-            client,
+            id_string: id.to_string(),
         }
     }
 
@@ -121,16 +109,12 @@ impl Account {
         self.secret = new_secret;
     }
 
-    pub fn id(&self) -> &Id {
-        &self.id
+    pub fn id(&self) -> Id {
+        self.id
     }
 
     pub fn id_string(&self) -> &str {
         &self.id_string
-    }
-
-    pub fn client(&self) -> &Client {
-        &self.client
     }
 
     pub fn name(&self) -> &'static str {
@@ -197,14 +181,25 @@ impl Account {
         .updated_id(account_id);
     }
 
-    pub async fn client_owned(&self) -> Client {
-        Client::new()
+    pub fn webdav_client(&self) -> DummyWebDavClient {
+        DummyWebDavClient::new(
+            self.id.document_id(),
+            self.name(),
+            self.secret(),
+            self.emails()[0],
+        )
+    }
+
+    pub async fn jmap_client(&self) -> Client {
+        let mut client = Client::new()
             .credentials(Credentials::basic(self.name(), self.secret()))
             .timeout(Duration::from_secs(3600))
             .accept_invalid_certs(true)
             .follow_redirects(["127.0.0.1"])
             .connect("https://127.0.0.1:8899")
             .await
-            .unwrap()
+            .unwrap();
+        client.set_default_account_id(self.id_string());
+        client
     }
 }

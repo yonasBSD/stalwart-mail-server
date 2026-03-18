@@ -13,12 +13,12 @@ use types::{
     id::Id,
 };
 
-pub async fn test(params: &mut JMAPTest) {
+pub async fn test(test: &mut TestServer) {
     println!("Running Email Changes tests...");
 
     let server = params.server.clone();
-    let account = params.account("jdoe@example.com");
-    let client = account.client();
+    let account = test.account("jdoe@example.com");
+    let client = account.jmap_client().await;
     let mut states = vec![State::Initial];
 
     for (changes, expected_changelog) in [

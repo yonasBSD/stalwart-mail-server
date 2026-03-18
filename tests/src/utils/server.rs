@@ -282,7 +282,7 @@ impl TestServerBuilder {
             temp_dir: self.temp_dir,
             accounts: AHashMap::from_iter([(
                 "admin",
-                Account::new("admin", "popolna_zapora", &[], Id::from(FALLBACK_ADMIN_ID)).await,
+                Account::new("admin", "popolna_zapora", &[], Id::from(FALLBACK_ADMIN_ID)),
             )]),
             shutdown_tx,
             reset: self.reset,
@@ -304,7 +304,7 @@ impl TestServer {
     }
 
     pub async fn assert_is_empty(&self) {
-        assert_is_empty(&self.server).await;
+        assert_is_empty(&self.server, true).await;
     }
 
     pub async fn destroy_store(&self) {
@@ -330,7 +330,7 @@ impl TestServer {
 
     pub async fn destroy_all_mailboxes(&self, account: &Account) {
         self.wait_for_tasks().await;
-        destroy_all_mailboxes_no_wait(account.client()).await;
+        destroy_all_mailboxes_no_wait(&account.jmap_client().await).await;
     }
 }
 

@@ -16,9 +16,9 @@ use jmap_proto::request::method::MethodObject;
 use serde_json::{Value, json};
 use types::{collection::SyncCollection, id::Id};
 
-pub async fn test(params: &mut JMAPTest) {
+pub async fn test(test: &mut TestServer) {
     println!("Running Contact Card tests...");
-    let account = params.account("jdoe@example.com");
+    let account = test.account("jdoe@example.com");
 
     // Create test address books
     let response = account
@@ -336,7 +336,7 @@ pub async fn test(params: &mut JMAPTest) {
     }));
 
     // Query tests
-    wait_for_tasks(&params.server).await;
+    test.wait_for_tasks().await;
     let email = if !params.server.search_store().is_mysql() {
         "sarah.johnson@example.com"
     } else {
@@ -496,7 +496,7 @@ END:VCARD"#
 
     // Clean up
     account.destroy_all_addressbooks().await;
-    test.assert_is_empty().await;;
+    test.assert_is_empty().await;
 }
 
 fn test_jscontact_1() -> Value {

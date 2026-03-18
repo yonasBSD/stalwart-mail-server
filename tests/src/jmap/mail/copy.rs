@@ -8,9 +8,9 @@ use crate::jmap::{JMAPTest, mail::mailbox::destroy_all_mailboxes_for_account};
 use jmap_client::mailbox::Role;
 use types::id::Id;
 
-pub async fn test(params: &mut JMAPTest) {
+pub async fn test(test: &mut TestServer) {
     println!("Running Email Copy tests...");
-    let account = params.account("admin");
+    let account = test.account("admin");
     let mut client = account.client_owned().await;
 
     // Create a mailbox on account 1

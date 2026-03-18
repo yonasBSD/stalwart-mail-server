@@ -11,7 +11,7 @@ use mail_parser::HeaderName;
 use std::{fs, path::PathBuf};
 use types::id::Id;
 
-pub async fn test(params: &mut JMAPTest) {
+pub async fn test(test: &mut TestServer) {
     println!("Running Email Get tests...");
 
     let mut test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -20,8 +20,8 @@ pub async fn test(params: &mut JMAPTest) {
     test_dir.push("email_get");
 
     let mailbox_id = Id::from(INBOX_ID).to_string();
-    let account = params.account("jdoe@example.com");
-    let client = account.client();
+    let account = test.account("jdoe@example.com");
+    let client = account.jmap_client().await;
 
     for file_name in fs::read_dir(&test_dir).unwrap() {
         let mut file_name = file_name.as_ref().unwrap().path();

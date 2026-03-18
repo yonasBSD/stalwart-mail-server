@@ -4,34 +4,60 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{
+use crate::utils::{
     imap::{AssertResult, ImapConnection, Type},
-    jmap::{JMAPTest, wait_for_tasks},
+    server::TestServer,
 };
 use ahash::AHashSet;
 use common::Server;
 use email::{
     cache::{MessageCacheFetch, email::MessageCacheAccess},
     mailbox::{INBOX_ID, JUNK_ID, TRASH_ID},
-    message::delete::EmailDeletion,
 };
 use imap_proto::ResponseType;
+use registry::schema::{
+    enums::{TaskAccountMaintenanceType, TaskStoreMaintenanceType},
+    prelude::Property,
+    structs::{DataRetention, Task, TaskAccountMaintenance, TaskStatus, TaskStoreMaintenance},
+};
 use store::{IterateParams, LogKey, U32_LEN, U64_LEN, write::key::DeserializeBigEndian};
 use types::id::Id;
 
-pub async fn test(params: &mut JMAPTest) {
+pub async fn test(test: &mut TestServer) {
     println!("Running purge tests...");
-    let server = params.server.clone();
     let inbox_id = Id::from(INBOX_ID).to_string();
     let trash_id = Id::from(TRASH_ID).to_string();
     let junk_id = Id::from(JUNK_ID).to_string();
-    let account = params.account("jdoe@example.com");
-    let client = account.client();
+    let admin = test.account("admin@example.org");
+
+    // Set test settings
+    admin
+        .registry_update_setting(
+            DataRetention {
+                max_changes_history: Some(1),
+                expunge_trash_after: Some(1000u64.into()),
+                ..Default::default()
+            },
+            &[Property::MaxChangesHistory, Property::ExpungeTrashAfter],
+        )
+        .await;
+    admin.reload_settings().await;
+
+    // Create test account
+    let account = test
+        .create_user_account(
+            "admin@example.org",
+            "jdoe@example.org",
+            "this is a very strong password",
+            &[],
+        )
+        .await;
+    let client = account.jmap_client().await;
 
     let mut imap = ImapConnection::connect(b"_x ").await;
     imap.assert_read(Type::Untagged, ResponseType::Ok).await;
-    imap.send("LOGIN \"jdoe@example.com\" \"12345\"").await;
-    imap.assert_read(Type::Tagged, ResponseType::Ok).await;
+    imap.authenticate("jdoe@example.org", "this is a very strong password")
+        .await;
     imap.send("STATUS INBOX (UIDNEXT MESSAGES UNSEEN)").await;
     imap.assert_read(Type::Tagged, ResponseType::Ok)
         .await
@@ -50,8 +76,8 @@ pub async fn test(params: &mut JMAPTest) {
                     .email_import(
                         format!(
                             concat!(
-                                "From: bill@example.com\r\n",
-                                "To: jdoe@example.com\r\n",
+                                "From: bill@example.org\r\n",
+                                "To: jdoe@example.org\r\n",
                                 "Subject: TPS Report #{} {}\r\n",
                                 "\r\n",
                                 "I'm going to need those TPS reports ASAP. ",
@@ -71,7 +97,7 @@ pub async fn test(params: &mut JMAPTest) {
         }
 
         if pass == 1 {
-            let (changes_, is_truncated) = get_changes(&server).await;
+            let (changes_, is_truncated) = get_changes(&test.server).await;
             assert!(!is_truncated);
             changes = changes_;
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
@@ -91,7 +117,7 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Make sure both messages and changes are present
     assert_eq!(
-        server
+        test.server
             .get_cached_messages(account.id().document_id())
             .await
             .unwrap()
@@ -102,15 +128,23 @@ pub async fn test(params: &mut JMAPTest) {
     );
 
     // Purge junk/trash messages and old changes
-    server.purge_account(account.id().document_id()).await;
-    let cache = server
+    admin
+        .registry_create_object(Task::AccountMaintenance(TaskAccountMaintenance {
+            account_id: account.id(),
+            maintenance_type: TaskAccountMaintenanceType::Purge,
+            status: TaskStatus::now(),
+        }))
+        .await;
+    test.wait_for_tasks().await;
+    let cache = test
+        .server
         .get_cached_messages(account.id().document_id())
         .await
         .unwrap();
 
     // Only 4 messages should remain
     assert_eq!(
-        server
+        test.server
             .get_cached_messages(account.id().document_id())
             .await
             .unwrap()
@@ -133,7 +167,7 @@ pub async fn test(params: &mut JMAPTest) {
         .assert_contains("\"Junk Mail\" (MESSAGES 1)");
 
     // Compare changes
-    let (new_changes, is_truncated) = get_changes(&server).await;
+    let (new_changes, is_truncated) = get_changes(&test.server).await;
     assert!(!changes.is_empty());
     assert!(!new_changes.is_empty());
     assert!(is_truncated);
@@ -146,17 +180,19 @@ pub async fn test(params: &mut JMAPTest) {
         );
     }
 
+    // Delete expired training samples
+    admin
+        .registry_create_object(Task::StoreMaintenance(TaskStoreMaintenance {
+            maintenance_type: TaskStoreMaintenanceType::PurgeBlob,
+            shard_index: None,
+            status: TaskStatus::now(),
+        }))
+        .await;
+
     // Delete account
-     test.wait_for_tasks().await;
-    server
-        .store()
-        .delete_principal(QueryBy::Id(account.id().document_id()))
-        .await
-        .unwrap();
-    destroy_account_data(&server, account.id().document_id(), true)
-        .await
-        .unwrap();
-    test.assert_is_empty().await;;
+    admin.destroy_account(account).await;
+    test.wait_for_tasks().await;
+    test.assert_is_empty().await;
 }
 
 async fn get_changes(server: &Server) -> (AHashSet<(u64, u8)>, bool) {

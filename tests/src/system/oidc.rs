@@ -29,16 +29,10 @@ use jmap_client::{
     client::{Client, Credentials},
     mailbox::query::Filter,
 };
-use registry::{
-    schema::{
-        enums::JwtSignatureAlgorithm,
-        prelude::{ObjectType, Property},
-        structs::{
-            Account, Credential, OidcProvider, PasswordCredential, SecretText, SecretTextValue,
-            UserAccount,
-        },
-    },
-    types::list::List,
+use registry::schema::{
+    enums::JwtSignatureAlgorithm,
+    prelude::{ObjectType, Property},
+    structs::{OidcProvider, SecretText, SecretTextValue},
 };
 use serde::{Serialize, de::DeserializeOwned};
 use std::time::{Duration, Instant};
@@ -48,7 +42,6 @@ pub async fn test(test: &mut TestServer) {
     println!("Running OIDC tests...");
 
     let admin = test.account("admin@example.org");
-    let domain_id = admin.find_or_create_domain("example.org").await;
 
     // Set test parameters
     let settings = OidcProvider {
@@ -86,17 +79,15 @@ pub async fn test(test: &mut TestServer) {
     admin.reload_settings().await;
 
     // Create test account
-    let user_id = admin
-        .registry_create_object(Account::User(UserAccount {
-            name: "user".to_string(),
-            domain_id,
-            credentials: List::from_iter([Credential::Password(PasswordCredential {
-                secret: "this is a very strong password".to_string(),
-                ..Default::default()
-            })]),
-            ..Default::default()
-        }))
+    let user = test
+        .create_user_account(
+            "admin@example.org",
+            "user@example.org",
+            "this is a very strong password",
+            &[],
+        )
         .await;
+    let user_id = user.id();
 
     // Build API
     let http = HttpRequest::new();
@@ -436,14 +427,8 @@ pub async fn test(test: &mut TestServer) {
     );
 
     // Clean up
-    assert_eq!(
-        admin
-            .registry_destroy(ObjectType::Account, [user_id])
-            .await
-            .destroyed_ids()
-            .collect::<Vec<_>>(),
-        vec![user_id]
-    );
+    admin.registry_destroy_all(ObjectType::OAuthClient).await;
+    admin.destroy_account(user).await;
     test.assert_is_empty().await;
 }
 

@@ -30,7 +30,7 @@ pub struct MockWebhookEndpoint {
     pub reject: AtomicBool,
 }
 
-pub async fn test(params: &mut JMAPTest) {
+pub async fn test(test: &mut TestServer) {
     println!("Running Webhook tests...");
 
     // Webhooks endpoint starts disabled by default, make sure there are no events.

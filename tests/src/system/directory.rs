@@ -400,4 +400,6 @@ pub async fn test(test: &TestServer) {
             .is_none()
     );
     assert!(test.server.domain("example.com").await.unwrap().is_none());
+
+    test.assert_is_empty().await;
 }

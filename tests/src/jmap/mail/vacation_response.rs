@@ -19,13 +19,13 @@ use crate::{
 use chrono::{TimeDelta, Utc};
 use std::time::Instant;
 
-pub async fn test(params: &mut JMAPTest) {
+pub async fn test(test: &mut TestServer) {
     println!("Running Vacation Response tests...");
 
     // Create test account
     let server = params.server.clone();
-    let account = params.account("jdoe@example.com");
-    let client = account.client();
+    let account = test.account("jdoe@example.com");
+    let client = account.jmap_client().await;
 
     // Start mock SMTP server
     let (mut smtp_rx, smtp_settings) = spawn_mock_smtp_server();

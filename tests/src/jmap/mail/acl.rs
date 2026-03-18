@@ -19,7 +19,7 @@ use std::fmt::Debug;
 use store::ahash::AHashMap;
 use types::id::Id;
 
-pub async fn test(params: &mut JMAPTest) {
+pub async fn test(test: &mut TestServer) {
     println!("Running ACL tests...");
     let server = params.server.clone();
 
@@ -27,10 +27,10 @@ pub async fn test(params: &mut JMAPTest) {
     let inbox_id = Id::new(INBOX_ID as u64).to_string();
     let trash_id = Id::new(TRASH_ID as u64).to_string();
 
-    let john = params.account("jdoe@example.com");
-    let jane = params.account("jane.smith@example.com");
-    let bill = params.account("bill@example.com");
-    let sales = params.account("sales@example.com");
+    let john = test.account("jdoe@example.com");
+    let jane = test.account("jane.smith@example.com");
+    let bill = test.account("bill@example.com");
+    let sales = test.account("sales@example.com");
 
     // Authenticate all accounts
     let mut john_client = john.client_owned().await;
@@ -44,7 +44,7 @@ pub async fn test(params: &mut JMAPTest) {
         (&mut jane_client, jane.id(), "jane"),
         (&mut bill_client, bill.id(), "bill"),
         (
-            &mut params.account("admin").client_owned().await,
+            &mut test.account("admin").client_owned().await,
             sales.id(),
             "sales",
         ),

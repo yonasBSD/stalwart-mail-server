@@ -8,9 +8,9 @@ use crate::jmap::{ChangeType, JMAPTest, JmapUtils};
 use jmap_proto::{object::calendar::CalendarProperty, request::method::MethodObject};
 use serde_json::json;
 
-pub async fn test(params: &mut JMAPTest) {
+pub async fn test(test: &mut TestServer) {
     println!("Running Calendar tests...");
-    let account = params.account("jdoe@example.com");
+    let account = test.account("jdoe@example.com");
 
     // Make sure the default calendar exists
     let response = account

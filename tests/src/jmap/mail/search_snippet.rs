@@ -11,11 +11,11 @@ use std::{fs, path::PathBuf};
 use store::ahash::AHashMap;
 use types::id::Id;
 
-pub async fn test(params: &mut JMAPTest) {
+pub async fn test(test: &mut TestServer) {
     println!("Running SearchSnippet tests...");
     let server = params.server.clone();
-    let account = params.account("jdoe@example.com");
-    let client = account.client();
+    let account = test.account("jdoe@example.com");
+    let client = account.jmap_client().await;
     let mailbox_id = Id::from(INBOX_ID).to_string();
 
     let mut email_ids = AHashMap::default();

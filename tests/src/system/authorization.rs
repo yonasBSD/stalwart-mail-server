@@ -76,8 +76,7 @@ pub async fn test(test: &mut TestServer) {
         "this is a very strong password",
         &[],
         user_id,
-    )
-    .await;
+    );
 
     // Verify user permissions include all permissions from the nested roles
     user.registry_update_object(
@@ -218,10 +217,7 @@ pub async fn test(test: &mut TestServer) {
         .assert_type(SetErrorType::ObjectIsLinked);
 
     // Delete the account and roles in the correct order
-    admin
-        .registry_destroy(ObjectType::Account, [user_id])
-        .await
-        .assert_destroyed(&[user_id]);
+    admin.destroy_account(user).await;
     for role_id in [l1_role_id, l2_role_id, l3_role_id] {
         admin
             .registry_destroy(ObjectType::Role, [role_id])

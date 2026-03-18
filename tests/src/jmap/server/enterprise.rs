@@ -77,7 +77,7 @@ Subject: undelete test
 test
 ";
 
-pub async fn test(params: &mut JMAPTest) {
+pub async fn test(test: &mut TestServer) {
     // Enable Enterprise
     println!("Running Enterprise tests...");
     let mut core = params.server.inner.shared_core.load_full().as_ref().clone();
@@ -151,7 +151,7 @@ pub async fn test(params: &mut JMAPTest) {
     destroy_account_data(&server, account_id, true)
         .await
         .unwrap();
-    test.assert_is_empty().await;;
+    test.assert_is_empty().await;
 
     params.server.inner.shared_core.store(
         params
@@ -241,7 +241,7 @@ async fn alerts(server: &Server) {
     );
 }
 
-async fn tracing(params: &mut JMAPTest) {
+async fn tracing(test: &mut TestServer) {
     // Enable tracing
     let store = params.server.core.storage.data.clone();
     let query = params.server.core.storage.fts.clone();
@@ -291,8 +291,8 @@ async fn tracing(params: &mut JMAPTest) {
     lmtp.quit().await;
     tokio::time::sleep(Duration::from_millis(300)).await;
 
-    params.server.notify_task_queue();
-    wait_for_tasks(&params.server).await;
+    test.server.notify_task_queue();
+    test.wait_for_tasks().await;
 
     // Purge should not delete anything at this point
     store
@@ -364,7 +364,7 @@ async fn tracing(params: &mut JMAPTest) {
     );
 }
 
-async fn metrics(params: &mut JMAPTest) {
+async fn metrics(test: &mut TestServer) {
     // Make sure there are no span entries in the db
     let store = params.server.core.storage.data.clone();
     assert_eq!(
@@ -384,7 +384,7 @@ async fn metrics(params: &mut JMAPTest) {
     );
 }
 
-async fn undelete(params: &mut JMAPTest) {
+async fn undelete(test: &mut TestServer) {
     // Authenticate
     let mut imap = ImapConnection::connect(b"_x ").await;
     imap.authenticate("jdoe@example.com", "12345").await;
@@ -437,7 +437,7 @@ async fn undelete(params: &mut JMAPTest) {
     api.get::<serde_json::Value>("/api/store/purge/account/jdoe@example.com")
         .await
         .unwrap();
-    wait_for_tasks(&params.server).await;
+    test.wait_for_tasks().await;
     tokio::time::sleep(Duration::from_millis(200)).await;
     let deleted = api
         .get::<List<DeletedBlobResponse>>("/api/store/undelete/jdoe@example.com")

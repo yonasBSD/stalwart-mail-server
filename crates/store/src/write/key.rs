@@ -278,7 +278,7 @@ impl ValueClass {
                 .write(collection)
                 .write(document_id),
             ValueClass::TaskQueue(task) => match task {
-                TaskQueueClass::Task { id } => serializer.write(*id),
+                TaskQueueClass::Task { id } => serializer.write(0u64).write(*id),
                 TaskQueueClass::Due { id, due } => serializer.write(*due).write(*id),
             },
             ValueClass::Blob(op) => match op {
@@ -513,10 +513,7 @@ impl ValueClass {
                         }
                 }
             },
-            ValueClass::TaskQueue(e) => match e {
-                TaskQueueClass::Task { .. } => U64_LEN + 1,
-                TaskQueueClass::Due { .. } => (U64_LEN * 2) + 1,
-            },
+            ValueClass::TaskQueue(_) => (U64_LEN * 2) + 1,
             ValueClass::Queue(q) => match q {
                 QueueClass::Message(_) => U64_LEN,
                 QueueClass::MessageEvent(_) => U64_LEN * 3,

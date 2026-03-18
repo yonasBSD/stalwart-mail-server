@@ -25,7 +25,7 @@ impl PartialOrd for Float {
 
 impl Ord for Float {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.partial_cmp(other).unwrap_or_else(|| {
+        self.0.partial_cmp(&other.0).unwrap_or_else(|| {
             if self.0.is_nan() && other.0.is_nan() {
                 std::cmp::Ordering::Equal
             } else if self.0.is_nan() {

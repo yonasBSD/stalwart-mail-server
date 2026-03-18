@@ -13,10 +13,10 @@ use jmap_proto::{
 use serde_json::json;
 use types::id::Id;
 
-pub async fn test(params: &mut JMAPTest) {
+pub async fn test(test: &mut TestServer) {
     println!("Running Calendar ACL tests...");
-    let john = params.account("jdoe@example.com");
-    let jane = params.account("jane.smith@example.com");
+    let john = test.account("jdoe@example.com");
+    let jane = test.account("jane.smith@example.com");
     let john_id = john.id_string().to_string();
     let jane_id = jane.id_string().to_string();
 

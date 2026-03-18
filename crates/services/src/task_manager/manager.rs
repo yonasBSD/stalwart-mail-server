@@ -261,7 +261,7 @@ impl TaskQueueManager for Server {
             account_id: 0,
             collection: 0,
             document_id: 0,
-            class: ValueClass::TaskQueue(TaskQueueClass::Due { id: 0, due: 0 }),
+            class: ValueClass::TaskQueue(TaskQueueClass::Due { id: 0, due: 1 }),
         };
         let to_key = ValueKey::<ValueClass> {
             account_id: u32::MAX,

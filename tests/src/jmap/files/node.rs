@@ -9,9 +9,9 @@ use ahash::AHashSet;
 use jmap_proto::{object::file_node::FileNodeProperty, request::method::MethodObject};
 use serde_json::json;
 
-pub async fn test(params: &mut JMAPTest) {
+pub async fn test(test: &mut TestServer) {
     println!("Running File Storage tests...");
-    let account = params.account("jdoe@example.com");
+    let account = test.account("jdoe@example.com");
 
     // Obtain change id
     let change_id = account

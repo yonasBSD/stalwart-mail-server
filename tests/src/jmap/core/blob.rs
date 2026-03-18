@@ -9,10 +9,10 @@ use email::mailbox::INBOX_ID;
 use serde_json::{Value, json};
 use types::id::Id;
 
-pub async fn test(params: &mut JMAPTest) {
+pub async fn test(test: &mut TestServer) {
     println!("Running blob tests...");
     let server = params.server.clone();
-    let account = params.account("jdoe@example.com");
+    let account = test.account("jdoe@example.com");
     store_blob_expire_all(&server.core.storage.data).await;
 
     // Blob/set simple test
@@ -356,7 +356,7 @@ pub async fn test(params: &mut JMAPTest) {
     store_blob_expire_all(&server.core.storage.data).await;
 
     // Blob/lookup
-    let client = account.client();
+    let client = account.jmap_client().await;
     let blob_id = client
         .email_import(
             concat!(
@@ -412,5 +412,5 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Remove test data
     test.destroy_all_mailboxes(account).await;
-    test.assert_is_empty().await;;
+    test.assert_is_empty().await;
 }

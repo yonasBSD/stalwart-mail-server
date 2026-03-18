@@ -150,8 +150,7 @@ pub async fn test(test: &TestServer) {
         "very strong password indeed",
         &[],
         user_id,
-    )
-    .await;
+    );
     user.registry_query_ids(
         ObjectType::PublicKey,
         Vec::<(&str, &str)>::new(),
@@ -392,6 +391,8 @@ pub async fn test(test: &TestServer) {
         )
         .await;
     admin.reload_settings().await;
+
+    test.assert_is_empty().await;
 }
 
 pub async fn validate_password(username: &str, password: &str, is_valid: bool) {

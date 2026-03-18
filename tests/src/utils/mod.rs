@@ -14,3 +14,4 @@ pub mod registry;
 pub mod server;
 pub mod smtp;
 pub mod storage;
+pub mod webdav;

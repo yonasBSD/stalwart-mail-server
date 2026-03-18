@@ -1,7 +1,11 @@
 /*
  * SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
  *
- * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ * SPDX-License-Identifier: LicenseRef-SEL
+ *
+ * This file is subject to the Stalwart Enterprise License Agreement (SEL) and
+ * is NOT open source software.
+ *
  */
 
 use crate::utils::{jmap::JmapUtils, server::TestServer};
@@ -86,15 +90,13 @@ pub async fn test(test: &mut TestServer) {
         "tenant x secret",
         &[],
         tenant_x_ids[&ObjectType::TaskManager],
-    )
-    .await;
+    );
     let admin_y = crate::utils::account::Account::new(
         "admin@tenanty.org",
         "tenant y secret",
         &[],
         tenant_y_ids[&ObjectType::TaskManager],
-    )
-    .await;
+    );
     assert_eq!(
         admin_x
             .registry_create([Tenant {
@@ -565,6 +567,7 @@ pub async fn test(test: &mut TestServer) {
             reason: "Organization over quota.".into()
         }]
     );
+    test.wait_for_tasks().await;
 
     // Delete everything created during the test
     for (admin, tenant_id_pos) in [(&admin_x, 0), (&admin_y, 1)] {

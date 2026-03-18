@@ -166,3 +166,9 @@ impl From<std::time::Duration> for Duration {
         Duration(value)
     }
 }
+
+impl From<u64> for Duration {
+    fn from(value: u64) -> Self {
+        Duration(std::time::Duration::from_millis(value))
+    }
+}

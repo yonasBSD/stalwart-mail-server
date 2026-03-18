@@ -12,10 +12,10 @@ use types::{id::Id, keyword::Keyword};
 
 use crate::{imap::antispam::*, jmap::JMAPTest};
 
-pub async fn test(params: &mut JMAPTest) {
+pub async fn test(test: &mut TestServer) {
     println!("Running Email Spam classifier tests...");
-    let account = params.account("jdoe@example.com");
-    let client = account.client();
+    let account = test.account("jdoe@example.com");
+    let client = account.jmap_client().await;
     let account_id = account.id().document_id();
 
     // Make sure there are no training samples
