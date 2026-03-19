@@ -4,22 +4,23 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::registry::mapping::{
-    ObjectResponse, RegistrySetResponse,
-    account::account_set,
-    action::action_set,
-    archived_item::archived_item_set,
-    dkim::validate_dkim_signature,
-    map_bootstrap_error,
-    masked_email::validate_masked_email,
-    principal::{
-        schedule_account_destruction, validate_account, validate_role, validate_tenant_quota,
+use crate::registry::{
+    EnterpriseRegistry,
+    mapping::{
+        ObjectResponse, RegistrySetResponse,
+        account::account_set,
+        action::action_set,
+        dkim::validate_dkim_signature,
+        map_bootstrap_error,
+        principal::{
+            schedule_account_destruction, validate_account, validate_role, validate_tenant_quota,
+        },
+        public_key::validate_public_key,
+        queued_message::queued_message_set,
+        report::report_set,
+        spam_sample::spam_sample_set,
+        task::task_set,
     },
-    public_key::validate_public_key,
-    queued_message::queued_message_set,
-    report::report_set,
-    spam_sample::spam_sample_set,
-    task::task_set,
 };
 use common::{
     Server, auth::AccessToken, cache::invalidate::CacheInvalidationBuilder,
@@ -84,6 +85,8 @@ impl RegistrySet for Server {
         access_token: &AccessToken,
         session: &HttpSessionData,
     ) -> trc::Result<SetResponse<Registry>> {
+        self.assert_enterprise_object(object_type)?;
+
         let object_flags = object_type.flags();
         let is_singleton = (object_flags & OBJ_SINGLETON) != 0;
         let has_account_id = (object_flags & OBJ_FILTER_ACCOUNT) != 0;
@@ -395,8 +398,12 @@ impl RegistrySet for Server {
                         ObjectInner::Role(role) => {
                             validate_role(&set, role, modification.as_role()).await?
                         }
+                        // SPDX-SnippetBegin
+                        // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
+                        // SPDX-License-Identifier: LicenseRef-SEL
+                        #[cfg(feature = "enterprise")]
                         ObjectInner::MaskedEmail(masked_email) => {
-                            validate_masked_email(
+                            crate::registry::mapping::masked_email::validate_masked_email(
                                 &set,
                                 masked_email,
                                 is_create,
@@ -404,6 +411,7 @@ impl RegistrySet for Server {
                             )
                             .await?
                         }
+                        // SPDX-SnippetEnd
                         ObjectInner::PublicKey(key) => {
                             validate_public_key(&set, key, modification.as_public_key()).await?
                         }
@@ -536,11 +544,11 @@ impl RegistrySet for Server {
                         .await
                         .caused_by(trc::location!())?
                         .filter(|object| {
-                            !(is_tenant_filtered
+                            !((is_tenant_filtered
                                 && access_token.tenant_id().map(Id::from)
                                     != object.inner.member_tenant_id())
                                 || (is_account_filtered
-                                    && object.inner.account_id() != Some(Id::from(set.account_id)))
+                                    && object.inner.account_id() != Some(Id::from(set.account_id))))
                         })
                     {
                         match self
@@ -585,8 +593,14 @@ impl RegistrySet for Server {
             | ObjectType::DmarcInternalReport
             | ObjectType::TlsInternalReport => report_set(set).await.map(|set| set.into_response()),
 
-            ObjectType::ArchivedItem => archived_item_set(set).await.map(|set| set.into_response()),
-
+            // SPDX-SnippetBegin
+            // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
+            // SPDX-License-Identifier: LicenseRef-SEL
+            #[cfg(feature = "enterprise")]
+            ObjectType::ArchivedItem => super::mapping::archived_item::archived_item_set(set)
+                .await
+                .map(|set| set.into_response()),
+            // SPDX-SnippetEnd
             ObjectType::SpamTrainingSample => {
                 spam_sample_set(set).await.map(|set| set.into_response())
             }

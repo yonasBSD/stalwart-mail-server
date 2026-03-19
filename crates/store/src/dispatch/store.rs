@@ -14,7 +14,7 @@ use crate::{
     },
 };
 use compact_str::ToCompactString;
-use std::{ops::Range, time::Instant};
+use std::time::Instant;
 use trc::{AddContext, StoreEvent};
 use types::collection::Collection;
 
@@ -373,75 +373,6 @@ impl Store {
         }
 
         Ok(())
-    }
-
-    pub async fn get_blob(&self, key: &[u8], range: Range<usize>) -> trc::Result<Option<Vec<u8>>> {
-        match self {
-            #[cfg(feature = "sqlite")]
-            Self::SQLite(store) => store.get_blob(key, range).await,
-            #[cfg(feature = "foundation")]
-            Self::FoundationDb(store) => store.get_blob(key, range).await,
-            #[cfg(feature = "postgres")]
-            Self::PostgreSQL(store) => store.get_blob(key, range).await,
-            #[cfg(feature = "mysql")]
-            Self::MySQL(store) => store.get_blob(key, range).await,
-            #[cfg(feature = "rocks")]
-            Self::RocksDb(store) => store.get_blob(key, range).await,
-            // SPDX-SnippetBegin
-            // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
-            // SPDX-License-Identifier: LicenseRef-SEL
-            #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
-            Self::SQLReadReplica(store) => store.get_blob(key, range).await,
-            // SPDX-SnippetEnd
-            Self::None => Err(trc::StoreEvent::NotConfigured.into()),
-        }
-        .caused_by(trc::location!())
-    }
-
-    pub async fn put_blob(&self, key: &[u8], data: &[u8]) -> trc::Result<()> {
-        match self {
-            #[cfg(feature = "sqlite")]
-            Self::SQLite(store) => store.put_blob(key, data).await,
-            #[cfg(feature = "foundation")]
-            Self::FoundationDb(store) => store.put_blob(key, data).await,
-            #[cfg(feature = "postgres")]
-            Self::PostgreSQL(store) => store.put_blob(key, data).await,
-            #[cfg(feature = "mysql")]
-            Self::MySQL(store) => store.put_blob(key, data).await,
-            #[cfg(feature = "rocks")]
-            Self::RocksDb(store) => store.put_blob(key, data).await,
-            // SPDX-SnippetBegin
-            // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
-            // SPDX-License-Identifier: LicenseRef-SEL
-            #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
-            Self::SQLReadReplica(store) => store.put_blob(key, data).await,
-            // SPDX-SnippetEnd
-            Self::None => Err(trc::StoreEvent::NotConfigured.into()),
-        }
-        .caused_by(trc::location!())
-    }
-
-    pub async fn delete_blob(&self, key: &[u8]) -> trc::Result<bool> {
-        match self {
-            #[cfg(feature = "sqlite")]
-            Self::SQLite(store) => store.delete_blob(key).await,
-            #[cfg(feature = "foundation")]
-            Self::FoundationDb(store) => store.delete_blob(key).await,
-            #[cfg(feature = "postgres")]
-            Self::PostgreSQL(store) => store.delete_blob(key).await,
-            #[cfg(feature = "mysql")]
-            Self::MySQL(store) => store.delete_blob(key).await,
-            #[cfg(feature = "rocks")]
-            Self::RocksDb(store) => store.delete_blob(key).await,
-            // SPDX-SnippetBegin
-            // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
-            // SPDX-License-Identifier: LicenseRef-SEL
-            #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
-            Self::SQLReadReplica(store) => store.delete_blob(key).await,
-            // SPDX-SnippetEnd
-            Self::None => Err(trc::StoreEvent::NotConfigured.into()),
-        }
-        .caused_by(trc::location!())
     }
 
     pub async fn create_tables(&self) -> trc::Result<()> {

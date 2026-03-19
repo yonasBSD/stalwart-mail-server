@@ -27,7 +27,7 @@ pub(crate) async fn validate_public_key(
         }
     } else {
         // Validate quotas
-        let num_masked = set
+        let num_keys = set
             .server
             .registry()
             .query::<RegistryObjectCounter>(
@@ -36,15 +36,19 @@ pub(crate) async fn validate_public_key(
             .await?
             .0 as u32;
         let account = set.server.account(set.account_id).await?;
-        let masked_quota = set
+        let key_quota = set
             .server
             .object_quota(account.object_quotas(), StorageQuota::MaxPublicKeys);
-        if num_masked >= masked_quota {
+        if num_keys >= key_quota {
             return Ok(Err(SetError::over_quota().with_description(format!(
                 "You have exceeded your quota of {} public keys.",
-                masked_quota
+                key_quota
             ))));
         }
+    }
+
+    if !key.key.ends_with('\n') {
+        key.key.push('\n');
     }
 
     match parse_public_key(key) {

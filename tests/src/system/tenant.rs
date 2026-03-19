@@ -297,15 +297,16 @@ pub async fn test(test: &mut TestServer) {
         .build();
     assert!(!user_x_at.has_permission(Permission::FetchAnyBlob));
     assert!(!user_x_at.has_permission(Permission::Impersonate));
+
     admin_x
         .registry_update_object(
             ObjectType::Account,
             user_x_id,
             json!({
-                Property::Permissions: Permissions::Merge(
-                    PermissionsList { disabled_permissions: Map::default(),
-                                      enabled_permissions: Map::new(vec![Permission::FetchAnyBlob, Permission::Impersonate])
-                     })
+                Property::Permissions: Permissions::Merge(PermissionsList {
+                    disabled_permissions: Map::default(),
+                    enabled_permissions: Map::new(vec![Permission::FetchAnyBlob, Permission::Impersonate]),
+                })
             }),
         )
         .await;

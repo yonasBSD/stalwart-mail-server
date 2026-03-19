@@ -4,10 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{collections::BTreeSet, io::Cursor};
-
 use aes::cipher::{BlockEncryptMut, KeyIvInit, block_padding::Pkcs7};
-
 use common::auth::{
     ACCOUNT_FLAG_ENCRYPT_ALGO_AES256, ACCOUNT_FLAG_ENCRYPT_METHOD_PGP,
     ACCOUNT_FLAG_ENCRYPT_TRAIN_SPAM_FILTER, EncryptionKeys,
@@ -30,6 +27,7 @@ use rasn_cms::{
 };
 use rsa::{Pkcs1v15Encrypt, RsaPublicKey, pkcs1::DecodeRsaPublicKey};
 use sequoia_openpgp as openpgp;
+use std::{collections::BTreeSet, io::Cursor};
 
 #[derive(Debug)]
 pub enum EncryptMessageError {
@@ -392,10 +390,10 @@ impl EncryptionFlags for u64 {
 
     fn encrypt(&self, key: &[u8], iv: &[u8], contents: &[u8]) -> Vec<u8> {
         if *self & ACCOUNT_FLAG_ENCRYPT_ALGO_AES256 != 0 {
-            cbc::Encryptor::<aes::Aes128>::new(key.into(), iv.into())
+            cbc::Encryptor::<aes::Aes256>::new(key.into(), iv.into())
                 .encrypt_padded_vec_mut::<Pkcs7>(contents)
         } else {
-            cbc::Encryptor::<aes::Aes256>::new(key.into(), iv.into())
+            cbc::Encryptor::<aes::Aes128>::new(key.into(), iv.into())
                 .encrypt_padded_vec_mut::<Pkcs7>(contents)
         }
     }

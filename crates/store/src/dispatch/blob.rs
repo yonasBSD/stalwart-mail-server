@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{BlobStore, CompressionAlgo, Store};
+use crate::{BlobStore, CompressionAlgo, Store, U32_LEN};
 use std::{ops::Range, time::Instant};
 use trc::{AddContext, StoreEvent};
 
@@ -57,11 +57,11 @@ impl BlobStore {
             Size = result.as_ref().map_or(0, |data| data.len()),
         );
 
-        let Some(data) = result else {
+        let Some(mut data) = result else {
             return Ok(None);
         };
 
-        let data = match data.last().copied() {
+        let mut data = match data.last().copied() {
             Some(LZ4_MARKER) => {
                 lz4_flex::decompress_size_prepended(data.get(..data.len() - 1).unwrap_or_default())
                     .map_err(|err| {
@@ -72,17 +72,28 @@ impl BlobStore {
                     })?
             }
             Some(NONE_MARKER) => {
-                trc::event!(Store(StoreEvent::BlobMissingMarker), Key = key);
+                if !data.is_empty() {
+                    data.truncate(data.len() - 1);
+                }
                 data
             }
-            Some(_) => data,
+            Some(_) => {
+                trc::event!(Store(StoreEvent::BlobMissingMarker), Key = key);
+
+                data
+            }
             None => {
                 return Ok(Some(data));
             }
         };
 
-        if range.end > data.len() {
-            Ok(Some(data))
+        if range.start == 0 {
+            if range.end > data.len() {
+                Ok(Some(data))
+            } else {
+                data.truncate(range.end);
+                Ok(Some(data))
+            }
         } else {
             Ok(Some(
                 data.get(range.start..range.end)
@@ -106,8 +117,21 @@ impl BlobStore {
                 uncompressed
             }
             CompressionAlgo::Lz4 => {
-                let mut compressed = lz4_flex::compress_prepend_size(data);
-                compressed.push(LZ4_MARKER);
+                let mut compressed =
+                    vec![
+                        LZ4_MARKER;
+                        lz4_flex::block::get_maximum_output_size(data.len()) + U32_LEN + 1
+                    ];
+
+                // Compress the data
+                let compressed_len =
+                    lz4_flex::compress_into(data, &mut compressed[U32_LEN..]).unwrap();
+
+                // Prepend the length of the uncompressed data
+                compressed[..U32_LEN].copy_from_slice(&(data.len() as u32).to_le_bytes());
+
+                // Truncate to the actual size
+                compressed.truncate(compressed_len + U32_LEN + 1);
                 compressed
             }
         };

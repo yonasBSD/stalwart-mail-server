@@ -148,8 +148,14 @@ impl Security {
         #[cfg(not(feature = "test_mode"))]
         {
             // Add loopback addresses
-            allowed_ip_addresses.insert(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
-            allowed_ip_addresses.insert(IpAddr::V6(std::net::Ipv6Addr::LOCALHOST));
+            allowed_ip_addresses.insert(IpWithTtl::new(
+                IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+                u64::MAX,
+            ));
+            allowed_ip_addresses.insert(IpWithTtl::new(
+                IpAddr::V6(std::net::Ipv6Addr::LOCALHOST),
+                u64::MAX,
+            ));
         }
 
         let security = bp.setting_infallible::<structs::Security>().await;

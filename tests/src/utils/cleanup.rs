@@ -15,7 +15,6 @@ use store::{
 };
 use trc::AddContext;
 use types::blob_hash::{BLOB_HASH_LEN, BlobHash};
-use utils::codec::leb128::Leb128Reader;
 
 pub async fn store_destroy(store: &Store) {
     store_destroy_sql_indexes(store).await;
@@ -311,7 +310,7 @@ pub async fn store_assert_is_empty(store: &Store, blob_store: BlobStore, include
                             if include_registry && is_allowed_registry_type(object_id) {
                                 return Ok(true);
                             }
-                            let item_id = key.read_leb128::<u64>().unwrap().0;
+                            let item_id = key.deserialize_be_u64(U16_LEN).unwrap();
 
                             println!(
                                 "Found registry item for object type {:?} and id {}",

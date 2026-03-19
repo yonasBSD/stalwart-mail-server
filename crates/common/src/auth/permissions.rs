@@ -270,7 +270,7 @@ impl Default for DefaultPermissions {
                         || name.starts_with("sysArchivedItem")
                         || name.starts_with("sysAccountSettings")
                         || name.starts_with("sysPublicKey")
-                        || name.starts_with("sysSpamTrainingSample")
+                        || (name.starts_with("sysSpamTrainingSample") && !name.contains("Create"))
                     {
                         default.user.push(permission);
                         default.group.push(permission);

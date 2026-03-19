@@ -6,7 +6,7 @@
 
 use crate::utils::{
     account::Account,
-    jmap::{JmapResponse, JmapSetError},
+    jmap::{JmapResponse, JmapSetError, JmapUtils},
 };
 use registry::{
     schema::{
@@ -39,6 +39,16 @@ impl Account {
             Vec::<(&str, &str)>::new(),
         )
         .await
+    }
+
+    pub async fn registry_create_many(
+        &self,
+        object_type: ObjectType,
+        items: impl IntoIterator<Item = Value>,
+    ) -> JmapResponse {
+        let name = object_type.as_str();
+        self.jmap_create_account(self, format!("x:{name}"), items, Vec::<(&str, &str)>::new())
+            .await
     }
 
     pub async fn registry_get<T: ObjectImpl>(&self, id: Id) -> T {
@@ -149,12 +159,10 @@ impl Account {
     }
 
     pub async fn registry_create_object_expect_err<T: ObjectImpl>(&self, item: T) -> JmapSetError {
-        let v = self
-            .registry_create([item])
+        self.registry_create([item])
             .await
             .not_created(0)
-            .to_string();
-        serde_json::from_str(&v).expect("Failed to deserialize set error")
+            .to_set_error()
     }
 
     pub async fn registry_update_object(&self, object: ObjectType, id: Id, item: Value) {
@@ -192,12 +200,10 @@ impl Account {
         id: Id,
         item: Value,
     ) -> JmapSetError {
-        let v = self
-            .registry_update(object, [(id, item)])
+        self.registry_update(object, [(id, item)])
             .await
             .not_updated(&id.to_string())
-            .to_string();
-        serde_json::from_str(&v).expect("Failed to deserialize set error")
+            .to_set_error()
     }
 
     pub async fn registry_destroy_object_expect_err(
@@ -205,12 +211,10 @@ impl Account {
         object: ObjectType,
         id: Id,
     ) -> JmapSetError {
-        let v = self
-            .registry_destroy(object, [id])
+        self.registry_destroy(object, [id])
             .await
             .not_destroyed(&id.to_string())
-            .to_string();
-        serde_json::from_str(&v).expect("Failed to deserialize set error")
+            .to_set_error()
     }
 
     pub async fn destroy_account(&self, account: Account) {

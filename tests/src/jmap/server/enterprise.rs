@@ -70,13 +70,6 @@ message = "this should not have happened"
 
 "#;
 
-const RAW_MESSAGE: &str = "From: john@example.com
-To: john@example.com
-Subject: undelete test
-
-test
-";
-
 pub async fn test(test: &mut TestServer) {
     // Enable Enterprise
     println!("Running Enterprise tests...");
@@ -164,35 +157,6 @@ pub async fn test(test: &mut TestServer) {
             .enable_enterprise()
             .into(),
     );
-}
-
-pub trait EnterpriseCore {
-    fn enable_enterprise(self) -> Self;
-}
-
-impl EnterpriseCore for Core {
-    fn enable_enterprise(mut self) -> Self {
-        self.enterprise = Enterprise {
-            license: LicenseKey {
-                valid_to: now() + 3600,
-                valid_from: now() - 3600,
-                domain: String::new(),
-                accounts: 100,
-            },
-            undelete: None,
-            trace_store: None,
-            metrics_store: None,
-            metrics_alerts: vec![],
-            logo_url: None,
-            ai_apis: Default::default(),
-            spam_filter_llm: None,
-            template_calendar_alarm: None,
-            template_scheduling_email: None,
-            template_scheduling_web: None,
-        }
-        .into();
-        self
-    }
 }
 
 async fn alerts(server: &Server) {
@@ -382,111 +346,6 @@ async fn metrics(test: &mut TestServer) {
         store.query_metrics(0, u64::MAX).await.unwrap(),
         Vec::<Metric<EventType, MetricType, u64>>::new()
     );
-}
-
-async fn undelete(test: &mut TestServer) {
-    // Authenticate
-    let mut imap = ImapConnection::connect(b"_x ").await;
-    imap.authenticate("jdoe@example.com", "12345").await;
-
-    // Insert test message
-    imap.send("STATUS INBOX (MESSAGES)").await;
-    imap.assert_read(Type::Tagged, ResponseType::Ok)
-        .await
-        .assert_contains("MESSAGES 0");
-    imap.send(&format!("APPEND INBOX {{{}}}", RAW_MESSAGE.len()))
-        .await;
-    imap.assert_read(Type::Continuation, ResponseType::Ok).await;
-    imap.send_untagged(RAW_MESSAGE).await;
-    imap.assert_read(Type::Tagged, ResponseType::Ok).await;
-
-    // Make sure the message is there
-    imap.send("STATUS INBOX (MESSAGES)").await;
-    imap.assert_read(Type::Tagged, ResponseType::Ok)
-        .await
-        .assert_contains("MESSAGES 1");
-    imap.send("SELECT INBOX").await;
-    imap.assert_read(Type::Tagged, ResponseType::Ok).await;
-
-    // Fetch message body
-    imap.send("FETCH 1 BODY[]").await;
-    imap.assert_read(Type::Tagged, ResponseType::Ok)
-        .await
-        .assert_contains("Subject: undelete test");
-
-    // Delete and expunge message
-    imap.send("STORE 1 +FLAGS (\\Deleted)").await;
-    imap.assert_read(Type::Tagged, ResponseType::Ok).await;
-    imap.send("EXPUNGE").await;
-    imap.assert_read(Type::Tagged, ResponseType::Ok).await;
-
-    // Logout and reconnect
-    imap.send("LOGOUT").await;
-    imap.assert_read(Type::Tagged, ResponseType::Ok).await;
-    let mut imap = ImapConnection::connect(b"_x ").await;
-    imap.authenticate("jdoe@example.com", "12345").await;
-
-    // Make sure the message is gone
-    imap.send("STATUS INBOX (MESSAGES)").await;
-    imap.assert_read(Type::Tagged, ResponseType::Ok)
-        .await
-        .assert_contains("MESSAGES 0");
-
-    // Query undelete API
-    let api = ManagementApi::new(8899, "admin", "secret");
-    api.get::<serde_json::Value>("/api/store/purge/account/jdoe@example.com")
-        .await
-        .unwrap();
-    test.wait_for_tasks().await;
-    tokio::time::sleep(Duration::from_millis(200)).await;
-    let deleted = api
-        .get::<List<DeletedBlobResponse>>("/api/store/undelete/jdoe@example.com")
-        .await
-        .unwrap()
-        .unwrap_data()
-        .items;
-    assert_eq!(deleted.len(), 1);
-    let deleted = deleted.into_iter().next().unwrap();
-    match deleted.item {
-        DeletedItemResponse::Email { from, subject, .. } => {
-            assert_eq!(subject.as_ref(), "undelete test");
-            assert_eq!(from.as_ref(), "john@example.com");
-        }
-        other => {
-            panic!("Unexpected deleted item response: {:?}", other);
-        }
-    }
-
-    // Undelete
-    let result = api
-        .post::<Vec<UndeleteResponse>>(
-            "/api/store/undelete/jdoe@example.com",
-            &vec![UndeleteRequest {
-                hash: deleted.hash,
-                collection: "email".to_string(),
-                time: deleted.deleted_at,
-                cancel_deletion: deleted.expires_at.into(),
-            }],
-        )
-        .await
-        .unwrap()
-        .unwrap_data();
-    assert_eq!(result, vec![UndeleteResponse::Success]);
-
-    // Make sure the message is back
-    imap.send("STATUS INBOX (MESSAGES)").await;
-    imap.assert_read(Type::Tagged, ResponseType::Ok)
-        .await
-        .assert_contains("MESSAGES 1");
-
-    imap.send("SELECT INBOX").await;
-    imap.assert_read(Type::Tagged, ResponseType::Ok).await;
-
-    // Fetch message body
-    imap.send("FETCH 1 BODY[]").await;
-    imap.assert_read(Type::Tagged, ResponseType::Ok)
-        .await
-        .assert_contains("Subject: undelete test");
 }
 
 pub async fn insert_test_metrics(core: Arc<Core>) {

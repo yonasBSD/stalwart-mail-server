@@ -6,16 +6,13 @@
 
 use crate::{
     api::query::QueryResponseBuilder,
-    registry::mapping::{
-        RegistryQueryResponse,
-        account::credential_query,
-        archived_item::archived_item_query,
-        log::log_query,
-        queued_message::queued_message_query,
-        report::report_query,
-        spam_sample::spam_sample_query,
-        task::task_query,
-        telemetry::{metric_query, trace_query},
+    registry::{
+        EnterpriseRegistry,
+        mapping::{
+            RegistryQueryResponse, account::credential_query, log::log_query,
+            queued_message::queued_message_query, report::report_query,
+            spam_sample::spam_sample_query, task::task_query,
+        },
     },
 };
 use common::{Server, auth::AccessToken};
@@ -55,6 +52,8 @@ impl RegistryQuery for Server {
         mut request: QueryRequest<Registry>,
         access_token: &AccessToken,
     ) -> trc::Result<QueryResponse> {
+        self.assert_enterprise_object(object_type)?;
+
         match object_type {
             ObjectType::ArfExternalReport
             | ObjectType::DmarcExternalReport
@@ -69,7 +68,23 @@ impl RegistryQuery for Server {
             .await
             .and_then(|response| response.build()),
 
-            ObjectType::ArchivedItem => archived_item_query(RegistryQueryResponse {
+            // SPDX-SnippetBegin
+            // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
+            // SPDX-License-Identifier: LicenseRef-SEL
+            #[cfg(feature = "enterprise")]
+            ObjectType::ArchivedItem => {
+                super::mapping::archived_item::archived_item_query(RegistryQueryResponse {
+                    server: self,
+                    access_token,
+                    object_type,
+                    request,
+                })
+                .await
+                .and_then(|response| response.build())
+            }
+
+            #[cfg(feature = "enterprise")]
+            ObjectType::Metric => super::mapping::telemetry::metric_query(RegistryQueryResponse {
                 server: self,
                 access_token,
                 object_type,
@@ -78,6 +93,16 @@ impl RegistryQuery for Server {
             .await
             .and_then(|response| response.build()),
 
+            #[cfg(feature = "enterprise")]
+            ObjectType::Trace => super::mapping::telemetry::trace_query(RegistryQueryResponse {
+                server: self,
+                access_token,
+                object_type,
+                request,
+            })
+            .await
+            .and_then(|response| response.build()),
+            // SPDX-SnippetEnd
             ObjectType::SpamTrainingSample => spam_sample_query(RegistryQueryResponse {
                 server: self,
                 access_token,
@@ -115,24 +140,6 @@ impl RegistryQuery for Server {
             .and_then(|response| response.build()),
 
             ObjectType::Log => log_query(RegistryQueryResponse {
-                server: self,
-                access_token,
-                object_type,
-                request,
-            })
-            .await
-            .and_then(|response| response.build()),
-
-            ObjectType::Metric => metric_query(RegistryQueryResponse {
-                server: self,
-                access_token,
-                object_type,
-                request,
-            })
-            .await
-            .and_then(|response| response.build()),
-
-            ObjectType::Trace => trace_query(RegistryQueryResponse {
                 server: self,
                 access_token,
                 object_type,

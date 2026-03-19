@@ -4,8 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+pub mod antispam;
+pub mod archiving;
 pub mod authentication;
 pub mod authorization;
+pub mod crypto;
 pub mod delivery;
 pub mod directory;
 pub mod oidc;
@@ -15,7 +18,7 @@ pub mod security;
 pub mod tenant;
 
 use crate::utils::server::TestServerBuilder;
-use registry::schema::structs::{Imap, SpamClassifier};
+use registry::schema::structs::{Expression, Imap, MtaStageAuth};
 
 #[tokio::test(flavor = "multi_thread")]
 pub async fn system_tests() {
@@ -28,8 +31,11 @@ pub async fn system_tests() {
             ..Default::default()
         })
         .await
-        .with_object(SpamClassifier {
-            hold_samples_for: 1u64.into(),
+        .with_object(MtaStageAuth {
+            require: Expression {
+                else_: "false".to_string(),
+                ..Default::default()
+            },
             ..Default::default()
         })
         .await
@@ -50,7 +56,7 @@ pub async fn system_tests() {
         .await;
     test.insert_account(admin);
 
-    let todo = "test permissions on account filtered objects";
+    let todo = "test tasks retries and other types";
 
     //directory::test(&test).await;
     //authentication::test(&test).await;
@@ -60,5 +66,8 @@ pub async fn system_tests() {
     //security::test(&mut test).await;
     //quota::test(&mut test).await;
     //purge::test(&mut test).await;
-    delivery::test(&mut test).await;
+    //delivery::test(&mut test).await;
+    //crypto::test(&mut test).await;
+    //antispam::test(&mut test).await;
+    archiving::test(&mut test).await;
 }

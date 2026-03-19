@@ -84,6 +84,7 @@ pub struct TrainingSample {
     account_id: u32,
 }
 
+#[derive(Debug)]
 struct TrainingTask {
     id: u64,
     sample: TrainingSample,
@@ -273,7 +274,11 @@ impl SpamClassifier for Server {
                 Elapsed = started.elapsed()
             );
 
-            return Ok(());
+            return if duplicate_samples.is_empty() {
+                Ok(())
+            } else {
+                delete_samples(self, samples, duplicate_samples).await
+            };
         } else if (trainer.reservoir.ham.total_seen < config.min_ham_samples)
             || (trainer.reservoir.spam.total_seen < config.min_spam_samples)
         {
@@ -291,7 +296,11 @@ impl SpamClassifier for Server {
                 Elapsed = started.elapsed()
             );
 
-            return Ok(());
+            return if duplicate_samples.is_empty() {
+                Ok(())
+            } else {
+                delete_samples(self, samples, duplicate_samples).await
+            };
         }
 
         // Balance classes if needed
@@ -555,44 +564,10 @@ impl SpamClassifier for Server {
 
         // Remove samples marked for deletion
         if remove_entries {
-            let mut batch = BatchBuilder::new();
-            for sample in samples.into_iter().chain(duplicate_samples.into_iter()) {
-                if let Some(until) = sample.remove {
-                    batch
-                        .with_account_id(sample.sample.account_id)
-                        .clear(BlobOp::Link {
-                            hash: sample.sample.hash,
-                            to: BlobLink::Temporary { until },
-                        })
-                        .clear(ValueClass::Registry(RegistryClass::Item {
-                            object_id,
-                            item_id: sample.id,
-                        }))
-                        .clear(ValueClass::Registry(RegistryClass::Index {
-                            index_id: Property::AccountId.to_id(),
-                            object_id,
-                            item_id: sample.id,
-                            key: (sample.sample.account_id as u64).serialize(),
-                        }));
-
-                    if batch.is_large_batch() {
-                        self.store()
-                            .write(batch.build_all())
-                            .await
-                            .caused_by(trc::location!())?;
-                        batch = BatchBuilder::new();
-                    }
-                }
-            }
-            if !batch.is_empty() {
-                self.store()
-                    .write(batch.build_all())
-                    .await
-                    .caused_by(trc::location!())?;
-            }
+            delete_samples(self, samples, duplicate_samples).await
+        } else {
+            Ok(())
         }
-
-        Ok(())
     }
 
     async fn spam_classify(&self, ctx: &mut SpamFilterContext<'_>) -> trc::Result<()> {
@@ -897,6 +872,53 @@ impl SpamClassifier for Server {
 
         tokens
     }
+}
+
+async fn delete_samples(
+    server: &Server,
+    samples: Vec<TrainingTask>,
+    duplicate_samples: Vec<TrainingTask>,
+) -> trc::Result<()> {
+    let object_id = ObjectType::SpamTrainingSample.to_id();
+    let mut batch = BatchBuilder::new();
+    for sample in samples.into_iter().chain(duplicate_samples.into_iter()) {
+        if let Some(until) = sample.remove {
+            batch
+                .with_account_id(sample.sample.account_id)
+                .clear(BlobOp::Link {
+                    hash: sample.sample.hash,
+                    to: BlobLink::Temporary { until },
+                })
+                .clear(ValueClass::Registry(RegistryClass::Item {
+                    object_id,
+                    item_id: sample.id,
+                }))
+                .clear(ValueClass::Registry(RegistryClass::Index {
+                    index_id: Property::AccountId.to_id(),
+                    object_id,
+                    item_id: sample.id,
+                    key: (sample.sample.account_id as u64).serialize(),
+                }));
+
+            if batch.is_large_batch() {
+                server
+                    .store()
+                    .write(batch.build_all())
+                    .await
+                    .caused_by(trc::location!())?;
+                batch = BatchBuilder::new();
+                batch.with_account_id(sample.sample.account_id);
+            }
+        }
+    }
+    if !batch.is_empty() {
+        server
+            .store()
+            .write(batch.build_all())
+            .await
+            .caused_by(trc::location!())?;
+    }
+    Ok(())
 }
 
 struct FhTrainJob {

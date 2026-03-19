@@ -4,12 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::auth::EncryptionKeys;
 use mail_parser::decoders::base64::base64_decode;
 use registry::schema::structs::PublicKey;
 use sequoia_openpgp::{Cert, parse::Parse, policy::StandardPolicy, types::KeyFlags};
 use std::borrow::Cow;
-
-use crate::auth::EncryptionKeys;
 
 const P: StandardPolicy<'static> = StandardPolicy::new();
 

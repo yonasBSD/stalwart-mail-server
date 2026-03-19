@@ -4,17 +4,13 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::registry::mapping::{
-    RegistryGetResponse,
-    account::account_get,
-    archived_item::archived_item_get,
-    dkim::generate_dkim_public_key,
-    log::log_get,
-    queued_message::queued_message_get,
-    report::report_get,
-    spam_sample::spam_sample_get,
-    task::task_get,
-    telemetry::{metric_get, trace_get},
+use crate::registry::{
+    EnterpriseRegistry,
+    mapping::{
+        RegistryGetResponse, account::account_get, dkim::generate_dkim_public_key, log::log_get,
+        queued_message::queued_message_get, report::report_get, spam_sample::spam_sample_get,
+        task::task_get,
+    },
 };
 use common::{Server, auth::AccessToken};
 use jmap_proto::{
@@ -54,6 +50,8 @@ impl RegistryGet for Server {
         mut request: GetRequest<Registry>,
         access_token: &AccessToken,
     ) -> trc::Result<GetResponse<Registry>> {
+        self.assert_enterprise_object(object_type)?;
+
         let object_flags = object_type.flags();
         let is_tenant_filtered =
             (object_flags & OBJ_FILTER_TENANT) != 0 && access_token.tenant_id().is_some();
@@ -289,12 +287,27 @@ impl RegistryGet for Server {
             | ObjectType::DmarcInternalReport
             | ObjectType::TlsInternalReport => report_get(get).await.map(|get| get.into_response()),
 
-            ObjectType::ArchivedItem => archived_item_get(get).await.map(|get| get.into_response()),
+            // SPDX-SnippetBegin
+            // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
+            // SPDX-License-Identifier: LicenseRef-SEL
+            #[cfg(feature = "enterprise")]
+            ObjectType::ArchivedItem => {
+                crate::registry::mapping::archived_item::archived_item_get(get)
+                    .await
+                    .map(|get| get.into_response())
+            }
+            #[cfg(feature = "enterprise")]
+            ObjectType::Metric => crate::registry::mapping::telemetry::metric_get(get)
+                .await
+                .map(|get| get.into_response()),
+            #[cfg(feature = "enterprise")]
+            ObjectType::Trace => crate::registry::mapping::telemetry::trace_get(get)
+                .await
+                .map(|get| get.into_response()),
+            // SPDX-SnippetEnd
             ObjectType::SpamTrainingSample => {
                 spam_sample_get(get).await.map(|get| get.into_response())
             }
-            ObjectType::Metric => metric_get(get).await.map(|get| get.into_response()),
-            ObjectType::Trace => trace_get(get).await.map(|get| get.into_response()),
             ObjectType::Log => log_get(get).await.map(|get| get.into_response()),
             ObjectType::AccountSettings | ObjectType::Credential => {
                 account_get(get).await.map(|get| get.into_response())

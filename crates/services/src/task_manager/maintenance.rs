@@ -37,7 +37,7 @@ use registry::{
 use smtp::reporting::index::ExternalReportIndex;
 use store::{
     Serialize, ValueKey,
-    rand::{self, Rng},
+    rand::{self},
     registry::{RegistryFilter, RegistryQuery},
     roaring::RoaringBitmap,
     write::{AlignedBytes, Archive, Archiver, BatchBuilder, RegistryClass, ValueClass, now},
@@ -106,10 +106,17 @@ async fn store_maintenance(
                 .query::<RoaringBitmap>(RegistryQuery::new(ObjectType::Account))
                 .await?
             {
+                #[cfg(feature = "test_mode")]
+                let status = TaskStatus::at(now);
+
+                #[cfg(not(feature = "test_mode"))]
+                let status =
+                    TaskStatus::at(now + rand::Rng::random_range(&mut rand::rng(), 0..=300));
+
                 batch.schedule_task(Task::AccountMaintenance(TaskAccountMaintenance {
                     account_id: account_id.into(),
                     maintenance_type,
-                    status: TaskStatus::at(now + rand::rng().random_range(0..=300)),
+                    status,
                 }));
 
                 if batch.is_large_batch() {

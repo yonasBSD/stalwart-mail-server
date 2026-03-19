@@ -302,7 +302,7 @@ impl ValueClass {
             },
             ValueClass::Registry(registry) => match registry {
                 RegistryClass::Item { object_id, item_id } => {
-                    serializer.write(*object_id).write_leb128(*item_id)
+                    serializer.write(*object_id).write(*item_id)
                 }
                 RegistryClass::IndexId { object_id, item_id } => {
                     serializer.write(u16::MAX).write(*object_id).write(*item_id)

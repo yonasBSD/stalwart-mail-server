@@ -1,0 +1,69 @@
+# Organizational Units
+dn: ou=users,dc=stalwart,dc=test
+objectClass: organizationalUnit
+ou: users
+
+dn: ou=groups,dc=stalwart,dc=test
+objectClass: organizationalUnit
+ou: groups
+
+# Users
+dn: uid=john.doe,ou=users,dc=stalwart,dc=test
+objectClass: inetOrgPerson
+objectClass: posixAccount
+objectClass: shadowAccount
+uid: john.doe
+cn: John Doe
+sn: Doe
+givenName: John
+mail: john.doe@example.org
+userPassword: this is an LDAP password
+uidNumber: 10001
+gidNumber: 10001
+homeDirectory: /home/john.doe
+loginShell: /bin/bash
+
+dn: uid=jane.smith,ou=users,dc=stalwart,dc=test
+objectClass: inetOrgPerson
+objectClass: posixAccount
+objectClass: shadowAccount
+uid: jane.smith
+cn: Jane Smith
+sn: Smith
+givenName: Jane
+mail: jane.smith@example.org
+userPassword: this is an LDAP password
+uidNumber: 10002
+gidNumber: 10002
+homeDirectory: /home/jane.smith
+loginShell: /bin/bash
+
+dn: uid=bill.foobar,ou=users,dc=stalwart,dc=test
+objectClass: inetOrgPerson
+objectClass: posixAccount
+objectClass: shadowAccount
+uid: bill.foobar
+cn: Bill Foobar
+sn: Foobar
+givenName: Bill
+mail: bill.foobar@example.org
+userPassword: this is an LDAP password
+uidNumber: 10003
+gidNumber: 10003
+homeDirectory: /home/bill.foobar
+loginShell: /bin/bash
+
+# Groups with email addresses
+dn: cn=sales,ou=groups,dc=stalwart,dc=test
+objectClass: groupOfNames
+cn: sales
+mail: sales@example.org
+member: uid=john.doe,ou=users,dc=stalwart,dc=test
+member: uid=jane.smith,ou=users,dc=stalwart,dc=test
+
+dn: cn=corporate,ou=groups,dc=stalwart,dc=test
+objectClass: groupOfNames
+cn: corporate
+mail: corporate@example.org
+member: uid=bill.foobar,ou=users,dc=stalwart,dc=test
+member: uid=jane.smith,ou=users,dc=stalwart,dc=test

@@ -4,16 +4,19 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::utils::server::TestServer;
-use common::auth::{ACCOUNT_IS_USER, EmailAddress, EmailCache};
+use crate::utils::{jmap::JmapUtils, server::TestServer};
+use common::{
+    auth::{ACCOUNT_IS_USER, EmailAddress, EmailCache},
+    network::RcptResolution,
+};
 use jmap_proto::error::set::SetErrorType;
 use registry::{
     schema::{
         enums::{AccountType, StorageQuota},
         prelude::{ObjectType, Property},
         structs::{
-            Account, Credential, Domain, EmailAlias, GroupAccount, MailingList, PasswordCredential,
-            UserAccount,
+            Account, Credential, Domain, EmailAlias, Expression, ExpressionMatch, GroupAccount,
+            MailingList, PasswordCredential, SubAddressing, SubAddressingCustom, UserAccount,
         },
     },
     types::{EnumImpl, list::List, map::Map},
@@ -32,6 +35,7 @@ pub async fn test(test: &TestServer) {
             aliases: Map::new(vec!["beispiel.de".to_string()]),
             is_enabled: true,
             catch_all_address: Some("catchy@example.com".to_string()),
+            sub_addressing: SubAddressing::Enabled,
             ..Default::default()
         })
         .await;
@@ -227,6 +231,35 @@ pub async fn test(test: &TestServer) {
     let account_cache = test.server.account(account_id.document_id()).await.unwrap();
     assert!(account_cache.id_member_of.as_ref().is_empty());
 
+    // Create a masked email
+    let john =
+        crate::utils::account::Account::new("johndoe@example.com", "hello world", &[], account_id);
+    let response = john
+        .registry_create_many(
+            ObjectType::MaskedEmail,
+            [json!({
+                Property::EmailPrefix: "test",
+            })],
+        )
+        .await;
+    let masked = response.created(0);
+    let masked_id = masked.object_id();
+    let masked_email = masked.text_field("email").to_string();
+    assert_eq!(
+        test.server
+            .account_id_from_email("johndoe@example.com", true)
+            .await
+            .unwrap(),
+        Some(account_id.document_id())
+    );
+    assert_eq!(
+        test.server
+            .account_id_from_email(&masked_email, true)
+            .await
+            .unwrap(),
+        Some(account_id.document_id())
+    );
+
     // Create a mailing list
     let list_id = account
         .registry_create_object(MailingList {
@@ -327,6 +360,108 @@ pub async fn test(test: &TestServer) {
         None
     );
 
+    // MTA rcpt resolve
+    let domain_2_id = account
+        .registry_create_object(Domain {
+            name: "another-example.com".to_string(),
+            is_enabled: true,
+            sub_addressing: SubAddressing::Custom(SubAddressingCustom {
+                custom_rule: Expression {
+                    else_: "false".to_string(),
+                    match_: List::from_iter([ExpressionMatch {
+                        if_: "matches('^([^.]+)\\.([^.]+)', rcpt)".to_string(),
+                        then: "$1".to_string(),
+                    }]),
+                },
+            }),
+            ..Default::default()
+        })
+        .await;
+    let account_2_id = account
+        .registry_create_object(Account::User(UserAccount {
+            name: "subaddresser".to_string(),
+            domain_id: domain_2_id,
+            ..Default::default()
+        }))
+        .await;
+    assert_eq!(
+        test.server.rcpt_resolve("unknown", 0).await.unwrap(),
+        RcptResolution::UnknownDomain
+    );
+    assert_eq!(
+        test.server
+            .rcpt_resolve("unknown@unknown.org", 0)
+            .await
+            .unwrap(),
+        RcptResolution::UnknownDomain
+    );
+    assert_eq!(
+        test.server
+            .rcpt_resolve("jdoe@example.com", 0)
+            .await
+            .unwrap(),
+        RcptResolution::Accept
+    );
+    assert_eq!(
+        test.server
+            .rcpt_resolve("johndoe@beispiel.de", 0)
+            .await
+            .unwrap(),
+        RcptResolution::Accept
+    );
+    assert_eq!(
+        test.server
+            .rcpt_resolve("sales@example.com", 0)
+            .await
+            .unwrap(),
+        RcptResolution::Accept
+    );
+    assert_eq!(
+        test.server
+            .rcpt_resolve("jdoe+promotions@example.com", 0)
+            .await
+            .unwrap(),
+        RcptResolution::Rewrite("jdoe@example.com".into())
+    );
+    assert_eq!(
+        test.server
+            .rcpt_resolve("newsletter@example.com", 0)
+            .await
+            .unwrap(),
+        RcptResolution::Expand(Arc::from(Box::from_iter([
+            "jdoe@example.com".into(),
+            "sales@example.com".into()
+        ])))
+    );
+    assert_eq!(
+        test.server
+            .rcpt_resolve("unknown@example.com", 0)
+            .await
+            .unwrap(),
+        RcptResolution::Rewrite("catchy@example.com".into())
+    );
+    assert_eq!(
+        test.server
+            .rcpt_resolve("subaddresser.ignoreme@another-example.com", 0)
+            .await
+            .unwrap(),
+        RcptResolution::Rewrite("subaddresser@another-example.com".into())
+    );
+    assert_eq!(
+        test.server
+            .rcpt_resolve("unknown@another-example.com", 0)
+            .await
+            .unwrap(),
+        RcptResolution::UnknownRecipient
+    );
+    assert_eq!(
+        test.server
+            .rcpt_resolve(masked_email.as_str(), 0)
+            .await
+            .unwrap(),
+        RcptResolution::Rewrite("johndoe@example.com".into())
+    );
+
     // Query tests
     assert_eq!(
         account
@@ -354,30 +489,21 @@ pub async fn test(test: &TestServer) {
     );
 
     // Delete everything
-    assert_eq!(
-        account
-            .registry_destroy(ObjectType::MailingList, [list_id])
-            .await
-            .destroyed_ids()
-            .collect::<Vec<_>>(),
-        vec![list_id]
-    );
-    assert_eq!(
-        account
-            .registry_destroy(ObjectType::Account, [group_id, account_id])
-            .await
-            .destroyed_ids()
-            .collect::<Vec<_>>(),
-        vec![group_id, account_id]
-    );
-    assert_eq!(
-        account
-            .registry_destroy(ObjectType::Domain, [domain_id])
-            .await
-            .destroyed_ids()
-            .collect::<Vec<_>>(),
-        vec![domain_id]
-    );
+    john.registry_destroy(ObjectType::MaskedEmail, [masked_id])
+        .await
+        .assert_destroyed(&[masked_id]);
+    account
+        .registry_destroy(ObjectType::MailingList, [list_id])
+        .await
+        .assert_destroyed(&[list_id]);
+    account
+        .registry_destroy(ObjectType::Account, [group_id, account_id, account_2_id])
+        .await
+        .assert_destroyed(&[group_id, account_id, account_2_id]);
+    account
+        .registry_destroy(ObjectType::Domain, [domain_id, domain_2_id])
+        .await
+        .assert_destroyed(&[domain_id, domain_2_id]);
     assert!(
         test.server
             .try_list(list_id.document_id())
@@ -400,6 +526,13 @@ pub async fn test(test: &TestServer) {
             .is_none()
     );
     assert!(test.server.domain("example.com").await.unwrap().is_none());
+    assert!(
+        test.server
+            .domain("another-example.com")
+            .await
+            .unwrap()
+            .is_none()
+    );
 
     test.assert_is_empty().await;
 }

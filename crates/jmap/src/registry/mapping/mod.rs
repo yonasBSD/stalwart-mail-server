@@ -23,17 +23,27 @@ use utils::map::vec_map::VecMap;
 
 pub mod account;
 pub mod action;
-pub mod archived_item;
 pub mod dkim;
 pub mod log;
-pub mod masked_email;
 pub mod principal;
 pub mod public_key;
 pub mod queued_message;
 pub mod report;
 pub mod spam_sample;
 pub mod task;
+
+// SPDX-SnippetBegin
+// SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
+// SPDX-License-Identifier: LicenseRef-SEL
+#[cfg(feature = "enterprise")]
+pub mod masked_email;
+
+#[cfg(feature = "enterprise")]
+pub mod archived_item;
+
+#[cfg(feature = "enterprise")]
 pub mod telemetry;
+// SPDX-SnippetEnd
 
 pub(crate) struct RegistryGetResponse<'x> {
     pub server: &'x Server,

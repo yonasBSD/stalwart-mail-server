@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::utils::{jmap::JmapUtils, server::TestServer};
+use ahash::AHashMap;
 use common::auth::{BuildAccessToken, permissions::DefaultPermissions};
 use jmap_proto::error::set::SetErrorType;
 use registry::{
@@ -18,9 +20,8 @@ use registry::{
     types::{EnumImpl, list::List, map::Map},
 };
 use serde_json::json;
+use std::str::FromStr;
 use types::id::Id;
-
-use crate::utils::{jmap::JmapUtils, server::TestServer};
 
 pub async fn test(test: &mut TestServer) {
     println!("Running authorization tests...");
@@ -225,5 +226,161 @@ pub async fn test(test: &mut TestServer) {
             .assert_destroyed(&[role_id]);
     }
 
+    // Create test data for John and Jane
+    let john = test
+        .create_user_account(
+            "admin@example.org",
+            "john@example.org",
+            "this is john's secret",
+            &[],
+        )
+        .await;
+    let jane = test
+        .create_user_account(
+            "admin@example.org",
+            "jane@example.org",
+            "this is jane's secret",
+            &[],
+        )
+        .await;
+    let mut john_ids = AHashMap::new();
+    let mut jane_ids = AHashMap::new();
+    for (account, ids) in [(&john, &mut john_ids), (&jane, &mut jane_ids)] {
+        let pk_id = account
+            .registry_create_many(
+                ObjectType::PublicKey,
+                [json!({
+                    Property::Description:"This is a public key",
+                    Property::Key: SMIME_CERTIFICATE,
+                })],
+            )
+            .await
+            .created(0)
+            .object_id();
+        ids.insert(ObjectType::PublicKey, pk_id);
+
+        let masked_id = account
+            .registry_create_many(
+                ObjectType::MaskedEmail,
+                [json!({
+                    Property::EmailDomain: "example.org",
+                })],
+            )
+            .await
+            .created(0)
+            .object_id();
+        ids.insert(ObjectType::MaskedEmail, masked_id);
+    }
+
+    // John should not be able to see Jane's objects and vice versa
+    for (account, own_ids, other_ids) in
+        [(&john, &john_ids, &jane_ids), (&jane, &jane_ids, &john_ids)]
+    {
+        for (object_type, id) in own_ids {
+            assert_eq!(
+                account
+                    .registry_query(*object_type, Vec::<(&str, &str)>::new(), Vec::<&str>::new())
+                    .await
+                    .object_ids()
+                    .collect::<Vec<_>>(),
+                vec![*id]
+            );
+            assert_eq!(
+                account
+                    .registry_get_many(*object_type, Vec::<&str>::new())
+                    .await
+                    .list()
+                    .len(),
+                1
+            );
+        }
+
+        for (object_type, id) in other_ids {
+            assert_eq!(
+                account
+                    .registry_get_many(*object_type, [*id])
+                    .await
+                    .not_found()
+                    .map(|id| Id::from_str(id).unwrap())
+                    .collect::<Vec<_>>(),
+                vec![*id]
+            );
+
+            account
+                .registry_update_object_expect_err(
+                    *object_type,
+                    *id,
+                    json!({
+                        Property::Description: "Hacked description"
+                    }),
+                )
+                .await
+                .assert_type(SetErrorType::NotFound);
+
+            account
+                .registry_destroy_object_expect_err(*object_type, *id)
+                .await
+                .assert_type(SetErrorType::NotFound);
+        }
+    }
+
+    // Admin should see all objects
+    for object_type in [ObjectType::PublicKey, ObjectType::MaskedEmail] {
+        let objects = admin
+            .registry_query(object_type, Vec::<(&str, &str)>::new(), Vec::<&str>::new())
+            .await
+            .object_ids()
+            .collect::<Vec<_>>();
+        assert_eq!(objects.len(), 2);
+        assert!(
+            objects.contains(&john_ids[&object_type]) && objects.contains(&jane_ids[&object_type]),
+        );
+
+        // Filter by account id should work
+        let objects = admin
+            .registry_query(
+                object_type,
+                [(Property::AccountId, john.id().to_string())],
+                Vec::<&str>::new(),
+            )
+            .await
+            .object_ids()
+            .collect::<Vec<_>>();
+        assert_eq!(objects, vec![john_ids[&object_type]]);
+    }
+
+    // Destroy test data
+    for (account, ids) in [(&john, &john_ids), (&jane, &jane_ids)] {
+        for (object_type, id) in ids {
+            account
+                .registry_destroy(*object_type, [*id])
+                .await
+                .assert_destroyed(&[*id]);
+        }
+    }
+
     test.assert_is_empty().await;
 }
+
+const SMIME_CERTIFICATE: &str = "-----BEGIN CERTIFICATE-----
+MIIDbjCCAlagAwIBAgIUZ4K0WXNSS8H0cUcZavD9EYqqTAswDQYJKoZIhvcNAQEN
+BQAwLTErMCkGA1UEAxMiU2FtcGxlIExBTVBTIENlcnRpZmljYXRlIEF1dGhvcml0
+eTAgFw0xOTExMjAwNjU0MThaGA8yMDUyMDkyNzA2NTQxOFowGTEXMBUGA1UEAxMO
+QWxpY2UgTG92ZWxhY2UwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDD
+7q35ZdG2JAzzJGNZDZ9sV7AKh0hlRfoFjTZN5m4RegQAYSyag43ouWi1xRN0avf0
+UTYrwjK04qRdV7GzCACoEKq/xiNUOsjfJXzbCublN3fZMOXDshKKBqThlK75SjA9
+Czxg7ejGoiY/iidk0e91neK30SCCaBTJlfR2ZDrPk73IPMeksxoTatfF9hw9dDA+
+/Hi1yptN/aG0Q/s9icFrxr6y2zQXsjuQPmjMZgj10aD9cazWVgRYCgflhmA0V1uQ
+l1wobYU8DAVxVn+GgabqyjGQMoythIK0Gn5+ofwxXXUM/zbU+g6+1ISdoXxRRFtq
+2GzbIqkAHZZQm+BbnFrhAgMBAAGjgZcwgZQwDAYDVR0TAQH/BAIwADAeBgNVHREE
+FzAVgRNhbGljZUBzbWltZS5leGFtcGxlMBMGA1UdJQQMMAoGCCsGAQUFBwMEMA8G
+A1UdDwEB/wQFAwMHoAAwHQYDVR0OBBYEFKwuVFqk/VUYry7oZkQ40SXR1wB5MB8G
+A1UdIwQYMBaAFLdSTXPAiD2yw3paDPOU9/eAonfbMA0GCSqGSIb3DQEBDQUAA4IB
+AQB76o4Yz7yrVSFcpXqLrcGtdI4q93aKCXECCCzNQLp4yesh6brqaZHNJtwYcJ5T
+qbUym9hJ70iJE4jGNN+yAZR1ltte0HFKYIBKM4EJumG++2hqbUaLz4tl06BHaQPC
+v/9NiNY7q9R9c/B6s1YzHhwqkWht2a+AtgJ4BkpG+g+MmZMQV/Ao7RwLFKJ9OlMW
+LBmEXFcpIJN0HpPasT0nEl/MmotSu+8RnClAi3yFfyTKb+8rD7VxuyXetqDZ6dU/
+9/iqD/SZS7OQIjywtd343mACz3B1RlFxMHSA6dQAf2btGumqR0KiAp3KkYRAePoa
+JqYkB7Zad06ngFl0G0FHON+7
+-----END CERTIFICATE-----
+";

@@ -140,10 +140,6 @@ async fn destroy_account(server: &Server, task: &TaskDestroyAccount) -> trc::Res
         SearchIndex::Contacts,
         SearchIndex::Calendar,
     ] {
-        let c = println!(
-            "Unindexing search index {:?} for account {}",
-            index, account_id
-        );
         server
             .search_store()
             .unindex(SearchQuery::new(index).with_account_id(account_id))

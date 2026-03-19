@@ -19,7 +19,7 @@ use crate::{
     },
     expr::{Variable, functions::ResolveVariable},
     manager::SPAM_CLASSIFIER_KEY,
-    network::{RcptResolution, masked::MaskedAddress},
+    network::RcptResolution,
 };
 use directory::Recipient;
 use mail_auth::IpLookupStrategy;
@@ -68,10 +68,16 @@ impl Server {
             }
         }
 
-        // Masked email resolution
-        if let Cow::Borrowed(addr) = &local_part
-            && let Some(masked_id) = MaskedAddress::parse(addr)
+        // SPDX-SnippetBegin
+        // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
+        // SPDX-License-Identifier: LicenseRef-SEL
+
+        #[cfg(feature = "enterprise")]
+        if self.is_enterprise_edition()
+            && let Cow::Borrowed(addr) = &local_part
+            && let Some(masked_id) = crate::enterprise::masked::MaskedAddress::parse(addr)
         {
+            // Masked email resolution
             return if let Some(masked_entry) = self
                 .registry()
                 .object::<MaskedEmail>(Id::new(masked_id))
@@ -95,6 +101,7 @@ impl Server {
                 Ok(RcptResolution::UnknownRecipient)
             };
         }
+        // SPDX-SnippetEnd
 
         // Try resolving address from registry
         if let Some(address_type) = self

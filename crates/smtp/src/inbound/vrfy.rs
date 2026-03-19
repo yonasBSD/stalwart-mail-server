@@ -17,9 +17,7 @@ impl<T: SessionStream> Session<T> {
                 .rcpt_resolve(&address.to_lowercase(), self.data.session_id)
                 .await
             {
-                Ok(
-                    RcptResolution::Accept | RcptResolution::Rewrite(_) | RcptResolution::Expand(_),
-                ) => {
+                Ok(RcptResolution::Accept | RcptResolution::Rewrite(_)) => {
                     trc::event!(
                         Smtp(SmtpEvent::Vrfy),
                         SpanId = self.data.session_id,
@@ -29,7 +27,11 @@ impl<T: SessionStream> Session<T> {
                     self.write(format!("250 {}\r\n", address.as_ref()).as_bytes())
                         .await
                 }
-                Ok(RcptResolution::UnknownRecipient) | Ok(RcptResolution::UnknownDomain) => {
+                Ok(
+                    RcptResolution::UnknownRecipient
+                    | RcptResolution::UnknownDomain
+                    | RcptResolution::Expand(_),
+                ) => {
                     trc::event!(
                         Smtp(SmtpEvent::VrfyNotFound),
                         SpanId = self.data.session_id,

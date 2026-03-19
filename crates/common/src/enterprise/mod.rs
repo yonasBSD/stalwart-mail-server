@@ -12,6 +12,7 @@ pub mod alerts;
 pub mod config;
 pub mod license;
 pub mod llm;
+pub mod masked;
 
 use crate::{
     Core, LogoCache, Server, config::groupware::CalendarTemplateVariable, expr::Expression,

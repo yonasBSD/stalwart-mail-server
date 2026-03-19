@@ -63,7 +63,9 @@ pub(crate) async fn spam_sample_set(
             continue;
         };
         if let Err(err) = sample.patch(
-            JsonPointerPatch::new(&JsonPointer::new(vec![])).with_create(true),
+            JsonPointerPatch::new(&JsonPointer::new(vec![]))
+                .with_create(true)
+                .with_can_set_account(!set.is_account_filtered),
             value,
         ) {
             set.response.not_created.append(id, err.into());
@@ -117,20 +119,20 @@ pub(crate) async fn spam_sample_set(
             continue;
         };
 
-        let (Some(subject), Some(from)) = (
-            message.subject().map(thread_name),
-            message
-                .from()
-                .and_then(|from| from.first().and_then(|addr| addr.address())),
-        ) else {
+        let subject = message.subject().map(thread_name).unwrap_or_default();
+        let from = message
+            .from()
+            .and_then(|from| from.first().and_then(|addr| addr.address()))
+            .unwrap_or_default();
+        if subject.is_empty() && from.is_empty() {
             set.response.not_created.append(
                 id,
                 SetError::invalid_properties()
                     .with_property(Property::BlobId)
-                    .with_description("Email message must have a subject and from header"),
+                    .with_description("Email message must have a subject or a from header"),
             );
             continue;
-        };
+        }
 
         sample.subject = subject.to_string();
         sample.from = from.to_lowercase();

@@ -18,7 +18,10 @@ use imap_proto::ResponseType;
 use registry::schema::{
     enums::{TaskAccountMaintenanceType, TaskStoreMaintenanceType},
     prelude::Property,
-    structs::{DataRetention, Task, TaskAccountMaintenance, TaskStatus, TaskStoreMaintenance},
+    structs::{
+        DataRetention, SpamClassifier, Task, TaskAccountMaintenance, TaskStatus,
+        TaskStoreMaintenance,
+    },
 };
 use store::{IterateParams, LogKey, U32_LEN, U64_LEN, write::key::DeserializeBigEndian};
 use types::id::Id;
@@ -39,6 +42,15 @@ pub async fn test(test: &mut TestServer) {
                 ..Default::default()
             },
             &[Property::MaxChangesHistory, Property::ExpungeTrashAfter],
+        )
+        .await;
+    admin
+        .registry_update_setting(
+            SpamClassifier {
+                hold_samples_for: 1u64.into(),
+                ..Default::default()
+            },
+            &[Property::HoldSamplesFor],
         )
         .await;
     admin.reload_settings().await;
@@ -193,6 +205,11 @@ pub async fn test(test: &mut TestServer) {
     admin.destroy_account(account).await;
     test.wait_for_tasks().await;
     test.assert_is_empty().await;
+
+    // Reset settings
+    admin
+        .registry_update_setting(SpamClassifier::default(), &[Property::HoldSamplesFor])
+        .await;
 }
 
 async fn get_changes(server: &Server) -> (AHashSet<(u64, u8)>, bool) {

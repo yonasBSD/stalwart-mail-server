@@ -23,7 +23,7 @@ use registry::{
     pickle::Pickle,
     schema::{
         enums::{TaskStatusType, TaskType},
-        prelude::{Object, Property},
+        prelude::Property,
         structs::Task,
     },
     types::{
@@ -339,6 +339,8 @@ pub(crate) async fn task_set(
                 due,
             }))
             .commit_point();
+
+        set.response.destroyed.push(id);
     }
 
     if !batch.is_empty() {
@@ -370,7 +372,7 @@ pub(crate) async fn task_get(
         if let Some(task) = get
             .server
             .store()
-            .get_value::<Object>(ValueKey::from(ValueClass::TaskQueue(
+            .get_value::<Task>(ValueKey::from(ValueClass::TaskQueue(
                 TaskQueueClass::Task { id: id.id() },
             )))
             .await?
@@ -387,7 +389,7 @@ pub(crate) async fn task_get(
 pub(crate) async fn task_query(
     mut req: RegistryQueryResponse<'_>,
 ) -> trc::Result<QueryResponseBuilder> {
-    let mut due_from = 0u64;
+    let mut due_from = 100u64;
     let mut due_to = u64::MAX;
 
     req.request
@@ -497,7 +499,7 @@ pub(crate) async fn task_query(
 
 async fn task_ids(server: &Server, max_results: usize) -> trc::Result<Vec<Id>> {
     let mut tasks = Vec::with_capacity(8);
-    let from_key = ValueKey::from(ValueClass::TaskQueue(TaskQueueClass::Due { id: 0, due: 0 }));
+    let from_key = ValueKey::from(ValueClass::TaskQueue(TaskQueueClass::Due { id: 0, due: 1 }));
     let to_key = ValueKey::from(ValueClass::TaskQueue(TaskQueueClass::Due {
         id: u64::MAX,
         due: u64::MAX,

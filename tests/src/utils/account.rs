@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::utils::{server::TestServer, webdav::DummyWebDavClient};
+use crate::utils::{imap::ImapConnection, server::TestServer, webdav::DummyWebDavClient};
 use ahash::AHashMap;
 use jmap_client::client::{Client, Credentials};
 use registry::{
@@ -188,6 +188,12 @@ impl Account {
             self.secret(),
             self.emails()[0],
         )
+    }
+
+    pub async fn imap_client(&self) -> ImapConnection {
+        let mut imap = ImapConnection::connect(b"_x ").await;
+        imap.authenticate(self.name(), self.secret()).await;
+        imap
     }
 
     pub async fn jmap_client(&self) -> Client {

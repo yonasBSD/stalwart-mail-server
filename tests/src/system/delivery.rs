@@ -5,7 +5,7 @@
  */
 
 use crate::utils::{
-    account::Account, imap::AssertResult, server::TestServer, smtp::SmtpConnection,
+    account::Account, imap::AssertResult, jmap::JmapUtils, server::TestServer, smtp::SmtpConnection,
 };
 use common::{Server, auth::BuildAccessToken};
 use email::{
@@ -15,19 +15,24 @@ use email::{
 };
 use groupware::DavResourceName;
 use jmap::blob::download::BlobDownload;
+use jmap_proto::error::set::SetErrorType;
 use registry::{
     schema::{
-        prelude::ObjectType,
-        structs::{EmailAlias, MailingList, SpamTag, SpamTagScore, SpamTrainingSample},
+        enums::StorageQuota,
+        prelude::{ObjectType, Property},
+        structs::{
+            EmailAlias, Expression, MailingList, MtaExtensions, SpamTag, SpamTagScore,
+            SpamTrainingSample,
+        },
     },
-    types::{float::Float, list::List, map::Map},
+    types::{EnumImpl, datetime::UTCDateTime, float::Float, list::List, map::Map},
 };
 use serde_json::json;
 use std::time::Duration;
 use store::{
     ValueKey,
     roaring::RoaringBitmap,
-    write::{AlignedBytes, Archive},
+    write::{AlignedBytes, Archive, now},
 };
 use types::{
     blob::{BlobClass, BlobId},
@@ -48,6 +53,23 @@ pub async fn test(test: &mut TestServer) {
             tag: "GTUBE_TEST".to_string(),
         }))
         .await;
+    admin
+        .registry_update_setting(
+            MtaExtensions {
+                expn: Expression {
+                    else_: "true".to_string(),
+                    ..Default::default()
+                },
+                vrfy: Expression {
+                    else_: "true".to_string(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            &[Property::Expn, Property::Vrfy],
+        )
+        .await;
+    admin.reload_settings().await;
 
     // Create a domain name and a test account
     let john = test
@@ -74,6 +96,15 @@ pub async fn test(test: &mut TestServer) {
             &[],
         )
         .await;
+    admin
+        .registry_update_object(
+            ObjectType::Account,
+            john.id(),
+            json!({
+                Property::Quotas: {StorageQuota::MaxMaskedAddresses.as_str(): 2}
+            }),
+        )
+        .await;
 
     // Create a mailing list
     let domain_id = admin.find_or_create_domain("example.org").await;
@@ -98,7 +129,6 @@ pub async fn test(test: &mut TestServer) {
 
     // Delivering to individuals
     let mut lmtp = SmtpConnection::connect().await;
-
     lmtp.ingest(
         "bill@example.org",
         &["jdoe@example.org"],
@@ -140,10 +170,69 @@ pub async fn test(test: &mut TestServer) {
             .is_none()
     );
 
-    // Test spam filtering
+    // Masked email tests
+    john.registry_create_many(
+        ObjectType::MaskedEmail,
+        [json!({
+            Property::EmailDomain: "invalid.org"
+        })],
+    )
+    .await
+    .not_created(0)
+    .to_set_error()
+    .assert_type(SetErrorType::Forbidden)
+    .assert_description_contains("The specified domain is not valid for this account.");
+
+    let response = john
+        .registry_create_many(
+            ObjectType::MaskedEmail,
+            [json!({
+                Property::EmailDomain: "example.org",
+                Property::EmailPrefix: "secretive",
+                Property::ExpiresAt: UTCDateTime::from_timestamp((now() + 1) as i64)
+            })],
+        )
+        .await;
+    let masked = response.created(0);
+    let masked_prefix_id = masked.object_id();
+    let masked_prefix_email = masked.text_field("email").to_string();
+    assert!(
+        masked_prefix_email.starts_with("secretive")
+            && masked_prefix_email.ends_with("@example.org"),
+        "Unexpected masked email: {masked_prefix_email}"
+    );
+
+    let response = john
+        .registry_create_many(
+            ObjectType::MaskedEmail,
+            [json!({
+                Property::EmailDomain: "example.org",
+            })],
+        )
+        .await;
+    let masked = response.created(0);
+    let masked_random_id = masked.object_id();
+    let masked_random_email = masked.text_field("email").to_string();
+    assert!(
+        masked_random_email.contains(".") && masked_random_email.ends_with("@example.org"),
+        "Unexpected masked email: {masked_random_email}"
+    );
+
+    john.registry_create_many(
+        ObjectType::MaskedEmail,
+        [json!({
+            Property::EmailDomain: "example.org",
+        })],
+    )
+    .await
+    .not_created(0)
+    .to_set_error()
+    .assert_type(SetErrorType::OverQuota);
+
+    // Test spam filtering using masked email
     lmtp.ingest(
         "bill@example.org",
-        &["john.doe@example.org"],
+        &[masked_prefix_email.as_str()],
         concat!(
             "From: bill@example.org\r\n",
             "To: john.doe@example.org\r\n",
@@ -180,7 +269,7 @@ pub async fn test(test: &mut TestServer) {
     .await;
     assert_eq!(john.spam_training_samples().await, vec![]);
 
-    // CardDAV spam override
+    // CardDAV spam override, using masked email
     let dav_client = john.webdav_client();
     dav_client
         .request(
@@ -201,7 +290,7 @@ END:VCARD
         .with_status(hyper::StatusCode::CREATED);
     lmtp.ingest(
         "dmarc-bill@example.org",
-        &["john.doe@example.org"],
+        &[masked_random_email.as_str()],
         concat!(
             "From: dmarc-bill@example.org\r\n",
             "To: john.doe@example.org\r\n",
@@ -238,8 +327,8 @@ END:VCARD
     )
     .await;
     let samples = john.spam_training_samples().await;
-    assert_eq!(samples.iter().filter(|x| x.1.is_spam).count(), 1);
-    assert_eq!(samples.iter().filter(|x| !x.1.is_spam).count(), 0);
+    assert_eq!(samples.iter().filter(|x| !x.1.is_spam).count(), 1);
+    assert_eq!(samples.iter().filter(|x| x.1.is_spam).count(), 0);
 
     // Test trusted reply override
     john.jmap_client()
@@ -312,8 +401,8 @@ END:VCARD
     )
     .await;
     let samples = john.spam_training_samples().await;
-    assert_eq!(samples.iter().filter(|x| x.1.is_spam).count(), 2);
-    assert_eq!(samples.iter().filter(|x| !x.1.is_spam).count(), 0);
+    assert_eq!(samples.iter().filter(|x| !x.1.is_spam).count(), 2);
+    assert_eq!(samples.iter().filter(|x| x.1.is_spam).count(), 0);
 
     // EXPN and VRFY
     lmtp.expn("members@example.org", 2)
@@ -326,6 +415,8 @@ END:VCARD
     lmtp.vrfy("jdoe@example.org", 2).await;
     lmtp.vrfy("members@example.org", 5).await;
     lmtp.vrfy("non_existant@example.org", 5).await;
+    lmtp.vrfy(masked_random_email.as_str(), 2).await;
+    lmtp.vrfy(masked_prefix_email.as_str(), 5).await; // Should have expired
 
     // Delivering to a mailing list
     lmtp.ingest(
@@ -358,14 +449,6 @@ END:VCARD
             account.id_string()
         );
     }
-
-    let todos = "todo";
-    /*
-       - MaskedEmail (receiving, expiring, not accessing other users' masked addresses)
-       - SpamSamples, can't access from other accounts but admin can using filter
-       - Catchall? Subaddressing?
-       - Review other code points for more testing ideas
-    */
 
     // Removing members from the mailing list and chunked ingest
     admin
@@ -446,11 +529,12 @@ END:VCARD
             let metadata = message_metadata(&test.server, account_id, document_id).await;
             let partial_message = test
                 .server
-                .store()
+                .blob_store()
                 .get_blob(metadata.blob_hash.0.as_ref(), 0..usize::MAX)
                 .await
                 .unwrap()
                 .unwrap();
+
             assert_ne!(metadata.blob_body_offset, 0);
             let expected_full_message = String::from_utf8(
                 ChainedBytes::new(metadata.raw_headers.as_ref())
@@ -491,9 +575,20 @@ END:VCARD
     }
 
     // Remove test data
+    john.registry_destroy(
+        ObjectType::MaskedEmail,
+        [masked_prefix_id, masked_random_id],
+    )
+    .await
+    .assert_destroyed(&[masked_prefix_id, masked_random_id]);
     for account in [&john, &jane, &bill] {
         test.destroy_all_mailboxes(account).await;
     }
+    admin.registry_destroy_all(ObjectType::MailingList).await;
+    admin
+        .registry_destroy_all(ObjectType::SpamTrainingSample)
+        .await;
+    admin.registry_destroy_all(ObjectType::SpamTag).await;
     test.assert_is_empty().await;
 
     for account in [john, jane, bill] {

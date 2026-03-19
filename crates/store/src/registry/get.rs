@@ -7,7 +7,10 @@
 use crate::{
     IterateParams, RegistryStore, SUBSPACE_REGISTRY, U16_LEN, U64_LEN, ValueKey,
     registry::RegistryObject,
-    write::{AnyClass, RegistryClass, ValueClass, key::KeySerializer},
+    write::{
+        AnyClass, RegistryClass, ValueClass,
+        key::{DeserializeBigEndian, KeySerializer},
+    },
 };
 use registry::{
     pickle::PickledStream,
@@ -16,7 +19,6 @@ use registry::{
 };
 use trc::AddContext;
 use types::id::Id;
-use utils::codec::leb128::Leb128Reader;
 
 impl RegistryStore {
     pub async fn get(&self, object_id: ObjectId) -> trc::Result<Option<Object>> {
@@ -76,17 +78,7 @@ impl RegistryStore {
                     })),
                 ),
                 |key, value| {
-                    let id = key
-                        .get(U16_LEN..)
-                        .and_then(|key| key.read_leb128::<u64>())
-                        .map(|r| r.0)
-                        .ok_or_else(|| {
-                            trc::EventType::Registry(trc::RegistryEvent::DeserializationError)
-                                .into_err()
-                                .caused_by(trc::location!())
-                                .details(object_type.as_str())
-                                .ctx(trc::Key::Key, key)
-                        })?;
+                    let id = key.deserialize_be_u64(U16_LEN)?;
                     let mut stream = PickledStream::new(value);
                     let object = T::unpickle(&mut stream).ok_or_else(|| {
                         trc::EventType::Registry(trc::RegistryEvent::DeserializationError)

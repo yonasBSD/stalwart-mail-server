@@ -4,8 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, time::Duration};
-
 use ahash::{AHashMap, AHashSet};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use dav_proto::{
@@ -16,6 +14,7 @@ use dav_proto::{
 use groupware::DavResourceName;
 use hyper::{HeaderMap, Method, StatusCode, header::AUTHORIZATION};
 use quick_xml::{Reader, events::Event};
+use std::{borrow::Cow, time::Duration};
 use store::rand::{Rng, distr::Alphanumeric, rng};
 
 #[allow(dead_code)]
@@ -611,8 +610,7 @@ impl DavResponse {
 
     pub fn with_body(self, expect_body: impl AsRef<str>) -> Self {
         let expect_body = expect_body.as_ref();
-        if self.body.is_ok() {
-            let body = self.body.as_ref().unwrap();
+        if let Ok(body) = &self.body {
             if body != expect_body {
                 self.dump_response();
                 assert_eq!(body, &expect_body);
@@ -625,8 +623,7 @@ impl DavResponse {
     }
 
     pub fn with_empty_body(self) -> Self {
-        if self.body.is_ok() {
-            let body = self.body.as_ref().unwrap();
+        if let Ok(body) = &self.body {
             if !body.is_empty() {
                 self.dump_response();
                 panic!("Expected empty body but got {body:?}");
@@ -639,8 +636,8 @@ impl DavResponse {
     }
 
     pub fn expect_body(&self) -> &str {
-        if self.body.is_ok() {
-            self.body.as_ref().unwrap()
+        if let Ok(body) = &self.body {
+            body
         } else {
             self.dump_response();
             panic!("Expected body but no body was returned.")

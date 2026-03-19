@@ -16,8 +16,8 @@ use registry::{
         enums::{Permission, StorageQuota, TaskAccountMaintenanceType},
         prelude::{ObjectType, Property},
         structs::{
-            self, Credential, Expression, Jmap, MtaStageAuth, PasswordCredential, PermissionsList,
-            Task, TaskAccountMaintenance, TaskStatus, UserAccount,
+            self, Credential, Jmap, PasswordCredential, PermissionsList, Task,
+            TaskAccountMaintenance, TaskStatus, UserAccount,
         },
     },
     types::{EnumImpl, list::List, map::Map},
@@ -45,18 +45,6 @@ pub async fn test(test: &mut TestServer) {
                 Property::MaxUploadCount,
                 Property::UploadTtl,
             ],
-        )
-        .await;
-    admin
-        .registry_update_setting(
-            MtaStageAuth {
-                require: Expression {
-                    else_: "false".to_string(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            &[Property::Require],
         )
         .await;
     admin.reload_settings().await;

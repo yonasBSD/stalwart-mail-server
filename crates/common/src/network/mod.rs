@@ -29,7 +29,6 @@ pub mod dkim;
 pub mod dns;
 pub mod limiter;
 pub mod listen;
-pub mod masked;
 pub mod mta;
 pub mod security;
 pub mod stream;

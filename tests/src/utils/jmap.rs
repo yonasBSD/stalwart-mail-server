@@ -646,6 +646,8 @@ pub trait JmapUtils {
         self.text_field("description")
     }
 
+    fn to_set_error(&self) -> JmapSetError;
+
     fn with_property(self, field: impl Display, value: impl Into<Value>) -> Self;
 
     fn text_field(&self, field: &str) -> &str;
@@ -666,6 +668,10 @@ impl JmapUtils for Value {
         self.pointer(&format!("/{field}"))
             .and_then(|v| v.as_i64())
             .unwrap_or_else(|| panic!("Missing {field} in object: {self:?}"))
+    }
+
+    fn to_set_error(&self) -> JmapSetError {
+        serde_json::from_str(&self.to_string()).expect("Failed to deserialize set error")
     }
 
     fn assert_is_equal(&self, expected: Value) {

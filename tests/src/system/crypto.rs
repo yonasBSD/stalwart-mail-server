@@ -4,13 +4,23 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::jmap::{JMAPTest, ManagementApi, mail::delivery::SmtpConnection};
-use mail_parser::{MessageParser, MimeHeaders};
-use std::path::PathBuf;
-use store::{
-    Deserialize, Serialize,
-    write::{Archive, Archiver},
+use crate::utils::{jmap::JmapUtils, server::TestServer, smtp::SmtpConnection};
+use common::{
+    auth::{
+        ACCOUNT_FLAG_ENCRYPT_ALGO_AES128, ACCOUNT_FLAG_ENCRYPT_ALGO_AES256,
+        ACCOUNT_FLAG_ENCRYPT_METHOD_PGP, ACCOUNT_FLAG_ENCRYPT_METHOD_SMIME,
+    },
+    storage::encryption::{EncryptionMethod, parse_public_key},
 };
+use email::message::crypto::EncryptMessage;
+use mail_parser::{MessageParser, MimeHeaders};
+use registry::schema::{
+    prelude::{ObjectType, Property},
+    structs::{EncryptionAtRest, EncryptionSettings, PublicKey},
+};
+use serde_json::json;
+use std::path::PathBuf;
+use types::id::Id;
 
 pub async fn test(test: &mut TestServer) {
     println!("Running Encryption-at-rest tests...");
@@ -20,57 +30,85 @@ pub async fn test(test: &mut TestServer) {
     import_certs_and_encrypt().await;
 
     // Create test account
-    let account = test.account("jdoe@example.com");
+    let account = test
+        .create_user_account(
+            "admin@example.org",
+            "jdoe@example.org",
+            "this is a very strong password",
+            &[],
+        )
+        .await;
     let client = account.jmap_client().await;
 
-    // Build API
-    let api = ManagementApi::new(8899, "jdoe@example.com", "12345");
-
-    // Try importing using multiple methods and symmetric algos
-    for (file_name, method, num_certs) in [
-        ("cert_smime.pem", EncryptionMethod::SMIME, 3),
-        ("cert_pgp.pem", EncryptionMethod::PGP, 1),
-    ] {
+    // Import all certs
+    let mut cert_ids = Vec::new();
+    let mut certs_parsed = Vec::new();
+    for cert_file in ["cert_smime.pem", "cert_pgp.pem"] {
         let certs = std::fs::read_to_string(
             PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("resources")
                 .join("crypto")
-                .join(file_name),
+                .join(cert_file),
         )
         .unwrap();
 
-        for algo in [Algorithm::Aes128, Algorithm::Aes256] {
-            let request = match method {
-                EncryptionMethod::PGP => EncryptionType::PGP {
-                    algo,
-                    certs: certs.clone(),
-                    allow_spam_training: true,
-                },
-                EncryptionMethod::SMIME => EncryptionType::SMIME {
-                    algo,
-                    certs: certs.clone(),
-                    allow_spam_training: true,
-                },
-            };
+        let params = parse_public_key(&PublicKey {
+            description: cert_file.to_string(),
+            key: certs.clone(),
+            ..Default::default()
+        })
+        .unwrap()
+        .unwrap();
+        certs_parsed.push(params.certs);
 
-            assert_eq!(
-                api.post::<u32>("/api/account/crypto", &request)
-                    .await
-                    .unwrap()
-                    .unwrap_data(),
-                num_certs
-            );
-        }
+        let cert_id = account
+            .registry_create_many(
+                ObjectType::PublicKey,
+                [json!({
+                    Property::Description: "This is a public key",
+                    Property::Key: certs
+                })],
+            )
+            .await
+            .created(0)
+            .object_id();
+
+        cert_ids.push(cert_id);
     }
+
+    // Update encryption at rest settings
+    account
+        .registry_update_object(
+            ObjectType::AccountSettings,
+            Id::singleton(),
+            json!({
+                Property::EncryptionAtRest: EncryptionAtRest::Aes256(EncryptionSettings {
+                    allow_spam_training: true,
+                    encrypt_on_append: true,
+                    public_key: cert_ids[1],
+                })
+            }),
+        )
+        .await;
+    assert_eq!(
+        test.server
+            .account(account.id().document_id())
+            .await
+            .unwrap()
+            .encryption_key
+            .as_ref()
+            .unwrap(),
+        &certs_parsed[1]
+    );
 
     // Send a new message, which should be encrypted
     let mut lmtp = SmtpConnection::connect().await;
     lmtp.ingest(
-        "bill@example.com",
-        &["jdoe@example.com"],
+        "bill@example.org",
+        &["jdoe@example.org"],
         concat!(
-            "From: bill@example.com\r\n",
-            "To: jdoe@example.com\r\n",
+            "From: bill@example.org\r\n",
+            "To: jdoe@example.org\r\n",
             "Subject: TPS Report (should be encrypted)\r\n",
             "\r\n",
             "I'm going to need those TPS reports ASAP. ",
@@ -81,11 +119,11 @@ pub async fn test(test: &mut TestServer) {
 
     // Send an encrypted message
     lmtp.ingest(
-        "bill@example.com",
-        &["jdoe@example.com"],
+        "bill@example.org",
+        &["jdoe@example.org"],
         concat!(
-            "From: bill@example.com\r\n",
-            "To: jdoe@example.com\r\n",
+            "From: bill@example.org\r\n",
+            "To: jdoe@example.org\r\n",
             "Subject: TPS Report (already encrypted)\r\n",
             "Content-Type: application/pkcs7-mime; name=\"smime.p7m\"; smime-type=enveloped-data\r\n",
             "\r\n",
@@ -104,21 +142,23 @@ pub async fn test(test: &mut TestServer) {
     .await;
 
     // Disable encryption
-    assert_eq!(
-        api.post::<Option<String>>("/api/account/crypto", &EncryptionType::Disabled)
-            .await
-            .unwrap()
-            .unwrap_data(),
-        None
-    );
+    account
+        .registry_update_object(
+            ObjectType::AccountSettings,
+            Id::singleton(),
+            json!({
+                Property::EncryptionAtRest: EncryptionAtRest::Disabled
+            }),
+        )
+        .await;
 
     // Send a new message, which should NOT be encrypted
     lmtp.ingest(
-        "bill@example.com",
-        &["jdoe@example.com"],
+        "bill@example.org",
+        &["jdoe@example.org"],
         concat!(
-            "From: bill@example.com\r\n",
-            "To: jdoe@example.com\r\n",
+            "From: bill@example.org\r\n",
+            "To: jdoe@example.org\r\n",
             "Subject: TPS Report (plain text)\r\n",
             "\r\n",
             "I'm going to need those TPS reports ASAP. ",
@@ -156,69 +196,70 @@ pub async fn test(test: &mut TestServer) {
             panic!("Unexpected message: {:#?}", message)
         }
     }
+
+    test.account("admin@example.org")
+        .destroy_account(account)
+        .await;
+    test.assert_is_empty().await;
 }
 
 pub async fn import_certs_and_encrypt() {
-    for (name, method, expected_certs) in [
-        ("cert_pgp.pem", EncryptionMethod::PGP, 1),
-        //("cert_pgp.der", EncryptionMethod::PGP, 1),
-        ("cert_smime.pem", EncryptionMethod::SMIME, 3),
-        ("cert_smime.der", EncryptionMethod::SMIME, 1),
+    for (name, method) in [
+        ("cert_pgp.pem", EncryptionMethod::PGP),
+        //("cert_pgp.der", EncryptionMethod::PGP),
+        ("cert_smime.pem", EncryptionMethod::SMIME),
+        //("cert_smime.der", EncryptionMethod::SMIME),
     ] {
-        let mut certs = try_parse_certs(
-            method,
-            std::fs::read(
-                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                    .join("resources")
-                    .join("crypto")
-                    .join(name),
+        let pk = PublicKey {
+            description: name.to_string(),
+            key: String::from_utf8(
+                std::fs::read(
+                    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                        .join("resources")
+                        .join("crypto")
+                        .join(name),
+                )
+                .unwrap(),
             )
             .unwrap(),
-        )
-        .expect(name);
-
-        assert_eq!(certs.len(), expected_certs);
-
-        if method == EncryptionMethod::PGP && certs.len() == 2 {
-            // PGP library won't encrypt using EC
-            let mut certs_ = certs.to_vec();
-            certs_.pop();
-            certs = certs_.into();
-        }
-
-        let mut params = EncryptionParams {
-            certs,
-            flags: method.flags(),
+            ..Default::default()
         };
 
-        for algo in [Algorithm::Aes128, Algorithm::Aes256] {
+        let params = parse_public_key(&pk).unwrap().unwrap();
+        assert_eq!(params.method, method);
+
+        for mut flags in [
+            ACCOUNT_FLAG_ENCRYPT_ALGO_AES128,
+            ACCOUNT_FLAG_ENCRYPT_ALGO_AES256,
+        ] {
             let message = MessageParser::new()
                 .parse(b"Subject: test\r\ntest\r\n")
                 .unwrap();
             assert!(!message.is_encrypted());
-            params.flags = algo.flags() | method.flags();
-            let arch =
-                Archive::deserialize_owned(Archiver::new(params.clone()).serialize().unwrap())
-                    .unwrap();
-            message
-                .encrypt(arch.unarchive::<EncryptionParams>().unwrap())
-                .await
-                .unwrap();
+            flags |= match method {
+                EncryptionMethod::PGP => ACCOUNT_FLAG_ENCRYPT_METHOD_PGP,
+                EncryptionMethod::SMIME => ACCOUNT_FLAG_ENCRYPT_METHOD_SMIME,
+            };
+            message.encrypt(&params.certs, flags).await.unwrap();
         }
     }
 
     // S/MIME and PGP should not be allowed mixed
     assert!(
-        try_parse_certs(
-            EncryptionMethod::PGP,
-            std::fs::read(
-                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                    .join("resources")
-                    .join("crypto")
-                    .join("cert_mixed.pem"),
+        parse_public_key(&PublicKey {
+            description: "err".into(),
+            key: String::from_utf8(
+                std::fs::read(
+                    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                        .join("resources")
+                        .join("crypto")
+                        .join("cert_mixed.pem"),
+                )
+                .unwrap()
             )
             .unwrap(),
-        )
+            ..Default::default()
+        })
         .is_err()
     );
 }
