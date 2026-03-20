@@ -56,7 +56,7 @@ pub fn key_names(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let parse_fn = quote! {
         pub fn try_parse(name: &str) -> Option<Self> {
             match name {
-                #(#snake_case_names => Some(Self::#variant_names),)*
+                #(#camel_case_names => Some(Self::#variant_names),)*
                 _ => None,
             }
         }

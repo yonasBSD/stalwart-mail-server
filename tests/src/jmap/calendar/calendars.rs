@@ -4,11 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::jmap::{ChangeType, JMAPTest, JmapUtils};
+use crate::utils::{
+    jmap::{ChangeType, JmapUtils},
+    server::TestServer,
+};
 use jmap_proto::{object::calendar::CalendarProperty, request::method::MethodObject};
 use serde_json::json;
 
-pub async fn test(test: &mut TestServer) {
+pub async fn test(test: &TestServer) {
     println!("Running Calendar tests...");
     let account = test.account("jdoe@example.com");
 
@@ -370,5 +373,5 @@ pub async fn test(test: &mut TestServer) {
 
     // Destroy all mailboxes
     account.destroy_all_calendars().await;
-    test.assert_is_empty().await;;
+    test.assert_is_empty().await;
 }

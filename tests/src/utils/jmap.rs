@@ -275,7 +275,7 @@ impl Account {
             serde_json::from_slice(
                 &reqwest::Client::builder()
                     .danger_accept_invalid_certs(true)
-                    .timeout(Duration::from_millis(1000))
+                    .timeout(Duration::from_millis(5000))
                     .default_headers(headers)
                     .build()
                     .unwrap()

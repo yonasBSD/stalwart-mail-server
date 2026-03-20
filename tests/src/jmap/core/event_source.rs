@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::jmap::{JMAPTest, mail::delivery::SmtpConnection};
 use email::mailbox::INBOX_ID;
 use futures::StreamExt;
 use jmap_client::{
@@ -17,7 +16,9 @@ use store::ahash::AHashSet;
 use tokio::sync::mpsc;
 use types::id::Id;
 
-pub async fn test(test: &mut TestServer) {
+use crate::utils::{server::TestServer, smtp::SmtpConnection};
+
+pub async fn test(test: &TestServer) {
     println!("Running EventSource tests...");
 
     // Create test account

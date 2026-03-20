@@ -105,12 +105,6 @@ impl Server {
                             Id = alert.id.id().id(),
                             Details = message.as_ref().map(|m| m.build())
                         );
-
-                        #[cfg(feature = "test_mode")]
-                        Collector::update_event_counter(
-                            trc::EventType::Telemetry(TelemetryEvent::AlertEvent),
-                            1,
-                        );
                     }
                 }
             }

@@ -15,21 +15,19 @@ use crate::utils::{
 };
 use imap_proto::ResponseType;
 use jmap_proto::error::set::SetErrorType;
-use registry::{
-    schema::{
-        enums::{AccountType, ArchivedItemStatus, TaskStoreMaintenanceType},
-        prelude::{ObjectType, Property},
-        structs::{
-            Account, ArchivedItem, Credential, DataRetention, PasswordCredential, Task, TaskStatus,
-            TaskStoreMaintenance,
-        },
+use registry::schema::{
+    enums::{AccountType, ArchivedItemStatus, TaskStoreMaintenanceType},
+    prelude::{ObjectType, Property},
+    structs::{
+        Account, Action, ArchivedItem, DataRetention, Task, TaskStatus, TaskStoreMaintenance,
     },
-    types::list::List,
 };
 use serde_json::json;
 use types::id::Id;
 
 pub async fn test(test: &mut TestServer) {
+    println!("Running Archiving tests...");
+
     // Add test settings
     let admin = test.account("admin@example.org");
     admin
@@ -48,7 +46,7 @@ pub async fn test(test: &mut TestServer) {
     admin.reload_settings().await;
 
     // Create test account
-    let john = test
+    let mut john = test
         .create_user_account(
             "admin@example.org",
             "jdoe@example.org",
@@ -319,24 +317,36 @@ pub async fn test(test: &mut TestServer) {
             ObjectType::Account,
             john.id(),
             json!({
-                Property::Credentials:  List::from_iter([Credential::Password(PasswordCredential {
-                    secret: "brand new secret".to_string(),
-                    ..Default::default()
-                })]),
+                "credentials/0": {
+                    Property::Type: "Password",
+                    Property::Secret: "brand new secret"
+                }
             }),
         )
         .await;
+
+    // Reset cache
+    admin.registry_create_object(Action::InvalidateCaches).await;
 
     // Authenticate with the new password and fetch the message again
     let mut john_imap = ImapConnection::connect(b"_x ").await;
     john_imap
         .authenticate("jdoe@example.org", "brand new secret")
         .await;
+    john_imap.send("SELECT INBOX").await;
+    john_imap.assert_read(Type::Tagged, ResponseType::Ok).await;
     john_imap.send("FETCH 1 BODY[]").await;
     john_imap
         .assert_read(Type::Tagged, ResponseType::Ok)
         .await
         .assert_contains(&format!("Subject: undelete test for {}", john.name()));
+
+    // Delete spam samples
+    john.update_secret("brand new secret");
+    john.registry_destroy_all(ObjectType::SpamTrainingSample)
+        .await;
+    jane.registry_destroy_all(ObjectType::SpamTrainingSample)
+        .await;
 
     // Restore settings
     admin
@@ -354,7 +364,7 @@ pub async fn test(test: &mut TestServer) {
     admin.destroy_account(john).await;
     admin.destroy_account(jane).await;
 
-    test.assert_is_empty().await;
+    test.cleanup().await;
 }
 
 const RAW_MESSAGE: &str = "From: NAME@example.org

@@ -29,7 +29,7 @@ pub mod scheduler;
 pub mod spam_classifier;
 
 const QUEUE_REFRESH_INTERVAL: u64 = 60 * 5; // 5 minutes
-const DEFAULT_LOCK_EXPIRY: u64 = 60 * 5; // 5 minutes
+const DEFAULT_LOCK_EXPIRY: u64 = 60 * 60; // 1 hour
 
 pub(crate) struct TaskManagerIpc {
     txs: [mpsc::Sender<TaskJob>; TaskType::COUNT],
@@ -37,16 +37,20 @@ pub(crate) struct TaskManagerIpc {
     revision: u64,
 }
 
+#[derive(Debug)]
 pub(crate) struct Locked {
     expires: Instant,
+    due: u64,
     revision: u64,
 }
 
+#[derive(Debug)]
 pub(crate) struct TaskDetails {
     task: Task,
     info: TaskJob,
 }
 
+#[derive(Debug)]
 pub(crate) struct TaskJob {
     id: u64,
     due: u64,

@@ -22,6 +22,8 @@ use std::str::FromStr;
 use store::write::now;
 
 pub async fn test(test: &TestServer) {
+    println!("Running Authentication tests...");
+
     let admin = test.account("admin@example.org");
     let domain_id = admin.find_or_create_domain("example.org").await;
 
@@ -392,7 +394,7 @@ pub async fn test(test: &TestServer) {
         .await;
     admin.reload_settings().await;
 
-    test.assert_is_empty().await;
+    test.cleanup().await;
 }
 
 pub async fn validate_password(username: &str, password: &str, is_valid: bool) {

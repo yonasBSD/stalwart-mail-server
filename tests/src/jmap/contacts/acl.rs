@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::jmap::{JMAPTest, JmapUtils};
+use crate::utils::{jmap::JmapUtils, server::TestServer};
 use calcard::jscontact::JSContactProperty;
 use jmap_proto::{
     object::{addressbook::AddressBookProperty, share_notification::ShareNotificationProperty},
@@ -13,7 +13,7 @@ use jmap_proto::{
 use serde_json::json;
 use types::id::Id;
 
-pub async fn test(test: &mut TestServer) {
+pub async fn test(test: &TestServer) {
     println!("Running Contacts ACL tests...");
     let john = test.account("jdoe@example.com");
     let jane = test.account("jane.smith@example.com");
@@ -670,5 +670,5 @@ pub async fn test(test: &mut TestServer) {
     // Destroy all mailboxes
     john.destroy_all_addressbooks().await;
     jane.destroy_all_addressbooks().await;
-    test.assert_is_empty().await;;
+    test.assert_is_empty().await;
 }

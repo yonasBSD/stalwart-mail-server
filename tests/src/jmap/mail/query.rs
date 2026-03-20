@@ -4,13 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{
-    jmap::{Account, JMAPTest, wait_for_tasks},
-    store::{deflate_test_resource, query::FIELDS},
-};
+use crate::store::{deflate_test_resource, query::FIELDS};
+use crate::utils::account::Account;
+use crate::utils::server::TestServer;
 use ::email::{cache::MessageCacheFetch, mailbox::Mailbox};
 use ahash::AHashSet;
-use common::{Server, storage::index::ObjectIndexBuilder};
+use common::storage::index::ObjectIndexBuilder;
 use jmap_client::{
     client::Client,
     core::query::{Comparator, Filter},
@@ -32,13 +31,13 @@ const MAX_THREADS: usize = 100;
 const MAX_MESSAGES: usize = 1000;
 const MAX_MESSAGES_PER_THREAD: usize = 100;
 
-pub async fn test(test: &mut TestServer, insert: bool) {
+pub async fn test(test: &TestServer) {
     println!("Running Email Query tests...");
-    let server = params.server.clone();
+    let server = test.server.clone();
     let account = test.account("jdoe@example.com");
     let client = account.jmap_client().await;
 
-    if insert {
+    if test.is_reset() {
         // Add some "virtual" mailbox ids so create doesn't fail
         let mut batch = BatchBuilder::new();
         let account_id = Id::from_str(client.default_account_id())
@@ -71,11 +70,10 @@ pub async fn test(test: &mut TestServer, insert: bool) {
 
         // Create test messages
         println!("Inserting JMAP Mail query test messages...");
-        create(&server, account).await;
+        create(test, account).await;
 
         assert_eq!(
-            params
-                .server
+            test.server
                 .get_cached_messages(account_id)
                 .await
                 .unwrap()
@@ -89,16 +87,16 @@ pub async fn test(test: &mut TestServer, insert: bool) {
         );
 
         // Wait for indexing to complete
-         test.wait_for_tasks().await;
+        test.wait_for_tasks().await;
     }
 
-    let can_stem = !params.server.search_store().is_mysql();
+    let can_stem = !test.server.search_store().is_mysql();
 
     println!("Running JMAP Mail query tests...");
-    query(client, can_stem).await;
+    query(&client, can_stem).await;
 
     println!("Running JMAP Mail query options tests...");
-    query_options(client).await;
+    query_options(&client).await;
 
     println!("Deleting all messages...");
     let mut request = client.build();
@@ -113,7 +111,7 @@ pub async fn test(test: &mut TestServer, insert: bool) {
         .unwrap();
 
     test.destroy_all_mailboxes(account).await;
-    test.assert_is_empty().await;;
+    test.assert_is_empty().await;
 }
 
 pub async fn query(client: &Client, can_stem: bool) {
@@ -709,7 +707,7 @@ pub async fn query_options(client: &Client) {
     }
 }
 
-pub async fn create(server: &Server, account: &Account) {
+pub async fn create(test: &TestServer, account: &Account) {
     let sent_at = now();
     let now = Instant::now();
     let mut fields = AHashMap::default();
@@ -852,7 +850,7 @@ pub async fn create(server: &Server, account: &Account) {
 
     let mut tasks = Vec::new();
     for chunk in chunks {
-        let client = account.client_owned().await;
+        let client = account.jmap_client().await;
         tasks.push(tokio::spawn(async move {
             for (raw_message, mailbox_ids, keywords, sent_at) in chunk {
                 client
@@ -867,7 +865,7 @@ pub async fn create(server: &Server, account: &Account) {
         task.await.unwrap();
     }
 
-    wait_for_tasks(server).await;
+    test.wait_for_tasks().await;
 
     println!(
         "Imported {} messages in {} ms (single thread).",

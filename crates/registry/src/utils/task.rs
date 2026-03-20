@@ -94,6 +94,7 @@ impl Action {
             Action::TroubleshootDmarc(_) => Permission::ActionTroubleshootDmarc,
             Action::ClassifySpam(_) => Permission::ActionClassifySpam,
             Action::InvalidateCaches => Permission::ActionInvalidateCaches,
+            Action::InvalidateNegativeCaches => Permission::ActionInvalidateNegativeCaches,
             Action::PauseMtaQueue => Permission::ActionPauseMtaQueue,
             Action::ResumeMtaQueue => Permission::ActionResumeMtaQueue,
         }

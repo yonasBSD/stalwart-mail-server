@@ -19,7 +19,8 @@ use registry::{
     schema::{
         prelude::{Object, ObjectInner, ObjectType, Property},
         structs::{
-            ArchivedItem, DmarcInternalReport, SpamTrainingSample, Task, TlsInternalReport, Trace,
+            ArchivedItem, DmarcInternalReport, Metric, SpamTrainingSample, Task, TlsInternalReport,
+            Trace,
         },
     },
     types::{EnumImpl, ObjectImpl, id::ObjectId},
@@ -32,6 +33,7 @@ pub struct RegistryObject<T: ObjectImpl> {
     pub revision: u64,
 }
 
+#[derive(Debug)]
 pub struct RegistryQuery {
     pub(crate) object_type: ObjectType,
     pub filters: Vec<RegistryFilter>,
@@ -49,6 +51,7 @@ pub(crate) enum RegistryQueryStart {
     None,
 }
 
+#[derive(Debug)]
 pub struct RegistryFilter {
     pub property: Property,
     pub op: RegistryFilterOp,
@@ -72,6 +75,7 @@ pub enum RegistryFilterOp {
     TextMatch,
 }
 
+#[derive(Debug)]
 pub enum RegistryFilterValue {
     String(String),
     Bytes(Vec<u8>),
@@ -206,6 +210,18 @@ impl Deserialize for Trace {
     fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
         let mut stream = PickledStream::new(bytes);
         Trace::unpickle(&mut stream).ok_or_else(|| {
+            trc::EventType::Registry(trc::RegistryEvent::DeserializationError)
+                .into_err()
+                .caused_by(trc::location!())
+                .ctx(trc::Key::Value, bytes)
+        })
+    }
+}
+
+impl Deserialize for Metric {
+    fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
+        let mut stream = PickledStream::new(bytes);
+        Metric::unpickle(&mut stream).ok_or_else(|| {
             trc::EventType::Registry(trc::RegistryEvent::DeserializationError)
                 .into_err()
                 .caused_by(trc::location!())

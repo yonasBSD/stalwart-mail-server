@@ -26,6 +26,7 @@ use std::sync::Arc;
 use utils::map::vec_map::VecMap;
 
 pub async fn test(test: &TestServer) {
+    println!("Running Directory tests...");
     let account = test.account("admin@example.org");
 
     // Create a domain and make sure it's in the cache
@@ -534,5 +535,5 @@ pub async fn test(test: &TestServer) {
             .is_none()
     );
 
-    test.assert_is_empty().await;
+    test.cleanup().await;
 }

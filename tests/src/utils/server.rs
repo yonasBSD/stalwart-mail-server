@@ -27,7 +27,7 @@ use common::{
 };
 use http::HttpSessionManager;
 use imap::core::ImapSessionManager;
-use jmap_client::client::{Client, Credentials};
+use jmap_client::client::Client;
 use managesieve::core::ManageSieveSessionManager;
 use pop3::Pop3SessionManager;
 use registry::{
@@ -47,7 +47,7 @@ use smtp::{
         spool::{QueuedMessages, SmtpSpool},
     },
 };
-use std::{str::FromStr, sync::Arc, time::Duration};
+use std::{str::FromStr, sync::Arc};
 use store::{
     RegistryStore, Store,
     registry::{bootstrap::Bootstrap, write::RegistryWrite},
@@ -68,6 +68,7 @@ pub struct TestServerBuilder {
     bootstrap: Bootstrap,
     temp_dir: TempDir,
     reset: bool,
+    logging_enabled: bool,
 }
 
 impl TestServerBuilder {
@@ -100,6 +101,7 @@ impl TestServerBuilder {
             .await,
             temp_dir,
             reset,
+            logging_enabled: false,
         }
     }
 
@@ -151,6 +153,11 @@ impl TestServerBuilder {
         self
     }
 
+    pub fn with_logging(mut self) -> Self {
+        self.logging_enabled = true;
+        self
+    }
+
     pub async fn insert_object(&self, object: impl Into<Object>) -> Id {
         self.bootstrap
             .registry
@@ -170,7 +177,7 @@ impl TestServerBuilder {
             .ok();
 
         self.insert_object(Tracer::Stdout(TracerStdout {
-            enable: level.is_some(),
+            enable: level.is_some() || self.logging_enabled,
             level: level.unwrap_or(TracingLevel::Info),
             ansi: true,
             multiline: false,
@@ -180,8 +187,12 @@ impl TestServerBuilder {
                     .filter(|ev| {
                         let ev = ev.as_str();
                         ev.starts_with("network.")
+                            || ev.starts_with("http.connection-")
                             || ev == "telemetry.webhook-error"
                             || ev == "http.request-body"
+                            || ev == "http.request-url"
+                            || ev == "tls.no-certificates-available"
+                            || ev == "store.cache-hit"
                     })
                     .copied()
                     .collect(),
@@ -296,7 +307,11 @@ impl TestServer {
     }
 
     pub async fn wait_for_tasks(&self) {
-        wait_for_tasks(&self.server).await;
+        wait_for_tasks(&self.server, false).await;
+    }
+
+    pub async fn wait_for_tasks_skip_failures(&self) {
+        wait_for_tasks(&self.server, true).await;
     }
 
     pub async fn blob_expire_all(&self) {
@@ -305,6 +320,11 @@ impl TestServer {
 
     pub async fn assert_is_empty(&self) {
         assert_is_empty(&self.server, true).await;
+    }
+
+    pub async fn cleanup(&self) {
+        self.assert_is_empty().await;
+        self.server.invalidate_all_local_caches();
     }
 
     pub async fn destroy_store(&self) {
@@ -334,17 +354,12 @@ impl TestServer {
     }
 }
 
-pub async fn destroy_all_mailboxes_for_account(account_id: u32) {
-    let mut client = Client::new()
-        .credentials(Credentials::basic("admin", "secret"))
-        .follow_redirects(["127.0.0.1"])
-        .timeout(Duration::from_secs(3600))
-        .accept_invalid_certs(true)
-        .connect("https://127.0.0.1:8899")
-        .await
-        .unwrap();
-    client.set_default_account_id(Id::from(account_id));
-    destroy_all_mailboxes_no_wait(&client).await;
+impl Account {
+    pub async fn destroy_all_mailboxes_for_account(&self, account_id: u32) {
+        let mut client = self.jmap_client().await;
+        client.set_default_account_id(Id::from(account_id));
+        destroy_all_mailboxes_no_wait(&client).await;
+    }
 }
 
 async fn destroy_all_mailboxes_no_wait(client: &Client) {

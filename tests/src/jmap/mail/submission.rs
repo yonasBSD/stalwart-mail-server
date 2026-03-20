@@ -5,8 +5,8 @@
  */
 
 use crate::{
-    jmap::{JMAPTest, mail::set::assert_email_properties},
-    smtp::DnsCache,
+    jmap::mail::set::assert_email_properties,
+    utils::{dns::DnsCache, server::TestServer},
 };
 use ahash::AHashMap;
 use jmap_client::{
@@ -58,10 +58,10 @@ pub struct MockSMTPSettings {
 }
 
 #[allow(clippy::disallowed_types)]
-pub async fn test(test: &mut TestServer) {
+pub async fn test(test: &TestServer) {
     println!("Running E-mail submissions tests...");
     // Start mock SMTP server
-    let server = params.server.clone();
+    let server = test.server.clone();
     let account = test.account("jdoe@example.com");
     let client = account.jmap_client().await;
     let (mut smtp_rx, smtp_settings) = spawn_mock_smtp_server();
@@ -458,7 +458,7 @@ pub async fn test(test: &mut TestServer) {
         .mailbox_id(&mailbox_id_2, true);
     request.send().await.unwrap().unwrap_method_responses();
 
-    assert_email_properties(client, &email_id, &[&mailbox_id_2], &["$draft"]).await;
+    assert_email_properties(&client, &email_id, &[&mailbox_id_2], &["$draft"]).await;
 
     // Verify onSuccessDestroyEmail action
     let mut request = client.build();
@@ -501,7 +501,7 @@ pub async fn test(test: &mut TestServer) {
         client.email_submission_destroy(&id).await.unwrap();
     }
     test.destroy_all_mailboxes(account).await;
-    test.assert_is_empty().await;;
+    test.assert_is_empty().await;
 }
 
 pub fn spawn_mock_smtp_server() -> (mpsc::Receiver<MockMessage>, Arc<Mutex<MockSMTPSettings>>) {

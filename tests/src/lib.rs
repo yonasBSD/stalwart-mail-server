@@ -4,8 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::path::PathBuf;
-
 #[cfg(test)]
 use ::store::registry::bootstrap::Bootstrap;
 #[cfg(not(target_env = "msvc"))]
@@ -24,32 +22,22 @@ pub mod cluster;
 pub mod directory;
 #[cfg(test)]
 pub mod imap;
-#[cfg(test)]
-pub mod jmap;
+
 #[cfg(test)]
 pub mod smtp;
 #[cfg(test)]
 pub mod webdav;
 */
 #[cfg(test)]
+pub mod jmap;
+#[cfg(test)]
 pub mod store;
 #[cfg(test)]
 pub mod system;
 #[cfg(test)]
+pub mod telemetry;
+#[cfg(test)]
 pub mod utils;
-
-pub fn add_test_certs(config: &str) -> String {
-    let mut cert_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    cert_path.push("resources");
-    let mut cert = cert_path.clone();
-    cert.push("tls_cert.pem");
-    let mut pk = cert_path.clone();
-    pk.push("tls_privatekey.pem");
-
-    config
-        .replace("{CERT}", cert.as_path().to_str().unwrap())
-        .replace("{PK}", pk.as_path().to_str().unwrap())
-}
 
 #[cfg(test)]
 pub trait AssertConfig {
@@ -84,16 +72,3 @@ pub fn enable_logging() {
         Telemetry::test_tracer(level.parse().expect("Invalid log level"));
     }
 }
-
-pub const TEST_USERS: &[(&str, &str, &str, &str)] = &[
-    ("admin", "secret", "Superuser", "admin@example.com"),
-    ("john", "secret2", "John Doe", "jdoe@example.com"),
-    (
-        "jane",
-        "secret3",
-        "Jane Doe-Smith",
-        "jane.smith@example.com",
-    ),
-    ("bill", "secret4", "Bill Foobar", "bill@example.com"),
-    ("mike", "secret5", "Mike Noquota", "mike@example.com"),
-];

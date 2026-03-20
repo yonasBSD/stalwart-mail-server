@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::jmap::JMAPTest;
+use crate::utils::server::TestServer;
 use jmap_proto::types::state::State;
 use std::str::FromStr;
 use store::{ahash::AHashSet, write::BatchBuilder};
@@ -13,10 +13,10 @@ use types::{
     id::Id,
 };
 
-pub async fn test(test: &mut TestServer) {
+pub async fn test(test: &TestServer) {
     println!("Running Email Changes tests...");
 
-    let server = params.server.clone();
+    let server = test.server.clone();
     let account = test.account("jdoe@example.com");
     let client = account.jmap_client().await;
     let mut states = vec![State::Initial];
@@ -313,7 +313,7 @@ pub async fn test(test: &mut TestServer) {
     assert_eq!(changes.updated(), Vec::<String>::new());
     assert_eq!(changes.destroyed(), Vec::<String>::new());
     test.destroy_all_mailboxes(account).await;
-    test.assert_is_empty().await;;
+    test.assert_is_empty().await;
 }
 
 #[derive(Debug, Clone, Copy)]

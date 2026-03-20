@@ -31,7 +31,7 @@ use types::id::Id;
 use utils::map::vec_map::VecMap;
 
 pub async fn test(test: &mut TestServer) {
-    println!("Running multi-tenancy tests...");
+    println!("Running Multi-tenancy tests...");
     let admin_system = test.account("admin@example.org");
 
     // Create tenants
@@ -620,7 +620,8 @@ pub async fn test(test: &mut TestServer) {
             );
         }
     }
-    test.assert_is_empty().await;
+
+    test.cleanup().await;
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]

@@ -109,6 +109,13 @@ pub(crate) async fn action_set(
                     .await;
                 set.response.created(id, now());
             }
+            Action::InvalidateNegativeCaches => {
+                set.server.invalidate_all_local_negative_caches();
+                set.server
+                    .cluster_broadcast(BroadcastEvent::CacheInvalidateNegative)
+                    .await;
+                set.response.created(id, now());
+            }
             Action::PauseMtaQueue => {
                 let _ = set
                     .server

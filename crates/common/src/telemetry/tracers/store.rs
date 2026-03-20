@@ -9,7 +9,7 @@
  */
 
 use crate::config::telemetry::StoreTracer;
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashMap;
 use registry::{
     pickle::Pickle,
     schema::structs::{
@@ -267,58 +267,35 @@ impl StoreTracer {
     }
 }
 
-pub fn build_span_document(
-    span_id: u64,
-    trace: Trace,
-    index_fields: &AHashSet<SearchField>,
-) -> IndexDocument {
+pub fn build_span_document(span_id: u64, trace: Trace) -> IndexDocument {
     let mut document = IndexDocument::new(SearchIndex::Tracing).with_id(span_id);
     let mut keywords = HashSet::new();
 
     for (idx, event) in trace.events.into_iter().enumerate() {
-        if idx == 0
-            && (index_fields.is_empty()
-                || index_fields.contains(&TracingSearchField::EventType.into()))
-        {
+        if idx == 0 {
             document.index_unsigned(TracingSearchField::EventType, event.event.to_id());
         }
 
         for TraceKeyValue { key, value } in event.key_values {
             match (key, value) {
                 (Key::QueueId, TraceValue::UnsignedInt(TraceValueUnsignedInt { value })) => {
-                    if index_fields.is_empty()
-                        || index_fields.contains(&TracingSearchField::QueueId.into())
-                    {
-                        document.index_unsigned(TracingSearchField::QueueId, value);
-                    }
+                    document.index_unsigned(TracingSearchField::QueueId, value);
                 }
                 (
                     Key::From | Key::To | Key::Domain | Key::Hostname,
                     TraceValue::String(TraceValueString { value }),
                 ) => {
-                    if index_fields.is_empty()
-                        || index_fields.contains(&TracingSearchField::Keywords.into())
-                    {
-                        keywords.insert(value);
-                    }
+                    keywords.insert(value);
                 }
                 (Key::To, TraceValue::List(TraceValueList { value })) => {
-                    if index_fields.is_empty()
-                        || index_fields.contains(&TracingSearchField::Keywords.into())
-                    {
-                        for value in value {
-                            if let TraceValue::String(TraceValueString { value }) = value {
-                                keywords.insert(value);
-                            }
+                    for value in value {
+                        if let TraceValue::String(TraceValueString { value }) = value {
+                            keywords.insert(value);
                         }
                     }
                 }
                 (Key::RemoteIp, TraceValue::IpAddr(TraceValueIpAddr { value })) => {
-                    if index_fields.is_empty()
-                        || index_fields.contains(&TracingSearchField::Keywords.into())
-                    {
-                        keywords.insert(value.to_string());
-                    }
+                    keywords.insert(value.to_string());
                 }
 
                 _ => {}

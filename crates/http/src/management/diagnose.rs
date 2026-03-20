@@ -7,7 +7,7 @@
 use common::{
     Server,
     config::smtp::{
-        queue::MxConfig,
+        queue::{HostOrIp, MxConfig},
         resolver::{Policy, Tlsa},
     },
 };
@@ -429,12 +429,12 @@ async fn delivery_diagnose(
         tx.send(DeliveryStage::IpLookupStart).await?;
 
         let now = Instant::now();
+        let hostname = match host.fqdn_hostname() {
+            HostOrIp::Host(host) => host.into_owned(),
+            HostOrIp::Ip { ip_str, .. } => ip_str,
+        };
         match server
-            .ip_lookup(
-                host.fqdn_hostname().as_ref(),
-                IpLookupStrategy::Ipv4thenIpv6,
-                usize::MAX,
-            )
+            .ip_lookup(&hostname, IpLookupStrategy::Ipv4thenIpv6, usize::MAX)
             .await
         {
             Ok(remote_ips) if !remote_ips.is_empty() => {
@@ -461,7 +461,7 @@ async fn delivery_diagnose(
                             tx.send(DeliveryStage::ReadGreetingStart).await?;
 
                             let now = Instant::now();
-                            if let Err(status) = client.read_greeting(hostname).await {
+                            if let Err(status) = client.read_greeting(&hostname).await {
                                 tx.send(DeliveryStage::ReadGreetingError {
                                     elapsed: now.elapsed_ms(),
                                     reason: status.to_string(),
@@ -524,7 +524,7 @@ async fn delivery_diagnose(
                             let mut client = match client
                                 .try_start_tls(
                                     &server.inner.data.smtp_connectors.pki_verify,
-                                    hostname,
+                                    &hostname,
                                     &capabilities,
                                 )
                                 .await
@@ -563,7 +563,7 @@ async fn delivery_diagnose(
                             if let Some(dane_policy) = &dane_policy {
                                 if let Err(err) = dane_policy.verify(
                                     0,
-                                    hostname,
+                                    &hostname,
                                     client.tls_connection().peer_certificates(),
                                 ) {
                                     tx.send(DeliveryStage::DaneVerifyError {

@@ -10,7 +10,7 @@ use crate::{
 };
 use common::config::{
     server::ServerProtocol,
-    smtp::queue::{MxConfig, RelayConfig},
+    smtp::queue::{HostOrIp, MxConfig, RelayConfig},
 };
 use mail_auth::IpLookupStrategy;
 use mail_send::Credentials;
@@ -246,21 +246,30 @@ impl NextHop<'_> {
                     host
                 }
             }
-            NextHop::Relay(host) => host.address.as_str(),
+            NextHop::Relay(host) => match &host.address {
+                HostOrIp::Host(host) => host.as_str(),
+                HostOrIp::Ip { ip_str, .. } => ip_str.as_str(),
+            },
         }
     }
 
     #[inline(always)]
-    pub fn fqdn_hostname(&self) -> Cow<'_, str> {
+    pub fn fqdn_hostname(&self) -> HostOrIp<Cow<'_, str>> {
         match self {
             NextHop::MX { host, .. } => {
                 if !host.ends_with('.') {
-                    format!("{host}.").into()
+                    HostOrIp::Host(format!("{host}.").into())
                 } else {
-                    (*host).into()
+                    HostOrIp::Host((*host).into())
                 }
             }
-            NextHop::Relay(host) => host.address.as_str().into(),
+            NextHop::Relay(host) => match &host.address {
+                HostOrIp::Host(host) => HostOrIp::Host(host.as_str().into()),
+                HostOrIp::Ip { ip, ip_str } => HostOrIp::Ip {
+                    ip: *ip,
+                    ip_str: ip_str.as_str().into(),
+                },
+            },
         }
     }
 

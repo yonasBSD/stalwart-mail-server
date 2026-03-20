@@ -4,13 +4,19 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::jmap::{IntoJmapSet, JMAPTest, JmapUtils, calendar::event::*};
+use crate::{
+    jmap::calendar::event::*,
+    utils::{
+        jmap::{IntoJmapSet, JmapUtils},
+        server::TestServer,
+    },
+};
 use calcard::jscalendar::JSCalendarProperty;
 use jmap_proto::request::method::MethodObject;
 use serde_json::json;
 use types::id::Id;
 
-pub async fn test(test: &mut TestServer) {
+pub async fn test(test: &TestServer) {
     println!("Running Principal Availability tests...");
     let john = test.account("jdoe@example.com");
     let jane = test.account("jane.smith@example.com");
@@ -251,5 +257,5 @@ pub async fn test(test: &mut TestServer) {
 
     // Cleanup
     john.destroy_all_calendars().await;
-    test.assert_is_empty().await;;
+    test.assert_is_empty().await;
 }

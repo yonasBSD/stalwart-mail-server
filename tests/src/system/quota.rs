@@ -27,7 +27,7 @@ use types::id::Id;
 use utils::map::vec_map::VecMap;
 
 pub async fn test(test: &mut TestServer) {
-    println!("Running quota tests...");
+    println!("Running Quota tests...");
     let admin = test.account("admin@example.org");
     let domain_id = admin.find_or_create_domain("example.org").await;
 
@@ -417,6 +417,7 @@ pub async fn test(test: &mut TestServer) {
         .registry_destroy(ObjectType::Account, [account_id, other_account_id])
         .await
         .assert_destroyed(&[account_id, other_account_id]);
+    test.cleanup().await;
 }
 
 fn assert_over_quota<T: std::fmt::Debug>(result: Result<T, jmap_client::Error>) {

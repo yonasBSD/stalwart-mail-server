@@ -19,7 +19,10 @@ use common::Server;
 use jmap_proto::types::state::State;
 use registry::{
     jmap::IntoValue,
-    schema::prelude::{Object, Property},
+    schema::{
+        prelude::Property,
+        structs::{Metric, Trace},
+    },
     types::datetime::UTCDateTime,
 };
 use std::str::FromStr;
@@ -67,7 +70,7 @@ pub(crate) async fn trace_get(
         if let Some(trace) = get
             .server
             .tracing_store()
-            .get_value::<Object>(ValueKey::from(ValueClass::Telemetry(TelemetryClass::Span(
+            .get_value::<Trace>(ValueKey::from(ValueClass::Telemetry(TelemetryClass::Span(
                 item_id,
             ))))
             .await?
@@ -95,7 +98,7 @@ pub(crate) async fn metric_get(
         if let Some(metric) = get
             .server
             .metrics_store()
-            .get_value::<Object>(ValueKey::from(ValueClass::Telemetry(
+            .get_value::<Metric>(ValueKey::from(ValueClass::Telemetry(
                 TelemetryClass::Metric(item_id),
             )))
             .await?

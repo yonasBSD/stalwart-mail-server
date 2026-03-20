@@ -262,7 +262,7 @@ pub async fn test(test: &mut TestServer) {
 
     admin.destroy_account(account).await;
     admin.destroy_account(other_account).await;
-    test.wait_for_tasks().await;
+    test.cleanup().await;
 }
 
 pub const SPAM: [&str; 10] = [

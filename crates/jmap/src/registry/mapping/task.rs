@@ -226,6 +226,8 @@ pub(crate) async fn task_set(
                 )
                 .commit_point();
         }
+
+        set.response.updated.append(id, None);
     }
 
     // Process destructions
@@ -343,17 +345,21 @@ pub(crate) async fn task_set(
         set.response.destroyed.push(id);
     }
 
-    if !batch.is_empty() {
+    let has_changes = !batch.is_empty();
+    if has_changes {
         set.server
             .store()
             .write(batch.build_all())
             .await
             .caused_by(trc::location!())?;
-        set.server.notify_task_queue();
     }
 
     for task_id in locked_tasks {
         set.server.remove_index_lock(task_id).await;
+    }
+
+    if has_changes {
+        set.server.notify_task_queue();
     }
 
     Ok(set)

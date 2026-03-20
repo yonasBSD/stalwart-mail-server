@@ -27,7 +27,7 @@ use store::{IterateParams, LogKey, U32_LEN, U64_LEN, write::key::DeserializeBigE
 use types::id::Id;
 
 pub async fn test(test: &mut TestServer) {
-    println!("Running purge tests...");
+    println!("Running Account purge tests...");
     let inbox_id = Id::from(INBOX_ID).to_string();
     let trash_id = Id::from(TRASH_ID).to_string();
     let junk_id = Id::from(JUNK_ID).to_string();
@@ -210,6 +210,7 @@ pub async fn test(test: &mut TestServer) {
     admin
         .registry_update_setting(SpamClassifier::default(), &[Property::HoldSamplesFor])
         .await;
+    test.cleanup().await;
 }
 
 async fn get_changes(server: &Server) -> (AHashSet<(u64, u8)>, bool) {

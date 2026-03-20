@@ -5,25 +5,19 @@
  */
 
 use crate::{
-    jmap::{
-        JMAPTest,
-        mail::{
-            delivery::SmtpConnection,
-            submission::{
-                MockMessage, assert_message_delivery, expect_nothing, spawn_mock_smtp_server,
-            },
-        },
+    jmap::mail::submission::{
+        MockMessage, assert_message_delivery, expect_nothing, spawn_mock_smtp_server,
     },
-    smtp::DnsCache,
+    utils::{dns::DnsCache, server::TestServer, smtp::SmtpConnection},
 };
 use chrono::{TimeDelta, Utc};
 use std::time::Instant;
 
-pub async fn test(test: &mut TestServer) {
+pub async fn test(test: &TestServer) {
     println!("Running Vacation Response tests...");
 
     // Create test account
-    let server = params.server.clone();
+    let server = test.server.clone();
     let account = test.account("jdoe@example.com");
     let client = account.jmap_client().await;
 
@@ -162,5 +156,5 @@ pub async fn test(test: &mut TestServer) {
     // Remove test data
     client.vacation_response_destroy().await.unwrap();
     test.destroy_all_mailboxes(account).await;
-    test.assert_is_empty().await;;
+    test.assert_is_empty().await;
 }

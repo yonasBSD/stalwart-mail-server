@@ -7,7 +7,7 @@
 // This file is auto-generated. Do not edit directly.
 
 pub const TOTAL_EVENT_COUNT: usize = 596;
-pub const TOTAL_METRIC_COUNT: usize = 338;
+pub const TOTAL_METRIC_COUNT: usize = 339;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EventType {
@@ -439,7 +439,7 @@ pub enum MessageIngestEvent {
     JmapAppend = 285,
     Duplicate = 281,
     Error = 282,
-    FtsIndex = 142,
+    SearchIndex = 142,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -1042,7 +1042,7 @@ pub enum MetricType {
     MessageIngestJmapAppend = 176,
     MessageIngestDuplicate = 177,
     MessageIngestError = 178,
-    MessageIngestFtsIndex = 179,
+    MessageIngestSearchIndex = 179,
     MilterActionAccept = 180,
     MilterActionDiscard = 181,
     MilterActionReject = 182,
@@ -1205,6 +1205,7 @@ pub enum MetricType {
     StoreBlobDelete = 327,
     TaskManagerBlobNotFound = 328,
     TaskManagerMetadataNotFound = 329,
+    TelemetryAlertEvent = 338,
     TelemetryAlertMessage = 212,
     TelemetryLogError = 330,
     TelemetryWebhookError = 331,

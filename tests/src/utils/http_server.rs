@@ -4,35 +4,23 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{AssertConfig, add_test_certs};
+use crate::{AssertConfig, utils::server::TestServer};
 use ahash::AHashMap;
-use common::{Caches, Core, Data, Inner, config::server::Listeners, network::SessionData};
+use common::{config::server::Listeners, network::SessionData};
 use http_proto::{HttpResponse, request::fetch_body};
 use hyper::{Method, Uri, body, server::conn::http1, service::service_fn};
 use hyper_util::rt::TokioIo;
-use std::sync::Arc;
+use registry::{
+    schema::{
+        enums::NetworkListenerProtocol,
+        prelude::{ObjectType, SocketAddr},
+        structs::{NetworkListener, SystemSettings},
+    },
+    types::{id::ObjectId, map::Map},
+};
+use std::{str::FromStr, sync::Arc};
+use store::registry::{RegistryObject, bootstrap::Bootstrap};
 use tokio::sync::watch;
-
-const MOCK_HTTP_SERVER: &str = r#"
-[server]
-hostname = "'oidc.example.org'"
-
-[http]
-url = "'https://127.0.0.1:9090'"
-
-[server.listener.jmap]
-bind = ['127.0.0.1:9090']
-protocol = 'http'
-tls.implicit = true
-
-[server.socket]
-reuse-addr = true
-
-[certificate.default]
-cert = '%{file:{CERT}}%'
-private-key = '%{file:{PK}}%'
-default = true
-"#;
 
 #[derive(Clone)]
 pub struct HttpSessionManager {
@@ -58,33 +46,44 @@ impl HttpMessage {
 }
 
 pub async fn spawn_mock_http_server(
+    test: &TestServer,
     handler: HttpRequestHandler,
+    port: u16,
 ) -> (watch::Sender<bool>, watch::Receiver<bool>) {
-    // Start mock push server
-    let mut settings = Config::new(add_test_certs(MOCK_HTTP_SERVER)).unwrap();
-    settings.resolve_all_macros().await;
-    let mock_inner = Arc::new(Inner {
-        shared_core: Core::parse(&mut settings, Default::default(), Default::default())
-            .await
-            .into_shared(),
-        data: Data::parse(&mut settings),
-        cache: Caches::parse(&mut settings),
-        ..Default::default()
-    });
-    settings.errors.clear();
-    settings.warnings.clear();
-    let mut servers = Listeners::parse(&mut settings);
-    servers.parse_tcp_acceptors(&mut settings, mock_inner.clone());
-
-    // Start JMAP server
-    servers.bind_and_drop_priv(&mut settings);
-    settings.assert_no_errors();
+    // Start mock HTTP server
+    let mut bp = Bootstrap::new_uninitialized(test.server.registry().clone());
+    let mut servers = Listeners::default();
+    servers.parse_server(
+        &mut bp,
+        RegistryObject {
+            id: ObjectId::new(ObjectType::NetworkListener, 0u64.into()),
+            object: NetworkListener {
+                name: "mock-http".into(),
+                bind: Map::new(vec![
+                    SocketAddr::from_str(&format!("127.0.0.1:{port}")).unwrap(),
+                ]),
+                protocol: NetworkListenerProtocol::Http,
+                tls_implicit: true,
+                use_tls: true,
+                socket_reuse_address: true,
+                socket_reuse_port: true,
+                ..Default::default()
+            },
+            revision: 0,
+        },
+        &SystemSettings::default(),
+    );
+    servers
+        .parse_tcp_acceptors(&mut bp, test.server.inner.clone())
+        .await;
+    servers.bind_and_drop_priv(&mut bp);
+    bp.assert_no_errors();
     servers.spawn(|server, acceptor, shutdown_rx| {
         server.spawn(
             HttpSessionManager {
                 inner: handler.clone(),
             },
-            mock_inner.clone(),
+            test.server.inner.clone(),
             acceptor,
             shutdown_rx,
         );

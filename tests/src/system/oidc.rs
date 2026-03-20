@@ -429,7 +429,7 @@ pub async fn test(test: &mut TestServer) {
     // Clean up
     admin.registry_destroy_all(ObjectType::OAuthClient).await;
     admin.destroy_account(user).await;
-    test.assert_is_empty().await;
+    test.cleanup().await;
 }
 
 async fn post_bytes(

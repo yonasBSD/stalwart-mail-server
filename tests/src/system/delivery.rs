@@ -43,7 +43,7 @@ use types::{
 use utils::chained_bytes::ChainedBytes;
 
 pub async fn test(test: &mut TestServer) {
-    println!("Running message delivery tests...");
+    println!("Running Email delivery tests...");
     let admin = test.account("admin@example.org");
 
     // Prepare tests
@@ -594,6 +594,8 @@ END:VCARD
     for account in [john, jane, bill] {
         admin.destroy_account(account).await;
     }
+
+    test.cleanup().await;
 }
 
 impl Account {

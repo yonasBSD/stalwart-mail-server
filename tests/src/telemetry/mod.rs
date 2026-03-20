@@ -4,31 +4,28 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-pub mod antispam;
-pub mod archiving;
-pub mod authentication;
-pub mod authorization;
-pub mod crypto;
-pub mod delivery;
-pub mod directory;
-pub mod oidc;
-pub mod purge;
-pub mod quota;
-pub mod security;
-pub mod task;
-pub mod tenant;
+pub mod alerts;
+pub mod metrics;
+pub mod tracing;
+pub mod webhooks;
 
 use crate::utils::server::TestServerBuilder;
-use registry::schema::structs::{Expression, Imap, MtaStageAuth};
+use registry::schema::structs::{Expression, Jmap, MetricsStore, MtaStageAuth, TracingStore};
 
 #[tokio::test(flavor = "multi_thread")]
-pub async fn system_tests() {
-    let mut test = TestServerBuilder::new("system_tests")
+pub async fn telemetry_tests() {
+    let mut test = TestServerBuilder::new("telemetry_tests")
         .await
+        .with_logging()
         .with_default_listeners()
         .await
-        .with_object(Imap {
-            allow_plain_text_auth: true,
+        .with_object(MetricsStore::Default)
+        .await
+        .with_object(TracingStore::Default)
+        .await
+        .with_object(Jmap {
+            get_max_results: 100_000,
+            query_max_results: 100_000,
             ..Default::default()
         })
         .await
@@ -57,19 +54,10 @@ pub async fn system_tests() {
         .await;
     test.insert_account(admin);
 
-    directory::test(&test).await;
-    authentication::test(&test).await;
-    oidc::test(&mut test).await;
-    authorization::test(&mut test).await;
-    tenant::test(&mut test).await;
-    security::test(&mut test).await;
-    quota::test(&mut test).await;
-    purge::test(&mut test).await;
-    delivery::test(&mut test).await;
-    crypto::test(&mut test).await;
-    antispam::test(&mut test).await;
-    archiving::test(&mut test).await;
-    task::test(&mut test).await;
+    alerts::test(&test).await;
+    metrics::test(&test).await;
+    tracing::test(&test).await;
+    webhooks::test(&test).await;
 
     if test.is_reset() {
         test.temp_dir.delete();

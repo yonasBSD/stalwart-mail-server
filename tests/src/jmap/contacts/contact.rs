@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{
-    jmap::{ChangeType, IntoJmapSet, JMAPTest, JmapUtils, wait_for_tasks},
-    webdav::DummyWebDavClient,
+use crate::utils::{
+    jmap::{ChangeType, IntoJmapSet, JmapUtils},
+    server::TestServer,
 };
 use ahash::AHashSet;
 use calcard::jscontact::JSContactProperty;
@@ -16,7 +16,7 @@ use jmap_proto::request::method::MethodObject;
 use serde_json::{Value, json};
 use types::{collection::SyncCollection, id::Id};
 
-pub async fn test(test: &mut TestServer) {
+pub async fn test(test: &TestServer) {
     println!("Running Contact Card tests...");
     let account = test.account("jdoe@example.com");
 
@@ -337,7 +337,7 @@ pub async fn test(test: &mut TestServer) {
 
     // Query tests
     test.wait_for_tasks().await;
-    let email = if !params.server.search_store().is_mysql() {
+    let email = if !test.server.search_store().is_mysql() {
         "sarah.johnson@example.com"
     } else {
         "sarah.johnson@example"
@@ -455,19 +455,10 @@ END:VCARD"#
 
     // CardDAV compatibility tests
     let account_id = account.id().document_id();
-    let dav_client = DummyWebDavClient::new(
-        u32::MAX,
-        account.name(),
-        account.secret(),
-        account.emails()[0],
-    );
-    let resources = params
+    let dav_client = account.webdav_client();
+    let resources = test
         .server
-        .fetch_dav_resources(
-            &params.server.get_access_token(account_id).await.unwrap(),
-            account_id,
-            SyncCollection::AddressBook,
-        )
+        .fetch_dav_resources(account_id, account_id, SyncCollection::AddressBook)
         .await
         .unwrap();
     let path = format!(
@@ -495,6 +486,7 @@ END:VCARD"#
     assert_eq!(vcard, expected_vcard);
 
     // Clean up
+    test.wait_for_tasks().await;
     account.destroy_all_addressbooks().await;
     test.assert_is_empty().await;
 }

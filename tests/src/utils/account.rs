@@ -9,10 +9,11 @@ use ahash::AHashMap;
 use jmap_client::client::{Client, Credentials};
 use registry::{
     schema::{
+        enums::Permission,
         prelude::{ObjectType, Property},
         structs::{
-            self, Credential, CustomRoles, Domain, EmailAlias, PasswordCredential, Roles,
-            UserAccount,
+            self, Credential, CustomRoles, Domain, EmailAlias, GroupAccount, PasswordCredential,
+            Permissions, PermissionsList, Roles, UserAccount,
         },
     },
     types::{list::List, map::Map},
@@ -37,51 +38,9 @@ impl TestServer {
         secret: &'static str,
         aliases: &'static [&'static str],
     ) -> Account {
-        let mut domains = AHashMap::from_iter(
-            aliases
-                .iter()
-                .copied()
-                .chain([name].into_iter())
-                .map(|email| {
-                    let domain = email.split('@').nth(1).expect("Invalid email address");
-                    (domain, Id::singleton())
-                }),
-        );
-        let account = self.account(using_account);
-        for (name, id) in &mut domains {
-            *id = account.find_or_create_domain(name).await;
-        }
-        let (account_name, domain_id) = name
-            .rsplit_once('@')
-            .map(|(name, domain)| (name.to_string(), *domains.get(domain).unwrap()))
-            .unwrap();
-        let account_aliases = aliases.iter().map(|email| {
-            let (name, domain_id) = email
-                .rsplit_once('@')
-                .map(|(name, domain)| (name.to_string(), *domains.get(domain).unwrap()))
-                .unwrap();
-            EmailAlias {
-                name,
-                domain_id,
-                enabled: true,
-                ..Default::default()
-            }
-        });
-
-        let account_id = account
-            .registry_create_object(structs::Account::User(UserAccount {
-                name: account_name,
-                domain_id,
-                credentials: List::from_iter([Credential::Password(PasswordCredential {
-                    secret: secret.to_string(),
-                    ..Default::default()
-                })]),
-                aliases: List::from_iter(account_aliases),
-                ..Default::default()
-            }))
-            .await;
-
-        Account::new(name, secret, aliases, account_id)
+        self.account(using_account)
+            .create_user_account(name, secret, None, aliases, vec![])
+            .await
     }
 
     pub fn insert_account(&mut self, account: Account) {
@@ -142,6 +101,114 @@ impl Account {
             1 => ids[0],
             _ => panic!("Multiple domains with name {name} found"),
         }
+    }
+
+    pub async fn create_user_account(
+        &self,
+        name: &'static str,
+        secret: &'static str,
+        description: Option<&'static str>,
+        aliases: &'static [&'static str],
+        extra_permissions: Vec<Permission>,
+    ) -> Account {
+        let mut domains = AHashMap::from_iter(
+            aliases
+                .iter()
+                .copied()
+                .chain([name].into_iter())
+                .map(|email| {
+                    let domain = email.split('@').nth(1).expect("Invalid email address");
+                    (domain, Id::singleton())
+                }),
+        );
+        for (name, id) in &mut domains {
+            *id = self.find_or_create_domain(name).await;
+        }
+        let (account_name, domain_id) = name
+            .rsplit_once('@')
+            .map(|(name, domain)| (name.to_string(), *domains.get(domain).unwrap()))
+            .unwrap();
+        let account_aliases = aliases.iter().map(|email| {
+            let (name, domain_id) = email
+                .rsplit_once('@')
+                .map(|(name, domain)| (name.to_string(), *domains.get(domain).unwrap()))
+                .unwrap();
+            EmailAlias {
+                name,
+                domain_id,
+                enabled: true,
+                ..Default::default()
+            }
+        });
+
+        let account_id = self
+            .registry_create_object(structs::Account::User(UserAccount {
+                name: account_name,
+                domain_id,
+                credentials: List::from_iter([Credential::Password(PasswordCredential {
+                    secret: secret.to_string(),
+                    ..Default::default()
+                })]),
+                aliases: List::from_iter(account_aliases),
+                description: description.map(|d| d.to_string()),
+                permissions: Permissions::Merge(PermissionsList {
+                    disabled_permissions: Default::default(),
+                    enabled_permissions: Map::new(extra_permissions),
+                }),
+                ..Default::default()
+            }))
+            .await;
+
+        Account::new(name, secret, aliases, account_id)
+    }
+
+    pub async fn create_group_account(
+        &self,
+        name: &'static str,
+        description: Option<&'static str>,
+        aliases: &'static [&'static str],
+    ) -> Account {
+        let mut domains = AHashMap::from_iter(
+            aliases
+                .iter()
+                .copied()
+                .chain([name].into_iter())
+                .map(|email| {
+                    let domain = email.split('@').nth(1).expect("Invalid email address");
+                    (domain, Id::singleton())
+                }),
+        );
+        for (name, id) in &mut domains {
+            *id = self.find_or_create_domain(name).await;
+        }
+        let (account_name, domain_id) = name
+            .rsplit_once('@')
+            .map(|(name, domain)| (name.to_string(), *domains.get(domain).unwrap()))
+            .unwrap();
+        let account_aliases = aliases.iter().map(|email| {
+            let (name, domain_id) = email
+                .rsplit_once('@')
+                .map(|(name, domain)| (name.to_string(), *domains.get(domain).unwrap()))
+                .unwrap();
+            EmailAlias {
+                name,
+                domain_id,
+                enabled: true,
+                ..Default::default()
+            }
+        });
+
+        let account_id = self
+            .registry_create_object(structs::Account::Group(GroupAccount {
+                name: account_name,
+                domain_id,
+                aliases: List::from_iter(account_aliases),
+                description: description.map(|d| d.to_string()),
+                ..Default::default()
+            }))
+            .await;
+
+        Account::new(name, "", aliases, account_id)
     }
 
     pub async fn create_domain(&self, name: &'static str) -> Id {

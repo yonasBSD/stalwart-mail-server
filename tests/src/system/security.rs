@@ -321,5 +321,5 @@ pub async fn test(test: &mut TestServer) {
     // Destroy account
     admin.destroy_account(user).await;
 
-    test.assert_is_empty().await;
+    test.cleanup().await;
 }

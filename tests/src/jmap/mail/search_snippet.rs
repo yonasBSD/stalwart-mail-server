@@ -4,16 +4,15 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::jmap::{JMAPTest, wait_for_tasks};
+use crate::utils::server::TestServer;
 use email::mailbox::INBOX_ID;
 use jmap_client::{core::query, email::query::Filter};
 use std::{fs, path::PathBuf};
 use store::ahash::AHashMap;
 use types::id::Id;
 
-pub async fn test(test: &mut TestServer) {
+pub async fn test(test: &TestServer) {
     println!("Running SearchSnippet tests...");
-    let server = params.server.clone();
     let account = test.account("jdoe@example.com");
     let client = account.jmap_client().await;
     let mailbox_id = Id::from(INBOX_ID).to_string();
@@ -47,9 +46,9 @@ pub async fn test(test: &mut TestServer) {
             .take_id();
         email_ids.insert(email_name, email_id);
     }
-     test.wait_for_tasks().await;
+    test.wait_for_tasks().await;
 
-    let can_stem = params.server.search_store().internal_fts().is_some();
+    let can_stem = test.server.search_store().internal_fts().is_some();
 
     // Run tests
     for (filter, email_name, snippet_subject, snippet_preview) in [
@@ -171,5 +170,5 @@ pub async fn test(test: &mut TestServer) {
 
     // Destroy test data
     test.destroy_all_mailboxes(account).await;
-    test.assert_is_empty().await;;
+    test.assert_is_empty().await;
 }

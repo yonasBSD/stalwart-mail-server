@@ -143,6 +143,9 @@ pub fn spawn_broadcast_subscriber(inner: Arc<Inner>, mut shutdown_rx: watch::Rec
                                             BroadcastEvent::CacheInvalidateAll => {
                                                 inner.build_server().invalidate_all_local_caches();
                                             }
+                                            BroadcastEvent::CacheInvalidateNegative => {
+                                                inner.build_server().invalidate_all_local_negative_caches();
+                                            }
                                             BroadcastEvent::MtaQueueStatus { is_running } => {
                                                 let _ = inner
                                                         .ipc
@@ -244,6 +247,7 @@ fn log_event(event: &BroadcastEvent) -> trc::Value {
             trc::Value::Array(array)
         }
         BroadcastEvent::CacheInvalidateAll => "CacheInvalidateAll".into(),
+        BroadcastEvent::CacheInvalidateNegative => "CacheInvalidateNegative".into(),
         BroadcastEvent::MtaQueueStatus { is_running } => {
             if *is_running {
                 "MtaQueueRunning".into()

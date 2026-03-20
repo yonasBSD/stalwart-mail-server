@@ -4,10 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{
-    jmap::{JMAPTest, mail::mailbox::destroy_all_mailboxes_no_wait, wait_for_tasks},
-    store::deflate_test_resource,
-};
+use crate::{store::deflate_test_resource, utils::server::TestServer};
 use ::email::{
     cache::MessageCacheFetch,
     mailbox::INBOX_ID,
@@ -23,15 +20,15 @@ use store::{
 };
 use types::id::Id;
 
-pub async fn test(test: &mut TestServer) {
-    test_single_thread(params).await;
-    test_multi_thread(params).await;
+pub async fn test(test: &TestServer) {
+    test_single_thread(test).await;
+    test_multi_thread(test).await;
 }
 
-async fn test_single_thread(test: &mut TestServer) {
+async fn test_single_thread(test_server: &TestServer) {
     println!("Running Email Merge Threads tests...");
-    let account = test.account("admin");
-    let mut client = account.client_owned().await;
+    let account = test_server.account("admin@example.com");
+    let mut client = account.jmap_client().await;
     let mut all_mailboxes = AHashMap::default();
 
     for (base_test_num, test) in [test_1(), test_2(), test_3()].iter().enumerate() {
@@ -141,7 +138,7 @@ async fn test_single_thread(test: &mut TestServer) {
             }
         }
 
-        test.wait_for_tasks().await;
+        test_server.wait_for_tasks().await;
 
         for test_num in 0..=5 {
             let result = client
@@ -201,16 +198,17 @@ async fn test_single_thread(test: &mut TestServer) {
     // Delete all messages and make sure no keys are left in the store.
     for (base_test_num, mailbox_ids) in all_mailboxes {
         for (test_num, _) in mailbox_ids.into_iter().enumerate() {
-            client.set_default_account_id(Id::new((base_test_num + test_num) as u64).to_string());
-            destroy_all_mailboxes_no_wait(&client).await;
+            account
+                .destroy_all_mailboxes_for_account((base_test_num + test_num) as u32)
+                .await;
         }
     }
 
-    test.assert_is_empty().await;
+    test_server.assert_is_empty().await;
 }
 
 #[allow(dead_code)]
-async fn test_multi_thread(test: &mut TestServer) {
+async fn test_multi_thread(test: &TestServer) {
     println!("Running Email Merge Threads tests (multi-threaded)...");
     let mut handles = vec![];
     let account = test.account("jdoe@example.com");
@@ -222,7 +220,7 @@ async fn test_multi_thread(test: &mut TestServer) {
         .into_iter()
     {
         let message = message.unwrap();
-        let server = params.server.clone();
+        let server = test.server.clone();
         handles.push(tokio::task::spawn(async move {
             let mut retry_count = 0;
             loop {
@@ -231,7 +229,7 @@ async fn test_multi_thread(test: &mut TestServer) {
                         raw_message: message.contents(),
                         message: MessageParser::new().parse(message.contents()),
                         blob_hash: None,
-                        access_token: &AccessToken::from_id(account_id),
+                        access_token: &AccessToken::from_id_maybe_invalid(account_id),
                         mailbox_ids: vec![mailbox_id],
                         keywords: vec![],
                         received_at: None,
@@ -267,8 +265,7 @@ async fn test_multi_thread(test: &mut TestServer) {
     }
     assert_eq!(
         messages,
-        params
-            .server
+        test.server
             .get_cached_messages(account_id)
             .await
             .unwrap()

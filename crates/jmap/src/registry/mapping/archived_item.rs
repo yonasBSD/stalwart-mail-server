@@ -296,7 +296,6 @@ pub(crate) async fn archived_item_query(
                     false
                 }
             }
-
             _ => false,
         })?;
 

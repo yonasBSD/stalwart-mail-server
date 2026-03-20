@@ -4,7 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::jmap::{IntoJmapSet, JMAPTest, JmapUtils, wait_for_tasks};
+use crate::utils::{
+    jmap::{IntoJmapSet, JmapUtils},
+    server::TestServer,
+};
 use calcard::jscalendar::JSCalendarProperty;
 use jmap_proto::{
     object::calendar_event_notification::CalendarEventNotificationProperty,
@@ -15,7 +18,7 @@ use serde_json::{Value, json};
 use store::write::now;
 use types::id::Id;
 
-pub async fn test(test: &mut TestServer) {
+pub async fn test(test: &TestServer) {
     println!("Running Calendar Event Notification tests...");
     let john = test.account("jdoe@example.com");
     let jane = test.account("jane.smith@example.com");
@@ -388,7 +391,7 @@ pub async fn test(test: &mut TestServer) {
         client.destroy_all_event_notifications().await;
         test.destroy_all_mailboxes(client).await;
     }
-    test.assert_is_empty().await;;
+    test.assert_is_empty().await;
 }
 
 fn test_event() -> Value {

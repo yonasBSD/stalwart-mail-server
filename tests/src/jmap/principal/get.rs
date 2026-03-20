@@ -4,11 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::jmap::{JMAPTest, JmapUtils};
 use jmap_proto::{object::principal::PrincipalProperty, request::method::MethodObject};
 use serde_json::json;
 
-pub async fn test(test: &mut TestServer) {
+use crate::utils::{jmap::JmapUtils, server::TestServer};
+
+pub async fn test(test: &TestServer) {
     println!("Running Principal get/query tests...");
     let john = test.account("jdoe@example.com");
     let jane = test.account("jane.smith@example.com");
@@ -25,10 +26,10 @@ pub async fn test(test: &mut TestServer) {
     response.assert_is_equal(json!({
       "capabilities": {
         "urn:ietf:params:jmap:core": {
-          "maxSizeUpload": 5000000,
+          "maxSizeUpload": 50000000,
           "maxConcurrentUpload": 4,
           "maxSizeRequest": 10000000,
-          "maxConcurrentRequests": 8,
+          "maxConcurrentRequests": 4,
           "maxCallsInRequest": 16,
           "maxObjectsInGet": 100000,
           "maxObjectsInSet": 100000,
@@ -113,7 +114,7 @@ pub async fn test(test: &mut TestServer) {
             "urn:ietf:params:jmap:websocket": {},
             "urn:ietf:params:jmap:sieve": {
               "maxSizeScriptName": 512,
-              "maxSizeScript": 1048576,
+              "maxSizeScript": 102400,
               "maxNumberScripts": 100,
               "maxNumberRedirects": 1,
               "sieveExtensions": [

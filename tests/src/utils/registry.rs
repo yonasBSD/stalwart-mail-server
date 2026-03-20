@@ -59,7 +59,9 @@ impl Account {
             .await
             .list()[0]
             .to_string();
-        serde_json::from_str(&value).expect("Failed to deserialize item")
+        serde_json::from_str(&value).unwrap_or_else(|_| {
+            panic!("Failed to deserialize {value}");
+        })
     }
 
     pub async fn registry_get_many(

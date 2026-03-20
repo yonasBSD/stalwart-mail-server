@@ -519,17 +519,13 @@ async fn build_tracing_span_document(
     use common::telemetry::tracers::store::build_span_document;
     use registry::schema::structs::Trace;
 
-    if let Some(index_fields) = server.core.email.index_fields.get(&SearchIndex::Tracing) {
-        server
-            .tracing_store()
-            .get_value::<Trace>(ValueKey::from(ValueClass::Telemetry(TelemetryClass::Span(
-                span_id,
-            ))))
-            .await
-            .map(|trace| trace.map(|trace| build_span_document(span_id, trace, index_fields)))
-    } else {
-        Ok(None)
-    }
+    server
+        .tracing_store()
+        .get_value::<Trace>(ValueKey::from(ValueClass::Telemetry(TelemetryClass::Span(
+            span_id,
+        ))))
+        .await
+        .map(|trace| trace.map(|trace| build_span_document(span_id, trace)))
 }
 
 // SPDX-SnippetEnd

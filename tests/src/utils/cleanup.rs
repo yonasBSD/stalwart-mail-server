@@ -237,6 +237,7 @@ pub async fn store_assert_is_empty(store: &Store, blob_store: BlobStore, include
 
     let store = store.clone();
     let mut failed = false;
+    let mut delete_batch = BatchBuilder::new();
 
     for (subspace, with_values) in [
         (SUBSPACE_ACL, true),
@@ -287,6 +288,13 @@ pub async fn store_assert_is_empty(store: &Store, blob_store: BlobStore, include
                                 || key.len() == U16_LEN =>
                         {
                             // Message ID, change ID counters and registry counters
+                            if key.len() != U16_LEN {
+                                // Keep registry counters, delete the rest
+                                delete_batch.clear(ValueClass::Any(AnyClass {
+                                    subspace,
+                                    key: key.to_vec(),
+                                }));
+                            }
                             return Ok(true);
                         }
                         SUBSPACE_INDEXES => {
@@ -303,7 +311,7 @@ pub async fn store_assert_is_empty(store: &Store, blob_store: BlobStore, include
                                 key
                             );
                         }
-                        SUBSPACE_REGISTRY | SUBSPACE_DIRECTORY => {
+                        SUBSPACE_REGISTRY | SUBSPACE_DIRECTORY | SUBSPACE_SPAM_SAMPLES => {
                             let object_id =
                                 ObjectType::from_id(key.deserialize_be_u16(0).unwrap()).unwrap();
 
@@ -392,19 +400,9 @@ pub async fn store_assert_is_empty(store: &Store, blob_store: BlobStore, include
         .await
         .unwrap();
 
-    store
-        .delete_range(
-            AnyKey {
-                subspace: SUBSPACE_COUNTER,
-                key: &[0u8],
-            },
-            AnyKey {
-                subspace: SUBSPACE_COUNTER,
-                key: (u32::MAX / 2).to_be_bytes().as_slice(),
-            },
-        )
-        .await
-        .unwrap();
+    if !delete_batch.is_empty() {
+        store.write(delete_batch.build_all()).await.unwrap();
+    }
 
     if failed {
         panic!("Store is not empty.");

@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::jmap::{
-    JMAPTest,
-    mail::changes::{LogAction, ParseState},
+use crate::{
+    jmap::mail::changes::{LogAction, ParseState},
+    utils::server::TestServer,
 };
 use ::email::message::metadata::MessageData;
 use common::storage::index::ObjectIndexBuilder;
@@ -27,9 +27,9 @@ use types::{
     id::Id,
 };
 
-pub async fn test(test: &mut TestServer) {
+pub async fn test(test: &TestServer) {
     println!("Running Email QueryChanges tests...");
-    let server = params.server.clone();
+    let server = test.server.clone();
     let account = test.account("jdoe@example.com");
     let client = account.jmap_client().await;
 
@@ -323,7 +323,7 @@ pub async fn test(test: &mut TestServer) {
     }
 
     test.destroy_all_mailboxes(account).await;
-    test.assert_is_empty().await;;
+    test.assert_is_empty().await;
 }
 
 #[derive(Debug, Clone)]

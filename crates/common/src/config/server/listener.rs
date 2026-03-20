@@ -54,7 +54,7 @@ impl Listeners {
         servers
     }
 
-    fn parse_server(
+    pub fn parse_server(
         &mut self,
         bp: &mut Bootstrap,
         listener: RegistryObject<NetworkListener>,

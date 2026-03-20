@@ -200,7 +200,7 @@ pub async fn test(test: &mut TestServer) {
     test.account("admin@example.org")
         .destroy_account(account)
         .await;
-    test.assert_is_empty().await;
+    test.cleanup().await;
 }
 
 pub async fn import_certs_and_encrypt() {

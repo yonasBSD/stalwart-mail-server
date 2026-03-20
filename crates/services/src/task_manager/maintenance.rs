@@ -280,6 +280,33 @@ async fn store_maintenance(
         | TaskStoreMaintenanceType::ResetRateLimiters
         | TaskStoreMaintenanceType::ResetBlobQuotas
         | TaskStoreMaintenanceType::RemoveAuthTokens => {
+            #[cfg(feature = "test_mode")]
+            if let Some(test_var) = task.shard_index {
+                use crate::task_manager::TaskFailureType;
+
+                // Simulate success for testing purposes
+                match test_var {
+                    0 => {
+                        return Ok(TaskResult::Success);
+                    }
+                    1 => {
+                        return Ok(TaskResult::temporary(
+                            "Simulated temporary failure".to_string(),
+                        ));
+                    }
+                    2 => {
+                        return Ok(TaskResult::permanent("Simulated permanent failure"));
+                    }
+
+                    retry => {
+                        return Ok(TaskResult::Failure {
+                            typ: TaskFailureType::Retry(retry),
+                            message: "Simulated retry failure".to_string(),
+                        });
+                    }
+                }
+            }
+
             let prefixes = match task.maintenance_type {
                 TaskStoreMaintenanceType::RemoveGreylist => &[KV_GREYLIST][..],
                 TaskStoreMaintenanceType::RemoveLockQueueMessage => &[KV_LOCK_QUEUE_MESSAGE][..],

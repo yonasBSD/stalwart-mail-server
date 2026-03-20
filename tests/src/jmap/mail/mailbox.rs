@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::jmap::{Account, JMAPTest, wait_for_tasks};
+use crate::utils::server::TestServer;
 use jmap_client::{
     Error, Set,
-    client::{Client, Credentials},
+    client::Client,
     core::{
         query::Filter,
         set::{SetError, SetErrorType, SetObject, SetRequest},
@@ -16,17 +16,16 @@ use jmap_client::{
 };
 use jmap_proto::types::state::State;
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
 use store::ahash::AHashMap;
 use types::id::Id;
 
-pub async fn test(test: &mut TestServer) {
+pub async fn test(test: &TestServer) {
     println!("Running Mailbox tests...");
-    let account = test.account("admin");
-    let mut client = account.client_owned().await;
+    let account = test.account("admin@example.com");
+    let client = account.jmap_client().await;
 
     // Create test mailboxes
-    client.set_default_account_id(Id::from(0u64));
+    test.destroy_all_mailboxes(account).await;
     let id_map = create_test_mailboxes(&client).await;
 
     // Sort by name
@@ -607,7 +606,7 @@ pub async fn test(test: &mut TestServer) {
         ["inbox", "sent", "spam"]
     );
 
-    destroy_all_mailboxes_no_wait(&client).await;
+    test.destroy_all_mailboxes(account).await;
     test.assert_is_empty().await;
 }
 

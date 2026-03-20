@@ -76,6 +76,7 @@ pub enum BroadcastEvent {
     RegistryChange(RegistryChange),
     CacheInvalidate(Vec<CacheInvalidation>),
     CacheInvalidateAll,
+    CacheInvalidateNegative,
     MtaQueueStatus { is_running: bool },
 }
 

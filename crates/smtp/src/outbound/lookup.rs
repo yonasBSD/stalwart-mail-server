@@ -8,7 +8,7 @@ use super::NextHop;
 use crate::queue::{Error, ErrorDetails, HostResponse, Status};
 use common::{
     Server,
-    config::smtp::queue::{ConnectionStrategy, IpAndHost, MxConfig},
+    config::smtp::queue::{ConnectionStrategy, HostOrIp, IpAndHost, MxConfig},
     expr::functions::ResolveVariable,
 };
 use mail_auth::{IpLookupStrategy, MX};
@@ -111,41 +111,44 @@ impl DnsLookup for Server {
         remote_host: &NextHop<'_>,
         envelope: &impl ResolveVariable,
     ) -> Result<IpLookupResult, Status<HostResponse<Box<str>>, ErrorDetails>> {
-        let mut remote_ips = self
-            .ip_lookup(
-                remote_host.fqdn_hostname().as_ref(),
-                remote_host.ip_lookup_strategy(),
-                remote_host.max_multi_homed(),
-            )
-            .await
-            .map_err(|err| {
-                if let mail_auth::Error::DnsRecordNotFound(_) = &err {
-                    if matches!(
-                        remote_host,
-                        NextHop::MX {
-                            is_implicit: true,
-                            ..
+        let mut remote_ips = match remote_host.fqdn_hostname() {
+            HostOrIp::Host(hostname) => self
+                .ip_lookup(
+                    hostname.as_ref(),
+                    remote_host.ip_lookup_strategy(),
+                    remote_host.max_multi_homed(),
+                )
+                .await
+                .map_err(|err| {
+                    if let mail_auth::Error::DnsRecordNotFound(_) = &err {
+                        if matches!(
+                            remote_host,
+                            NextHop::MX {
+                                is_implicit: true,
+                                ..
+                            }
+                        ) {
+                            Status::PermanentFailure(ErrorDetails {
+                                entity: remote_host.hostname().into(),
+                                details: Error::DnsError("no MX record found.".into()),
+                            })
+                        } else {
+                            Status::PermanentFailure(ErrorDetails {
+                                entity: remote_host.hostname().into(),
+                                details: Error::ConnectionError("record not found for MX".into()),
+                            })
                         }
-                    ) {
-                        Status::PermanentFailure(ErrorDetails {
-                            entity: remote_host.hostname().into(),
-                            details: Error::DnsError("no MX record found.".into()),
-                        })
                     } else {
-                        Status::PermanentFailure(ErrorDetails {
+                        Status::TemporaryFailure(ErrorDetails {
                             entity: remote_host.hostname().into(),
-                            details: Error::ConnectionError("record not found for MX".into()),
+                            details: Error::ConnectionError(
+                                format!("lookup error: {err}").into_boxed_str(),
+                            ),
                         })
                     }
-                } else {
-                    Status::TemporaryFailure(ErrorDetails {
-                        entity: remote_host.hostname().into(),
-                        details: Error::ConnectionError(
-                            format!("lookup error: {err}").into_boxed_str(),
-                        ),
-                    })
-                }
-            })?;
+                })?,
+            HostOrIp::Ip { ip, .. } => vec![ip],
+        };
 
         if !remote_ips.is_empty() {
             #[cfg(not(feature = "test_mode"))]

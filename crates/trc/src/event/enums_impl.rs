@@ -287,7 +287,7 @@ impl EventType {
             b"message-ingest.jmap-append" => EventType::MessageIngest(MessageIngestEvent::JmapAppend),
             b"message-ingest.duplicate" => EventType::MessageIngest(MessageIngestEvent::Duplicate),
             b"message-ingest.error" => EventType::MessageIngest(MessageIngestEvent::Error),
-            b"message-ingest.fts-index" => EventType::MessageIngest(MessageIngestEvent::FtsIndex),
+            b"message-ingest.search-index" => EventType::MessageIngest(MessageIngestEvent::SearchIndex),
             b"milter.read" => EventType::Milter(MilterEvent::Read),
             b"milter.write" => EventType::Milter(MilterEvent::Write),
             b"milter.action-accept" => EventType::Milter(MilterEvent::ActionAccept),
@@ -955,7 +955,9 @@ impl EventType {
             }
             EventType::MessageIngest(MessageIngestEvent::Duplicate) => "message-ingest.duplicate",
             EventType::MessageIngest(MessageIngestEvent::Error) => "message-ingest.error",
-            EventType::MessageIngest(MessageIngestEvent::FtsIndex) => "message-ingest.fts-index",
+            EventType::MessageIngest(MessageIngestEvent::SearchIndex) => {
+                "message-ingest.search-index"
+            }
             EventType::Milter(MilterEvent::Read) => "milter.read",
             EventType::Milter(MilterEvent::Write) => "milter.write",
             EventType::Milter(MilterEvent::ActionAccept) => "milter.action-accept",
@@ -1616,7 +1618,7 @@ impl EventType {
             EventType::MessageIngest(MessageIngestEvent::JmapAppend) => 285,
             EventType::MessageIngest(MessageIngestEvent::Duplicate) => 281,
             EventType::MessageIngest(MessageIngestEvent::Error) => 282,
-            EventType::MessageIngest(MessageIngestEvent::FtsIndex) => 142,
+            EventType::MessageIngest(MessageIngestEvent::SearchIndex) => 142,
             EventType::Milter(MilterEvent::Read) => 299,
             EventType::Milter(MilterEvent::Write) => 303,
             EventType::Milter(MilterEvent::ActionAccept) => 287,
@@ -2235,7 +2237,7 @@ impl EventType {
             285 => Some(EventType::MessageIngest(MessageIngestEvent::JmapAppend)),
             281 => Some(EventType::MessageIngest(MessageIngestEvent::Duplicate)),
             282 => Some(EventType::MessageIngest(MessageIngestEvent::Error)),
-            142 => Some(EventType::MessageIngest(MessageIngestEvent::FtsIndex)),
+            142 => Some(EventType::MessageIngest(MessageIngestEvent::SearchIndex)),
             299 => Some(EventType::Milter(MilterEvent::Read)),
             303 => Some(EventType::Milter(MilterEvent::Write)),
             287 => Some(EventType::Milter(MilterEvent::ActionAccept)),
@@ -2713,7 +2715,7 @@ impl EventType {
             EventType::MessageIngest(MessageIngestEvent::ImapAppend) => Level::Info,
             EventType::MessageIngest(MessageIngestEvent::JmapAppend) => Level::Info,
             EventType::MessageIngest(MessageIngestEvent::Duplicate) => Level::Info,
-            EventType::MessageIngest(MessageIngestEvent::FtsIndex) => Level::Info,
+            EventType::MessageIngest(MessageIngestEvent::SearchIndex) => Level::Info,
             EventType::Milter(MilterEvent::ActionAccept) => Level::Info,
             EventType::Milter(MilterEvent::ActionDiscard) => Level::Info,
             EventType::Milter(MilterEvent::ActionReject) => Level::Info,
@@ -3273,9 +3275,7 @@ impl EventType {
             EventType::MessageIngest(MessageIngestEvent::JmapAppend) => "Message appended via JMAP",
             EventType::MessageIngest(MessageIngestEvent::Duplicate) => "Skipping duplicate message",
             EventType::MessageIngest(MessageIngestEvent::Error) => "Message ingestion error",
-            EventType::MessageIngest(MessageIngestEvent::FtsIndex) => {
-                "Full-text search index updated"
-            }
+            EventType::MessageIngest(MessageIngestEvent::SearchIndex) => "Search index updated",
             EventType::Milter(MilterEvent::Read) => "Reading from Milter",
             EventType::Milter(MilterEvent::Write) => "Writing to Milter",
             EventType::Milter(MilterEvent::ActionAccept) => "Milter action: Accept",
@@ -3629,9 +3629,9 @@ impl EventType {
                 "Prometheus exporter error"
             }
             EventType::Telemetry(TelemetryEvent::JournalError) => "Journal collector error",
-            EventType::Telemetry(TelemetryEvent::MetricsCollected) => "Housekeeper process stopped",
-            EventType::Telemetry(TelemetryEvent::MetricsStored) => "Purge finished",
-            EventType::Telemetry(TelemetryEvent::MetricsPushed) => "Housekeeper task run",
+            EventType::Telemetry(TelemetryEvent::MetricsCollected) => "Metrics collected",
+            EventType::Telemetry(TelemetryEvent::MetricsStored) => "Metric store",
+            EventType::Telemetry(TelemetryEvent::MetricsPushed) => "Metrics pushed",
             EventType::Tls(TlsEvent::Handshake) => "TLS handshake",
             EventType::Tls(TlsEvent::HandshakeError) => "TLS handshake error",
             EventType::Tls(TlsEvent::NotConfigured) => "TLS not configured",
@@ -4142,8 +4142,8 @@ impl EventType {
             EventType::MessageIngest(MessageIngestEvent::Error) => {
                 "An error occurred while ingesting the message"
             }
-            EventType::MessageIngest(MessageIngestEvent::FtsIndex) => {
-                "The full-text search index has been updated"
+            EventType::MessageIngest(MessageIngestEvent::SearchIndex) => {
+                "The search index has been updated"
             }
             EventType::Milter(MilterEvent::Read) => "Reading from the Milter",
             EventType::Milter(MilterEvent::Write) => "Writing to the Milter",
@@ -4726,11 +4726,11 @@ impl EventType {
             EventType::Telemetry(TelemetryEvent::JournalError) => {
                 "An error occurred with the journal collector"
             }
-            EventType::Telemetry(TelemetryEvent::MetricsCollected) => {
-                "The housekeeper process has stopped"
+            EventType::Telemetry(TelemetryEvent::MetricsCollected) => "Metrics have been collected",
+            EventType::Telemetry(TelemetryEvent::MetricsStored) => "Metrics have been stored",
+            EventType::Telemetry(TelemetryEvent::MetricsPushed) => {
+                "Metrics have been pushed to the configured exporters"
             }
-            EventType::Telemetry(TelemetryEvent::MetricsStored) => "The purge has finished",
-            EventType::Telemetry(TelemetryEvent::MetricsPushed) => "A housekeeper task is running",
             EventType::Tls(TlsEvent::Handshake) => "Successful TLS handshake",
             EventType::Tls(TlsEvent::HandshakeError) => {
                 "An error occurred during the TLS handshake"
@@ -5326,7 +5326,7 @@ impl EventType {
             EventType::MessageIngest(MessageIngestEvent::JmapAppend),
             EventType::MessageIngest(MessageIngestEvent::Duplicate),
             EventType::MessageIngest(MessageIngestEvent::Error),
-            EventType::MessageIngest(MessageIngestEvent::FtsIndex),
+            EventType::MessageIngest(MessageIngestEvent::SearchIndex),
             EventType::Milter(MilterEvent::Read),
             EventType::Milter(MilterEvent::Write),
             EventType::Milter(MilterEvent::ActionAccept),
@@ -5823,7 +5823,7 @@ impl MetricType {
             b"message-ingest.jmap-append" => MetricType::MessageIngestJmapAppend,
             b"message-ingest.duplicate" => MetricType::MessageIngestDuplicate,
             b"message-ingest.error" => MetricType::MessageIngestError,
-            b"message-ingest.fts-index" => MetricType::MessageIngestFtsIndex,
+            b"message-ingest.search-index" => MetricType::MessageIngestSearchIndex,
             b"milter.action-accept" => MetricType::MilterActionAccept,
             b"milter.action-discard" => MetricType::MilterActionDiscard,
             b"milter.action-reject" => MetricType::MilterActionReject,
@@ -5986,6 +5986,7 @@ impl MetricType {
             b"store.blob-delete" => MetricType::StoreBlobDelete,
             b"task-manager.blob-not-found" => MetricType::TaskManagerBlobNotFound,
             b"task-manager.metadata-not-found" => MetricType::TaskManagerMetadataNotFound,
+            b"telemetry.alert-event" => MetricType::TelemetryAlertEvent,
             b"telemetry.alert-message" => MetricType::TelemetryAlertMessage,
             b"telemetry.log-error" => MetricType::TelemetryLogError,
             b"telemetry.webhook-error" => MetricType::TelemetryWebhookError,
@@ -6171,7 +6172,7 @@ impl MetricType {
             MetricType::MessageIngestJmapAppend => "message-ingest.jmap-append",
             MetricType::MessageIngestDuplicate => "message-ingest.duplicate",
             MetricType::MessageIngestError => "message-ingest.error",
-            MetricType::MessageIngestFtsIndex => "message-ingest.fts-index",
+            MetricType::MessageIngestSearchIndex => "message-ingest.search-index",
             MetricType::MilterActionAccept => "milter.action-accept",
             MetricType::MilterActionDiscard => "milter.action-discard",
             MetricType::MilterActionReject => "milter.action-reject",
@@ -6340,6 +6341,7 @@ impl MetricType {
             MetricType::StoreBlobDelete => "store.blob-delete",
             MetricType::TaskManagerBlobNotFound => "task-manager.blob-not-found",
             MetricType::TaskManagerMetadataNotFound => "task-manager.metadata-not-found",
+            MetricType::TelemetryAlertEvent => "telemetry.alert-event",
             MetricType::TelemetryAlertMessage => "telemetry.alert-message",
             MetricType::TelemetryLogError => "telemetry.log-error",
             MetricType::TelemetryWebhookError => "telemetry.webhook-error",
@@ -6522,7 +6524,7 @@ impl MetricType {
             MetricType::MessageIngestJmapAppend => 176,
             MetricType::MessageIngestDuplicate => 177,
             MetricType::MessageIngestError => 178,
-            MetricType::MessageIngestFtsIndex => 179,
+            MetricType::MessageIngestSearchIndex => 179,
             MetricType::MilterActionAccept => 180,
             MetricType::MilterActionDiscard => 181,
             MetricType::MilterActionReject => 182,
@@ -6685,6 +6687,7 @@ impl MetricType {
             MetricType::StoreBlobDelete => 327,
             MetricType::TaskManagerBlobNotFound => 328,
             MetricType::TaskManagerMetadataNotFound => 329,
+            MetricType::TelemetryAlertEvent => 338,
             MetricType::TelemetryAlertMessage => 212,
             MetricType::TelemetryLogError => 330,
             MetricType::TelemetryWebhookError => 331,
@@ -6865,7 +6868,7 @@ impl MetricType {
             176 => Some(MetricType::MessageIngestJmapAppend),
             177 => Some(MetricType::MessageIngestDuplicate),
             178 => Some(MetricType::MessageIngestError),
-            179 => Some(MetricType::MessageIngestFtsIndex),
+            179 => Some(MetricType::MessageIngestSearchIndex),
             180 => Some(MetricType::MilterActionAccept),
             181 => Some(MetricType::MilterActionDiscard),
             182 => Some(MetricType::MilterActionReject),
@@ -7028,6 +7031,7 @@ impl MetricType {
             327 => Some(MetricType::StoreBlobDelete),
             328 => Some(MetricType::TaskManagerBlobNotFound),
             329 => Some(MetricType::TaskManagerMetadataNotFound),
+            338 => Some(MetricType::TelemetryAlertEvent),
             212 => Some(MetricType::TelemetryAlertMessage),
             330 => Some(MetricType::TelemetryLogError),
             331 => Some(MetricType::TelemetryWebhookError),
@@ -7196,7 +7200,7 @@ impl MetricType {
             MetricType::MessageIngestJmapAppend => 285,
             MetricType::MessageIngestDuplicate => 281,
             MetricType::MessageIngestError => 282,
-            MetricType::MessageIngestFtsIndex => 142,
+            MetricType::MessageIngestSearchIndex => 142,
             MetricType::MilterActionAccept => 287,
             MetricType::MilterActionDiscard => 289,
             MetricType::MilterActionReject => 290,
@@ -7346,6 +7350,7 @@ impl MetricType {
             MetricType::StoreBlobDelete => 506,
             MetricType::TaskManagerBlobNotFound => 141,
             MetricType::TaskManagerMetadataNotFound => 145,
+            MetricType::TelemetryAlertEvent => 548,
             MetricType::TelemetryAlertMessage => 365,
             MetricType::TelemetryLogError => 535,
             MetricType::TelemetryWebhookError => 539,
@@ -7534,7 +7539,7 @@ impl MetricType {
             MetricType::MessageIngestJmapAppend => "Message appended via JMAP",
             MetricType::MessageIngestDuplicate => "Skipping duplicate message",
             MetricType::MessageIngestError => "Message ingestion error",
-            MetricType::MessageIngestFtsIndex => "Full-text search index updated",
+            MetricType::MessageIngestSearchIndex => "Search index updated",
             MetricType::MilterActionAccept => "Milter action: Accept",
             MetricType::MilterActionDiscard => "Milter action: Discard",
             MetricType::MilterActionReject => "Milter action: Reject",
@@ -7701,6 +7706,7 @@ impl MetricType {
             MetricType::StoreBlobDelete => "Blob delete operation",
             MetricType::TaskManagerBlobNotFound => "Blob not found for task",
             MetricType::TaskManagerMetadataNotFound => "Metadata not found for task",
+            MetricType::TelemetryAlertEvent => "Alert event triggered",
             MetricType::TelemetryAlertMessage => "Alert message sent",
             MetricType::TelemetryLogError => "Log collector error",
             MetricType::TelemetryWebhookError => "Webhook collector error",
@@ -7878,7 +7884,7 @@ impl MetricType {
             | MetricType::MessageIngestJmapAppend
             | MetricType::MessageIngestDuplicate
             | MetricType::MessageIngestError
-            | MetricType::MessageIngestFtsIndex
+            | MetricType::MessageIngestSearchIndex
             | MetricType::MilterActionAccept
             | MetricType::MilterActionDiscard
             | MetricType::MilterActionReject
@@ -8028,6 +8034,7 @@ impl MetricType {
             | MetricType::StoreBlobDelete
             | MetricType::TaskManagerBlobNotFound
             | MetricType::TaskManagerMetadataNotFound
+            | MetricType::TelemetryAlertEvent
             | MetricType::TelemetryAlertMessage
             | MetricType::TelemetryLogError
             | MetricType::TelemetryWebhookError
@@ -8224,7 +8231,7 @@ impl MetricType {
             MetricType::MessageIngestJmapAppend,
             MetricType::MessageIngestDuplicate,
             MetricType::MessageIngestError,
-            MetricType::MessageIngestFtsIndex,
+            MetricType::MessageIngestSearchIndex,
             MetricType::MilterActionAccept,
             MetricType::MilterActionDiscard,
             MetricType::MilterActionReject,
@@ -8387,6 +8394,7 @@ impl MetricType {
             MetricType::StoreBlobDelete,
             MetricType::TaskManagerBlobNotFound,
             MetricType::TaskManagerMetadataNotFound,
+            MetricType::TelemetryAlertEvent,
             MetricType::TelemetryAlertMessage,
             MetricType::TelemetryLogError,
             MetricType::TelemetryWebhookError,

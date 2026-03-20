@@ -4,49 +4,41 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{AssertConfig, add_test_certs, jmap::JMAPTest};
+use crate::{AssertConfig, utils::server::TestServer};
 use base64::{Engine, engine::general_purpose};
-use common::{Caches, Core, Data, Inner, config::server::Listeners, network::SessionData};
+use common::{config::server::Listeners, network::SessionData};
 use ece::EcKeyComponents;
 use http_proto::{HtmlResponse, ToHttpResponse, request::fetch_body};
 use hyper::{StatusCode, body, header::CONTENT_ENCODING, server::conn::http1, service::service_fn};
 use hyper_util::rt::TokioIo;
 use jmap_client::{mailbox::Role, push_subscription::Keys};
 use jmap_proto::{response::status::PushObject, types::state::State};
+use registry::{
+    schema::{
+        enums::NetworkListenerProtocol,
+        prelude::{ObjectType, SocketAddr},
+        structs::{NetworkListener, SystemSettings},
+    },
+    types::{id::ObjectId, map::Map},
+};
 use services::state_manager::ece::ece_encrypt;
 use std::{
+    str::FromStr,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
 };
-use store::ahash::AHashSet;
+use store::{
+    ahash::AHashSet,
+    registry::{RegistryObject, bootstrap::Bootstrap},
+};
 use tokio::sync::mpsc;
 use types::{id::Id, type_state::DataType};
+use utils::map::vec_map::VecMap;
 
-const SERVER: &str = r#"
-[server]
-hostname = "'jmap-push.example.org'"
-
-[http]
-url = "'https://127.0.0.1:9000'"
-
-[server.listener.jmap]
-bind = ['127.0.0.1:9000']
-protocol = 'http'
-tls.implicit = true
-
-[server.socket]
-reuse-addr = true
-
-[certificate.default]
-cert = '%{file:{CERT}}%'
-private-key = '%{file:{PK}}%'
-default = true
-"#;
-
-pub async fn test(test: &mut TestServer) {
+pub async fn test(test: &TestServer) {
     println!("Running Push Subscription tests...");
 
     // ECE roundtrip test
@@ -72,28 +64,35 @@ pub async fn test(test: &mut TestServer) {
     });
 
     // Start mock push server
-    let mut settings = Config::new(add_test_certs(SERVER)).unwrap();
-    settings.resolve_all_macros().await;
-    let mock_inner = Arc::new(Inner {
-        shared_core: Core::parse(&mut settings, Default::default(), Default::default())
-            .await
-            .into_shared(),
-        data: Data::parse(&mut settings),
-        cache: Caches::parse(&mut settings),
-        ..Default::default()
-    });
-    settings.errors.clear();
-    settings.warnings.clear();
-    let mut servers = Listeners::parse(&mut settings);
-    servers.parse_tcp_acceptors(&mut settings, mock_inner.clone());
-
-    // Start JMAP server
-    servers.bind_and_drop_priv(&mut settings);
-    settings.assert_no_errors();
+    let mut bp = Bootstrap::new_uninitialized(test.server.registry().clone());
+    let mut servers = Listeners::default();
+    servers.parse_server(
+        &mut bp,
+        RegistryObject {
+            id: ObjectId::new(ObjectType::NetworkListener, 0u64.into()),
+            object: NetworkListener {
+                name: "mock-push".into(),
+                bind: Map::new(vec![SocketAddr::from_str("127.0.0.1:19000").unwrap()]),
+                protocol: NetworkListenerProtocol::Http,
+                tls_implicit: true,
+                use_tls: true,
+                socket_reuse_address: true,
+                socket_reuse_port: true,
+                ..Default::default()
+            },
+            revision: 0,
+        },
+        &SystemSettings::default(),
+    );
+    servers
+        .parse_tcp_acceptors(&mut bp, test.server.inner.clone())
+        .await;
+    servers.bind_and_drop_priv(&mut bp);
+    bp.assert_no_errors();
     let _shutdown_tx = servers.spawn(|server, acceptor, shutdown_rx| {
         server.spawn(
             SessionManager::from(push_server.clone()),
-            mock_inner.clone(),
+            test.server.inner.clone(),
             acceptor,
             shutdown_rx,
         );
@@ -101,7 +100,7 @@ pub async fn test(test: &mut TestServer) {
 
     // Register push notification (no encryption)
     let push_id = client
-        .push_subscription_create("123", "https://127.0.0.1:9000/push", None)
+        .push_subscription_create("123", "https://127.0.0.1:19000/push", None)
         .await
         .unwrap()
         .take_id();
@@ -141,7 +140,7 @@ pub async fn test(test: &mut TestServer) {
 
     // Only one verification per minute is allowed
     let push_id = client
-        .push_subscription_create("invalid", "https://127.0.0.1:9000/push", None)
+        .push_subscription_create("invalid", "https://127.0.0.1:19000/push", None)
         .await
         .unwrap()
         .take_id();
@@ -152,7 +151,7 @@ pub async fn test(test: &mut TestServer) {
     let push_id = client
         .push_subscription_create(
             "123",
-            "https://127.0.0.1:9000/push?skip_checks=true", // skip_checks only works in cfg(test)
+            "https://127.0.0.1:19000/push?skip_checks=true", // skip_checks only works in cfg(test)
             keys.into(),
         )
         .await
@@ -261,9 +260,9 @@ struct PushVerification {
     pub verification_code: String,
 }
 
-impl common::listener::SessionManager for SessionManager {
+impl common::network::SessionManager for SessionManager {
     #[allow(clippy::manual_async_fn)]
-    fn handle<T: common::listener::SessionStream>(
+    fn handle<T: common::network::SessionStream>(
         self,
         session: SessionData<T>,
     ) -> impl std::future::Future<Output = ()> + Send {
@@ -345,12 +344,12 @@ async fn expect_nothing(event_rx: &mut mpsc::Receiver<PushMessage>) {
     }
 }
 
-async fn assert_state(event_rx: &mut mpsc::Receiver<PushMessage>, id: &Id, state: &[DataType]) {
+async fn assert_state(event_rx: &mut mpsc::Receiver<PushMessage>, id: Id, state: &[DataType]) {
     assert_eq!(
         expect_push(event_rx)
             .await
             .unwrap_state_change()
-            .get(id)
+            .get(&id)
             .unwrap()
             .iter()
             .map(|x| x.0)

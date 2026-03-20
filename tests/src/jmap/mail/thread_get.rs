@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::jmap::{JMAPTest, wait_for_tasks};
+use crate::utils::server::TestServer;
 use jmap_client::mailbox::Role;
 
-pub async fn test(test: &mut TestServer) {
+pub async fn test(test: &TestServer) {
     println!("Running Email Thread tests...");
     let account = test.account("jdoe@example.com");
     let client = account.jmap_client().await;

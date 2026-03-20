@@ -6,7 +6,9 @@
 
 pub mod account;
 pub mod cleanup;
+pub mod dns;
 pub mod http;
+pub mod http_server;
 pub mod imap;
 pub mod jmap;
 pub mod pop3;

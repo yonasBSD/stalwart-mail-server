@@ -83,24 +83,25 @@ impl MetricsStore for Store {
                     let history = history.events.entry(event).or_insert(0);
                     let diff = reading - *history;
 
-                    #[cfg(not(feature = "test_mode"))]
-                    let metric_id = SnowflakeIdGenerator::from_sequence_id(event.to_id() as u64)
-                        .unwrap_or_default();
-
-                    #[cfg(feature = "test_mode")]
-                    let metric_id = _timestamp
-                        .map(|timestamp| {
-                            SnowflakeIdGenerator::from_timestamp_and_sequence_id(
-                                timestamp,
-                                event.to_id() as u64,
-                            )
-                        })
-                        .unwrap_or_else(|| {
-                            SnowflakeIdGenerator::from_sequence_id(event.to_id() as u64)
-                        })
-                        .unwrap_or_default();
-
                     if diff > 0 {
+                        #[cfg(not(feature = "test_mode"))]
+                        let metric_id =
+                            SnowflakeIdGenerator::from_sequence_id(event.to_id() as u64)
+                                .unwrap_or_default();
+
+                        #[cfg(feature = "test_mode")]
+                        let metric_id = _timestamp
+                            .map(|timestamp| {
+                                SnowflakeIdGenerator::from_timestamp_and_sequence_id(
+                                    timestamp,
+                                    event.to_id() as u64,
+                                )
+                            })
+                            .unwrap_or_else(|| {
+                                SnowflakeIdGenerator::from_sequence_id(event.to_id() as u64)
+                            })
+                            .unwrap_or_default();
+
                         batch.set(
                             ValueClass::Telemetry(TelemetryClass::Metric(metric_id)),
                             Metric::Counter(MetricCount {

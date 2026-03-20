@@ -4,14 +4,17 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::jmap::{JMAPTest, mail::get::all_headers, replace_blob_ids};
+use crate::{
+    jmap::{mail::get::all_headers, replace_blob_ids},
+    utils::server::TestServer,
+};
 use jmap_client::{
     email::{self, Header, HeaderForm},
     mailbox::Role,
 };
 use std::{fs, path::PathBuf};
 
-pub async fn test(test: &mut TestServer) {
+pub async fn test(test: &TestServer) {
     println!("Running Email Parse tests...");
     let account = test.account("jdoe@example.com");
     let client = account.jmap_client().await;
@@ -222,5 +225,5 @@ pub async fn test(test: &mut TestServer) {
     }
 
     test.destroy_all_mailboxes(account).await;
-    test.assert_is_empty().await;;
+    test.assert_is_empty().await;
 }

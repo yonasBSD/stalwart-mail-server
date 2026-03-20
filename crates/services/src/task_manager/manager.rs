@@ -18,10 +18,10 @@ use crate::task_manager::{
     DEFAULT_LOCK_EXPIRY, Locked, QUEUE_REFRESH_INTERVAL, TaskDetails, TaskFailureType, TaskInfo,
     TaskJob, TaskManagerIpc, TaskResult,
 };
+use common::BuildServer;
 use common::config::server::ServerProtocol;
 use common::network::limiter::ConcurrencyLimiter;
 use common::network::{ServerInstance, TcpAcceptor};
-use common::{BuildServer, IPC_CHANNEL_BUFFER};
 use common::{Inner, Server};
 use registry::pickle::Pickle;
 use registry::schema::enums::TaskType;
@@ -45,8 +45,10 @@ use tokio::sync::{mpsc, watch};
 use trc::TaskManagerEvent;
 use utils::snowflake::SnowflakeIdGenerator;
 
+const TASK_QUEUE_BUFFER: usize = 10;
+
 pub fn spawn_task_manager(inner: Arc<Inner>) {
-    {
+    let is_clustered = {
         let server = inner.build_server();
         let roles = &server.core.network.roles;
 
@@ -58,7 +60,9 @@ pub fn spawn_task_manager(inner: Arc<Inner>) {
         {
             return;
         }
-    }
+
+        server.core.storage.coordinator.is_enabled()
+    };
 
     trc::event!(TaskManager(TaskManagerEvent::ManagerStarted));
 
@@ -76,19 +80,39 @@ pub fn spawn_task_manager(inner: Arc<Inner>) {
     // Spawn workers for each task type
     let mut txs = Vec::with_capacity(TaskType::COUNT);
     for idx in 0..TaskType::COUNT {
-        let (tx, mut rx) = mpsc::channel::<TaskJob>(IPC_CHANNEL_BUFFER);
+        let task_type = TaskType::from_id(idx as u16).unwrap();
+        let channel_capacity = match task_type {
+            TaskType::IndexDocument | TaskType::UnindexDocument | TaskType::IndexTrace => {
+                std::cmp::max(
+                    inner.build_server().core.email.index_batch_size,
+                    TASK_QUEUE_BUFFER,
+                )
+            }
+            TaskType::DestroyAccount
+            | TaskType::AccountMaintenance
+            | TaskType::StoreMaintenance => 1,
+            TaskType::SpamFilterMaintenance => 2,
+            TaskType::CalendarAlarmEmail
+            | TaskType::CalendarAlarmNotification
+            | TaskType::CalendarItipMessage
+            | TaskType::MergeThreads
+            | TaskType::DmarcReport
+            | TaskType::TlsReport
+            | TaskType::RestoreArchivedItem => TASK_QUEUE_BUFFER,
+        };
+
+        let (tx, mut rx) = mpsc::channel::<TaskJob>(channel_capacity);
         txs.push(tx);
         let inner = inner.clone();
         let server_instance = server_instance.clone();
 
         if matches!(
-            TaskType::from_id(idx as u16).unwrap(),
-            TaskType::IndexDocument | TaskType::UnindexDocument | TaskType::IndexTrace
+            task_type,
+            TaskType::IndexDocument | TaskType::UnindexDocument | TaskType::IndexTrace,
         ) {
             tokio::spawn(async move {
                 while let Some(job) = rx.recv().await {
                     let server = inner.build_server();
-
                     let batch_size = server.core.email.index_batch_size;
                     let mut batch = Vec::with_capacity(batch_size);
                     match server
@@ -151,8 +175,16 @@ pub fn spawn_task_manager(inner: Arc<Inner>) {
                     }
 
                     // Dispatch
-                    let results = server.index(&batch).await.into_iter().map(|r| r.result);
+                    let mut refresh_queue = false;
+                    let results = server.index(&batch).await.into_iter().map(|r| {
+                        refresh_queue |= r.result.is_retry();
+                        r.result
+                    });
                     update_tasks(&server, &mut batch, results).await;
+
+                    if refresh_queue || rx.is_empty() {
+                        server.notify_task_queue();
+                    }
                 }
             });
         } else {
@@ -160,6 +192,7 @@ pub fn spawn_task_manager(inner: Arc<Inner>) {
             tokio::spawn(async move {
                 while let Some(job) = rx.recv().await {
                     let server = inner.build_server();
+                    let mut refresh_queue = false;
 
                     match server
                         .store()
@@ -206,6 +239,8 @@ pub fn spawn_task_manager(inner: Arc<Inner>) {
                                 | Task::IndexTrace(_) => unreachable!(),
                             };
 
+                            refresh_queue = result.is_retry();
+
                             update_tasks(
                                 &server,
                                 &mut [TaskDetails { task, info: job }],
@@ -228,11 +263,16 @@ pub fn spawn_task_manager(inner: Arc<Inner>) {
                             );
                         }
                     }
+
+                    if refresh_queue || rx.is_empty() {
+                        server.notify_task_queue();
+                    }
                 }
             });
         }
     }
 
+    const REFRESH_INTERVAL: Duration = Duration::from_secs(60);
     tokio::spawn(async move {
         let mut ipc = TaskManagerIpc {
             txs: txs.try_into().expect("Incorrect number of task channels"),
@@ -242,7 +282,10 @@ pub fn spawn_task_manager(inner: Arc<Inner>) {
         let rx = inner.ipc.task_tx.clone();
         loop {
             // Index any queued tasks
-            let sleep_for = inner.build_server().process_tasks(&mut ipc).await;
+            let mut sleep_for = inner.build_server().process_tasks(&mut ipc).await;
+            if is_clustered && sleep_for > REFRESH_INTERVAL {
+                sleep_for = REFRESH_INTERVAL;
+            }
 
             // Wait for a signal or sleep until the next task is due
             let _ = tokio::time::timeout(sleep_for, rx.notified()).await;
@@ -277,6 +320,7 @@ impl TaskQueueManager for Server {
         let mut tasks = Vec::new();
         let now = Instant::now();
         let mut next_event = None;
+        let roles = &self.core.network.roles;
         ipc.revision += 1;
         let _ = self
             .store()
@@ -294,14 +338,43 @@ impl TaskQueueManager for Server {
                                     .caused_by(trc::location!())
                                     .ctx(trc::Key::Value, value)
                             })?;
+                            let enabled = match task_type {
+                                TaskType::IndexDocument
+                                | TaskType::UnindexDocument
+                                | TaskType::IndexTrace => roles.search_indexing,
+                                TaskType::AccountMaintenance | TaskType::DestroyAccount => {
+                                    roles.account_maintenance
+                                }
+                                TaskType::StoreMaintenance => roles.store_maintenance,
+                                TaskType::SpamFilterMaintenance => roles.spam_training,
+                                TaskType::CalendarAlarmEmail
+                                | TaskType::CalendarAlarmNotification
+                                | TaskType::CalendarItipMessage
+                                | TaskType::MergeThreads
+                                | TaskType::DmarcReport
+                                | TaskType::TlsReport
+                                | TaskType::RestoreArchivedItem => true,
+                            };
+
+                            if !enabled {
+                                trc::event!(
+                                    TaskManager(TaskManagerEvent::TaskIgnored),
+                                    Id = task_id,
+                                    Details = task_type.as_str(),
+                                    Reason = "Task type is disabled by cluster roles.",
+                                );
+                                return Ok(true);
+                            }
+
                             match ipc.locked.entry(task_id) {
                                 Entry::Occupied(mut entry) => {
                                     let locked = entry.get_mut();
-                                    if locked.expires <= now {
+                                    if locked.expires <= now || locked.due < task_due {
                                         locked.expires = Instant::now()
                                             + std::time::Duration::from_secs(
                                                 DEFAULT_LOCK_EXPIRY + 1,
                                             );
+                                        locked.due = task_due;
                                         tasks.push((
                                             TaskJob {
                                                 id: task_id,
@@ -319,6 +392,7 @@ impl TaskQueueManager for Server {
                                             + std::time::Duration::from_secs(
                                                 DEFAULT_LOCK_EXPIRY + 1,
                                             ),
+                                        due: task_due,
                                         revision: ipc.revision,
                                     });
                                     tasks.push((
@@ -364,33 +438,11 @@ impl TaskQueueManager for Server {
         }
 
         // Dispatch tasks
-        let roles = &self.core.network.roles;
         for (task_job, task_type_idx) in tasks {
-            let enabled = match task_job.typ {
-                TaskType::IndexDocument | TaskType::UnindexDocument | TaskType::IndexTrace => {
-                    roles.search_indexing
-                }
-                TaskType::AccountMaintenance | TaskType::DestroyAccount => {
-                    roles.account_maintenance
-                }
-                TaskType::StoreMaintenance => roles.store_maintenance,
-                TaskType::SpamFilterMaintenance => roles.spam_training,
-                TaskType::CalendarAlarmEmail
-                | TaskType::CalendarAlarmNotification
-                | TaskType::CalendarItipMessage
-                | TaskType::MergeThreads
-                | TaskType::DmarcReport
-                | TaskType::TlsReport
-                | TaskType::RestoreArchivedItem => true,
-            };
+            let tx = &ipc.txs[task_type_idx as usize];
 
-            if enabled {
-                if self.try_lock_task(task_job.id).await
-                    && ipc.txs[task_type_idx as usize]
-                        .send(task_job)
-                        .await
-                        .is_err()
-                {
+            if tx.capacity() > 0 {
+                if self.try_lock_task(task_job.id).await && tx.send(task_job).await.is_err() {
                     trc::event!(
                         Server(trc::ServerEvent::ThreadError),
                         Details = "Error sending task.",
@@ -398,12 +450,8 @@ impl TaskQueueManager for Server {
                     );
                 }
             } else {
-                trc::event!(
-                    TaskManager(TaskManagerEvent::TaskIgnored),
-                    Id = task_job.id,
-                    Details = task_job.typ.as_str(),
-                    Reason = "Task type is disabled by cluster roles.",
-                );
+                // If the channel is full, release the lock so it can be picked up in the next iteration
+                ipc.locked.remove(&task_job.id);
             }
         }
 
@@ -550,4 +598,17 @@ pub fn next_retry_time(
     }
 
     Some(next_time)
+}
+
+impl TaskResult {
+    pub fn is_retry(&self) -> bool {
+        matches!(
+            self,
+            TaskResult::Update(_)
+                | TaskResult::Failure {
+                    typ: TaskFailureType::Temporary | TaskFailureType::Retry(_),
+                    ..
+                }
+        )
+    }
 }

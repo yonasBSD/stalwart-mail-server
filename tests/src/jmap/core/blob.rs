@@ -4,16 +4,15 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{jmap::JMAPTest, store::cleanup::store_blob_expire_all};
+use crate::utils::server::TestServer;
 use email::mailbox::INBOX_ID;
 use serde_json::{Value, json};
 use types::id::Id;
 
-pub async fn test(test: &mut TestServer) {
+pub async fn test(test: &TestServer) {
     println!("Running blob tests...");
-    let server = params.server.clone();
     let account = test.account("jdoe@example.com");
-    store_blob_expire_all(&server.core.storage.data).await;
+    test.blob_expire_all().await;
 
     // Blob/set simple test
     let response = account.jmap_method_call("Blob/upload", json!({
@@ -139,7 +138,7 @@ pub async fn test(test: &mut TestServer) {
         );
     }
 
-    store_blob_expire_all(&server.core.storage.data).await;
+    test.blob_expire_all().await;
 
     // Blob/upload Complex Example
     let response = account
@@ -226,7 +225,7 @@ pub async fn test(test: &mut TestServer) {
             "Pointer {pointer:?} Response: {response:?}",
         );
     }
-    store_blob_expire_all(&server.core.storage.data).await;
+    test.blob_expire_all().await;
 
     // Blob/get Example with Range and Encoding Errors
     let response = account.jmap_method_calls(json!([
@@ -353,7 +352,7 @@ pub async fn test(test: &mut TestServer) {
             "Pointer {pointer:?} Response: {response:?}",
         );
     }
-    store_blob_expire_all(&server.core.storage.data).await;
+    test.blob_expire_all().await;
 
     // Blob/lookup
     let client = account.jmap_client().await;

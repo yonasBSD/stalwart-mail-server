@@ -24,7 +24,7 @@ use std::str::FromStr;
 use types::id::Id;
 
 pub async fn test(test: &mut TestServer) {
-    println!("Running authorization tests...");
+    println!("Running Authorization tests...");
 
     let admin = test.account("admin@example.org");
     let domain_id = admin.find_or_create_domain("example.org").await;
@@ -358,8 +358,10 @@ pub async fn test(test: &mut TestServer) {
                 .assert_destroyed(&[*id]);
         }
     }
+    admin.destroy_account(john).await;
+    admin.destroy_account(jane).await;
 
-    test.assert_is_empty().await;
+    test.cleanup().await;
 }
 
 const SMIME_CERTIFICATE: &str = "-----BEGIN CERTIFICATE-----

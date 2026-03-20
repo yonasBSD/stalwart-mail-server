@@ -7,7 +7,7 @@
 use crate::utils::cleanup::{search_store_destroy, store_assert_is_empty};
 use crate::utils::registry::UnwrapRegistryId;
 use common::Server;
-use registry::schema::structs::Task;
+use registry::schema::structs::{Task, TaskStatus};
 use registry::{
     schema::{
         enums::{BlobStoreType, DataStoreType, InMemoryStoreType, SearchStoreType},
@@ -153,7 +153,7 @@ fn build_search_store(typ: SearchStoreType, _path: &str) -> SearchStore {
     }
 }
 
-pub async fn wait_for_tasks(server: &Server) {
+pub async fn wait_for_tasks(server: &Server, skip_permanent_failures: bool) {
     let mut count = 0;
     loop {
         let mut has_index_tasks = None;
@@ -168,9 +168,14 @@ pub async fn wait_for_tasks(server: &Server) {
                 )
                 .ascending(),
                 |_, value| {
-                    has_index_tasks = Some(Task::deserialize(value)?);
+                    let task = Task::deserialize(value)?;
+                    if skip_permanent_failures && matches!(task.status(), TaskStatus::Failed(_)) {
+                        Ok(true)
+                    } else {
+                        has_index_tasks = Some(task);
 
-                    Ok(false)
+                        Ok(false)
+                    }
                 },
             )
             .await
@@ -190,7 +195,7 @@ pub async fn wait_for_tasks(server: &Server) {
 
 pub async fn assert_is_empty(server: &Server, include_registry: bool) {
     // Wait for pending index tasks
-    wait_for_tasks(server).await;
+    wait_for_tasks(server, false).await;
 
     // Assert is empty
     store_assert_is_empty(

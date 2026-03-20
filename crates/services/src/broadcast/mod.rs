@@ -116,11 +116,14 @@ impl BroadcastBatch<Vec<BroadcastEvent>> {
                 BroadcastEvent::CacheInvalidateAll => {
                     serialized.push(8u8);
                 }
+                BroadcastEvent::CacheInvalidateNegative => {
+                    serialized.push(9u8);
+                }
                 BroadcastEvent::MtaQueueStatus { is_running } => {
                     if *is_running {
-                        serialized.push(9u8);
-                    } else {
                         serialized.push(10u8);
+                    } else {
+                        serialized.push(11u8);
                     }
                 }
             }
@@ -236,8 +239,9 @@ where
                     Ok(Some(BroadcastEvent::CacheInvalidate(items)))
                 }
                 8 => Ok(Some(BroadcastEvent::CacheInvalidateAll)),
-                9 => Ok(Some(BroadcastEvent::MtaQueueStatus { is_running: true })),
-                10 => Ok(Some(BroadcastEvent::MtaQueueStatus { is_running: false })),
+                9 => Ok(Some(BroadcastEvent::CacheInvalidateNegative)),
+                10 => Ok(Some(BroadcastEvent::MtaQueueStatus { is_running: true })),
+                11 => Ok(Some(BroadcastEvent::MtaQueueStatus { is_running: false })),
                 _ => Err(()),
             }
         } else {

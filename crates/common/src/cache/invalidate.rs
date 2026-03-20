@@ -200,7 +200,6 @@ impl Server {
         if changes.is_empty() {
             return Ok(());
         }
-        let c = println!("Invalidating caches for changes: {:?}", changes);
 
         // Invalidate objects linking roles
         let mut role_ids = changes
@@ -262,12 +261,11 @@ impl Server {
     }
 
     pub fn invalidate_all_local_caches(&self) {
+        self.invalidate_all_local_negative_caches();
         self.inner.cache.access_tokens.clear();
         self.inner.cache.domains.clear();
         self.inner.cache.domain_names.clear();
-        self.inner.cache.domain_names_negative.clear();
         self.inner.cache.emails.clear();
-        self.inner.cache.emails_negative.clear();
         self.inner.cache.tenants.clear();
         self.inner.cache.files.clear();
         self.inner.cache.contacts.clear();
@@ -278,6 +276,11 @@ impl Server {
         self.inner.cache.roles.clear();
         self.inner.cache.lists.clear();
         self.inner.data.logos.lock().clear();
+    }
+
+    pub fn invalidate_all_local_negative_caches(&self) {
+        self.inner.cache.domain_names_negative.clear();
+        self.inner.cache.emails_negative.clear();
     }
 
     pub async fn invalidate_local_caches(&self, changes: &[CacheInvalidation]) {
