@@ -35,6 +35,7 @@ pub trait MetricsStore: Sync + Send {
 pub struct MetricsHistory {
     events: AHashMap<MetricType, u32>,
     histograms: AHashMap<MetricType, HistogramHistory>,
+    id_generator: SnowflakeIdGenerator,
 }
 
 #[derive(Default)]
@@ -53,7 +54,7 @@ impl MetricsStore for Store {
     ) -> trc::Result<()> {
         let mut batch = BatchBuilder::new();
         {
-            let mut history = history_.lock();
+            let mut history_guard = history_.lock();
             for event in [
                 MetricType::SmtpConnectionStart,
                 MetricType::ImapConnectionStart,
@@ -80,27 +81,20 @@ impl MetricsStore for Store {
             ] {
                 let reading = Collector::read_metric_counter(event.event_id());
                 if reading > 0 {
-                    let history = history.events.entry(event).or_insert(0);
+                    let history = history_guard.events.entry(event).or_insert(0);
                     let diff = reading - *history;
+                    *history = reading;
 
                     if diff > 0 {
                         #[cfg(not(feature = "test_mode"))]
-                        let metric_id =
-                            SnowflakeIdGenerator::from_sequence_id(event.to_id() as u64)
-                                .unwrap_or_default();
+                        let metric_id = history_guard.id_generator.generate();
 
                         #[cfg(feature = "test_mode")]
                         let metric_id = _timestamp
                             .map(|timestamp| {
-                                SnowflakeIdGenerator::from_timestamp_and_sequence_id(
-                                    timestamp,
-                                    event.to_id() as u64,
-                                )
+                                SnowflakeIdGenerator::global_id_from_timestamp(timestamp).unwrap()
                             })
-                            .unwrap_or_else(|| {
-                                SnowflakeIdGenerator::from_sequence_id(event.to_id() as u64)
-                            })
-                            .unwrap_or_default();
+                            .unwrap_or_else(|| history_guard.id_generator.generate());
 
                         batch.set(
                             ValueClass::Telemetry(TelemetryClass::Metric(metric_id)),
@@ -111,7 +105,6 @@ impl MetricsStore for Store {
                             .to_pickled_vec(),
                         );
                     }
-                    *history = reading;
                 }
             }
 
@@ -121,22 +114,14 @@ impl MetricsStore for Store {
                     let value = gauge.get();
                     if value > 0 {
                         #[cfg(not(feature = "test_mode"))]
-                        let metric_id =
-                            SnowflakeIdGenerator::from_sequence_id(metric.to_id() as u64)
-                                .unwrap_or_default();
+                        let metric_id = history_guard.id_generator.generate();
 
                         #[cfg(feature = "test_mode")]
                         let metric_id = _timestamp
                             .map(|timestamp| {
-                                SnowflakeIdGenerator::from_timestamp_and_sequence_id(
-                                    timestamp,
-                                    metric.to_id() as u64,
-                                )
+                                SnowflakeIdGenerator::global_id_from_timestamp(timestamp).unwrap()
                             })
-                            .unwrap_or_else(|| {
-                                SnowflakeIdGenerator::from_sequence_id(metric.to_id() as u64)
-                            })
-                            .unwrap_or_default();
+                            .unwrap_or_else(|| history_guard.id_generator.generate());
 
                         batch.set(
                             ValueClass::Telemetry(TelemetryClass::Metric(metric_id)),
@@ -160,37 +145,29 @@ impl MetricsStore for Store {
                         | MetricType::DeliveryAttemptTime
                         | MetricType::DnsLookupTime
                 ) {
-                    let history = history.histograms.entry(metric).or_default();
+                    let history = history_guard.histograms.entry(metric).or_default();
                     let sum = histogram.sum();
                     let count = histogram.count();
                     let diff_sum = sum - history.sum;
                     let diff_count = count - history.count;
+                    history.sum = sum;
+                    history.count = count;
                     if diff_sum > 0 || diff_count > 0 {
                         #[cfg(not(feature = "test_mode"))]
-                        let metric_id =
-                            SnowflakeIdGenerator::from_sequence_id(metric.to_id() as u64)
-                                .unwrap_or_default();
+                        let metric_id = history_guard.id_generator.generate();
 
                         #[cfg(feature = "test_mode")]
                         let metric_id = _timestamp
                             .map(|timestamp| {
-                                SnowflakeIdGenerator::from_timestamp_and_sequence_id(
-                                    timestamp,
-                                    metric.to_id() as u64,
-                                )
+                                SnowflakeIdGenerator::global_id_from_timestamp(timestamp).unwrap()
                             })
-                            .unwrap_or_else(|| {
-                                SnowflakeIdGenerator::from_sequence_id(metric.to_id() as u64)
-                            })
-                            .unwrap_or_default();
+                            .unwrap_or_else(|| history_guard.id_generator.generate());
 
                         batch.set(
                             ValueClass::Telemetry(TelemetryClass::Metric(metric_id)),
                             Metric::Histogram(MetricSum { count, metric, sum }).to_pickled_vec(),
                         );
                     }
-                    history.sum = sum;
-                    history.count = count;
                 }
             }
         }

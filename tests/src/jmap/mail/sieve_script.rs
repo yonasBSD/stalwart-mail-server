@@ -14,6 +14,7 @@ use jmap_client::{
     email, mailbox,
     sieve::query::{Comparator, Filter},
 };
+use registry::schema::{prelude::ObjectType, structs::SieveUserScript};
 use std::{
     fs,
     path::PathBuf,
@@ -22,6 +23,20 @@ use std::{
 
 pub async fn test(test: &TestServer) {
     println!("Running Sieve tests...");
+
+    // Create a global script
+    let admin = test.account("admin@example.com");
+    admin
+        .registry_create_object(SieveUserScript {
+            contents: "require \"reject\";\nreject \"Rejected from a global script.\";\nstop;\n"
+                .into(),
+            description: None,
+            is_active: true,
+            name: "common".into(),
+        })
+        .await;
+    admin.reload_settings().await;
+
     let server = test.server.clone();
     let account = test.account("jdoe@example.com");
     let client = account.jmap_client().await;
@@ -491,6 +506,9 @@ pub async fn test(test: &TestServer) {
         client.sieve_script_destroy(&id).await.unwrap();
     }
     test.destroy_all_mailboxes(account).await;
+    admin
+        .registry_destroy_all(ObjectType::SieveUserScript)
+        .await;
     test.assert_is_empty().await;
 }
 

@@ -135,6 +135,10 @@ impl Scripting {
         // Parse trusted scripts
         let mut trusted_scripts = AHashMap::new();
         for script in bp.list_infallible::<SieveSystemScript>().await {
+            if !script.object.is_active {
+                continue;
+            }
+
             match trusted_compiler.compile(script.object.contents.as_bytes()) {
                 Ok(compiled) => {
                     trusted_scripts.insert(script.object.name, compiled.into());
@@ -151,6 +155,10 @@ impl Scripting {
         // Parse untrusted scripts
         let mut untrusted_scripts = AHashMap::new();
         for script in bp.list_infallible::<SieveUserScript>().await {
+            if !script.object.is_active {
+                continue;
+            }
+
             match untrusted_compiler.compile(script.object.contents.as_bytes()) {
                 Ok(compiled) => {
                     untrusted_scripts.insert(script.object.name, compiled.into());

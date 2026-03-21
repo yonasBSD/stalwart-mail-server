@@ -34,6 +34,7 @@ use registry::{
 };
 use std::future::Future;
 use std::{borrow::Cow, cmp::Ordering, fmt::Write, time::Instant};
+use store::write::{AlignedBytes, Archive, RegistryClass};
 use store::{
     IndexKeyPrefix, IterateParams, SerializeInfallible, U32_LEN, ValueKey,
     ahash::AHashMap,
@@ -41,10 +42,6 @@ use store::{
         AssignedId, AssignedIds, BatchBuilder, BlobLink, BlobOp, IndexPropertyClass, ValueClass,
         key::DeserializeBigEndian, now,
     },
-};
-use store::{
-    write::{AlignedBytes, Archive, RegistryClass},
-    xxhash_rust,
 };
 use trc::{AddContext, MessageIngestEvent, SpamEvent};
 use types::{
@@ -660,19 +657,17 @@ impl EmailIngest for Server {
         }
 
         // Merge threads if necessary
-        if !thread_result.merge_ids.is_empty() {
+        if !thread_result.merge_ids.is_empty()
+            || matches!(
+                params.source,
+                IngestSource::Jmap { .. } | IngestSource::Imap { .. }
+            )
+        {
             batch.schedule_task(Task::MergeThreads(TaskMergeThreads {
                 account_id: account_id.into(),
-                document_id: document_id.into(),
                 status: TaskStatus::now(),
-                thread_ids: Map::new(
-                    thread_result
-                        .merge_ids
-                        .into_iter()
-                        .map(|id| id.into())
-                        .collect(),
-                ),
-                thread_hash: thread_result.thread_hash.to_string(),
+                thread_name: thread_result.thread_hash.to_string(),
+                message_ids: Map::new(message_ids.into_iter().map(|id| id.to_string()).collect()),
             }));
         }
 
@@ -942,10 +937,7 @@ impl EmailIngest for Server {
             .to_pickled_vec();
 
             let object_id = ObjectType::SpamTrainingSample.to_id();
-            let item_id = SnowflakeIdGenerator::from_sequence_id(xxhash_rust::xxh3::xxh3_64(
-                sample.as_slice(),
-            ))
-            .unwrap_or_default();
+            let item_id = SnowflakeIdGenerator::global_id().unwrap_or_default();
             batch
                 .set(
                     BlobOp::Link {
@@ -979,7 +971,7 @@ impl EmailIngest for Server {
     }
 }
 
-fn has_message_id(a: &[CheekyHash], b: &[u8]) -> bool {
+pub fn has_message_id(a: &[CheekyHash], b: &[u8]) -> bool {
     let mut i = 0;
     let mut j = 0;
 

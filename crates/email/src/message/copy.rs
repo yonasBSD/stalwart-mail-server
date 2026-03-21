@@ -220,16 +220,9 @@ impl EmailCopy for Server {
         if !thread_result.merge_ids.is_empty() {
             batch.schedule_task(Task::MergeThreads(TaskMergeThreads {
                 account_id: to_account_id.into(),
-                document_id: document_id.into(),
                 status: TaskStatus::now(),
-                thread_ids: Map::new(
-                    thread_result
-                        .merge_ids
-                        .into_iter()
-                        .map(|id| id.into())
-                        .collect(),
-                ),
-                thread_hash: thread_result.thread_hash.to_string(),
+                thread_name: thread_result.thread_hash.to_string(),
+                message_ids: Map::new(message_ids.into_iter().map(|id| id.to_string()).collect()),
             }));
         }
 

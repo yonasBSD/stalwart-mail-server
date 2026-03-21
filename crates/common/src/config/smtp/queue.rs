@@ -179,7 +179,7 @@ pub struct QueueQuota {
 
 #[derive(Clone, Hash, PartialEq, Eq)]
 pub struct RelayConfig {
-    pub address: HostOrIp<String>,
+    pub address: HostOrIp<Box<str>, IpStr>,
     pub port: u16,
     pub protocol: ServerProtocol,
     pub auth: Option<Credentials<String>>,
@@ -188,9 +188,15 @@ pub struct RelayConfig {
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub enum HostOrIp<T> {
-    Host(T),
-    Ip { ip: IpAddr, ip_str: String },
+pub enum HostOrIp<N, I> {
+    Host(N),
+    Ip(I),
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct IpStr {
+    pub ip: IpAddr,
+    pub ip_str: Box<str>,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -375,12 +381,12 @@ impl QueueConfig {
                         route.name,
                         RoutingStrategy::Relay(RelayConfig {
                             address: if let Ok(ip) = route.address.parse() {
-                                HostOrIp::Ip {
+                                HostOrIp::Ip(IpStr {
                                     ip,
-                                    ip_str: route.address,
-                                }
+                                    ip_str: route.address.into(),
+                                })
                             } else {
-                                HostOrIp::Host(route.address)
+                                HostOrIp::Host(route.address.into())
                             },
                             port: route.port as u16,
                             protocol: match route.protocol {

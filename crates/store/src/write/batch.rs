@@ -474,8 +474,7 @@ impl BatchBuilder {
         let due = task.due_timestamp();
         let class = task.object_type().to_id();
         let task = task.to_pickled_vec();
-        let id = SnowflakeIdGenerator::from_sequence_id(xxhash_rust::xxh3::xxh3_64(&task))
-            .unwrap_or_default();
+        let id = SnowflakeIdGenerator::global_id().unwrap_or_default();
 
         self.set(ValueClass::TaskQueue(TaskQueueClass::Task { id }), task)
             .set(

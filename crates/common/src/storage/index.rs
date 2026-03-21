@@ -469,10 +469,7 @@ fn build_index(
             let object_account_id = batch.last_account_id().unwrap_or_default();
             let object_type = batch.last_collection().unwrap_or(Collection::None);
             let object_id = batch.last_document_id().unwrap_or_default();
-            let notification_id = SnowflakeIdGenerator::from_sequence_id(
-                object_type as u64 ^ object_account_id as u64,
-            )
-            .unwrap_or_default();
+            let notification_id = SnowflakeIdGenerator::global_id().unwrap_or_default();
 
             for item in value.as_ref() {
                 if set {
@@ -630,10 +627,7 @@ fn merge_index(
             let object_account_id = batch.last_account_id().unwrap_or_default();
             let object_type = batch.last_collection().unwrap_or(Collection::None);
             let object_id = batch.last_document_id().unwrap_or_default();
-            let notification_id = SnowflakeIdGenerator::from_sequence_id(
-                object_type as u64 ^ object_account_id as u64,
-            )
-            .unwrap_or_default();
+            let notification_id = SnowflakeIdGenerator::global_id().unwrap_or_default();
 
             match (has_old_acl, has_new_acl) {
                 (true, true) => {

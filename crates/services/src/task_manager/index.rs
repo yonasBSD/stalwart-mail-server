@@ -585,10 +585,8 @@ async fn delete_email_metadata(
                     use store::{
                         SerializeInfallible,
                         write::{BlobLink, BlobOp, RegistryClass, now},
-                        xxhash_rust,
                     };
                     use types::blob::BlobId;
-                    use utils::snowflake::SnowflakeIdGenerator;
 
                     let root_part = metadata.root_part();
                     let from: Option<String> = root_part.headers.iter().find_map(|h| {
@@ -632,10 +630,7 @@ async fn delete_email_metadata(
                     })
                     .to_pickled_vec();
                     let object_id = ObjectType::ArchivedItem.to_id();
-                    let item_id = SnowflakeIdGenerator::from_sequence_id(
-                        xxhash_rust::xxh3::xxh3_64(item.as_slice()),
-                    )
-                    .unwrap_or_default();
+                    let item_id = server.inner.data.registry_id_gen.generate();
 
                     batch
                         .set(

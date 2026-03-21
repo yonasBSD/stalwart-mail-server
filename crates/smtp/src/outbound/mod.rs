@@ -15,7 +15,7 @@ use common::config::{
 use mail_auth::IpLookupStrategy;
 use mail_send::Credentials;
 use smtp_proto::{Response, Severity};
-use std::borrow::Cow;
+use std::{borrow::Cow, net::IpAddr};
 
 pub mod client;
 pub mod dane;
@@ -247,14 +247,14 @@ impl NextHop<'_> {
                 }
             }
             NextHop::Relay(host) => match &host.address {
-                HostOrIp::Host(host) => host.as_str(),
-                HostOrIp::Ip { ip_str, .. } => ip_str.as_str(),
+                HostOrIp::Host(host) => host.as_ref(),
+                HostOrIp::Ip(ip) => ip.ip_str.as_ref(),
             },
         }
     }
 
     #[inline(always)]
-    pub fn fqdn_hostname(&self) -> HostOrIp<Cow<'_, str>> {
+    pub fn fqdn_hostname(&self) -> HostOrIp<Cow<'_, str>, IpAddr> {
         match self {
             NextHop::MX { host, .. } => {
                 if !host.ends_with('.') {
@@ -264,11 +264,8 @@ impl NextHop<'_> {
                 }
             }
             NextHop::Relay(host) => match &host.address {
-                HostOrIp::Host(host) => HostOrIp::Host(host.as_str().into()),
-                HostOrIp::Ip { ip, ip_str } => HostOrIp::Ip {
-                    ip: *ip,
-                    ip_str: ip_str.as_str().into(),
-                },
+                HostOrIp::Host(host) => HostOrIp::Host(host.as_ref().into()),
+                HostOrIp::Ip(ip) => HostOrIp::Ip(ip.ip),
             },
         }
     }

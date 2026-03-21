@@ -429,245 +429,255 @@ async fn delivery_diagnose(
         tx.send(DeliveryStage::IpLookupStart).await?;
 
         let now = Instant::now();
-        let hostname = match host.fqdn_hostname() {
-            HostOrIp::Host(host) => host.into_owned(),
-            HostOrIp::Ip { ip_str, .. } => ip_str,
+        let remote_ips = match host.fqdn_hostname() {
+            HostOrIp::Host(hostname) => {
+                match server
+                    .ip_lookup(&hostname, IpLookupStrategy::Ipv4thenIpv6, usize::MAX)
+                    .await
+                {
+                    Ok(remote_ips) if !remote_ips.is_empty() => remote_ips,
+                    Ok(_) => {
+                        tx.send(DeliveryStage::IpLookupError {
+                            reason: "No IP addresses found for host".to_string(),
+                            elapsed: now.elapsed_ms(),
+                        })
+                        .await?;
+                        continue;
+                    }
+                    Err(err) => {
+                        tx.send(DeliveryStage::IpLookupError {
+                            reason: err.to_string(),
+                            elapsed: now.elapsed_ms(),
+                        })
+                        .await?;
+                        continue;
+                    }
+                }
+            }
+            HostOrIp::Ip(ip) => vec![ip],
         };
-        match server
-            .ip_lookup(&hostname, IpLookupStrategy::Ipv4thenIpv6, usize::MAX)
-            .await
-        {
-            Ok(remote_ips) if !remote_ips.is_empty() => {
-                tx.send(DeliveryStage::IpLookupSuccess {
-                    remote_ips: remote_ips.clone(),
-                    elapsed: now.elapsed_ms(),
-                })
+
+        tx.send(DeliveryStage::IpLookupSuccess {
+            remote_ips: remote_ips.clone(),
+            elapsed: now.elapsed_ms(),
+        })
+        .await?;
+
+        for remote_ip in remote_ips {
+            // Start connection
+            tx.send(DeliveryStage::ConnectionStart { remote_ip })
                 .await?;
 
-                for remote_ip in remote_ips {
-                    // Start connection
-                    tx.send(DeliveryStage::ConnectionStart { remote_ip })
-                        .await?;
+            let now = Instant::now();
+            match SmtpClient::connect(SocketAddr::new(remote_ip, 25), timeout, 0).await {
+                Ok(mut client) => {
+                    tx.send(DeliveryStage::ConnectionSuccess {
+                        elapsed: now.elapsed_ms(),
+                    })
+                    .await?;
+
+                    // Read greeting
+                    tx.send(DeliveryStage::ReadGreetingStart).await?;
 
                     let now = Instant::now();
-                    match SmtpClient::connect(SocketAddr::new(remote_ip, 25), timeout, 0).await {
-                        Ok(mut client) => {
-                            tx.send(DeliveryStage::ConnectionSuccess {
+                    if let Err(status) = client.read_greeting(hostname).await {
+                        tx.send(DeliveryStage::ReadGreetingError {
+                            elapsed: now.elapsed_ms(),
+                            reason: status.to_string(),
+                        })
+                        .await?;
+
+                        continue;
+                    }
+                    tx.send(DeliveryStage::ReadGreetingSuccess {
+                        elapsed: now.elapsed_ms(),
+                    })
+                    .await?;
+
+                    // Say EHLO
+                    tx.send(DeliveryStage::EhloStart).await?;
+
+                    let now = Instant::now();
+                    let capabilities = match tokio::time::timeout(timeout, async {
+                        client
+                            .stream
+                            .write_all(format!("EHLO {local_host}\r\n",).as_bytes())
+                            .await?;
+                        client.stream.flush().await?;
+                        client.read_ehlo().await
+                    })
+                    .await
+                    {
+                        Ok(Ok(capabilities)) => {
+                            tx.send(DeliveryStage::EhloSuccess {
                                 elapsed: now.elapsed_ms(),
                             })
                             .await?;
 
-                            // Read greeting
-                            tx.send(DeliveryStage::ReadGreetingStart).await?;
+                            capabilities
+                        }
+                        Ok(Err(err)) => {
+                            tx.send(DeliveryStage::EhloError {
+                                elapsed: now.elapsed_ms(),
+                                reason: err.to_string(),
+                            })
+                            .await?;
 
-                            let now = Instant::now();
-                            if let Err(status) = client.read_greeting(&hostname).await {
-                                tx.send(DeliveryStage::ReadGreetingError {
+                            continue;
+                        }
+                        Err(_) => {
+                            tx.send(DeliveryStage::EhloError {
+                                elapsed: now.elapsed_ms(),
+                                reason: "Timed out reading response".to_string(),
+                            })
+                            .await?;
+
+                            continue;
+                        }
+                    };
+
+                    // Start TLS
+                    tx.send(DeliveryStage::StartTlsStart).await?;
+
+                    let now = Instant::now();
+                    let mut client = match client
+                        .try_start_tls(
+                            &server.inner.data.smtp_connectors.pki_verify,
+                            hostname,
+                            &capabilities,
+                        )
+                        .await
+                    {
+                        StartTlsResult::Success { smtp_client } => {
+                            tx.send(DeliveryStage::StartTlsSuccess {
+                                elapsed: now.elapsed_ms(),
+                            })
+                            .await?;
+
+                            smtp_client
+                        }
+                        StartTlsResult::Error { error } => {
+                            tx.send(DeliveryStage::StartTlsError {
+                                elapsed: now.elapsed_ms(),
+                                reason: error.to_string(),
+                            })
+                            .await?;
+
+                            continue;
+                        }
+                        StartTlsResult::Unavailable { response, .. } => {
+                            tx.send(DeliveryStage::StartTlsError {
+                                elapsed: now.elapsed_ms(),
+                                reason: response.map(|r| r.to_string()).unwrap_or_else(|| {
+                                    "STARTTLS not advertised by host".to_string()
+                                }),
+                            })
+                            .await?;
+
+                            continue;
+                        }
+                    };
+
+                    // Verify DANE policy
+                    if let Some(dane_policy) = &dane_policy {
+                        if let Err(err) = dane_policy.verify(
+                            0,
+                            hostname,
+                            client.tls_connection().peer_certificates(),
+                        ) {
+                            tx.send(DeliveryStage::DaneVerifyError {
+                                reason: err.to_string(),
+                            })
+                            .await?;
+                        } else {
+                            tx.send(DeliveryStage::DaneVerifySuccess).await?;
+                        }
+                    }
+
+                    // Say EHLO again (some SMTP servers require this)
+                    tx.send(DeliveryStage::EhloStart).await?;
+
+                    let now = Instant::now();
+                    match tokio::time::timeout(timeout, async {
+                        client
+                            .stream
+                            .write_all(format!("EHLO {local_host}\r\n",).as_bytes())
+                            .await?;
+                        client.stream.flush().await?;
+                        client.read_ehlo().await
+                    })
+                    .await
+                    {
+                        Ok(Ok(_)) => {
+                            tx.send(DeliveryStage::EhloSuccess {
+                                elapsed: now.elapsed_ms(),
+                            })
+                            .await?;
+                        }
+                        Ok(Err(err)) => {
+                            tx.send(DeliveryStage::EhloError {
+                                elapsed: now.elapsed_ms(),
+                                reason: err.to_string(),
+                            })
+                            .await?;
+
+                            continue;
+                        }
+                        Err(_) => {
+                            tx.send(DeliveryStage::EhloError {
+                                elapsed: now.elapsed_ms(),
+                                reason: "Timed out reading response".to_string(),
+                            })
+                            .await?;
+
+                            continue;
+                        }
+                    }
+
+                    // Verify recipient
+                    let mut is_success = email.is_none();
+                    if let Some(email) = &email {
+                        // MAIL FROM
+                        tx.send(DeliveryStage::MailFromStart).await?;
+
+                        let now = Instant::now();
+
+                        match client.cmd(b"MAIL FROM:<>\r\n").await.and_then(|r| {
+                            if r.is_positive_completion() {
+                                Ok(r)
+                            } else {
+                                Err(mail_send::Error::UnexpectedReply(r))
+                            }
+                        }) {
+                            Ok(_) => {
+                                tx.send(DeliveryStage::MailFromSuccess {
                                     elapsed: now.elapsed_ms(),
-                                    reason: status.to_string(),
                                 })
                                 .await?;
 
-                                continue;
-                            }
-                            tx.send(DeliveryStage::ReadGreetingSuccess {
-                                elapsed: now.elapsed_ms(),
-                            })
-                            .await?;
-
-                            // Say EHLO
-                            tx.send(DeliveryStage::EhloStart).await?;
-
-                            let now = Instant::now();
-                            let capabilities = match tokio::time::timeout(timeout, async {
-                                client
-                                    .stream
-                                    .write_all(format!("EHLO {local_host}\r\n",).as_bytes())
-                                    .await?;
-                                client.stream.flush().await?;
-                                client.read_ehlo().await
-                            })
-                            .await
-                            {
-                                Ok(Ok(capabilities)) => {
-                                    tx.send(DeliveryStage::EhloSuccess {
-                                        elapsed: now.elapsed_ms(),
-                                    })
-                                    .await?;
-
-                                    capabilities
-                                }
-                                Ok(Err(err)) => {
-                                    tx.send(DeliveryStage::EhloError {
-                                        elapsed: now.elapsed_ms(),
-                                        reason: err.to_string(),
-                                    })
-                                    .await?;
-
-                                    continue;
-                                }
-                                Err(_) => {
-                                    tx.send(DeliveryStage::EhloError {
-                                        elapsed: now.elapsed_ms(),
-                                        reason: "Timed out reading response".to_string(),
-                                    })
-                                    .await?;
-
-                                    continue;
-                                }
-                            };
-
-                            // Start TLS
-                            tx.send(DeliveryStage::StartTlsStart).await?;
-
-                            let now = Instant::now();
-                            let mut client = match client
-                                .try_start_tls(
-                                    &server.inner.data.smtp_connectors.pki_verify,
-                                    &hostname,
-                                    &capabilities,
-                                )
-                                .await
-                            {
-                                StartTlsResult::Success { smtp_client } => {
-                                    tx.send(DeliveryStage::StartTlsSuccess {
-                                        elapsed: now.elapsed_ms(),
-                                    })
-                                    .await?;
-
-                                    smtp_client
-                                }
-                                StartTlsResult::Error { error } => {
-                                    tx.send(DeliveryStage::StartTlsError {
-                                        elapsed: now.elapsed_ms(),
-                                        reason: error.to_string(),
-                                    })
-                                    .await?;
-
-                                    continue;
-                                }
-                                StartTlsResult::Unavailable { response, .. } => {
-                                    tx.send(DeliveryStage::StartTlsError {
-                                        elapsed: now.elapsed_ms(),
-                                        reason: response.map(|r| r.to_string()).unwrap_or_else(
-                                            || "STARTTLS not advertised by host".to_string(),
-                                        ),
-                                    })
-                                    .await?;
-
-                                    continue;
-                                }
-                            };
-
-                            // Verify DANE policy
-                            if let Some(dane_policy) = &dane_policy {
-                                if let Err(err) = dane_policy.verify(
-                                    0,
-                                    &hostname,
-                                    client.tls_connection().peer_certificates(),
-                                ) {
-                                    tx.send(DeliveryStage::DaneVerifyError {
-                                        reason: err.to_string(),
-                                    })
-                                    .await?;
-                                } else {
-                                    tx.send(DeliveryStage::DaneVerifySuccess).await?;
-                                }
-                            }
-
-                            // Say EHLO again (some SMTP servers require this)
-                            tx.send(DeliveryStage::EhloStart).await?;
-
-                            let now = Instant::now();
-                            match tokio::time::timeout(timeout, async {
-                                client
-                                    .stream
-                                    .write_all(format!("EHLO {local_host}\r\n",).as_bytes())
-                                    .await?;
-                                client.stream.flush().await?;
-                                client.read_ehlo().await
-                            })
-                            .await
-                            {
-                                Ok(Ok(_)) => {
-                                    tx.send(DeliveryStage::EhloSuccess {
-                                        elapsed: now.elapsed_ms(),
-                                    })
-                                    .await?;
-                                }
-                                Ok(Err(err)) => {
-                                    tx.send(DeliveryStage::EhloError {
-                                        elapsed: now.elapsed_ms(),
-                                        reason: err.to_string(),
-                                    })
-                                    .await?;
-
-                                    continue;
-                                }
-                                Err(_) => {
-                                    tx.send(DeliveryStage::EhloError {
-                                        elapsed: now.elapsed_ms(),
-                                        reason: "Timed out reading response".to_string(),
-                                    })
-                                    .await?;
-
-                                    continue;
-                                }
-                            }
-
-                            // Verify recipient
-                            let mut is_success = email.is_none();
-                            if let Some(email) = &email {
-                                // MAIL FROM
-                                tx.send(DeliveryStage::MailFromStart).await?;
+                                // RCPT TO
+                                tx.send(DeliveryStage::RcptToStart).await?;
 
                                 let now = Instant::now();
-
-                                match client.cmd(b"MAIL FROM:<>\r\n").await.and_then(|r| {
-                                    if r.is_positive_completion() {
-                                        Ok(r)
-                                    } else {
-                                        Err(mail_send::Error::UnexpectedReply(r))
-                                    }
-                                }) {
+                                match client
+                                    .cmd(format!("RCPT TO:<{email}>\r\n").as_bytes())
+                                    .await
+                                    .and_then(|r| {
+                                        if r.is_positive_completion() {
+                                            Ok(r)
+                                        } else {
+                                            Err(mail_send::Error::UnexpectedReply(r))
+                                        }
+                                    }) {
                                     Ok(_) => {
-                                        tx.send(DeliveryStage::MailFromSuccess {
+                                        is_success = true;
+                                        tx.send(DeliveryStage::RcptToSuccess {
                                             elapsed: now.elapsed_ms(),
                                         })
                                         .await?;
-
-                                        // RCPT TO
-                                        tx.send(DeliveryStage::RcptToStart).await?;
-
-                                        let now = Instant::now();
-                                        match client
-                                            .cmd(format!("RCPT TO:<{email}>\r\n").as_bytes())
-                                            .await
-                                            .and_then(|r| {
-                                                if r.is_positive_completion() {
-                                                    Ok(r)
-                                                } else {
-                                                    Err(mail_send::Error::UnexpectedReply(r))
-                                                }
-                                            }) {
-                                            Ok(_) => {
-                                                is_success = true;
-                                                tx.send(DeliveryStage::RcptToSuccess {
-                                                    elapsed: now.elapsed_ms(),
-                                                })
-                                                .await?;
-                                            }
-                                            Err(err) => {
-                                                tx.send(DeliveryStage::RcptToError {
-                                                    reason: err.to_string(),
-                                                    elapsed: now.elapsed_ms(),
-                                                })
-                                                .await?;
-                                            }
-                                        }
                                     }
                                     Err(err) => {
-                                        tx.send(DeliveryStage::MailFromError {
+                                        tx.send(DeliveryStage::RcptToError {
                                             reason: err.to_string(),
                                             elapsed: now.elapsed_ms(),
                                         })
@@ -675,44 +685,37 @@ async fn delivery_diagnose(
                                     }
                                 }
                             }
-
-                            // QUIT
-                            tx.send(DeliveryStage::QuitStart).await?;
-
-                            let now = Instant::now();
-                            client.quit().await;
-                            tx.send(DeliveryStage::QuitCompleted {
-                                elapsed: now.elapsed_ms(),
-                            })
-                            .await?;
-
-                            if is_success {
-                                break 'outer;
+                            Err(err) => {
+                                tx.send(DeliveryStage::MailFromError {
+                                    reason: err.to_string(),
+                                    elapsed: now.elapsed_ms(),
+                                })
+                                .await?;
                             }
                         }
-                        Err(err) => {
-                            tx.send(DeliveryStage::ConnectionError {
-                                elapsed: now.elapsed_ms(),
-                                reason: err.to_string(),
-                            })
-                            .await?;
-                        }
+                    }
+
+                    // QUIT
+                    tx.send(DeliveryStage::QuitStart).await?;
+
+                    let now = Instant::now();
+                    client.quit().await;
+                    tx.send(DeliveryStage::QuitCompleted {
+                        elapsed: now.elapsed_ms(),
+                    })
+                    .await?;
+
+                    if is_success {
+                        break 'outer;
                     }
                 }
-            }
-            Ok(_) => {
-                tx.send(DeliveryStage::IpLookupError {
-                    reason: "No IP addresses found for host".to_string(),
-                    elapsed: now.elapsed_ms(),
-                })
-                .await?;
-            }
-            Err(err) => {
-                tx.send(DeliveryStage::IpLookupError {
-                    reason: err.to_string(),
-                    elapsed: now.elapsed_ms(),
-                })
-                .await?;
+                Err(err) => {
+                    tx.send(DeliveryStage::ConnectionError {
+                        elapsed: now.elapsed_ms(),
+                        reason: err.to_string(),
+                    })
+                    .await?;
+                }
             }
         }
     }

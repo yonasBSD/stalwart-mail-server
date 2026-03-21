@@ -9,8 +9,8 @@ use registry::{
     schema::{
         enums::{MtaProtocol, Permission},
         structs::{
-            CalendarAlarm, Expression, ExpressionMatch, Imap, Jmap, MtaOutboundStrategy, MtaRoute,
-            MtaRouteRelay, MtaStageAuth, Sharing,
+            CalendarAlarm, Expression, ExpressionMatch, Imap, Jmap, MtaExtensions,
+            MtaOutboundStrategy, MtaRoute, MtaRouteRelay, MtaStageAuth, Sharing,
         },
     },
     types::list::List,
@@ -153,17 +153,29 @@ async fn jmap_tests() {
             address: "127.0.0.1".into(),
             port: 9999,
             allow_invalid_certs: true,
-            implicit_tls: true,
+            implicit_tls: false,
             name: "mock-smtp".into(),
             protocol: MtaProtocol::Smtp,
             ..Default::default()
         }))
         .await;
+    admin
+        .registry_create_object(MtaExtensions {
+            future_release: Expression {
+                match_: List::from_iter([ExpressionMatch {
+                    if_: "!is_empty(authenticated_as)".into(),
+                    then: "99999999d".into(),
+                }]),
+                else_: "false".to_string(),
+            },
+            ..Default::default()
+        })
+        .await;
     admin.reload_settings().await;
 
     test.insert_account(admin);
 
-    /*mail::get::test(&test).await;
+    mail::get::test(&test).await;
     mail::set::test(&test).await;
     mail::parse::test(&test).await;
     mail::query::test(&test).await;
@@ -174,12 +186,12 @@ async fn jmap_tests() {
     mail::thread_get::test(&test).await;
     mail::thread_merge::test(&test).await;
     mail::mailbox::test(&test).await;
-    mail::acl::test(&test).await;*/
+    mail::acl::test(&test).await;
     mail::sieve_script::test(&test).await;
     mail::vacation_response::test(&test).await;
     mail::submission::test(&test).await;
 
-    /*core::event_source::test(&test).await;
+    core::event_source::test(&test).await;
     core::websocket::test(&test).await;
     core::push_subscription::test(&test).await;
     core::blob::test(&test).await;
@@ -200,7 +212,7 @@ async fn jmap_tests() {
     calendar::acl::test(&test).await;
 
     principal::get::test(&test).await;
-    principal::availability::test(&test).await;*/
+    principal::availability::test(&test).await;
 
     if test.is_reset() {
         test.temp_dir.delete();

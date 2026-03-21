@@ -154,6 +154,7 @@ pub struct Data {
     pub jmap_id_gen: SnowflakeIdGenerator,
     pub queue_id_gen: SnowflakeIdGenerator,
     pub span_id_gen: SnowflakeIdGenerator,
+    pub registry_id_gen: SnowflakeIdGenerator,
     pub queue_status: AtomicBool,
 
     pub applications: WebApplicationManager,

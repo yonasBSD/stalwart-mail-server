@@ -24,6 +24,7 @@ const NODE_ID_MASK: u64 = (1 << NODE_ID_LEN) - 1;
 const DEFAULT_EPOCH: u64 = 1632280000; // 52 years after UNIX_EPOCH
 
 static mut NODE_ID: u64 = 1;
+static SEQUENCE_ID: AtomicU64 = AtomicU64::new(0);
 
 /*
 
@@ -74,12 +75,13 @@ impl SnowflakeIdGenerator {
             .and_then(|diff| Self::from_duration(Duration::from_secs(diff)))
     }
 
-    pub fn from_timestamp_and_sequence_id(timestamp: u64, sequence: u64) -> Option<u64> {
+    pub fn global_id_from_timestamp(timestamp: u64) -> Option<u64> {
+        let sequence = SEQUENCE_ID.fetch_add(1, Ordering::Relaxed) & SEQUENCE_MASK;
         Self::from_timestamp(timestamp).map(|id| id | (sequence << NODE_ID_LEN) | node_id())
     }
 
-    pub fn from_sequence_id(sequence: u64) -> Option<u64> {
-        let sequence = sequence & SEQUENCE_MASK;
+    pub fn global_id() -> Option<u64> {
+        let sequence = SEQUENCE_ID.fetch_add(1, Ordering::Relaxed) & SEQUENCE_MASK;
 
         (SystemTime::UNIX_EPOCH + Duration::from_secs(DEFAULT_EPOCH))
             .elapsed()

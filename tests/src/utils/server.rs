@@ -350,7 +350,7 @@ impl TestServer {
 
     pub async fn destroy_all_mailboxes(&self, account: &Account) {
         self.wait_for_tasks().await;
-        destroy_all_mailboxes_no_wait(&account.jmap_client().await).await;
+        account.jmap_client().await.destroy_all_mailboxes().await;
     }
 }
 
@@ -358,16 +358,22 @@ impl Account {
     pub async fn destroy_all_mailboxes_for_account(&self, account_id: u32) {
         let mut client = self.jmap_client().await;
         client.set_default_account_id(Id::from(account_id));
-        destroy_all_mailboxes_no_wait(&client).await;
+        client.destroy_all_mailboxes().await;
     }
 }
 
-async fn destroy_all_mailboxes_no_wait(client: &Client) {
-    let mut request = client.build();
-    request.query_mailbox().arguments().sort_as_tree(true);
-    let mut ids = request.send_query_mailbox().await.unwrap().take_ids();
-    ids.reverse();
-    for id in ids {
-        client.mailbox_destroy(&id, true).await.unwrap();
+pub trait DestroyAllMailboxes {
+    fn destroy_all_mailboxes(&self) -> impl Future<Output = ()>;
+}
+
+impl DestroyAllMailboxes for Client {
+    async fn destroy_all_mailboxes(&self) {
+        let mut request = self.build();
+        request.query_mailbox().arguments().sort_as_tree(true);
+        let mut ids = request.send_query_mailbox().await.unwrap().take_ids();
+        ids.reverse();
+        for id in ids {
+            self.mailbox_destroy(&id, true).await.unwrap();
+        }
     }
 }

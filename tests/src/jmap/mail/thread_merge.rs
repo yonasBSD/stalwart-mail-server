@@ -4,7 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{store::deflate_test_resource, utils::server::TestServer};
+use crate::{
+    store::deflate_test_resource,
+    utils::server::{DestroyAllMailboxes, TestServer},
+};
 use ::email::{
     cache::MessageCacheFetch,
     mailbox::INBOX_ID,
@@ -15,7 +18,7 @@ use jmap_client::{email, mailbox::Role};
 use mail_parser::{MessageParser, mailbox::mbox::MessageIterator};
 use std::{io::Cursor, str::FromStr, time::Duration};
 use store::{
-    ahash::{AHashMap, AHashSet},
+    ahash::AHashSet,
     rand::{self, Rng},
 };
 use types::id::Id;
@@ -29,10 +32,20 @@ async fn test_single_thread(test_server: &TestServer) {
     println!("Running Email Merge Threads tests...");
     let account = test_server.account("admin@example.com");
     let mut client = account.jmap_client().await;
-    let mut all_mailboxes = AHashMap::default();
 
-    for (base_test_num, test) in [test_1(), test_2(), test_3()].iter().enumerate() {
-        let base_test_num = ((base_test_num * 6) as u32) + 1;
+    let mut account_ids = Vec::new();
+    for name in [
+        "admin@example.com",
+        "jdoe@example.com",
+        "jane.smith@example.com",
+        "bill@example.com",
+        "robert@example.com",
+        "sales@example.com",
+    ] {
+        account_ids.push(test_server.account(name).id_string());
+    }
+
+    for (test_group_num, test) in [test_1(), test_2(), test_3()].iter().enumerate() {
         let mut messages = Vec::new();
         let mut total_messages = 0;
         let mut messages_per_thread =
@@ -41,10 +54,10 @@ async fn test_single_thread(test_server: &TestServer) {
 
         let mut mailbox_ids = Vec::with_capacity(6);
 
-        for test_num in 0..=5 {
+        for account_id in &account_ids {
             mailbox_ids.push(
                 client
-                    .set_default_account_id(Id::new((base_test_num + test_num) as u64).to_string())
+                    .set_default_account_id(*account_id)
                     .mailbox_create("Thread nightmare", None::<String>, Role::None)
                     .await
                     .unwrap()
@@ -54,7 +67,7 @@ async fn test_single_thread(test_server: &TestServer) {
 
         for message in &messages {
             client
-                .set_default_account_id(Id::new(base_test_num as u64).to_string())
+                .set_default_account_id(account_ids[0])
                 .email_import(
                     message.to_string().into_bytes(),
                     [mailbox_ids[0].clone()],
@@ -67,7 +80,7 @@ async fn test_single_thread(test_server: &TestServer) {
 
         for message in messages.iter().rev() {
             client
-                .set_default_account_id(Id::new((base_test_num + 1) as u64).to_string())
+                .set_default_account_id(account_ids[1])
                 .email_import(
                     message.to_string().into_bytes(),
                     [mailbox_ids[1].clone()],
@@ -79,8 +92,7 @@ async fn test_single_thread(test_server: &TestServer) {
         }
 
         for chunk in messages.chunks(5) {
-            client.set_default_account_id(Id::new((base_test_num + 2) as u64).to_string());
-
+            client.set_default_account_id(account_ids[2]);
             for message in chunk {
                 client
                     .email_import(
@@ -93,8 +105,7 @@ async fn test_single_thread(test_server: &TestServer) {
                     .unwrap();
             }
 
-            client.set_default_account_id(Id::new((base_test_num + 3) as u64).to_string());
-
+            client.set_default_account_id(account_ids[3]);
             for message in chunk.iter().rev() {
                 client
                     .email_import(
@@ -109,8 +120,7 @@ async fn test_single_thread(test_server: &TestServer) {
         }
 
         for chunk in messages.chunks(5).rev() {
-            client.set_default_account_id(Id::new((base_test_num + 4) as u64).to_string());
-
+            client.set_default_account_id(account_ids[4]);
             for message in chunk {
                 client
                     .email_import(
@@ -123,8 +133,7 @@ async fn test_single_thread(test_server: &TestServer) {
                     .unwrap();
             }
 
-            client.set_default_account_id(Id::new((base_test_num + 5) as u64).to_string());
-
+            client.set_default_account_id(account_ids[5]);
             for message in chunk.iter().rev() {
                 client
                     .email_import(
@@ -137,14 +146,13 @@ async fn test_single_thread(test_server: &TestServer) {
                     .unwrap();
             }
         }
-
         test_server.wait_for_tasks().await;
 
         for test_num in 0..=5 {
             let result = client
-                .set_default_account_id(Id::new((base_test_num + test_num) as u64).to_string())
+                .set_default_account_id(account_ids[test_num])
                 .email_query(
-                    email::query::Filter::in_mailbox(mailbox_ids[test_num as usize].clone()).into(),
+                    email::query::Filter::in_mailbox(mailbox_ids[test_num].clone()).into(),
                     None::<Vec<_>>,
                 )
                 .await
@@ -154,7 +162,7 @@ async fn test_single_thread(test_server: &TestServer) {
                 result.ids().len(),
                 total_messages,
                 "test# {}/{}",
-                base_test_num,
+                test_group_num,
                 test_num
             );
 
@@ -163,15 +171,6 @@ async fn test_single_thread(test_server: &TestServer) {
                 .iter()
                 .map(|id| Id::from_str(id).unwrap().prefix_id())
                 .collect();
-
-            assert_eq!(
-                thread_ids.len(),
-                messages_per_thread.len(),
-                "{:?}: test# {}/{}",
-                thread_ids,
-                base_test_num,
-                test_num
-            );
 
             let mut messages_per_thread_db = Vec::new();
 
@@ -189,19 +188,17 @@ async fn test_single_thread(test_server: &TestServer) {
             messages_per_thread_db.sort_unstable();
 
             assert_eq!(messages_per_thread_db, messages_per_thread);
-            println!("passed test# {}/{}", base_test_num, test_num);
+            println!("passed test# {}/{}", test_group_num, test_num);
         }
 
-        all_mailboxes.insert(base_test_num as usize, mailbox_ids);
-    }
-
-    // Delete all messages and make sure no keys are left in the store.
-    for (base_test_num, mailbox_ids) in all_mailboxes {
-        for (test_num, _) in mailbox_ids.into_iter().enumerate() {
-            account
-                .destroy_all_mailboxes_for_account((base_test_num + test_num) as u32)
+        for account_id in &account_ids {
+            client
+                .set_default_account_id(*account_id)
+                .destroy_all_mailboxes()
                 .await;
         }
+        test_server.wait_for_tasks().await;
+        test_server.assert_is_empty().await;
     }
 
     test_server.assert_is_empty().await;

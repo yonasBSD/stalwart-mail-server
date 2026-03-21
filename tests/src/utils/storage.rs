@@ -186,7 +186,7 @@ pub async fn wait_for_tasks(server: &Server, skip_permanent_failures: bool) {
             if count % 10 == 0 {
                 println!("Waiting for pending task {:?}...", task);
             }
-            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         } else {
             break;
         }

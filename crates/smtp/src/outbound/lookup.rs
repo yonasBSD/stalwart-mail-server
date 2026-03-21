@@ -147,7 +147,7 @@ impl DnsLookup for Server {
                         })
                     }
                 })?,
-            HostOrIp::Ip { ip, .. } => vec![ip],
+            HostOrIp::Ip(ip) => vec![ip],
         };
 
         if !remote_ips.is_empty() {

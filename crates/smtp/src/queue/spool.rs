@@ -34,14 +34,11 @@ use store::write::{
     AlignedBytes, Archive, Archiver, BatchBuilder, BlobLink, BlobOp, MergeResult, Params,
     QueueClass, RegistryClass, ValueClass, now,
 };
-use store::{
-    Deserialize, IterateParams, Serialize, SerializeInfallible, U64_LEN, ValueKey, xxhash_rust,
-};
+use store::{Deserialize, IterateParams, Serialize, SerializeInfallible, U64_LEN, ValueKey};
 use trc::{AddContext, ServerEvent, SpamEvent};
 use types::blob::BlobId;
 use types::blob_hash::BlobHash;
 use utils::DomainPart;
-use utils::snowflake::SnowflakeIdGenerator;
 
 pub const LOCK_EXPIRY: u64 = 10 * 60; // 10 minutes
 pub const QUEUE_REFRESH: u64 = 5 * 60; // 5 minutes
@@ -476,10 +473,7 @@ impl MessageWrapper {
             .to_pickled_vec();
 
             let object_id = ObjectType::SpamTrainingSample.to_id();
-            let item_id = SnowflakeIdGenerator::from_sequence_id(xxhash_rust::xxh3::xxh3_64(
-                sample.as_slice(),
-            ))
-            .unwrap_or_default();
+            let item_id = server.inner.data.registry_id_gen.generate();
             batch
                 .set(
                     BlobOp::Link {
