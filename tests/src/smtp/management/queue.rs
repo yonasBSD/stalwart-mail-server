@@ -63,8 +63,8 @@ pub(super) struct List<T> {
 #[tokio::test]
 #[serial_test::serial]
 async fn manage_queue() {
-    // Enable logging
-    crate::enable_logging();
+    
+    
 
     // Start remote test server
     let mut remote = TestSMTP::new("smtp_manage_queue_remote", REMOTE).await;

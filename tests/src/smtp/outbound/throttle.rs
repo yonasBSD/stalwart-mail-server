@@ -63,8 +63,8 @@ enable = true
 
 #[tokio::test]
 async fn throttle_outbound() {
-    // Enable logging
-    crate::enable_logging();
+    
+    
 
     // Build test message
     let mut test_message = new_message(0).message;

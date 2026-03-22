@@ -36,6 +36,7 @@ pub async fn test(test: &mut TestServer) {
             "jdoe@example.org",
             "this is a very strong password",
             &[],
+            "jdoe@example.org",
         )
         .await;
     let client = account.jmap_client().await;

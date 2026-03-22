@@ -64,6 +64,28 @@ impl Account {
         })
     }
 
+    pub async fn registry_get_all<T: ObjectImpl>(&self) -> Vec<(Id, T)> {
+        let name = T::OBJECT.as_str();
+
+        let response = self
+            .jmap_get_account(
+                self,
+                format!("x:{name}"),
+                Vec::<&str>::new(),
+                Vec::<Id>::new(),
+            )
+            .await;
+        let mut items = Vec::with_capacity(response.list().len());
+        for item in response.list() {
+            let id = item.object_id();
+            let item = serde_json::from_str(&item.to_string()).unwrap_or_else(|_| {
+                panic!("Failed to deserialize {item}");
+            });
+            items.push((id, item));
+        }
+        items
+    }
+
     pub async fn registry_get_many(
         &self,
         object_type: ObjectType,

@@ -52,8 +52,8 @@ chunking = false
 #[tokio::test]
 #[serial_test::serial]
 async fn fallback_relay() {
-    // Enable logging
-    crate::enable_logging();
+    
+    
 
     // Start test server
     let mut remote = TestSMTP::new("smtp_fallback_remote", REMOTE).await;

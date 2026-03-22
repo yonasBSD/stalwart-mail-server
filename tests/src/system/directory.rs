@@ -233,8 +233,13 @@ pub async fn test(test: &TestServer) {
     assert!(account_cache.id_member_of.as_ref().is_empty());
 
     // Create a masked email
-    let john =
-        crate::utils::account::Account::new("johndoe@example.com", "hello world", &[], account_id);
+    let john = crate::utils::account::Account::new(
+        "johndoe@example.com",
+        "hello world",
+        &[],
+        "John",
+        account_id,
+    );
     let response = john
         .registry_create_many(
             ObjectType::MaskedEmail,

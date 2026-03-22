@@ -4,13 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{
-    directory::DirectoryStore,
-    smtp::{
-        DnsCache, TempDir, TestSMTP,
-        session::{TestSession, VerifyResponse},
-    },
-};
+use crate::smtp::session::{TestSession, VerifyResponse};
 use common::{
     Core,
     expr::{tokenizer::TokenMap, *},
@@ -88,8 +82,8 @@ expect = "0-1-2-2"
 
 #[tokio::test]
 async fn lookup_sql() {
-    // Enable logging
-    crate::enable_logging();
+    
+    
 
     // Parse settings
     let temp_dir = TempDir::new("smtp_lookup_tests", true);

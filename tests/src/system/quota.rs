@@ -85,12 +85,14 @@ pub async fn test(test: &mut TestServer) {
         "user1@example.org",
         "this is a very strong password1",
         &[],
+        "User1",
         account_id,
     );
     let other_account = Account::new(
         "user2@example.org",
         "this is a very strong password2",
         &[],
+        "User2",
         other_account_id,
     );
 

@@ -60,8 +60,8 @@ return-path = false
 #[tokio::test]
 #[serial_test::serial]
 async fn mta_sts_verify() {
-    // Enable logging
-    crate::enable_logging();
+    
+    
 
     // Start test server
     let mut remote = TestSMTP::new("smtp_mta_sts_remote", REMOTE).await;

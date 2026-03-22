@@ -20,18 +20,18 @@ use store::rand::{Rng, distr::Alphanumeric, rng};
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct DummyWebDavClient {
-    account_id: u32,
-    name: &'static str,
-    email: &'static str,
-    credentials: String,
+    pub account_id: u32,
+    pub name: &'static str,
+    pub email: &'static str,
+    pub credentials: String,
 }
 
 #[derive(Debug)]
 pub struct DavResponse {
-    headers: AHashMap<String, String>,
-    status: StatusCode,
-    body: Result<String, String>,
-    xml: Vec<(String, String)>,
+    pub headers: AHashMap<String, String>,
+    pub status: StatusCode,
+    pub body: Result<String, String>,
+    pub xml: Vec<(String, String)>,
 }
 
 #[derive(Debug)]
@@ -655,6 +655,10 @@ impl DavResponse {
 
     pub fn etag(&self) -> &str {
         self.header("etag")
+    }
+
+    pub fn lock_token(&self) -> &str {
+        self.value("D:prop.D:lockdiscovery.D:activelock.D:locktoken.D:href")
     }
 
     pub fn sync_token(&self) -> &str {

@@ -63,8 +63,8 @@ if allof( envelope :localpart :contains "to" ".",
 
 #[tokio::test]
 async fn address_rewrite() {
-    // Enable logging
-    crate::enable_logging();
+    
+    
 
     // Prepare config
     let mut config = Config::new(CONFIG).unwrap();

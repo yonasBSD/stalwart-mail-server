@@ -4,14 +4,13 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::core::Session;
 use common::{auth::AuthRequest, network::SessionStream};
 use directory::Credentials;
 use mail_parser::decoders::base64::base64_decode;
 use registry::schema::enums::Permission;
 use smtp_proto::{AUTH_LOGIN, AUTH_OAUTHBEARER, AUTH_PLAIN, AUTH_XOAUTH2, IntoString};
 use trc::AuthEvent;
-
-use crate::core::Session;
 
 pub struct SaslToken {
     mechanism: u64,

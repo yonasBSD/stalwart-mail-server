@@ -4,12 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{
-    store::TempDir,
-    utils::{
-        cleanup::{store_assert_is_empty, store_destroy},
-        server::TestServer,
-    },
+use crate::utils::{
+    cleanup::{store_assert_is_empty, store_destroy},
+    server::TestServer,
+    temp_dir::TempDir,
 };
 use ::registry::schema::enums::CompressionAlgo;
 use ahash::AHashSet;

@@ -89,12 +89,14 @@ pub async fn test(test: &mut TestServer) {
         "admin@tenantx.org",
         "tenant x secret",
         &[],
+        "Admin X",
         tenant_x_ids[&ObjectType::TaskManager],
     );
     let admin_y = crate::utils::account::Account::new(
         "admin@tenanty.org",
         "tenant y secret",
         &[],
+        "Admin Y",
         tenant_y_ids[&ObjectType::TaskManager],
     );
     assert_eq!(

@@ -8,8 +8,6 @@
 use ::store::registry::bootstrap::Bootstrap;
 #[cfg(not(target_env = "msvc"))]
 use jemallocator::Jemalloc;
-#[cfg(test)]
-use trc::Collector;
 
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
@@ -20,16 +18,13 @@ static GLOBAL: Jemalloc = Jemalloc;
 pub mod cluster;
 #[cfg(test)]
 pub mod directory;
-#[cfg(test)]
-pub mod imap;
-
-#[cfg(test)]
-pub mod smtp;
-#[cfg(test)]
-pub mod webdav;
 */
 #[cfg(test)]
+pub mod imap;
+#[cfg(test)]
 pub mod jmap;
+#[cfg(test)]
+pub mod smtp;
 #[cfg(test)]
 pub mod store;
 #[cfg(test)]
@@ -38,6 +33,8 @@ pub mod system;
 pub mod telemetry;
 #[cfg(test)]
 pub mod utils;
+#[cfg(test)]
+pub mod webdav;
 
 #[cfg(test)]
 pub trait AssertConfig {
@@ -59,16 +56,5 @@ impl AssertConfig for Bootstrap {
             panic!("Warnings: {:#?}", self.warnings);
         }
         self
-    }
-}
-
-#[cfg(test)]
-pub fn enable_logging() {
-    use common::config::telemetry::Telemetry;
-
-    if let Ok(level) = std::env::var("LOG")
-        && !Collector::is_enabled()
-    {
-        Telemetry::test_tracer(level.parse().expect("Invalid log level"));
     }
 }

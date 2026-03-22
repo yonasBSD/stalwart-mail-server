@@ -98,8 +98,8 @@ This is a smuggled message
 #[tokio::test]
 #[serial_test::serial]
 async fn smtp_delivery() {
-    // Enable logging
-    crate::enable_logging();
+    
+    
 
     // Start test server
     let mut remote = TestSMTP::new("smtp_delivery_remote", REMOTE).await;

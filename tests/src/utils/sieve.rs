@@ -5,6 +5,7 @@
  */
 
 use base64::{Engine, engine::general_purpose};
+use imap_proto::ResponseType;
 use mail_send::smtp::tls::build_tls_connector;
 use rustls_pki_types::ServerName;
 use std::time::Duration;
@@ -14,67 +15,61 @@ use tokio::{
 };
 use tokio_rustls::client::TlsStream;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ResponseType {
-    Ok,
-    Multiline,
-    Err,
-}
-
-pub struct Pop3Connection {
+pub struct SieveConnection {
     reader: Lines<BufReader<ReadHalf<TlsStream<TcpStream>>>>,
     writer: WriteHalf<TlsStream<TcpStream>>,
 }
 
-impl Pop3Connection {
+impl SieveConnection {
     pub async fn connect() -> Self {
         let (reader, writer) = tokio::io::split(
             build_tls_connector(true)
                 .connect(
-                    ServerName::try_from("pop3.example.org").unwrap().to_owned(),
-                    TcpStream::connect("127.0.0.1:4110").await.unwrap(),
+                    ServerName::try_from("imap.example.org").unwrap().to_owned(),
+                    TcpStream::connect("127.0.0.1:4190").await.unwrap(),
                 )
                 .await
                 .unwrap(),
         );
-
-        let mut conn = Pop3Connection {
+        SieveConnection {
             reader: BufReader::new(reader).lines(),
             writer,
-        };
-
-        conn.assert_read(ResponseType::Ok).await;
-        conn
+        }
     }
 
     pub async fn authenticate(&mut self, user: &str, pass: &str) {
         let creds = general_purpose::STANDARD.encode(format!("\0{user}\0{pass}"));
-        self.send(&format!("AUTH PLAIN {creds}")).await;
+        self.send(&format!(
+            "AUTHENTICATE PLAIN {{{}+}}\r\n{creds}",
+            creds.len()
+        ))
+        .await;
         self.assert_read(ResponseType::Ok).await;
     }
 
     pub async fn assert_read(&mut self, rt: ResponseType) -> Vec<String> {
-        let lines = self.read(matches!(rt, ResponseType::Multiline)).await;
-        if lines.last().unwrap().starts_with(match rt {
-            ResponseType::Ok => "+OK",
-            ResponseType::Multiline => ".",
-            ResponseType::Err => "-ERR",
-        }) {
+        let lines = self.read().await;
+        let mut buf = Vec::with_capacity(10);
+        rt.serialize(&mut buf);
+        if lines
+            .last()
+            .unwrap()
+            .starts_with(&String::from_utf8(buf).unwrap())
+        {
             lines
         } else {
             panic!("Expected {:?} from server but got: {:?}", rt, lines);
         }
     }
 
-    pub async fn read(&mut self, is_multiline: bool) -> Vec<String> {
+    pub async fn read(&mut self) -> Vec<String> {
         let mut lines = Vec::new();
         loop {
             match tokio::time::timeout(Duration::from_millis(1500), self.reader.next_line()).await {
                 Ok(Ok(Some(line))) => {
-                    let is_done = (!is_multiline && line.starts_with("+OK"))
-                        || (is_multiline && line == ".")
-                        || line.starts_with("-ERR");
-                    //let c = println!("<- {:?}", line);
+                    let is_done =
+                        line.starts_with("OK") || line.starts_with("NO") || line.starts_with("BYE");
+                    //println!("<- {:?}", line);
                     lines.push(line);
                     if is_done {
                         return lines;
@@ -92,13 +87,18 @@ impl Pop3Connection {
     }
 
     pub async fn send(&mut self, text: &str) {
-        //let c = println!("-> {:?}", text);
+        //println!("-> {:?}", text);
         self.writer.write_all(text.as_bytes()).await.unwrap();
         self.writer.write_all(b"\r\n").await.unwrap();
     }
 
     pub async fn send_raw(&mut self, text: &str) {
-        //let c = println!("-> {:?}", text);
+        //println!("-> {:?}", text);
         self.writer.write_all(text.as_bytes()).await.unwrap();
+    }
+
+    pub async fn send_literal(&mut self, text: &str, literal: &str) {
+        self.send(&format!("{}{{{}+}}\r\n{}", text, literal.len(), literal))
+            .await;
     }
 }

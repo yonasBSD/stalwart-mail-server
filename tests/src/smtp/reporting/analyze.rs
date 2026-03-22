@@ -23,8 +23,8 @@ store = "1s"
 
 #[tokio::test(flavor = "multi_thread")]
 async fn report_analyze() {
-    // Enable logging
-    crate::enable_logging();
+    
+    
 
     // Create temp dir for queue
     let mut local = TestSMTP::new("smtp_analyze_report_test", CONFIG).await;

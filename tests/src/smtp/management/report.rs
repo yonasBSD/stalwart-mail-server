@@ -53,8 +53,8 @@ max-size = 1024
 #[tokio::test]
 #[serial_test::serial]
 async fn manage_reports() {
-    // Enable logging
-    crate::enable_logging();
+    
+    
 
     // Start reporting service
     let local = TestSMTP::new("smtp_manage_reports", CONFIG).await;

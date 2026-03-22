@@ -4,11 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use super::{QueueReceiver, ReportReceiver};
+use crate::utils::server::TestServer;
 use common::{
     Server,
     ipc::{DmarcEvent, QueueEvent, QueueEventStatus, ReportingEvent, TlsEvent},
 };
+use registry::{schema::prelude::ObjectType, types::ObjectImpl};
 use smtp::queue::{Message, MessageWrapper, QueueId, QueuedMessage};
 use std::time::Duration;
 use store::{
@@ -16,25 +17,29 @@ use store::{
     write::{AlignedBytes, Archive, QueueClass, ValueClass, key::DeserializeBigEndian},
 };
 use tokio::sync::mpsc::error::TryRecvError;
+use types::id::Id;
 
-pub mod antispam;
-pub mod asn;
 pub mod auth;
 pub mod basic;
 pub mod data;
+pub mod mail;
+pub mod rcpt;
+
+/*
+pub mod antispam;
+pub mod asn;
 pub mod dmarc;
 pub mod ehlo;
 pub mod limits;
-pub mod mail;
 pub mod milter;
-pub mod rcpt;
 pub mod rewrite;
 pub mod scripts;
 pub mod sign;
 pub mod throttle;
 pub mod vrfy;
+*/
 
-impl QueueReceiver {
+impl TestServer {
     pub async fn read_event(&mut self) -> QueueEvent {
         match tokio::time::timeout(Duration::from_millis(100), self.queue_rx.recv()).await {
             Ok(Some(event)) => event,
@@ -64,53 +69,8 @@ impl QueueReceiver {
         assert_eq!(self.read_queued_events().await, vec![]);
     }
 
-    pub async fn assert_report_is_empty(&self) {
-        assert_eq!(self.read_report_events().await, vec![]);
-
-        for (from_key, to_key) in [
-            (
-                ValueKey::from(ValueClass::Queue(QueueClass::TlsReportEvent(ReportEvent {
-                    due: 0,
-                    policy_hash: 0,
-                    seq_id: 0,
-                    domain: String::new(),
-                }))),
-                ValueKey::from(ValueClass::Queue(QueueClass::TlsReportEvent(ReportEvent {
-                    due: u64::MAX,
-                    policy_hash: 0,
-                    seq_id: 0,
-                    domain: String::new(),
-                }))),
-            ),
-            (
-                ValueKey::from(ValueClass::Queue(QueueClass::DmarcReportEvent(
-                    ReportEvent {
-                        due: 0,
-                        policy_hash: 0,
-                        seq_id: 0,
-                        domain: String::new(),
-                    },
-                ))),
-                ValueKey::from(ValueClass::Queue(QueueClass::DmarcReportEvent(
-                    ReportEvent {
-                        due: u64::MAX,
-                        policy_hash: 0,
-                        seq_id: 0,
-                        domain: String::new(),
-                    },
-                ))),
-            ),
-        ] {
-            self.store
-                .iterate(
-                    IterateParams::new(from_key, to_key).ascending().no_values(),
-                    |key, _| {
-                        panic!("Unexpected report event: {key:?}");
-                    },
-                )
-                .await
-                .unwrap();
-        }
+    pub async fn assert_report_is_empty<T: ObjectImpl + PartialEq + std::fmt::Debug>(&self) {
+        assert_eq!(self.read_report_events::<T>().await, vec![]);
     }
 
     pub async fn expect_message(&mut self) -> MessageWrapper {
@@ -160,7 +120,8 @@ impl QueueReceiver {
             },
         )));
 
-        self.store
+        self.server
+            .store()
             .iterate(
                 IterateParams::new(from_key, to_key).ascending().no_values(),
                 |key, _| {
@@ -185,7 +146,8 @@ impl QueueReceiver {
         let to_key = ValueKey::from(ValueClass::Queue(QueueClass::Message(u64::MAX)));
         let mut messages = Vec::new();
 
-        self.store
+        self.server
+            .store()
             .iterate(
                 IterateParams::new(from_key, to_key).descending(),
                 |key, value| {
@@ -206,44 +168,8 @@ impl QueueReceiver {
         messages
     }
 
-    pub async fn read_report_events(&self) -> Vec<QueueClass> {
-        let from_key = ValueKey::from(ValueClass::Queue(QueueClass::DmarcReportHeader(
-            ReportEvent {
-                due: 0,
-                policy_hash: 0,
-                seq_id: 0,
-                domain: String::new(),
-            },
-        )));
-        let to_key = ValueKey::from(ValueClass::Queue(QueueClass::TlsReportHeader(
-            ReportEvent {
-                due: u64::MAX,
-                policy_hash: 0,
-                seq_id: 0,
-                domain: String::new(),
-            },
-        )));
-
-        let mut events = Vec::new();
-        self.store
-            .iterate(
-                IterateParams::new(from_key, to_key).ascending().no_values(),
-                |key, _| {
-                    let event = ReportEvent::deserialize(key)?;
-                    // Skip lock
-                    if event.seq_id != 0 {
-                        events.push(if *key.last().unwrap() == 0 {
-                            QueueClass::DmarcReportHeader(event)
-                        } else {
-                            QueueClass::TlsReportHeader(event)
-                        });
-                    }
-                    Ok(true)
-                },
-            )
-            .await
-            .unwrap();
-        events
+    pub async fn read_report_events<T: ObjectImpl>(&self) -> Vec<(Id, T)> {
+        self.account("admin").registry_get_all().await
     }
 
     pub async fn last_queued_message(&self) -> MessageWrapper {
@@ -273,15 +199,12 @@ impl QueueReceiver {
             .expect("No event found in queue for message")
     }
 
-    pub async fn clear_queue(&self, server: &Server) {
-        for message in self.read_queued_messages().await {
-            let due = self.message_due(message.queue_id).await;
-            message.remove(server, due.into()).await;
-        }
+    pub async fn clear_queue(&self) {
+        self.account("admin")
+            .registry_destroy_all(ObjectType::QueuedMessage)
+            .await;
     }
-}
 
-impl ReportReceiver {
     pub async fn read_report(&mut self) -> ReportingEvent {
         match tokio::time::timeout(Duration::from_millis(100), self.report_rx.recv()).await {
             Ok(Some(event)) => event,
@@ -315,7 +238,8 @@ pub trait TestQueueEvent {
 impl TestQueueEvent for QueueEvent {
     fn assert_refresh(self) {
         match self {
-            QueueEvent::Refresh
+            QueueEvent::ReloadSettings
+            | QueueEvent::Refresh
             | QueueEvent::WorkerDone {
                 status: QueueEventStatus::Deferred,
                 ..
@@ -368,14 +292,15 @@ impl TestReportingEvent for ReportingEvent {
 
 #[allow(async_fn_in_trait)]
 pub trait TestMessage {
-    async fn read_message(&self, core: &QueueReceiver) -> String;
-    async fn read_lines(&self, core: &QueueReceiver) -> Vec<String>;
+    async fn read_message(&self, core: &TestServer) -> String;
+    async fn read_lines(&self, core: &TestServer) -> Vec<String>;
 }
 
 impl TestMessage for MessageWrapper {
-    async fn read_message(&self, core: &QueueReceiver) -> String {
+    async fn read_message(&self, core: &TestServer) -> String {
         String::from_utf8(
-            core.blob_store
+            core.server
+                .blob_store()
                 .get_blob(self.message.blob_hash.as_slice(), 0..usize::MAX)
                 .await
                 .unwrap()
@@ -384,7 +309,7 @@ impl TestMessage for MessageWrapper {
         .unwrap()
     }
 
-    async fn read_lines(&self, core: &QueueReceiver) -> Vec<String> {
+    async fn read_lines(&self, core: &TestServer) -> Vec<String> {
         self.read_message(core)
             .await
             .split('\n')

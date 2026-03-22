@@ -42,8 +42,8 @@ sign = "['rsa']"
 
 #[tokio::test]
 async fn report_tls() {
-    // Enable logging
-    crate::enable_logging();
+    
+    
 
     // Create scheduler
     let mut local = TestSMTP::new("smtp_report_tls_test", CONFIG.to_string() + SIGNATURES).await;

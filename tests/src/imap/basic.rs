@@ -13,11 +13,12 @@ pub async fn test(imap: &mut ImapConnection, _imap_check: &mut ImapConnection) {
     println!("Running basic tests...");
 
     // Test OAuth Bearer decoding
-    assert!(
+    assert_eq!(
         Credentials::Bearer {
             token: "vF9dft4qmTc2Nvb3RlckBhbHRhdmlzdGEuY29tCg==".to_string(),
-            username: None,
-        } == Credentials::decode_sasl_challenge_oauth(
+            username: Some("user@example.com".to_string()),
+        },
+        Credentials::decode_sasl_challenge_oauth(
             &base64_decode(
                 concat!(
                     "bixhPXVzZXJAZXhhbXBsZS5jb20sAWhv",

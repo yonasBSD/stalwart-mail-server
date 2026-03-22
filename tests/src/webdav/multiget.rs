@@ -4,14 +4,13 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use super::WebDavTest;
-use crate::webdav::{DummyWebDavClient, GenerateTestDavResource, prop::DavMultiStatus};
+use crate::utils::{server::TestServer, webdav::GenerateTestDavResource};
 use dav_proto::schema::property::{CalDavProperty, CardDavProperty, DavProperty, WebDavProperty};
 use groupware::DavResourceName;
 use hyper::StatusCode;
 
-pub async fn test(test: &WebDavTest) {
-    let client = test.client("john");
+pub async fn test(test: &TestServer) {
+    let client = test.account("john@example.com").webdav_client();
 
     for resource_type in [DavResourceName::Cal, DavResourceName::Card] {
         println!(
@@ -22,7 +21,7 @@ pub async fn test(test: &WebDavTest) {
         let mut paths = Vec::new();
         for name in ["file1", "file2"] {
             let contents = resource_type.generate();
-            let path = format!("{}/john/default/{}", resource_type.base_path(), name);
+            let path = format!("{}/john%40example.com/default/{}", resource_type.base_path(), name);
             let etag = client
                 .request("PUT", &path, contents.as_str())
                 .await
@@ -33,7 +32,7 @@ pub async fn test(test: &WebDavTest) {
         }
 
         if resource_type == DavResourceName::Cal {
-            let path = format!("{}/john", resource_type.base_path());
+            let path = format!("{}/john%40example.com", resource_type.base_path());
             let response = client
                 .multiget_calendar(&path, &[&paths[0].0, &paths[1].0])
                 .await;
@@ -49,7 +48,7 @@ pub async fn test(test: &WebDavTest) {
                     .with_values([contents.as_str()]);
             }
         } else {
-            let path = format!("{}/john", resource_type.base_path());
+            let path = format!("{}/john%40example.com", resource_type.base_path());
             let response = client
                 .multiget_addressbook(&path, &[&paths[0].0, &paths[1].0])
                 .await;

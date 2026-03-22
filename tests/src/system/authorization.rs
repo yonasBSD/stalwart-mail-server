@@ -76,6 +76,7 @@ pub async fn test(test: &mut TestServer) {
         "user@example.org",
         "this is a very strong password",
         &[],
+        "User",
         user_id,
     );
 
@@ -233,6 +234,7 @@ pub async fn test(test: &mut TestServer) {
             "john@example.org",
             "this is john's secret",
             &[],
+            "john@example.org",
         )
         .await;
     let jane = test
@@ -241,6 +243,7 @@ pub async fn test(test: &mut TestServer) {
             "jane@example.org",
             "this is jane's secret",
             &[],
+            "jane@example.org",
         )
         .await;
     let mut john_ids = AHashMap::new();

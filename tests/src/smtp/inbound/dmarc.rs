@@ -86,8 +86,8 @@ verify = [{if = "sender_domain = 'test.net'", then = 'relaxed'},
 
 #[tokio::test]
 async fn dmarc() {
-    // Enable logging
-    crate::enable_logging();
+    
+    
 
     let tmp_dir = TempDir::new("smtp_dmarc_test", true);
     let mut config = Config::new(tmp_dir.update_config(CONFIG.to_string() + SIGNATURES)).unwrap();

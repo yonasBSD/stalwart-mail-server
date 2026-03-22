@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::smtp::{QueueReceiver, TestSMTP, inbound::sign::SIGNATURES};
+use crate::{smtp::inbound::sign::SIGNATURES, utils::server::TestServer};
 use common::config::smtp::queue::{QueueExpiry, QueueName};
 use smtp::queue::{
     Error, ErrorDetails, HostResponse, Message, MessageWrapper, Recipient, Schedule, Status,
@@ -39,8 +39,8 @@ sign = "['rsa']"
 
 #[tokio::test]
 async fn generate_dsn() {
-    // Enable logging
-    crate::enable_logging();
+    
+    
 
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     path.push("resources");
@@ -171,7 +171,7 @@ async fn generate_dsn() {
     assert_eq!(queue.len(), 4);
 }
 
-impl QueueReceiver {
+impl TestServer {
     async fn compare_dsn(&self, message: Message, test: &str) {
         let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         path.push("resources");
@@ -180,7 +180,8 @@ impl QueueReceiver {
         path.push(test);
 
         let bytes = self
-            .blob_store
+            .server
+            .blob_store()
             .get_blob(message.blob_hash.as_slice(), 0..usize::MAX)
             .await
             .unwrap()

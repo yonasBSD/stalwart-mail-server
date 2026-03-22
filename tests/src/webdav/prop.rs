@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use super::{DavResponse, DummyWebDavClient, WebDavTest};
-use crate::webdav::{GenerateTestDavResource, TEST_ICAL_2, TEST_VTIMEZONE_1};
-use ahash::{AHashMap, AHashSet};
+use crate::utils::server::TestServer;
+use crate::utils::webdav::GenerateTestDavResource;
+use crate::webdav::{TEST_ICAL_2, TEST_VTIMEZONE_1};
 use dav_proto::schema::property::{
     CalDavProperty, CardDavProperty, DavProperty, PrincipalProperty, WebDavProperty,
 };
@@ -14,8 +14,8 @@ use groupware::DavResourceName;
 use hyper::StatusCode;
 use types::dead_property::DeadElementTag;
 
-pub async fn test(test: &WebDavTest, assisted_discovery: bool) {
-    let client = test.client("jane");
+pub async fn test(test: &TestServer, assisted_discovery: bool) {
+    let client = test.account("jane@example.com").webdav_client();
 
     for resource_type in [
         DavResourceName::File,
@@ -26,8 +26,8 @@ pub async fn test(test: &WebDavTest, assisted_discovery: bool) {
             "Running PROPFIND/PROPPATCH tests ({})...",
             resource_type.base_path()
         );
-        let user_base_path = format!("{}/jane", resource_type.base_path());
-        let group_base_path = format!("{}/support", resource_type.base_path());
+        let user_base_path = format!("{}/jane%40example.com", resource_type.base_path());
+        let group_base_path = format!("{}/support%40example.com", resource_type.base_path());
 
         // Create a new test container and file
         let test_base_path = format!("{user_base_path}/PropFind_Folder/");
@@ -208,14 +208,18 @@ pub async fn test(test: &WebDavTest, assisted_discovery: bool) {
                 ]);
             properties
                 .get(DavProperty::WebDav(WebDavProperty::CurrentUserPrincipal))
-                .with_values([
-                    format!("D:href:{}/jane/", DavResourceName::Principal.base_path()).as_str(),
-                ]);
+                .with_values([format!(
+                    "D:href:{}/jane%40example.com/",
+                    DavResourceName::Principal.base_path()
+                )
+                .as_str()]);
             properties
                 .get(DavProperty::WebDav(WebDavProperty::Owner))
-                .with_values([
-                    format!("D:href:{}/jane/", DavResourceName::Principal.base_path()).as_str(),
-                ]);
+                .with_values([format!(
+                    "D:href:{}/jane%40example.com/",
+                    DavResourceName::Principal.base_path()
+                )
+                .as_str()]);
             properties
                 .get(DavProperty::WebDav(WebDavProperty::SupportedPrivilegeSet))
                 .is_not_empty();
@@ -440,7 +444,7 @@ pub async fn test(test: &WebDavTest, assisted_discovery: bool) {
             ] {
                 properties.get(prop).with_some_values([
                     format!(
-                        "D:response.D:href:{}/jane/",
+                        "D:response.D:href:{}/jane%40example.com/",
                         DavResourceName::Principal.base_path(),
                     )
                     .as_str(),
@@ -702,7 +706,9 @@ pub async fn test(test: &WebDavTest, assisted_discovery: bool) {
     }
 
     client.delete_default_containers().await;
-    client.delete_default_containers_by_account("support").await;
+    client
+        .delete_default_containers_by_account("support@example.com")
+        .await;
     test.assert_is_empty().await;
 }
 

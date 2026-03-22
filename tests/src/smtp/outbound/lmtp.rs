@@ -75,8 +75,8 @@ allow-invalid-certs = true
 #[tokio::test]
 #[serial_test::serial]
 async fn lmtp_delivery() {
-    // Enable logging
-    crate::enable_logging();
+    
+    
 
     // Start test server
     let mut remote = TestSMTP::new("lmtp_delivery_remote", REMOTE).await;

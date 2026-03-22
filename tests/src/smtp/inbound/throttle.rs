@@ -40,8 +40,8 @@ enable = true
 
 #[tokio::test]
 async fn throttle_inbound() {
-    // Enable logging
-    crate::enable_logging();
+    
+    
 
     let tmp_dir = TempDir::new("smtp_inbound_throttle", true);
     let mut config = Config::new(tmp_dir.update_config(CONFIG)).unwrap();

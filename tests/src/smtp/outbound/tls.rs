@@ -48,8 +48,8 @@ chunking = false
 #[tokio::test]
 #[serial_test::serial]
 async fn starttls_optional() {
-    // Enable logging
-    crate::enable_logging();
+    
+    
 
     // Start test server
     let mut remote = TestSMTP::new("smtp_starttls_remote", REMOTE).await;

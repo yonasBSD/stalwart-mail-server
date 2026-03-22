@@ -85,6 +85,7 @@ pub async fn test(test: &mut TestServer) {
             "user@example.org",
             "this is a very strong password",
             &[],
+            "user@example.org",
         )
         .await;
     let user_id = user.id();

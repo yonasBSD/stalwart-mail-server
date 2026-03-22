@@ -50,6 +50,7 @@ pub async fn system_tests() {
             "admin@example.org",
             "these_pretzels_are_making_me_thirsty",
             &[],
+            "Admin",
         )
         .await;
     test.account("admin")

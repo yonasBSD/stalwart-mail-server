@@ -52,6 +52,7 @@ pub async fn test(test: &mut TestServer) {
             "jdoe@example.org",
             "this is a very strong password",
             &[],
+            "jdoe@example.org",
         )
         .await;
     let jane = test
@@ -60,6 +61,7 @@ pub async fn test(test: &mut TestServer) {
             "jane@example.org",
             "this is a very strong password",
             &[],
+            "jane@example.org",
         )
         .await;
     let mut john_imap = john.imap_client().await;

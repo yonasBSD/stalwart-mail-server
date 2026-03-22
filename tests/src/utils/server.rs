@@ -6,25 +6,32 @@
 
 use crate::{
     AssertConfig,
-    store::TempDir,
+    smtp::session::{DummyIo, TestSession},
     utils::{
         account::Account,
         cleanup::{search_store_destroy, store_blob_expire_all, store_destroy},
         registry::UnwrapRegistryId,
         storage::{RegistryEnvStores, assert_is_empty, build_data_store, wait_for_tasks},
+        temp_dir::TempDir,
     },
 };
 use ahash::AHashMap;
 use common::{
-    BuildServer, Caches, Core, Data, Inner, Server,
+    BuildServer, Caches, Core, Data, DavResources, Inner, Server,
     auth::FALLBACK_ADMIN_ID,
     config::{
         server::{Listeners, ServerProtocol},
         storage::Storage,
         telemetry::Telemetry,
     },
-    manager::{boot::build_ipc, defaults::BootstrapDefaults},
+    ipc::{QueueEvent, ReportingEvent},
+    manager::{
+        boot::{IpcReceivers, build_ipc},
+        defaults::BootstrapDefaults,
+    },
 };
+use email::message::metadata::MessageMetadata;
+use groupware::cache::GroupwareCache;
 use http::HttpSessionManager;
 use imap::core::ImapSessionManager;
 use jmap_client::client::Client;
@@ -41,25 +48,29 @@ use registry::{
 use services::{SpawnServices, broadcast::subscriber::spawn_broadcast_subscriber};
 use smtp::{
     SpawnQueueManager,
-    core::SmtpSessionManager,
+    core::{Session, SmtpSessionManager},
     queue::{
-        manager::Queue,
+        manager::{Queue, SpawnQueue},
         spool::{QueuedMessages, SmtpSpool},
     },
+    reporting::scheduler::SpawnReport,
 };
 use std::{str::FromStr, sync::Arc};
 use store::{
-    RegistryStore, Store,
+    RegistryStore, Store, ValueKey,
     registry::{bootstrap::Bootstrap, write::RegistryWrite},
+    write::{AlignedBytes, Archive},
 };
 use tokio::sync::{mpsc, watch};
 use trc::EventType;
-use types::id::Id;
+use types::{collection::Collection, field::EmailField, id::Id};
 
 pub struct TestServer {
     pub server: Server,
     pub accounts: AHashMap<&'static str, Account>,
     pub temp_dir: TempDir,
+    pub queue_rx: mpsc::Receiver<QueueEvent>,
+    pub report_rx: mpsc::Receiver<ReportingEvent>,
     shutdown_tx: watch::Sender<bool>,
     reset: bool,
 }
@@ -67,8 +78,12 @@ pub struct TestServer {
 pub struct TestServerBuilder {
     bootstrap: Bootstrap,
     temp_dir: TempDir,
+    http_listener_port: u16,
     reset: bool,
     logging_enabled: bool,
+    capture_queue: bool,
+    capture_reporting: bool,
+    disable_services: bool,
 }
 
 impl TestServerBuilder {
@@ -99,9 +114,13 @@ impl TestServerBuilder {
                 RegistryStore::new(&path, store, "mail.example.org".to_string(), 1, None).await,
             )
             .await,
+            http_listener_port: 8899,
             temp_dir,
             reset,
             logging_enabled: false,
+            capture_queue: false,
+            capture_reporting: false,
+            disable_services: false,
         }
     }
 
@@ -125,6 +144,21 @@ impl TestServerBuilder {
             ..Default::default()
         })
         .await
+    }
+
+    pub async fn with_http_listener(mut self, port: u16) -> Self {
+        self.http_listener_port = port;
+        self.with_listener(NetworkListenerProtocol::Http, "jmap", port, true)
+            .await
+            .with_object(Http {
+                base_url: Expression {
+                    else_: format!("'https://127.0.0.1:{}'", port),
+
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .await
     }
 
     pub async fn with_listener(
@@ -155,6 +189,21 @@ impl TestServerBuilder {
 
     pub fn with_logging(mut self) -> Self {
         self.logging_enabled = true;
+        self
+    }
+
+    pub fn capture_queue(mut self) -> Self {
+        self.capture_queue = true;
+        self
+    }
+
+    pub fn capture_reporting(mut self) -> Self {
+        self.capture_reporting = true;
+        self
+    }
+
+    pub fn disable_services(mut self) -> Self {
+        self.disable_services = true;
         self
     }
 
@@ -244,8 +293,29 @@ impl TestServerBuilder {
 
         // Start services
         self.bootstrap.assert_no_errors();
-        ipc_rxs.spawn_queue_manager(inner.clone());
-        ipc_rxs.spawn_services(inner.clone());
+        if !self.disable_services {
+            ipc_rxs.spawn_services(inner.clone());
+        }
+
+        // Spawn queue manager if not capturing
+        let (_, mut queue_rx) = mpsc::channel(100);
+        let (_, mut report_rx) = mpsc::channel(100);
+        if !self.capture_queue && !self.capture_reporting {
+            ipc_rxs.spawn_queue_manager(inner.clone());
+        } else {
+            let queue_rx_ = ipc_rxs.queue_rx.take().unwrap();
+            let report_rx_ = ipc_rxs.report_rx.take().unwrap();
+            if !self.capture_queue {
+                queue_rx_.spawn(inner.clone());
+            } else {
+                queue_rx = queue_rx_;
+            }
+            if !self.capture_reporting {
+                report_rx_.spawn(inner.clone());
+            } else {
+                report_rx = report_rx_;
+            }
+        }
 
         // Spawn servers
         let (shutdown_tx, shutdown_rx) = servers.spawn(|server, acceptor, shutdown_rx| {
@@ -284,17 +354,27 @@ impl TestServerBuilder {
         });
 
         // Start broadcast subscriber
-        spawn_broadcast_subscriber(inner.clone(), shutdown_rx);
+        if !self.disable_services {
+            spawn_broadcast_subscriber(inner.clone(), shutdown_rx);
+        }
 
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+        let mut admin = Account::new(
+            "admin",
+            "popolna_zapora",
+            &[],
+            "Recovery Admin",
+            Id::from(FALLBACK_ADMIN_ID),
+        );
+        admin.http_listener_port = self.http_listener_port;
 
         TestServer {
             server: inner.build_server(),
             temp_dir: self.temp_dir,
-            accounts: AHashMap::from_iter([(
-                "admin",
-                Account::new("admin", "popolna_zapora", &[], Id::from(FALLBACK_ADMIN_ID)),
-            )]),
+            accounts: AHashMap::from_iter([("admin", admin)]),
+            queue_rx,
+            report_rx,
             shutdown_tx,
             reset: self.reset,
         }
@@ -302,6 +382,10 @@ impl TestServerBuilder {
 }
 
 impl TestServer {
+    pub fn reload_core(&mut self) {
+        self.server = self.server.inner.build_server();
+    }
+
     pub fn account(&self, name: &str) -> &Account {
         self.accounts.get(name).unwrap()
     }
@@ -339,6 +423,47 @@ impl TestServer {
         let _ = self.shutdown_tx.send(true);
     }
 
+    pub fn new_mta_session(&self) -> Session<DummyIo> {
+        Session::test(self.server.clone())
+    }
+
+    pub async fn resources(&self, name: &'static str, collection: Collection) -> Arc<DavResources> {
+        let account_id = self.account(name).id().document_id();
+        self.server
+            .fetch_dav_resources(account_id, account_id, collection.into())
+            .await
+            .unwrap()
+    }
+
+    pub async fn fetch_email(&self, account_id: u32, document_id: u32) -> Vec<u8> {
+        let metadata_ = self
+            .server
+            .store()
+            .get_value::<Archive<AlignedBytes>>(ValueKey::property(
+                account_id,
+                Collection::Email,
+                document_id,
+                EmailField::Metadata,
+            ))
+            .await
+            .unwrap()
+            .unwrap();
+        self.server
+            .blob_store()
+            .get_blob(
+                metadata_
+                    .unarchive::<MessageMetadata>()
+                    .unwrap()
+                    .blob_hash
+                    .0
+                    .as_slice(),
+                0..usize::MAX,
+            )
+            .await
+            .unwrap()
+            .unwrap()
+    }
+
     pub async fn all_queued_messages(&self) -> QueuedMessages {
         self.server
             .next_event(&mut Queue::new(
@@ -351,6 +476,23 @@ impl TestServer {
     pub async fn destroy_all_mailboxes(&self, account: &Account) {
         self.wait_for_tasks().await;
         account.jmap_client().await.destroy_all_mailboxes().await;
+    }
+
+    pub async fn inner_with_rxs(&self) -> (Arc<Inner>, IpcReceivers) {
+        let (ipc, ipc_rxs) = build_ipc(false);
+
+        let mut bp = Bootstrap::new_uninitialized(self.server.registry().clone());
+
+        (
+            Inner {
+                shared_core: self.server.core.as_ref().clone().into_shared(),
+                data: Default::default(),
+                ipc,
+                cache: Caches::parse(&mut bp).await,
+            }
+            .into(),
+            ipc_rxs,
+        )
     }
 }
 

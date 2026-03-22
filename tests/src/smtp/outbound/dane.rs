@@ -74,8 +74,8 @@ return-path = false
 #[tokio::test]
 #[serial_test::serial]
 async fn dane_verify() {
-    // Enable logging
-    crate::enable_logging();
+    
+    
 
     // Start test server
     let mut remote = TestSMTP::new("smtp_dane_remote", REMOTE).await;

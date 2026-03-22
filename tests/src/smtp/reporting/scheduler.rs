@@ -37,8 +37,8 @@ send = "daily"
 
 #[tokio::test]
 async fn report_scheduler() {
-    // Enable logging
-    crate::enable_logging();
+    
+    
 
     // Create scheduler
     let local = TestSMTP::new("smtp_report_queue_test", CONFIG).await;

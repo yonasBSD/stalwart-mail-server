@@ -155,6 +155,8 @@ pub trait AssertResult: Sized {
 
     fn assert_response_code(self, code: &str) -> Self;
     fn assert_contains(self, text: &str) -> Self;
+    fn assert_contains_any(self, expected_texts: &[&str]) -> Self;
+    fn assert_not_contains(self, expected_text: &str) -> Self;
     fn assert_count(self, text: &str, occurrences: usize) -> Self;
     fn assert_equals(self, text: &str) -> Self;
     fn into_response_code(self) -> String;
@@ -208,13 +210,39 @@ impl AssertResult for Vec<String> {
         self
     }
 
-    fn assert_contains(self, text: &str) -> Self {
-        for line in &self {
-            if line.contains(text) {
-                return self;
-            }
+    fn assert_contains(self, expected_text: &str) -> Self {
+        if self.iter().any(|line| line.contains(expected_text)) {
+            self
+        } else {
+            panic!("Expected {:?} but got {}.", expected_text, self.join("\n"));
         }
-        panic!("Expected response to contain {:?}, got {:?}", text, self);
+    }
+
+    fn assert_contains_any(self, expected_texts: &[&str]) -> Self {
+        if self
+            .iter()
+            .any(|line| expected_texts.iter().any(|text| line.contains(text)))
+        {
+            self
+        } else {
+            panic!(
+                "Expected any of {:?} but got {}.",
+                expected_texts,
+                self.join("\n")
+            );
+        }
+    }
+
+    fn assert_not_contains(self, expected_text: &str) -> Self {
+        if !self.iter().any(|line| line.contains(expected_text)) {
+            self
+        } else {
+            panic!(
+                "Not expecting {:?} but got it {}.",
+                expected_text,
+                self.join("\n")
+            );
+        }
     }
 
     fn assert_count(self, text: &str, occurrences: usize) -> Self {

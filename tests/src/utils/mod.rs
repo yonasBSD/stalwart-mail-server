@@ -14,6 +14,8 @@ pub mod jmap;
 pub mod pop3;
 pub mod registry;
 pub mod server;
+pub mod sieve;
 pub mod smtp;
 pub mod storage;
+pub mod temp_dir;
 pub mod webdav;

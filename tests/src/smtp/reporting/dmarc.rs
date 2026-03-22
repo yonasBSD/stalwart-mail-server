@@ -4,12 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{
-    net::IpAddr,
-    sync::Arc,
-    time::{Duration, Instant},
+use crate::smtp::{
+    inbound::{TestMessage, sign::SIGNATURES},
+    session::VerifyResponse,
 };
-
 use common::{config::smtp::report::AggregateFrequency, ipc::DmarcEvent};
 use mail_auth::{
     common::parse::TxtRecordParser,
@@ -17,13 +15,12 @@ use mail_auth::{
     report::{ActionDisposition, Disposition, DmarcResult, Record, Report},
 };
 use smtp::reporting::dmarc::DmarcReporting;
-use store::write::QueueClass;
-
-use crate::smtp::{
-    DnsCache, TestSMTP,
-    inbound::{TestMessage, sign::SIGNATURES},
-    session::VerifyResponse,
+use std::{
+    net::IpAddr,
+    sync::Arc,
+    time::{Duration, Instant},
 };
+use store::write::QueueClass;
 
 const CONFIG: &str = r#"
 [session.rcpt]
@@ -48,8 +45,8 @@ sign = "['rsa']"
 
 #[tokio::test]
 async fn report_dmarc() {
-    // Enable logging
-    crate::enable_logging();
+    
+    
 
     // Create scheduler
     let mut local = TestSMTP::new("smtp_report_dmarc_test", CONFIG.to_string() + SIGNATURES).await;

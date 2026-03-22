@@ -279,7 +279,10 @@ impl Account {
                     .default_headers(headers)
                     .build()
                     .unwrap()
-                    .post("https://127.0.0.1:8899/jmap")
+                    .post(format!(
+                        "https://127.0.0.1:{}/jmap",
+                        self.http_listener_port
+                    ))
                     .body(body.to_string())
                     .send()
                     .await
@@ -312,7 +315,10 @@ impl Account {
                     .default_headers(headers)
                     .build()
                     .unwrap()
-                    .get("https://127.0.0.1:8899/jmap/session")
+                    .get(format!(
+                        "https://127.0.0.1:{}/jmap/session",
+                        self.http_listener_port
+                    ))
                     .send()
                     .await
                     .unwrap()

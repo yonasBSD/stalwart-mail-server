@@ -33,17 +33,7 @@ async fn jmap_tests() {
         .await;
 
     // Create admin account
-    let admin = test
-        .create_user_account(
-            "admin",
-            "admin@example.com",
-            "these_pretzels_are_making_me_thirsty",
-            &[],
-        )
-        .await;
-    test.account("admin")
-        .assign_roles_to_account(admin.id(), &["user", "system"])
-        .await;
+    let admin = test.create_admin_account("admin@example.com").await;
 
     // Create test users
     for (name, secret, description, aliases) in [
@@ -76,7 +66,7 @@ async fn jmap_tests() {
             .create_user_account(
                 name,
                 secret,
-                description.into(),
+                description,
                 aliases,
                 vec![Permission::UnlimitedRequests, Permission::UnlimitedUploads],
             )
@@ -87,7 +77,7 @@ async fn jmap_tests() {
     // Create test group
     test.insert_account(
         admin
-            .create_group_account("sales@example.com", "Sales Group".into(), &[])
+            .create_group_account("sales@example.com", "Sales Group", &[])
             .await,
     );
 

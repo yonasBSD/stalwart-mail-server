@@ -93,8 +93,8 @@ stages = ["data"]
 
 #[tokio::test]
 async fn milter_session() {
-    // Enable logging
-    crate::enable_logging();
+    
+    
 
     // Configure tests
     let tmp_dir = TempDir::new("smtp_milter_test", true);
@@ -220,7 +220,7 @@ async fn milter_session() {
 
 #[tokio::test]
 async fn mta_hook_session() {
-    // Enable logging
+    
     /*let disable = "true";
     tracing::subscriber::set_global_default(
         tracing_subscriber::FmtSubscriber::builder()

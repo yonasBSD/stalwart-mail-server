@@ -78,8 +78,8 @@ schedule = "source + ' ' + received_from_ip + ' ' + received_via_port + ' ' + qu
 
 #[tokio::test]
 async fn strategies() {
-    // Enable logging
-    crate::enable_logging();
+    
+    
 
     let ipv6: [IpAddr; 4] = [
         "a:b::1".parse().unwrap(),

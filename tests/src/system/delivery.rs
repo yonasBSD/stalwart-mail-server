@@ -78,6 +78,7 @@ pub async fn test(test: &mut TestServer) {
             "jdoe@example.org",
             "this is a very strong password",
             &["john.doe@example.org"],
+            "jdoe@example.org",
         )
         .await;
     let jane = test
@@ -86,6 +87,7 @@ pub async fn test(test: &mut TestServer) {
             "jane.smith@example.org",
             "this is a very strong password",
             &[],
+            "jane.smith@example.org",
         )
         .await;
     let bill = test
@@ -94,6 +96,7 @@ pub async fn test(test: &mut TestServer) {
             "bill@example.org",
             "this is a very strong password",
             &[],
+            "bill@example.org",
         )
         .await;
     admin
@@ -609,13 +612,7 @@ impl Account {
     }
 
     pub async fn spam_training_samples(&self) -> Vec<(Id, SpamTrainingSample)> {
-        let ids = self.spam_training_sample_ids().await;
-        let mut results = Vec::with_capacity(ids.len());
-        for id in ids {
-            let sample = self.registry_get::<SpamTrainingSample>(id).await;
-            results.push((id, sample));
-        }
-        results
+        self.registry_get_all().await
     }
 }
 

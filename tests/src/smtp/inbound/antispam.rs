@@ -171,8 +171,8 @@ allow-invalid-certs = true
 
 #[tokio::test(flavor = "multi_thread")]
 async fn antispam() {
-    // Enable logging
-    crate::enable_logging();
+    
+    
 
     // Prepare config
     let tmp_dir = TempDir::new("smtp_antispam_test", true);

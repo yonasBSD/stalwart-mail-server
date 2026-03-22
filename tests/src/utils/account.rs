@@ -26,8 +26,10 @@ pub struct Account {
     name: &'static str,
     secret: &'static str,
     emails: &'static [&'static str],
+    description: &'static str,
     id: Id,
     id_string: String,
+    pub http_listener_port: u16,
 }
 
 impl TestServer {
@@ -37,10 +39,27 @@ impl TestServer {
         name: &'static str,
         secret: &'static str,
         aliases: &'static [&'static str],
+        description: &'static str,
     ) -> Account {
         self.account(using_account)
-            .create_user_account(name, secret, None, aliases, vec![])
+            .create_user_account(name, secret, description, aliases, vec![])
             .await
+    }
+
+    pub async fn create_admin_account(&self, name: &'static str) -> Account {
+        let admin = self
+            .create_user_account(
+                "admin",
+                name,
+                "these_pretzels_are_making_me_thirsty",
+                &[],
+                "Admin",
+            )
+            .await;
+        self.account("admin")
+            .assign_roles_to_account(admin.id(), &["user", "system"])
+            .await;
+        admin
     }
 
     pub fn insert_account(&mut self, account: Account) {
@@ -53,14 +72,17 @@ impl Account {
         name: &'static str,
         secret: &'static str,
         emails: &'static [&'static str],
+        description: &'static str,
         id: Id,
     ) -> Self {
         Self {
             name,
             secret,
             emails,
+            description,
             id,
             id_string: id.to_string(),
+            http_listener_port: 8899,
         }
     }
 
@@ -79,6 +101,11 @@ impl Account {
     pub fn name(&self) -> &'static str {
         self.name
     }
+
+    pub fn description(&self) -> &'static str {
+        self.description
+    }
+
     pub fn secret(&self) -> &'static str {
         self.secret
     }
@@ -107,7 +134,7 @@ impl Account {
         &self,
         name: &'static str,
         secret: &'static str,
-        description: Option<&'static str>,
+        description: &'static str,
         aliases: &'static [&'static str],
         extra_permissions: Vec<Permission>,
     ) -> Account {
@@ -128,7 +155,7 @@ impl Account {
             .rsplit_once('@')
             .map(|(name, domain)| (name.to_string(), *domains.get(domain).unwrap()))
             .unwrap();
-        let account_aliases = aliases.iter().map(|email| {
+        let account_aliases = aliases.iter().filter(|email| **email != name).map(|email| {
             let (name, domain_id) = email
                 .rsplit_once('@')
                 .map(|(name, domain)| (name.to_string(), *domains.get(domain).unwrap()))
@@ -150,7 +177,7 @@ impl Account {
                     ..Default::default()
                 })]),
                 aliases: List::from_iter(account_aliases),
-                description: description.map(|d| d.to_string()),
+                description: description.to_string().into(),
                 permissions: Permissions::Merge(PermissionsList {
                     disabled_permissions: Default::default(),
                     enabled_permissions: Map::new(extra_permissions),
@@ -159,13 +186,15 @@ impl Account {
             }))
             .await;
 
-        Account::new(name, secret, aliases, account_id)
+        let mut account = Account::new(name, secret, aliases, description, account_id);
+        account.http_listener_port = self.http_listener_port;
+        account
     }
 
     pub async fn create_group_account(
         &self,
         name: &'static str,
-        description: Option<&'static str>,
+        description: &'static str,
         aliases: &'static [&'static str],
     ) -> Account {
         let mut domains = AHashMap::from_iter(
@@ -203,12 +232,12 @@ impl Account {
                 name: account_name,
                 domain_id,
                 aliases: List::from_iter(account_aliases),
-                description: description.map(|d| d.to_string()),
+                description: description.to_string().into(),
                 ..Default::default()
             }))
             .await;
 
-        Account::new(name, "", aliases, account_id)
+        Account::new(name, "", aliases, description, account_id)
     }
 
     pub async fn create_domain(&self, name: &'static str) -> Id {
@@ -269,7 +298,7 @@ impl Account {
             .timeout(Duration::from_secs(3600))
             .accept_invalid_certs(true)
             .follow_redirects(["127.0.0.1"])
-            .connect("https://127.0.0.1:8899")
+            .connect(&format!("https://127.0.0.1:{}", self.http_listener_port))
             .await
             .unwrap();
         client.set_default_account_id(self.id_string());

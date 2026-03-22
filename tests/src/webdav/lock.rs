@@ -4,14 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use super::{DavResponse, DummyWebDavClient, WebDavTest};
-use crate::webdav::GenerateTestDavResource;
+use crate::utils::{server::TestServer, webdav::GenerateTestDavResource};
+
 use dav_proto::schema::property::{DavProperty, WebDavProperty};
 use groupware::DavResourceName;
 use hyper::StatusCode;
 
-pub async fn test(test: &WebDavTest) {
-    let client = test.client("john");
+pub async fn test(test: &TestServer) {
+    let client = test.account("john@example.com").webdav_client();
 
     for resource_type in [
         DavResourceName::File,
@@ -22,7 +22,7 @@ pub async fn test(test: &WebDavTest) {
             "Running LOCK/UNLOCK tests ({})...",
             resource_type.base_path()
         );
-        let base_path = format!("{}/john", resource_type.base_path());
+        let base_path = format!("{}/john%40example.com", resource_type.base_path());
 
         // Test 1: Creating a collection under an unmapped resource without providing a lock token should fail
         let path = format!("{base_path}/do-not-write");
@@ -200,10 +200,4 @@ pub async fn test(test: &WebDavTest) {
 
     client.delete_default_containers().await;
     test.assert_is_empty().await;
-}
-
-impl DavResponse {
-    pub fn lock_token(&self) -> &str {
-        self.value("D:prop.D:lockdiscovery.D:activelock.D:locktoken.D:href")
-    }
 }

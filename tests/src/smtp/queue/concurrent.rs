@@ -51,8 +51,8 @@ const NUM_QUEUES: usize = 10;
 #[tokio::test(flavor = "multi_thread", worker_threads = 18)]
 #[serial_test::serial]
 async fn concurrent_queue() {
-    // Enable logging
-    crate::enable_logging();
+    
+    
 
     // Start test server
     let remote = TestSMTP::new("smtp_concurrent_queue_remote", REMOTE).await;

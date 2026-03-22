@@ -50,8 +50,8 @@ return-path = false
 #[tokio::test]
 #[serial_test::serial]
 async fn extensions() {
-    // Enable logging
-    crate::enable_logging();
+    
+    
 
     // Start test server
     let mut remote = TestSMTP::new("smtp_ext_remote", REMOTE).await;

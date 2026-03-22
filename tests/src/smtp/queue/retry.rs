@@ -51,8 +51,8 @@ schedule = [{if = "sender_domain == 'test.org'", then = "'sender-test'"},
 
 #[tokio::test]
 async fn queue_retry() {
-    // Enable logging
-    crate::enable_logging();
+    
+    
 
     // Create temp dir for queue
     let mut local = TestSMTP::new("smtp_queue_retry_test", CONFIG).await;

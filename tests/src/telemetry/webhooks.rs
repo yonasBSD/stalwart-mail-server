@@ -81,6 +81,7 @@ pub async fn test(test: &TestServer) {
             "jdoe@example.org",
             "this is a very strong password",
             &["john.doe@example.org"],
+            "jdoe@example.org",
         )
         .await;
     let mut lmtp = SmtpConnection::connect().await;

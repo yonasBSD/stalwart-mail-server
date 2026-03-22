@@ -4,17 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::utils::{server::TestServer, webdav::GenerateTestDavResource};
 use dav_proto::schema::property::{DavProperty, WebDavProperty};
 use groupware::DavResourceName;
 use hyper::StatusCode;
 
-use crate::webdav::GenerateTestDavResource;
-
-use super::{DavResponse, DummyWebDavClient, WebDavTest};
-
-pub async fn test(test: &WebDavTest) {
-    let owner_client = test.client("bill");
-    let sharee_client = test.client("john");
+pub async fn test(test: &TestServer) {
+    let owner_client = test.account("bill@example.com").webdav_client();
+    let sharee_client = test.account("john@example.com").webdav_client();
 
     for resource_type in [
         DavResourceName::File,
@@ -23,10 +20,16 @@ pub async fn test(test: &WebDavTest) {
     ] {
         println!("Running ACL tests ({})...", resource_type.base_path());
         let is_file = resource_type == DavResourceName::File;
-        let sharee_principal = format!("{}/john/", DavResourceName::Principal.base_path());
-        let sharee_base_path = format!("{}/john/", resource_type.base_path());
-        let owner_principal = format!("{}/bill/", DavResourceName::Principal.base_path());
-        let owner_base_path = format!("{}/bill/", resource_type.base_path());
+        let sharee_principal = format!(
+            "{}/john%40example.com/",
+            DavResourceName::Principal.base_path()
+        );
+        let sharee_base_path = format!("{}/john%40example.com/", resource_type.base_path());
+        let owner_principal = format!(
+            "{}/bill%40example.com/",
+            DavResourceName::Principal.base_path()
+        );
+        let owner_base_path = format!("{}/bill%40example.com/", resource_type.base_path());
 
         // Create a resource for the owner
         let owner_folder = format!("{owner_base_path}test-shared/");

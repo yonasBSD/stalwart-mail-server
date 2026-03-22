@@ -30,8 +30,8 @@ relay = true
 #[tokio::test]
 #[serial_test::serial]
 async fn ip_lookup_strategy() {
-    // Enable logging
-    crate::enable_logging();
+    
+    
 
     // Start test server
     let mut remote = TestSMTP::new("smtp_iplookup_remote", REMOTE).await;

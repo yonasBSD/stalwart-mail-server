@@ -151,6 +151,7 @@ pub async fn test(test: &TestServer) {
         "user@example.org",
         "very strong password indeed",
         &[],
+        "User",
         user_id,
     );
     user.registry_query_ids(

@@ -95,7 +95,7 @@ member-of = ["sales"]
 
 #[tokio::test]
 async fn sieve_scripts() {
-    // Enable logging
+    
     enable_logging();
 
     // Add test scripts

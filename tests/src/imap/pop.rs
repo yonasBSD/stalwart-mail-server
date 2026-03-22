@@ -4,22 +4,19 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{jmap::mail::delivery::SmtpConnection, smtp::session::VerifyResponse};
-use mail_send::smtp::tls::build_tls_connector;
-use rustls_pki_types::ServerName;
-use std::time::Duration;
-use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines, ReadHalf, WriteHalf},
-    net::TcpStream,
+use crate::utils::{
+    imap::AssertResult,
+    pop3::{Pop3Connection, ResponseType},
+    server::TestServer,
+    smtp::SmtpConnection,
 };
-use tokio_rustls::client::TlsStream;
 
-pub async fn test() {
+pub async fn test(test: &TestServer) {
     println!("Running POP3 tests...");
 
     // Send 3 test emails
     for i in 0..3 {
-        let mut lmtp = SmtpConnection::connect_port(11201).await;
+        let mut lmtp = SmtpConnection::connect().await;
         lmtp.ingest(
             "bill@example.com",
             &["popper@example.com"],
@@ -41,8 +38,8 @@ pub async fn test() {
     }
 
     // Connect to POP3
+    let account = test.account("popper@example.com");
     let mut pop3 = Pop3Connection::connect().await;
-    pop3.assert_read(ResponseType::Ok).await;
 
     // Capabilities
     pop3.send("CAPA").await;
@@ -64,16 +61,13 @@ pub async fn test() {
     pop3.assert_read(ResponseType::Err).await;
     pop3.send("USER popper@example.com").await;
     pop3.assert_read(ResponseType::Ok).await;
-    pop3.send("PASS secret").await;
+    pop3.send(&format!("PASS {}", account.secret())).await;
     pop3.assert_read(ResponseType::Ok).await;
     pop3.send("QUIT").await;
 
     // Authenticate using AUTH PLAIN
     let mut pop3 = Pop3Connection::connect().await;
-    pop3.assert_read(ResponseType::Ok).await;
-    pop3.send("AUTH PLAIN AHBvcHBlckBleGFtcGxlLmNvbQBzZWNyZXQ=")
-        .await;
-    pop3.assert_read(ResponseType::Ok).await;
+    pop3.authenticate(account.name(), account.secret()).await;
 
     // STAT
     pop3.send("STAT").await;
@@ -149,7 +143,8 @@ pub async fn test() {
     pop3.send("RSET").await;
     pop3.assert_read(ResponseType::Ok).await;
     pop3.send("QUIT").await;
-    let mut pop3 = Pop3Connection::connect_and_login().await;
+    let mut pop3 = Pop3Connection::connect().await;
+    pop3.authenticate(account.name(), account.secret()).await;
     pop3.send("STAT").await;
     pop3.assert_read(ResponseType::Ok)
         .await
@@ -160,7 +155,8 @@ pub async fn test() {
     pop3.assert_read(ResponseType::Ok).await;
     pop3.send("QUIT").await;
     pop3.assert_read(ResponseType::Ok).await;
-    let mut pop3 = Pop3Connection::connect_and_login().await;
+    let mut pop3 = Pop3Connection::connect().await;
+    pop3.authenticate(account.name(), account.secret()).await;
     pop3.send("STAT").await;
     pop3.assert_read(ResponseType::Ok)
         .await
@@ -180,7 +176,8 @@ pub async fn test() {
     pop3.assert_read(ResponseType::Ok).await;
     pop3.send("QUIT").await;
     pop3.assert_read(ResponseType::Ok).await;
-    let mut pop3 = Pop3Connection::connect_and_login().await;
+    let mut pop3 = Pop3Connection::connect().await;
+    pop3.authenticate(account.name(), account.secret()).await;
     pop3.send("STAT").await;
     pop3.assert_read(ResponseType::Ok)
         .await

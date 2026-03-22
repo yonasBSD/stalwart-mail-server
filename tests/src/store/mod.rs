@@ -14,10 +14,6 @@ pub mod registry;
 use crate::utils::server::TestServerBuilder;
 use std::io::Read;
 
-pub struct TempDir {
-    pub path: std::path::PathBuf,
-}
-
 #[tokio::test(flavor = "multi_thread")]
 pub async fn store_tests() {
     let test = TestServerBuilder::new("store_tests").await.build().await;
@@ -65,20 +61,4 @@ pub fn deflate_test_resource(name: &str) -> Vec<u8> {
     let mut result = Vec::new();
     decoder.read_to_end(&mut result).unwrap();
     result
-}
-
-impl TempDir {
-    pub fn new(name: &str, delete_if_exists: bool) -> Self {
-        let mut path = std::env::temp_dir();
-        path.push(name);
-        if delete_if_exists && path.exists() {
-            std::fs::remove_dir_all(&path).unwrap();
-        }
-        std::fs::create_dir_all(&path).unwrap();
-        Self { path }
-    }
-
-    pub fn delete(&self) {
-        std::fs::remove_dir_all(&self.path).unwrap();
-    }
 }
