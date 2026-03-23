@@ -419,12 +419,21 @@ impl TestServer {
         self.reset
     }
 
+    pub fn tmp_dir(&self) -> &str {
+        self.temp_dir.path.as_os_str().to_str().unwrap()
+    }
+
     pub fn shutdown(&self) {
         let _ = self.shutdown_tx.send(true);
     }
 
     pub fn new_mta_session(&self) -> Session<DummyIo> {
         Session::test(self.server.clone())
+    }
+
+    pub fn new_mta_session_with_shutdown(&self) -> (Session<DummyIo>, watch::Sender<bool>) {
+        let (tx, rx) = watch::channel(true);
+        (Session::test_with_shutdown(self.server.clone(), rx), tx)
     }
 
     pub async fn resources(&self, name: &'static str, collection: Collection) -> Arc<DavResources> {

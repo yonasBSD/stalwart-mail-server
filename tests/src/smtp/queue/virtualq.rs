@@ -5,7 +5,7 @@
  */
 
 use crate::{
-    smtp::{DnsCache, TestSMTP, session::TestSession},
+    smtp::{DnsCache,  session::TestSession},
     store::cleanup::store_assert_is_empty,
 };
 use common::{

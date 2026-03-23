@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use common::config::server::ServerProtocol;
 use mail_auth::{IpLookupStrategy, MX};
 
-use crate::smtp::{DnsCache, TestSMTP, session::TestSession};
+use crate::smtp::{DnsCache,  session::TestSession};
 
 const LOCAL: &str = r#"
 [session.rcpt]

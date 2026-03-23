@@ -6,7 +6,7 @@
 
 use crate::{
     jmap::ManagementApi,
-    smtp::{TestSMTP, management::queue::List},
+    smtp::{ management::queue::List},
 };
 use ahash::{AHashMap, HashSet};
 use common::{

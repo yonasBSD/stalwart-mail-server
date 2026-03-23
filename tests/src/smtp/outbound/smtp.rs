@@ -14,7 +14,7 @@ use mail_auth::MX;
 use store::write::now;
 
 use crate::smtp::{
-    DnsCache, TestSMTP,
+    DnsCache, 
     inbound::{TestMessage, TestQueueEvent},
     queue::QueuedEvents,
     session::{TestSession, VerifyResponse},

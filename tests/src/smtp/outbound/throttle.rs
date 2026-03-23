@@ -5,7 +5,7 @@
  */
 
 use crate::smtp::{
-    DnsCache, TestSMTP,
+    DnsCache, 
     inbound::TestQueueEvent,
     queue::{build_rcpt, manager::new_message},
     session::TestSession,

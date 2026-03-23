@@ -7,7 +7,7 @@
 use crate::{
     http_server::{HttpMessage, spawn_mock_http_server},
     jmap::server::enterprise::EnterpriseCore,
-    smtp::{DnsCache, TempDir, TestSMTP, session::TestSession},
+    smtp::{DnsCache, session::TestSession},
 };
 use ahash::{AHashMap, AHashSet};
 use common::{
@@ -171,9 +171,6 @@ allow-invalid-certs = true
 
 #[tokio::test(flavor = "multi_thread")]
 async fn antispam() {
-    
-    
-
     // Prepare config
     let tmp_dir = TempDir::new("smtp_antispam_test", true);
     let mut config = CONFIG.replace("{PATH}", tmp_dir.temp_dir.as_path().to_str().unwrap());
@@ -389,7 +386,7 @@ async fn antispam() {
             let mut in_params = true;
 
             // Build session
-            let mut session = Session::test(server.clone());
+            let mut session = test.new_mta_session();
             let mut arc_result = None;
             let mut dkim_result = None;
             let mut dkim_signatures = vec![];

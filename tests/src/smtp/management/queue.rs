@@ -6,7 +6,7 @@
 
 use crate::{
     jmap::ManagementApi,
-    smtp::{DnsCache, TestSMTP, session::TestSession},
+    smtp::{DnsCache,  session::TestSession},
 };
 use ahash::{AHashMap, HashMap, HashSet};
 use common::config::server::ServerProtocol;

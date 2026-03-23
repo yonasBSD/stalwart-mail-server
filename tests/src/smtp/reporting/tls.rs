@@ -18,7 +18,7 @@ use store::write::QueueClass;
 use smtp::reporting::tls::{TLS_HTTP_REPORT, TlsReporting};
 
 use crate::smtp::{
-    TestSMTP,
+    
     inbound::{TestMessage, sign::SIGNATURES},
     session::VerifyResponse,
 };

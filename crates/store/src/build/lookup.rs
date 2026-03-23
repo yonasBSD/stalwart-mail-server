@@ -36,6 +36,11 @@ impl LookupStores {
                         .await
                         .map(InMemoryStore::Store)
                 }
+                #[cfg(feature = "sqlite")]
+                LookupStore::Sqlite(sqlite_store) => {
+                    crate::backend::sqlite::SqliteStore::open(sqlite_store)
+                        .map(InMemoryStore::Store)
+                }
                 // SPDX-SnippetBegin
                 // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
                 // SPDX-License-Identifier: LicenseRef-SEL

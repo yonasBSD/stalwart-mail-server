@@ -74,7 +74,7 @@ impl IfBlock {
 }
 
 impl Expression {
-    fn parse(token_map: &TokenMap, expr: &str) -> Self {
+    pub fn parse(token_map: &TokenMap, expr: &str) -> Self {
         ExpressionParser::new(Tokenizer::new(expr, token_map))
             .parse()
             .unwrap()

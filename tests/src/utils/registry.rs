@@ -218,6 +218,11 @@ impl Account {
         self.registry_create_object(Action::ReloadSettings).await;
     }
 
+    pub async fn reload_lookup_stores(&self) {
+        self.registry_create_object(Action::ReloadLookupStores)
+            .await;
+    }
+
     pub async fn registry_update_object_expect_err(
         &self,
         object: ObjectType,

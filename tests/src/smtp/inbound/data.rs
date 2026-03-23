@@ -193,6 +193,7 @@ async fn data() {
         .await;
     admin.reload_settings().await;
     test.reload_core();
+    test.expect_reload_settings().await;
 
     // Test queue message builder
     let mut session = test.new_mta_session();

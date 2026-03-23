@@ -5,7 +5,7 @@
  */
 
 use crate::smtp::{
-    TestSMTP,
+    
     queue::{QueuedEvents, build_rcpt},
 };
 use common::config::smtp::queue::QueueName;

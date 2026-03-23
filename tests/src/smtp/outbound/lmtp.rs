@@ -7,7 +7,7 @@
 use std::time::{Duration, Instant};
 
 use crate::smtp::{
-    DnsCache, TestSMTP,
+    DnsCache, 
     inbound::TestMessage,
     queue::QueuedEvents,
     session::{TestSession, VerifyResponse},

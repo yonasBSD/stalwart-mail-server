@@ -4,14 +4,15 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::smtp::{
-    TempDir, TestSMTP,
-    inbound::TestMessage,
-    session::{TestSession, VerifyResponse, load_test_message},
+use crate::{
+    smtp::{
+        inbound::TestMessage,
+        session::{TestSession, VerifyResponse, load_test_message},
+    },
+    utils::server::TestServerBuilder,
 };
 use ahash::AHashSet;
 use common::{
-    Core,
     config::smtp::session::{Milter, MilterVersion, Stage},
     expr::if_block::IfBlock,
     manager::application::Resource,
@@ -21,9 +22,17 @@ use hyper::{body, server::conn::http1, service::service_fn};
 use hyper_util::rt::TokioIo;
 use mail_auth::AuthenticatedMessage;
 use mail_parser::MessageParser;
+use registry::{
+    schema::{
+        enums::{self, MtaStage},
+        prelude::{ObjectType, Property},
+        structs::{Expression, MtaHook, MtaMilter, MtaStageAuth, MtaStageRcpt},
+    },
+    types::map::Map,
+};
 use serde::Deserialize;
 use smtp::{
-    core::{Session, SessionData},
+    core::SessionData,
     inbound::{
         hooks::{self, Request, SmtpResponse},
         milter::{
@@ -45,69 +54,60 @@ struct HeaderTest {
     result: String,
 }
 
-const CONFIG_MILTER: &str = r#"
-[storage]
-data = "rocksdb"
-lookup = "rocksdb"
-blob = "rocksdb"
-fts = "rocksdb"
-
-[store."rocksdb"]
-type = "rocksdb"
-path = "{TMP}/queue.db"
-
-[session.rcpt]
-relay = true
-
-[[session.milter]]
-hostname = "127.0.0.1"
-port = 9332
-#port = 11332
-#port = 7357
-enable = true
-options.version = 6
-tls = false
-stages = ["data"]
-
-"#;
-
-const CONFIG_JMILTER: &str = r#"
-[storage]
-data = "rocksdb"
-lookup = "rocksdb"
-blob = "rocksdb"
-fts = "rocksdb"
-
-[store."rocksdb"]
-type = "rocksdb"
-path = "{TMP}/queue.db"
-
-[session.rcpt]
-relay = true
-
-[[session.hook]]
-url = "http://127.0.0.1:9333"
-enable = true
-stages = ["data"]
-"#;
-
 #[tokio::test]
 async fn milter_session() {
-    
-    
+    let mut test = TestServerBuilder::new("smtp_milter_test")
+        .await
+        .with_http_listener(19014)
+        .await
+        .capture_queue()
+        .disable_services()
+        .build()
+        .await;
 
-    // Configure tests
-    let tmp_dir = TempDir::new("smtp_milter_test", true);
-    let mut config = Config::new(tmp_dir.update_config(CONFIG_MILTER)).unwrap();
-    let stores = Stores::parse_all(&mut config, false).await;
-    let core = Core::parse(&mut config, stores, Default::default()).await;
+    // Add test settings
+    let admin = test.account("admin");
+    admin
+        .registry_create_object(MtaStageAuth {
+            require: Expression {
+                else_: "false".into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .await;
+    admin
+        .registry_create_object(MtaStageRcpt {
+            allow_relaying: Expression {
+                else_: "true".into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .await;
+    admin
+        .registry_create_object(MtaMilter {
+            enable: Expression {
+                else_: "true".into(),
+                ..Default::default()
+            },
+            hostname: "127.0.0.1".into(),
+            port: 9332,
+            use_tls: false,
+            stages: Map::new(vec![MtaStage::Data]),
+            protocol_version: enums::MilterVersion::V6,
+            ..Default::default()
+        })
+        .await;
+    admin.reload_settings().await;
+    test.reload_core();
+    test.expect_reload_settings().await;
+
     let _rx = spawn_mock_milter_server();
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     // Build session
-    let test = TestSMTP::from_core(core);
-    let mut qr = test.queue_receiver;
-    let mut session = Session::test(test.server);
+    let mut session = test.new_mta_session();
     session.data.remote_ip_str = "10.0.0.1".into();
     session.eval_session_params().await;
     session.ehlo("mx.doe.org").await;
@@ -121,7 +121,7 @@ async fn milter_session() {
             "503 5.5.3",
         )
         .await;
-    qr.assert_no_events();
+    test.assert_no_events();
 
     // Test discard
     session
@@ -132,7 +132,7 @@ async fn milter_session() {
             "250 2.0.0",
         )
         .await;
-    qr.assert_no_events();
+    test.assert_no_events();
 
     // Test temp fail
     session
@@ -143,7 +143,7 @@ async fn milter_session() {
             "451 4.3.5",
         )
         .await;
-    qr.assert_no_events();
+    test.assert_no_events();
 
     // Test shutdown
     session
@@ -154,7 +154,7 @@ async fn milter_session() {
             "421 4.3.0",
         )
         .await;
-    qr.assert_no_events();
+    test.assert_no_events();
 
     // Test reply code
     session
@@ -165,7 +165,7 @@ async fn milter_session() {
             "321",
         )
         .await;
-    qr.assert_no_events();
+    test.assert_no_events();
 
     // Test accept with header addition
     session
@@ -176,9 +176,9 @@ async fn milter_session() {
             "250 2.0.0",
         )
         .await;
-    qr.expect_message()
+    test.expect_message()
         .await
-        .read_lines(&qr)
+        .read_lines(&test)
         .await
         .assert_contains("X-Hello: World")
         .assert_contains("Subject: Is dinner ready?")
@@ -193,9 +193,9 @@ async fn milter_session() {
             "250 2.0.0",
         )
         .await;
-    qr.expect_message()
+    test.expect_message()
         .await
-        .read_lines(&qr)
+        .read_lines(&test)
         .await
         .assert_contains("Subject: [SPAM] Saying Hello")
         .assert_count("References: ", 1)
@@ -210,9 +210,9 @@ async fn milter_session() {
             "250 2.0.0",
         )
         .await;
-    qr.expect_message()
+    test.expect_message()
         .await
-        .read_lines(&qr)
+        .read_lines(&test)
         .await
         .assert_contains("X-Spam: Yes")
         .assert_contains("123456");
@@ -220,27 +220,55 @@ async fn milter_session() {
 
 #[tokio::test]
 async fn mta_hook_session() {
-    
-    /*let disable = "true";
-    tracing::subscriber::set_global_default(
-        tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(tracing::Level::TRACE)
-            .finish(),
-    )
-    .unwrap();*/
+    let mut test = TestServerBuilder::new("smtp_mta_hook_test")
+        .await
+        .with_http_listener(19015)
+        .await
+        .disable_services()
+        .capture_queue()
+        .build()
+        .await;
 
-    // Configure tests
-    let tmp_dir = TempDir::new("smtp_mta_hook_test", true);
-    let mut config = Config::new(tmp_dir.update_config(CONFIG_JMILTER)).unwrap();
-    let stores = Stores::parse_all(&mut config, false).await;
-    let core = Core::parse(&mut config, stores, Default::default()).await;
+    // Add test settings
+    let admin = test.account("admin");
+    admin
+        .registry_create_object(MtaStageAuth {
+            require: Expression {
+                else_: "false".into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .await;
+    admin
+        .registry_create_object(MtaStageRcpt {
+            allow_relaying: Expression {
+                else_: "true".into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .await;
+    admin
+        .registry_create_object(MtaHook {
+            enable: Expression {
+                else_: "true".into(),
+                ..Default::default()
+            },
+            url: "http://127.0.0.1:9333".into(),
+            stages: Map::new(vec![MtaStage::Data]),
+            ..Default::default()
+        })
+        .await;
+    admin.reload_settings().await;
+    test.reload_core();
+    test.expect_reload_settings().await;
+
     let _rx = spawn_mock_mta_hook_server();
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     // Build session
-    let test = TestSMTP::from_core(core);
-    let mut qr = test.queue_receiver;
-    let mut session = Session::test(test.server);
+    let mut session = test.new_mta_session();
     session.data.remote_ip_str = "10.0.0.1".into();
     session.eval_session_params().await;
     session.ehlo("mx.doe.org").await;
@@ -254,7 +282,7 @@ async fn mta_hook_session() {
             "503 5.5.3",
         )
         .await;
-    qr.assert_no_events();
+    test.assert_no_events();
 
     // Test discard
     session
@@ -265,7 +293,7 @@ async fn mta_hook_session() {
             "250 2.0.0",
         )
         .await;
-    qr.assert_no_events();
+    test.assert_no_events();
 
     // Test temp fail
     session
@@ -276,7 +304,7 @@ async fn mta_hook_session() {
             "451 4.3.5",
         )
         .await;
-    qr.assert_no_events();
+    test.assert_no_events();
 
     // Test shutdown
     session
@@ -287,7 +315,7 @@ async fn mta_hook_session() {
             "421 4.3.0",
         )
         .await;
-    qr.assert_no_events();
+    test.assert_no_events();
 
     // Test reply code
     session
@@ -298,7 +326,7 @@ async fn mta_hook_session() {
             "321",
         )
         .await;
-    qr.assert_no_events();
+    test.assert_no_events();
 
     // Test accept with header addition
     session
@@ -309,9 +337,9 @@ async fn mta_hook_session() {
             "250 2.0.0",
         )
         .await;
-    qr.expect_message()
+    test.expect_message()
         .await
-        .read_lines(&qr)
+        .read_lines(&test)
         .await
         .assert_contains("X-Hello: World")
         .assert_contains("Subject: Is dinner ready?")
@@ -326,9 +354,9 @@ async fn mta_hook_session() {
             "250 2.0.0",
         )
         .await;
-    qr.expect_message()
+    test.expect_message()
         .await
-        .read_lines(&qr)
+        .read_lines(&test)
         .await
         .assert_contains("Subject: [SPAM] Saying Hello")
         .assert_count("References: ", 1)
@@ -343,9 +371,9 @@ async fn mta_hook_session() {
             "250 2.0.0",
         )
         .await;
-    qr.expect_message()
+    test.expect_message()
         .await
-        .read_lines(&qr)
+        .read_lines(&test)
         .await
         .assert_contains("X-Spam: Yes")
         .assert_contains("123456");
@@ -547,8 +575,8 @@ async fn milter_client_test() {
     const PORT: u16 = 7357;
     let mut client = MilterClient::connect(
         &Milter {
-            enable: IfBlock::empty(""),
-            id: Arc::new("test".into()),
+            enable: IfBlock::empty(ObjectType::MtaMilter.singleton(), Property::Enable),
+            id: ObjectType::MtaMilter.singleton(),
             addrs: vec![SocketAddr::from(([127, 0, 0, 1], PORT))],
             hostname: "localhost".into(),
             port: PORT,

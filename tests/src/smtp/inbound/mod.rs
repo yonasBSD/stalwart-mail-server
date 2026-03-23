@@ -19,28 +19,29 @@ use store::{
 use tokio::sync::mpsc::error::TryRecvError;
 use types::id::Id;
 
+pub mod asn;
 pub mod auth;
 pub mod basic;
 pub mod data;
-pub mod mail;
-pub mod rcpt;
-
-/*
-pub mod antispam;
-pub mod asn;
 pub mod dmarc;
 pub mod ehlo;
 pub mod limits;
+pub mod mail;
 pub mod milter;
+pub mod rcpt;
 pub mod rewrite;
 pub mod scripts;
 pub mod sign;
 pub mod throttle;
 pub mod vrfy;
+
+/*
+pub mod antispam;
 */
 
 impl TestServer {
     pub async fn read_event(&mut self) -> QueueEvent {
+        let todo = "fix antispam tests";
         match tokio::time::timeout(Duration::from_millis(100), self.queue_rx.recv()).await {
             Ok(Some(event)) => event,
             Ok(None) => panic!("Channel closed."),
@@ -71,6 +72,10 @@ impl TestServer {
 
     pub async fn assert_report_is_empty<T: ObjectImpl + PartialEq + std::fmt::Debug>(&self) {
         assert_eq!(self.read_report_events::<T>().await, vec![]);
+    }
+
+    pub async fn expect_reload_settings(&mut self) {
+        self.read_event().await.assert_reload_settings();
     }
 
     pub async fn expect_message(&mut self) -> MessageWrapper {
@@ -230,6 +235,7 @@ impl TestServer {
 }
 
 pub trait TestQueueEvent {
+    fn assert_reload_settings(self);
     fn assert_refresh(self);
     fn assert_done(self);
     fn assert_refresh_or_done(self);
@@ -238,12 +244,18 @@ pub trait TestQueueEvent {
 impl TestQueueEvent for QueueEvent {
     fn assert_refresh(self) {
         match self {
-            QueueEvent::ReloadSettings
-            | QueueEvent::Refresh
+            QueueEvent::Refresh
             | QueueEvent::WorkerDone {
                 status: QueueEventStatus::Deferred,
                 ..
             } => (),
+            e => panic!("Unexpected event: {e:?}"),
+        }
+    }
+
+    fn assert_reload_settings(self) {
+        match self {
+            QueueEvent::ReloadSettings => (),
             e => panic!("Unexpected event: {e:?}"),
         }
     }

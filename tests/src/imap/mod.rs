@@ -207,9 +207,7 @@ pub async fn imap_tests() {
         })
         .await;
     admin.reload_settings().await;
-    admin
-        .registry_create_object(Action::ReloadLookupStores)
-        .await;
+    admin.reload_lookup_stores().await;
 
     test.insert_account(admin);
 

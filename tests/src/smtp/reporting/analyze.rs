@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::smtp::{TestSMTP, inbound::TestQueueEvent, session::TestSession};
+use crate::smtp::{ inbound::TestQueueEvent, session::TestSession};
 use std::time::Duration;
 use store::{IterateParams, ValueKey, write::ValueClass};
 

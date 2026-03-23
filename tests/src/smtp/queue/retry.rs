@@ -7,7 +7,7 @@
 use std::time::Duration;
 
 use crate::smtp::{
-    TestSMTP,
+    
     inbound::{TestMessage, TestQueueEvent},
     queue::QueuedEvents,
     session::{TestSession, VerifyResponse},

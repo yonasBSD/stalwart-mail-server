@@ -21,7 +21,7 @@ use mail_auth::{
 };
 
 use crate::smtp::{
-    DnsCache, TestSMTP,
+    DnsCache, 
     inbound::{TestMessage, TestQueueEvent, TestReportingEvent},
     session::{TestSession, VerifyResponse},
 };

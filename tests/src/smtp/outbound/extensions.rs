@@ -11,7 +11,7 @@ use mail_auth::MX;
 use smtp_proto::{MAIL_REQUIRETLS, MAIL_RET_HDRS, MAIL_SMTPUTF8, RCPT_NOTIFY_NEVER};
 
 use crate::smtp::{
-    DnsCache, TestSMTP,
+    DnsCache, 
     inbound::{TestMessage, TestQueueEvent},
     session::{TestSession, VerifyResponse},
 };
