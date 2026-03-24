@@ -31,8 +31,8 @@ use registry::{
         enums::{Permission, SpecialUse},
         prelude::ObjectType,
         structs::{
-            Action, Email, EmailFolder, Expression, Imap, MemoryLookupKey, MtaStageAuth,
-            MtaStageData, SpamClassifier, SpamTag, SpamTagScore,
+            Email, EmailFolder, Expression, Imap, MemoryLookupKey, MtaStageAuth, MtaStageData,
+            SpamClassifier, SpamTag, SpamTagScore,
         },
     },
     types::float::Float,

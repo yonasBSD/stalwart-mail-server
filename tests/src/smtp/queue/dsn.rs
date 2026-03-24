@@ -4,8 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{smtp::inbound::sign::SIGNATURES, utils::server::TestServer};
+use crate::utils::server::{TestServer, TestServerBuilder};
 use common::config::smtp::queue::{QueueExpiry, QueueName};
+use registry::schema::{
+    enums::CompressionAlgo,
+    structs::{DsnReportSettings, Expression, ReportSettings},
+};
 use smtp::queue::{
     Error, ErrorDetails, HostResponse, Message, MessageWrapper, Recipient, Schedule, Status,
     UnexpectedResponse, dsn::SendDsn,
@@ -20,28 +24,8 @@ use std::{
 use store::write::now;
 use types::blob_hash::BlobHash;
 
-const CONFIG: &str = r#"
-[report]
-submitter = "'mx.example.org'"
-
-[session.ehlo]
-reject-non-fqdn = false
-
-[session.rcpt]
-relay = true
-
-[report.dsn]
-from-name = "'Mail Delivery Subsystem'"
-from-address = "'MAILER-DAEMON@example.org'"
-sign = "['rsa']"
-
-"#;
-
 #[tokio::test]
 async fn generate_dsn() {
-    
-    
-
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     path.push("resources");
     path.push("smtp");
@@ -92,30 +76,71 @@ async fn generate_dsn() {
         },
     };
 
-    // Load config
-    let mut local = TestSMTP::new("smtp_dsn_test", CONFIG.to_string() + SIGNATURES).await;
-    let core = local.build_smtp();
-    let qr = &mut local.queue_receiver;
+    let mut local = TestServerBuilder::new("smtp_queue_dsn")
+        .await
+        .with_http_listener(19039)
+        .await
+        .disable_services()
+        .capture_queue()
+        .build()
+        .await;
+    let local_admin = local.account("admin");
+    local_admin
+        .registry_create_object(ReportSettings {
+            outbound_report_submitter: Expression {
+                else_: "'mx.example.org'".into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .await;
+    local_admin
+        .registry_create_object(DsnReportSettings {
+            dkim_sign_domain: Expression {
+                else_: "'example.org'".into(),
+                ..Default::default()
+            },
+            from_address: Expression {
+                else_: "'MAILER-DAEMON@example.org'".into(),
+                ..Default::default()
+            },
+            from_name: Expression {
+                else_: "'Mail Delivery Subsystem'".into(),
+                ..Default::default()
+            },
+        })
+        .await;
+    let domain_id = local_admin.find_or_create_domain("example.org").await;
+    local_admin.create_dkim_signatures(domain_id).await;
+    local_admin.mta_allow_non_fqdn().await;
+    local_admin.mta_allow_relaying().await;
+    local_admin.reload_settings().await;
+    local_admin.mta_allow_relaying().await;
+    local.reload_core();
+    local.expect_reload_settings().await;
 
     // Create temp dir for queue
-    qr.blob_store
+    local
+        .server
+        .blob_store()
         .put_blob(
             message.message.blob_hash.as_slice(),
             dsn_original.as_bytes(),
+            CompressionAlgo::Lz4,
         )
         .await
         .unwrap();
 
     // Disabled DSN
-    core.send_dsn(&mut message).await;
-    qr.assert_no_events();
-    qr.assert_queue_is_empty().await;
+    local.server.send_dsn(&mut message).await;
+    local.assert_no_events();
+    local.assert_queue_is_empty().await;
 
     // Failure DSN
     message.message.recipients[0].flags = flags;
-    core.send_dsn(&mut message).await;
-    let dsn_message = qr.expect_message().await;
-    qr.compare_dsn(dsn_message.message, "failure.eml").await;
+    local.server.send_dsn(&mut message).await;
+    let dsn_message = local.expect_message().await;
+    local.compare_dsn(dsn_message.message, "failure.eml").await;
 
     // Success DSN
     message.message.recipients.push(Recipient {
@@ -135,9 +160,9 @@ async fn generate_dsn() {
         expires: QueueExpiry::Ttl(10),
         queue: QueueName::default(),
     });
-    core.send_dsn(&mut message).await;
-    let dsn_message = qr.expect_message().await;
-    qr.compare_dsn(dsn_message.message, "success.eml").await;
+    local.server.send_dsn(&mut message).await;
+    let dsn_message = local.expect_message().await;
+    local.compare_dsn(dsn_message.message, "success.eml").await;
 
     // Delay DSN
     message.message.recipients.push(Recipient {
@@ -153,21 +178,21 @@ async fn generate_dsn() {
         expires: QueueExpiry::Ttl(10),
         queue: QueueName::default(),
     });
-    core.send_dsn(&mut message).await;
-    let dsn_message = qr.expect_message().await;
-    qr.compare_dsn(dsn_message.message, "delay.eml").await;
+    local.server.send_dsn(&mut message).await;
+    let dsn_message = local.expect_message().await;
+    local.compare_dsn(dsn_message.message, "delay.eml").await;
 
     // Mixed DSN
     for rcpt in &mut message.message.recipients {
         rcpt.flags = flags;
     }
     message.message.recipients.last_mut().unwrap().notify.due = now();
-    core.send_dsn(&mut message).await;
-    let dsn_message = qr.expect_message().await;
-    qr.compare_dsn(dsn_message.message, "mixed.eml").await;
+    local.server.send_dsn(&mut message).await;
+    let dsn_message = local.expect_message().await;
+    local.compare_dsn(dsn_message.message, "mixed.eml").await;
 
     // Load queue
-    let queue = qr.read_queued_messages().await;
+    let queue = local.read_queued_messages().await;
     assert_eq!(queue.len(), 4);
 }
 
@@ -206,7 +231,7 @@ impl TestServer {
 fn remove_ids(message: Vec<u8>) -> String {
     let old_message = String::from_utf8(message).unwrap();
     let mut message = String::with_capacity(old_message.len());
-    let mut found_dkim = false;
+    let mut found_dkim = 0;
     let mut skip = false;
 
     let mut boundary = "";
@@ -220,8 +245,8 @@ fn remove_ids(message: Vec<u8>) -> String {
         }
         if line.starts_with("Date:") || line.starts_with("Message-ID:") {
             continue;
-        } else if !found_dkim && line.starts_with("DKIM-Signature:") {
-            found_dkim = true;
+        } else if found_dkim < 2 && line.starts_with("DKIM-Signature:") {
+            found_dkim += 1;
             skip = true;
             continue;
         } else if line.starts_with("--") {
@@ -239,7 +264,7 @@ fn remove_ids(message: Vec<u8>) -> String {
         message.push_str("\r\n");
     }
 
-    if !found_dkim {
+    if found_dkim == 0 {
         panic!("No DKIM signature found in: {old_message}");
     }
 

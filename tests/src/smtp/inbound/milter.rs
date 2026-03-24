@@ -26,7 +26,7 @@ use registry::{
     schema::{
         enums::{self, MtaStage},
         prelude::{ObjectType, Property},
-        structs::{Expression, MtaHook, MtaMilter, MtaStageAuth, MtaStageRcpt},
+        structs::{Expression, MtaHook, MtaMilter, MtaStageRcpt},
     },
     types::map::Map,
 };
@@ -67,24 +67,8 @@ async fn milter_session() {
 
     // Add test settings
     let admin = test.account("admin");
-    admin
-        .registry_create_object(MtaStageAuth {
-            require: Expression {
-                else_: "false".into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .await;
-    admin
-        .registry_create_object(MtaStageRcpt {
-            allow_relaying: Expression {
-                else_: "true".into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .await;
+    admin.mta_no_auth().await;
+    admin.mta_allow_relaying().await;
     admin
         .registry_create_object(MtaMilter {
             enable: Expression {
@@ -231,15 +215,7 @@ async fn mta_hook_session() {
 
     // Add test settings
     let admin = test.account("admin");
-    admin
-        .registry_create_object(MtaStageAuth {
-            require: Expression {
-                else_: "false".into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .await;
+    admin.mta_no_auth().await;
     admin
         .registry_create_object(MtaStageRcpt {
             allow_relaying: Expression {

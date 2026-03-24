@@ -41,7 +41,10 @@ use registry::{
     schema::{
         enums::{DataStoreType, EventPolicy, NetworkListenerProtocol, TracingLevel},
         prelude::{Object, SocketAddr},
-        structs::{Expression, Http, NetworkListener, Tracer, TracerStdout},
+        structs::{
+            Certificate, Expression, Http, NetworkListener, PublicText, SecretKeyFile, SecretText,
+            Tracer, TracerStdout,
+        },
     },
     types::{EnumImpl, map::Map},
 };
@@ -55,7 +58,7 @@ use smtp::{
     },
     reporting::scheduler::SpawnReport,
 };
-use std::{str::FromStr, sync::Arc};
+use std::{path::PathBuf, str::FromStr, sync::Arc};
 use store::{
     RegistryStore, Store, ValueKey,
     registry::{bootstrap::Bootstrap, write::RegistryWrite},
@@ -159,6 +162,32 @@ impl TestServerBuilder {
                 ..Default::default()
             })
             .await
+    }
+
+    pub async fn with_smtp_listener(self, port: u16) -> Self {
+        self.with_listener(NetworkListenerProtocol::Smtp, "smtp", port, false)
+            .await
+    }
+
+    pub async fn with_dummy_tls_cert(self) -> Self {
+        let mut cert_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        cert_path.push("resources");
+        let mut cert = cert_path.clone();
+        cert.push("tls_cert.pem");
+        let mut pk = cert_path.clone();
+        pk.push("tls_privatekey.pem");
+
+        self.with_object(Certificate {
+            private_key: SecretText::File(SecretKeyFile {
+                file_path: pk.to_string_lossy().to_string(),
+            }),
+            certificate: PublicText::File(SecretKeyFile {
+                file_path: cert.to_string_lossy().to_string(),
+            }),
+
+            ..Default::default()
+        })
+        .await
     }
 
     pub async fn with_listener(

@@ -13,7 +13,7 @@ use crate::{
 };
 use core::panic;
 use registry::schema::structs::{
-    Domain, Expression, LookupStore, MtaStageAuth, MtaStageConnect, MtaStageData, MtaStageEhlo,
+    Domain, Expression, LookupStore, MtaStageConnect, MtaStageData, MtaStageEhlo,
     MtaStageMail, MtaStageRcpt, SieveSystemInterpreter, SieveSystemScript, SqliteStore,
     StoreLookup,
 };
@@ -41,15 +41,7 @@ async fn sieve_scripts() {
         })
         .await;
     admin.create_dkim_signatures(domain_id).await;
-    admin
-        .registry_create_object(MtaStageAuth {
-            require: Expression {
-                else_: "false".into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .await;
+    admin.mta_no_auth().await;
     admin
         .registry_create_object(SieveSystemInterpreter {
             default_from_address: Expression {

@@ -207,11 +207,11 @@ impl<'de, T: MapItem> Deserialize<'de> for Map<T> {
             {
                 let mut items = Vec::with_capacity(map.size_hint().unwrap_or(0));
 
-                while let Some(key) = map.next_key::<&str>()? {
+                while let Some(key) = map.next_key::<Cow<'de, str>>()? {
                     let value: Option<bool> = map.next_value()?;
 
                     if value == Some(true) {
-                        let item = T::try_from_string(key)
+                        let item = T::try_from_string(&key)
                             .ok_or_else(|| de::Error::custom(format!("invalid map key: {key}")))?;
                         if !items.contains(&item) {
                             items.push(item);

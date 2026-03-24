@@ -8,7 +8,7 @@ use crate::utils::server::TestServerBuilder;
 use registry::{
     schema::{
         enums::MtaInboundThrottleKey,
-        structs::{Expression, MtaInboundThrottle, MtaStageAuth, Rate},
+        structs::{Expression, MtaInboundThrottle, Rate},
     },
     types::map::Map,
 };
@@ -27,16 +27,7 @@ async fn throttle_inbound() {
 
     // Add test settings
     let admin = test.account("admin");
-    admin
-        .registry_create_object(MtaStageAuth {
-            require: Expression {
-                else_: "false".into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .await;
-
+    admin.mta_no_auth().await;
     admin
         .registry_create_object(MtaInboundThrottle {
             description: None,

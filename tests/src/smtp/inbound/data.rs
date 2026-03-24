@@ -16,8 +16,7 @@ use registry::{
         enums::MtaQueueQuotaKey,
         prelude::ObjectType,
         structs::{
-            Expression, ExpressionMatch, MtaQueueQuota, MtaStageAuth, MtaStageData, SenderAuth,
-            SpamSettings,
+            Expression, ExpressionMatch, MtaQueueQuota, MtaStageData, SenderAuth, SpamSettings,
         },
     },
     types::{list::List, map::Map},
@@ -58,15 +57,7 @@ async fn data() {
     }
 
     // Add test settings
-    admin
-        .registry_create_object(MtaStageAuth {
-            require: Expression {
-                else_: "false".into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .await;
+    admin.mta_no_auth().await;
     admin
         .registry_create_object(SpamSettings {
             enable: false,
@@ -313,8 +304,10 @@ async fn data() {
 
     // Make sure store is empty
     test.clear_queue().await;
-    test.account("admin")
-        .registry_destroy_all(ObjectType::MtaQueueQuota)
+    let admin = test.account("admin");
+    admin.registry_destroy_all(ObjectType::MtaQueueQuota).await;
+    admin
+        .registry_destroy_all(ObjectType::MtaInboundThrottle)
         .await;
     test.assert_is_empty().await;
 }

@@ -605,7 +605,7 @@ impl DmarcReporting for Server {
                 .0
                 .inner
                 .iter()
-                .position(|d| d.value == record)
+                .position(|d| d.value.eq_except_count(&record))
             {
                 report.report.records.0.inner[idx].value.count += 1;
             } else {

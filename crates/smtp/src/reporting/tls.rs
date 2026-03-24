@@ -421,18 +421,19 @@ impl TlsReporting for Server {
             };
 
             // Add failure details
-            if let Some(failure) = event.failure.clone().map(TlsFailureDetails::from) {
+            if let Some(mut failure) = event.failure.clone().map(TlsFailureDetails::from) {
                 if let Some(idx) = policy
                     .failure_details
                     .0
                     .inner
                     .iter()
-                    .position(|d| d.value == failure)
+                    .position(|d| d.value.eq_except_count(&failure))
                 {
                     policy.failure_details.0.inner[idx]
                         .value
                         .failed_session_count += 1;
                 } else {
+                    failure.failed_session_count = 1;
                     policy.failure_details.push(failure);
                 }
 

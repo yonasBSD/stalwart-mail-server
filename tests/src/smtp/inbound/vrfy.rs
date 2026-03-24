@@ -9,7 +9,7 @@ use crate::{
     utils::server::TestServerBuilder,
 };
 use registry::{
-    schema::structs::{Expression, ExpressionMatch, MailingList, MtaExtensions, MtaStageAuth},
+    schema::structs::{Expression, ExpressionMatch, MailingList, MtaExtensions},
     types::{list::List, map::Map},
 };
 
@@ -54,15 +54,7 @@ async fn vrfy_expn() {
         .await;
 
     // Add test settings
-    admin
-        .registry_create_object(MtaStageAuth {
-            require: Expression {
-                else_: "false".into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .await;
+    admin.mta_no_auth().await;
     admin
         .registry_create_object(MtaExtensions {
             vrfy: Expression {

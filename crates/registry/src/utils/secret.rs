@@ -5,8 +5,8 @@
  */
 
 use crate::schema::prelude::{
-    SecretKey, SecretKeyEnvironmentVariable, SecretKeyFile, SecretKeyOptional, SecretKeyValue,
-    SecretText, SecretTextOptional, SecretTextValue,
+    PublicText, SecretKey, SecretKeyEnvironmentVariable, SecretKeyFile, SecretKeyOptional,
+    SecretKeyValue, SecretText, SecretTextOptional, SecretTextValue,
 };
 use std::borrow::Cow;
 
@@ -26,6 +26,16 @@ impl SecretText {
             SecretText::Text(value) => Ok(Cow::Borrowed(value.secret())),
             SecretText::File(file) => file.secret().await.map(Cow::Owned),
             SecretText::EnvironmentVariable(env_var) => env_var.secret().map(Cow::Owned),
+        }
+    }
+}
+
+impl PublicText {
+    pub async fn value(&self) -> Result<Cow<'_, str>, String> {
+        match self {
+            PublicText::Text(value) => Ok(Cow::Borrowed(value.value.as_str())),
+            PublicText::File(file) => file.secret().await.map(Cow::Owned),
+            PublicText::EnvironmentVariable(env_var) => env_var.secret().map(Cow::Owned),
         }
     }
 }

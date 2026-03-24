@@ -18,7 +18,7 @@ use registry::{
         enums::MtaIpStrategy,
         structs::{
             Expression, MtaConnectionIpHost, MtaConnectionStrategy, MtaOutboundStrategy, MtaRoute,
-            MtaRouteMx, MtaStageAuth,
+            MtaRouteMx, 
         },
     },
     types::{ipaddr::IpAddr, list::List},
@@ -75,15 +75,7 @@ async fn strategies() {
 
     // Add test settings
     let admin = test.account("admin");
-    admin
-        .registry_create_object(MtaStageAuth {
-            require: Expression {
-                else_: "false".into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .await;
+    admin.mta_no_auth().await;
     admin
         .registry_create_object(MtaConnectionStrategy {
             name: "test".into(),

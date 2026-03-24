@@ -7,7 +7,7 @@
 use crate::{smtp::session::TestSession, utils::server::TestServerBuilder};
 use registry::{
     schema::structs::{
-        Expression, ExpressionMatch, MtaStageAuth, MtaStageMail, MtaStageRcpt,
+        Expression, ExpressionMatch, MtaStageMail, MtaStageRcpt,
         SieveSystemInterpreter, SieveSystemScript,
     },
     types::list::List,
@@ -39,15 +39,7 @@ async fn address_rewrite() {
 
     // Add test settings
     let admin = test.account("admin");
-    admin
-        .registry_create_object(MtaStageAuth {
-            require: Expression {
-                else_: "false".into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .await;
+    admin.mta_no_auth().await;
     admin
         .registry_create_object(MtaStageMail {
             rewrite: Expression {

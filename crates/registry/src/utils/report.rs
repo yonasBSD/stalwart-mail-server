@@ -5,7 +5,11 @@
  */
 
 use crate::{
-    schema::{enums, prelude::UTCDateTime, structs},
+    schema::{
+        enums,
+        prelude::UTCDateTime,
+        structs::{self, DmarcReportRecord, TlsFailureDetails},
+    },
     types::{ipaddr::IpAddr, list::List},
 };
 use mail_auth::{
@@ -925,5 +929,33 @@ impl From<&mail_auth::dmarc::Policy> for enums::DmarcDisposition {
             mail_auth::dmarc::Policy::Reject => enums::DmarcDisposition::Reject,
             mail_auth::dmarc::Policy::Unspecified => enums::DmarcDisposition::Unspecified,
         }
+    }
+}
+
+impl DmarcReportRecord {
+    pub fn eq_except_count(&self, other: &Self) -> bool {
+        self.dkim_results == other.dkim_results
+            && self.envelope_from == other.envelope_from
+            && self.envelope_to == other.envelope_to
+            && self.evaluated_disposition == other.evaluated_disposition
+            && self.evaluated_dkim == other.evaluated_dkim
+            && self.evaluated_spf == other.evaluated_spf
+            && self.extensions == other.extensions
+            && self.header_from == other.header_from
+            && self.policy_override_reasons == other.policy_override_reasons
+            && self.source_ip == other.source_ip
+            && self.spf_results == other.spf_results
+    }
+}
+
+impl TlsFailureDetails {
+    pub fn eq_except_count(&self, other: &Self) -> bool {
+        self.additional_information == other.additional_information
+            && self.failure_reason_code == other.failure_reason_code
+            && self.receiving_ip == other.receiving_ip
+            && self.receiving_mx_helo == other.receiving_mx_helo
+            && self.receiving_mx_hostname == other.receiving_mx_hostname
+            && self.result_type == other.result_type
+            && self.sending_mta_ip == other.sending_mta_ip
     }
 }

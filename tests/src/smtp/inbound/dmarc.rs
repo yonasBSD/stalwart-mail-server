@@ -21,8 +21,8 @@ use mail_auth::{
 };
 use registry::{
     schema::structs::{
-        DkimReportSettings, DmarcReportSettings, Domain, Expression, ExpressionMatch, MtaStageAuth,
-        MtaStageData, SenderAuth, SpfReportSettings,
+        DkimReportSettings, DmarcReportSettings, Domain, Expression, ExpressionMatch, SenderAuth,
+        SpfReportSettings,
     },
     types::list::List,
 };
@@ -50,48 +50,8 @@ async fn dmarc() {
         })
         .await;
     admin.create_dkim_signatures(domain_id).await;
-    admin
-        .registry_create_object(MtaStageAuth {
-            require: Expression {
-                else_: "false".into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .await;
-    admin
-        .registry_create_object(MtaStageData {
-            add_date_header: Expression {
-                else_: "true".into(),
-                ..Default::default()
-            },
-            add_message_id_header: Expression {
-                else_: "true".into(),
-                ..Default::default()
-            },
-            add_received_header: Expression {
-                else_: "true".into(),
-                ..Default::default()
-            },
-            add_received_spf_header: Expression {
-                else_: "true".into(),
-                ..Default::default()
-            },
-            add_auth_results_header: Expression {
-                else_: "true".into(),
-                ..Default::default()
-            },
-            add_return_path_header: Expression {
-                else_: "false".into(),
-                ..Default::default()
-            },
-            enable_spam_filter: Expression {
-                else_: "false".into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .await;
+    admin.mta_no_auth().await;
+    admin.mta_add_all_headers().await;
     admin
         .registry_create_object(SenderAuth {
             dmarc_verify: Expression {

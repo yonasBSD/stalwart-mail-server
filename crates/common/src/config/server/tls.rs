@@ -282,8 +282,18 @@ pub(crate) async fn parse_certificates(
                 continue;
             }
         };
+        let public = match cert_obj.object.certificate.value().await {
+            Ok(value) => value.into_owned().into_bytes(),
+            Err(err) => {
+                bp.build_error(
+                    cert_obj.id,
+                    format!("Failed to obtain certificate value: {err}"),
+                );
+                continue;
+            }
+        };
 
-        match build_certified_key(cert_obj.object.certificate.into_bytes(), secret) {
+        match build_certified_key(public, secret) {
             Ok(cert) => {
                 match cert
                     .end_entity_cert()

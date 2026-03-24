@@ -18,8 +18,8 @@ use mail_auth::{
 use registry::schema::{
     enums::DkimCanonicalization,
     structs::{
-        Dkim1Signature, DkimPrivateKey, DkimSignature, Domain, Expression, MtaStageAuth,
-        MtaStageData, SecretTextValue, SenderAuth,
+        Dkim1Signature, DkimPrivateKey, DkimSignature, Domain, Expression, SecretTextValue,
+        SenderAuth,
     },
 };
 use std::time::{Duration, Instant};
@@ -46,48 +46,8 @@ async fn sign_and_seal() {
         })
         .await;
     admin.create_dkim_signatures(domain_id).await;
-    admin
-        .registry_create_object(MtaStageAuth {
-            require: Expression {
-                else_: "false".into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .await;
-    admin
-        .registry_create_object(MtaStageData {
-            add_date_header: Expression {
-                else_: "true".into(),
-                ..Default::default()
-            },
-            add_message_id_header: Expression {
-                else_: "true".into(),
-                ..Default::default()
-            },
-            add_received_header: Expression {
-                else_: "true".into(),
-                ..Default::default()
-            },
-            add_received_spf_header: Expression {
-                else_: "true".into(),
-                ..Default::default()
-            },
-            add_auth_results_header: Expression {
-                else_: "true".into(),
-                ..Default::default()
-            },
-            add_return_path_header: Expression {
-                else_: "false".into(),
-                ..Default::default()
-            },
-            enable_spam_filter: Expression {
-                else_: "false".into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .await;
+    admin.mta_no_auth().await;
+    admin.mta_add_all_headers().await;
     admin
         .registry_create_object(SenderAuth {
             dmarc_verify: Expression {

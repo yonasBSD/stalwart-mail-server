@@ -13,7 +13,7 @@ use registry::{
     schema::{
         enums::MtaInboundThrottleKey,
         structs::{
-            Expression, ExpressionMatch, MtaExtensions, MtaInboundThrottle, MtaStageAuth,
+            Expression, ExpressionMatch, MtaExtensions, MtaInboundThrottle,
             MtaStageData, MtaStageEhlo, MtaStageMail, Rate, SenderAuth,
         },
     },
@@ -43,15 +43,7 @@ async fn mail() {
             ..Default::default()
         })
         .await;
-    admin
-        .registry_create_object(MtaStageAuth {
-            require: Expression {
-                else_: "false".into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .await;
+    admin.mta_no_auth().await;
     admin
         .registry_create_object(SenderAuth {
             reverse_ip_verify: Expression {

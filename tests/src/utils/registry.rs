@@ -11,7 +11,10 @@ use crate::utils::{
 use registry::{
     schema::{
         prelude::{ObjectType, Property},
-        structs::Action,
+        structs::{
+            Action, Expression, MtaExtensions, MtaStageAuth, MtaStageData, MtaStageEhlo,
+            MtaStageRcpt, SpamSettings,
+        },
     },
     types::{EnumImpl, ObjectImpl},
 };
@@ -78,8 +81,8 @@ impl Account {
         let mut items = Vec::with_capacity(response.list().len());
         for item in response.list() {
             let id = item.object_id();
-            let item = serde_json::from_str(&item.to_string()).unwrap_or_else(|_| {
-                panic!("Failed to deserialize {item}");
+            let item = serde_json::from_str(&item.to_string()).unwrap_or_else(|err| {
+                panic!("Failed to deserialize {item} : {err}");
             });
             items.push((id, item));
         }
@@ -251,6 +254,128 @@ impl Account {
         self.registry_destroy(ObjectType::Account, [account_id])
             .await
             .assert_destroyed(&[account_id]);
+    }
+
+    pub async fn mta_allow_relaying(&self) {
+        self.registry_create_object(MtaStageRcpt {
+            allow_relaying: Expression {
+                else_: "true".into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .await;
+    }
+
+    pub async fn mta_disable_spam_filter(&self) {
+        self.registry_create_object(SpamSettings {
+            enable: false,
+            ..Default::default()
+        })
+        .await;
+    }
+
+    pub async fn mta_no_auth(&self) {
+        self.registry_create_object(MtaStageAuth {
+            require: Expression {
+                else_: "false".into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .await;
+    }
+
+    pub async fn mta_all_extensions(&self) {
+        self.registry_create_object(MtaExtensions {
+            chunking: Expression {
+                else_: "true".into(),
+                ..Default::default()
+            },
+            deliver_by: Expression {
+                else_: "true".into(),
+                ..Default::default()
+            },
+            dsn: Expression {
+                else_: "true".into(),
+                ..Default::default()
+            },
+            expn: Expression {
+                else_: "true".into(),
+                ..Default::default()
+            },
+            future_release: Expression {
+                else_: "true".into(),
+                ..Default::default()
+            },
+            mt_priority: Expression {
+                else_: "true".into(),
+                ..Default::default()
+            },
+            no_soliciting: Expression {
+                else_: "true".into(),
+                ..Default::default()
+            },
+            pipelining: Expression {
+                else_: "true".into(),
+                ..Default::default()
+            },
+            require_tls: Expression {
+                else_: "true".into(),
+                ..Default::default()
+            },
+            vrfy: Expression {
+                else_: "true".into(),
+                ..Default::default()
+            },
+        })
+        .await;
+    }
+
+    pub async fn mta_allow_non_fqdn(&self) {
+        self.registry_create_object(MtaStageEhlo {
+            reject_non_fqdn: Expression {
+                else_: "false".into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .await;
+    }
+
+    pub async fn mta_add_all_headers(&self) {
+        self.registry_create_object(MtaStageData {
+            add_date_header: Expression {
+                else_: "true".into(),
+                ..Default::default()
+            },
+            add_message_id_header: Expression {
+                else_: "true".into(),
+                ..Default::default()
+            },
+            add_received_header: Expression {
+                else_: "true".into(),
+                ..Default::default()
+            },
+            add_received_spf_header: Expression {
+                else_: "true".into(),
+                ..Default::default()
+            },
+            add_auth_results_header: Expression {
+                else_: "true".into(),
+                ..Default::default()
+            },
+            add_return_path_header: Expression {
+                else_: "false".into(),
+                ..Default::default()
+            },
+            enable_spam_filter: Expression {
+                else_: "false".into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .await;
     }
 }
 

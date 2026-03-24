@@ -11,8 +11,7 @@ use crate::{
 use mail_auth::{SpfResult, common::parse::TxtRecordParser, spf::Spf};
 use registry::{
     schema::structs::{
-        Expression, ExpressionMatch, MtaExtensions, MtaStageAuth, MtaStageData, MtaStageEhlo,
-        SenderAuth,
+        Expression, ExpressionMatch, MtaExtensions, MtaStageData, MtaStageEhlo, SenderAuth,
     },
     types::list::List,
 };
@@ -30,15 +29,7 @@ async fn ehlo() {
 
     // Add test settings
     let admin = test.account("admin");
-    admin
-        .registry_create_object(MtaStageAuth {
-            require: Expression {
-                else_: "false".into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .await;
+    admin.mta_no_auth().await;
     admin
         .registry_create_object(MtaExtensions {
             future_release: Expression {

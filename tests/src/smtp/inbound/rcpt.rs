@@ -12,8 +12,7 @@ use registry::{
     schema::{
         enums::MtaInboundThrottleKey,
         structs::{
-            Expression, ExpressionMatch, MtaExtensions, MtaInboundThrottle, MtaStageAuth,
-            MtaStageRcpt, Rate,
+            Expression, ExpressionMatch, MtaExtensions, MtaInboundThrottle, MtaStageRcpt, Rate,
         },
     },
     types::{list::List, map::Map},
@@ -26,7 +25,7 @@ use std::time::Duration;
 async fn rcpt() {
     let mut test = TestServerBuilder::new("smtp_rcpt_test")
         .await
-        .with_http_listener(19004)
+        .with_http_listener(18999)
         .await
         .disable_services()
         .build()
@@ -56,15 +55,7 @@ async fn rcpt() {
     }
 
     // Add test settings
-    admin
-        .registry_create_object(MtaStageAuth {
-            require: Expression {
-                else_: "false".into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .await;
+    admin.mta_no_auth().await;
     admin
         .registry_create_object(MtaStageRcpt {
             allow_relaying: Expression {

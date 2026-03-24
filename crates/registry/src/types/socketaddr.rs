@@ -13,6 +13,11 @@ use crate::{
 };
 use std::{fmt::Display, str::FromStr};
 
+const UNSET_SOCKET_ADDR: std::net::SocketAddr = std::net::SocketAddr::new(
+    std::net::IpAddr::V4(std::net::Ipv4Addr::from_octets([255, 255, 255, 255])),
+    u16::MAX,
+);
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SocketAddr(pub std::net::SocketAddr);
 
@@ -22,7 +27,7 @@ impl SocketAddr {
     }
 
     pub fn is_valid(&self) -> bool {
-        !self.0.ip().is_unspecified()
+        self.0 != UNSET_SOCKET_ADDR
     }
 }
 
@@ -63,7 +68,7 @@ impl<'de> serde::Deserialize<'de> for SocketAddr {
 
 impl Default for SocketAddr {
     fn default() -> Self {
-        SocketAddr(std::net::SocketAddr::from(([0, 0, 0, 0], 0)))
+        SocketAddr(UNSET_SOCKET_ADDR)
     }
 }
 

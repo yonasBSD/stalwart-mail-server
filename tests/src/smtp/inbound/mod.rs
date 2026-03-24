@@ -7,6 +7,7 @@
 use crate::utils::server::TestServer;
 use common::{
     Server,
+    config::smtp::queue::QueueName,
     ipc::{DmarcEvent, QueueEvent, QueueEventStatus, ReportingEvent, TlsEvent},
 };
 use registry::{schema::prelude::ObjectType, types::ObjectImpl};
@@ -83,12 +84,12 @@ impl TestServer {
         self.last_queued_message().await
     }
 
-    pub async fn consume_message(&mut self, server: &Server) -> MessageWrapper {
+    pub async fn consume_message(&mut self) -> MessageWrapper {
         self.read_event().await.assert_refresh();
         let message = self.last_queued_message().await;
         message
             .clone()
-            .remove(server, self.last_queued_due().await.into())
+            .remove(&self.server, self.last_queued_due().await.into())
             .await;
         message
     }
@@ -103,7 +104,29 @@ impl TestServer {
         QueuedMessage {
             due: self.message_due(queue_id).await,
             queue_id,
-            queue_name: Default::default(),
+            queue_name: QueueName::new("remote").unwrap(),
+        }
+    }
+
+    pub async fn expect_message_for_queue_then_deliver(
+        &mut self,
+        queue_name: &str,
+    ) -> QueuedMessage {
+        let message = self.expect_message().await;
+
+        self.delivery_attempt_for_queue(message.queue_id, queue_name)
+            .await
+    }
+
+    pub async fn delivery_attempt_for_queue(
+        &mut self,
+        queue_id: u64,
+        queue_name: &str,
+    ) -> QueuedMessage {
+        QueuedMessage {
+            due: self.message_due(queue_id).await,
+            queue_id,
+            queue_name: QueueName::new(queue_name).unwrap(),
         }
     }
 
