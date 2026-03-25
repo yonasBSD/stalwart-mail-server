@@ -55,6 +55,7 @@ pub struct SpamFilterConfig {
     pub pyzor: Option<PyzorConfig>,
     pub classifier: Option<ClassifierConfig>,
     pub scores: SpamFilterScoreConfig,
+    pub spam_rules_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -201,6 +202,7 @@ impl SpamFilterConfig {
                 spam_threshold: spam.score_spam.into_inner() as f32,
             },
             grey_list_expiry: spam.greylist_for.map(|d| d.into_inner().as_secs()),
+            spam_rules_url: spam.spam_filter_rules_url,
         }
     }
 }
@@ -316,49 +318,49 @@ impl DnsBlServer {
                 zone: bp.compile_expr(obj.id, &server.ctx_zone()),
                 tags: bp.compile_expr(obj.id, &server.ctx_tag()),
                 scope: Element::Any,
-                id: server.description,
+                id: server.name,
             }
             .into(),
             SpamDnsblServer::Url(server) if server.enable => DnsBlServer {
                 zone: bp.compile_expr(obj.id, &server.ctx_zone()),
                 tags: bp.compile_expr(obj.id, &server.ctx_tag()),
                 scope: Element::Url,
-                id: server.description,
+                id: server.name,
             }
             .into(),
             SpamDnsblServer::Domain(server) if server.enable => DnsBlServer {
                 zone: bp.compile_expr(obj.id, &server.ctx_zone()),
                 tags: bp.compile_expr(obj.id, &server.ctx_tag()),
                 scope: Element::Domain,
-                id: server.description,
+                id: server.name,
             }
             .into(),
             SpamDnsblServer::Email(server) if server.enable => DnsBlServer {
                 zone: bp.compile_expr(obj.id, &server.ctx_zone()),
                 tags: bp.compile_expr(obj.id, &server.ctx_tag()),
                 scope: Element::Email,
-                id: server.description,
+                id: server.name,
             }
             .into(),
             SpamDnsblServer::Ip(server) if server.enable => DnsBlServer {
                 zone: bp.compile_expr(obj.id, &server.ctx_zone()),
                 tags: bp.compile_expr(obj.id, &server.ctx_tag()),
                 scope: Element::Ip,
-                id: server.description,
+                id: server.name,
             }
             .into(),
             SpamDnsblServer::Header(server) if server.enable => DnsBlServer {
                 zone: bp.compile_expr(obj.id, &server.ctx_zone()),
                 tags: bp.compile_expr(obj.id, &server.ctx_tag()),
                 scope: Element::Header,
-                id: server.description,
+                id: server.name,
             }
             .into(),
             SpamDnsblServer::Body(server) if server.enable => DnsBlServer {
                 zone: bp.compile_expr(obj.id, &server.ctx_zone()),
                 tags: bp.compile_expr(obj.id, &server.ctx_tag()),
                 scope: Element::Body,
-                id: server.description,
+                id: server.name,
             }
             .into(),
             _ => None,

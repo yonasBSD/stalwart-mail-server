@@ -402,7 +402,6 @@ pub enum MailAuthEvent {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u16)]
 pub enum ManageEvent {
-    Reserved5 = 280,
     Reserved6 = 277,
 }
 
@@ -740,6 +739,7 @@ pub enum SpamEvent {
     ModelLoaded = 589,
     ModelNotReady = 496,
     ModelNotFound = 497,
+    RulesUpdated = 280,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

@@ -61,6 +61,7 @@ pub(crate) async fn queued_message_set(
     };
 
     // Process update operations
+    let mut refresh_queue = false;
     'outer: for (id, value) in set.update.drain(..) {
         let queue_id = id.id();
         let Some(archive) = set.server.read_message_archive(queue_id).await? else {
@@ -80,6 +81,7 @@ pub(crate) async fn queued_message_set(
         }
 
         // Process patches
+        let prev_event = archived_message.inner.next_delivery_event(None);
         let mut message = map_message(archived_message.inner);
         for (key, value) in value.into_expanded_object() {
             let ptr = match key {
@@ -169,10 +171,20 @@ pub(crate) async fn queued_message_set(
         }
 
         if has_changes {
-            if !MessageWrapper::new(queued_message, queue_id, QueueName::default())
-                .save_changes(set.server, None)
-                .await
-            {
+            // Delete message if there are no pending deliveries
+            let message = MessageWrapper::new(queued_message, queue_id, QueueName::default());
+            let is_success = if message.message.recipients.iter().any(|recipient| {
+                matches!(
+                    recipient.status,
+                    Status::TemporaryFailure(_) | Status::Scheduled
+                )
+            }) {
+                message.save_changes(set.server, prev_event).await
+            } else {
+                message.remove(set.server, prev_event).await
+            };
+
+            if !is_success {
                 set.response.not_updated.append(
                     id,
                     SetError::forbidden().with_description("Queue update operation failed"),
@@ -180,16 +192,20 @@ pub(crate) async fn queued_message_set(
                 continue;
             }
 
-            let _ = set
-                .server
-                .inner
-                .ipc
-                .queue_tx
-                .send(QueueEvent::Refresh)
-                .await;
+            refresh_queue = true;
         }
 
         set.response.updated.append(id, None);
+    }
+
+    if refresh_queue {
+        let _ = set
+            .server
+            .inner
+            .ipc
+            .queue_tx
+            .send(QueueEvent::Refresh)
+            .await;
     }
 
     // Process destroy operations

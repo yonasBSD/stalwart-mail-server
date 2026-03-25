@@ -23,6 +23,11 @@ use store::{
 };
 use types::id::Id;
 
+pub const ASN_IPV4: &str = "https://cdn.jsdelivr.net/npm/@ip-location-db/asn/asn-ipv4.csv";
+pub const ASN_IPV6: &str = "https://cdn.jsdelivr.net/npm/@ip-location-db/asn/asn-ipv6.csv";
+pub const GEO_IPV4: &str = "https://cdn.jsdelivr.net/npm/@ip-location-db/geolite2-geo-whois-asn-country/geolite2-geo-whois-asn-country-ipv4.csv";
+pub const GEO_IPV6: &str = "https://cdn.jsdelivr.net/npm/@ip-location-db/geolite2-geo-whois-asn-country/geolite2-geo-whois-asn-country-ipv6.csv";
+
 pub trait BootstrapDefaults {
     fn insert_safe_defaults(&mut self) -> impl Future<Output = ()> + Send;
 }
@@ -284,6 +289,7 @@ async fn insert_safe_defaults(bp: &mut Bootstrap) -> trc::Result<()> {
     }
 
     if bp.registry.count_object(ObjectType::OidcProvider).await? == 0 {
+        let todo = "use asymmetric keys";
         bp.registry
             .write(RegistryWrite::insert(
                 &OidcProvider {
@@ -487,6 +493,23 @@ async fn insert_safe_defaults(bp: &mut Bootstrap) -> trc::Result<()> {
                 ))
                 .await?;
         }
+    }
+
+    #[cfg(not(feature = "test_mode"))]
+    if bp.registry.count_object(ObjectType::Asn).await? == 0 {
+        bp.registry
+            .write(RegistryWrite::insert(
+                &Asn::Resource(AsnResource {
+                    asn_urls: Map::new(vec![ASN_IPV4.into(), ASN_IPV6.into()]),
+                    geo_urls: Map::new(vec![GEO_IPV4.into(), GEO_IPV6.into()]),
+                    max_size: 104857600,
+                    expires: Duration::from_millis(24 * 60 * 60 * 1000),
+                    timeout: Duration::from_millis(5 * 60 * 1000),
+                    ..Default::default()
+                })
+                .into(),
+            ))
+            .await?;
     }
 
     if bp.registry.count_object(ObjectType::Tracer).await? == 0 {

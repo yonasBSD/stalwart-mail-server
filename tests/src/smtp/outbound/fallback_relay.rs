@@ -48,12 +48,10 @@ async fn fallback_relay() {
         .registry_create_object(MtaStageRcpt {
             max_recipients: Expression {
                 else_: "100".into(),
-
                 ..Default::default()
             },
             allow_relaying: Expression {
                 else_: "true".into(),
-
                 ..Default::default()
             },
             ..Default::default()

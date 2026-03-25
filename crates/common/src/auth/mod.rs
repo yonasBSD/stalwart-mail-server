@@ -68,7 +68,7 @@ pub struct DomainCache {
 pub const DOMAIN_FLAG_RELAY: u8 = 1;
 pub const DOMAIN_FLAG_SUB_ADDRESSING: u8 = 1 << 1;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct AccountCache {
     pub name: Box<str>,
     pub id: u32,
@@ -156,9 +156,9 @@ pub(crate) struct AccessTo {
 
 #[derive(Clone)]
 pub struct AccountInfo {
-    pub(crate) account_id: u32,
-    pub(crate) account: Arc<AccountCache>,
-    pub(crate) addresses: Vec<String>,
+    pub account_id: u32,
+    pub account: Arc<AccountCache>,
+    pub addresses: Vec<String>,
 }
 
 #[derive(Clone, Copy)]

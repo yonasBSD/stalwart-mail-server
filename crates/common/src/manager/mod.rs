@@ -6,7 +6,11 @@
 
 use crate::USER_AGENT;
 use hyper::HeaderMap;
-use std::time::Duration;
+use mail_auth::flate2;
+use std::{
+    io::{BufReader, Read},
+    time::Duration,
+};
 use utils::HttpLimitResponse;
 
 pub mod application;
@@ -58,6 +62,16 @@ pub async fn fetch_resource(
             ))
         }
     }
+    .and_then(|bytes| {
+        if url.ends_with(".gz") || url.ends_with(".gzip") {
+            BufReader::new(flate2::read::GzDecoder::new(&bytes[..]))
+                .bytes()
+                .collect::<Result<Vec<u8>, _>>()
+                .map_err(|err| format!("Failed to decompress {url}: {err}"))
+        } else {
+            Ok(bytes)
+        }
+    })
 }
 
 pub fn is_localhost_url(url: &str) -> bool {

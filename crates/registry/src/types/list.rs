@@ -18,6 +18,7 @@ use serde::{
     ser::SerializeMap,
 };
 use std::{
+    borrow::Cow,
     fmt::{self, Debug},
     marker::PhantomData,
 };
@@ -193,7 +194,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for List<T> {
             {
                 let mut items = VecMap::with_capacity(map.size_hint().unwrap_or(0));
 
-                while let Some(key) = map.next_key::<&str>()? {
+                while let Some(key) = map.next_key::<Cow<str>>()? {
                     let id: u32 = key
                         .parse()
                         .map_err(|_| de::Error::custom(format!("invalid integer key: {key}")))?;

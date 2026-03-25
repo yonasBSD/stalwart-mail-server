@@ -11,13 +11,12 @@ use common::{
     network::{ServerInstance, SessionStream, TcpAcceptor, limiter::ConcurrencyLimiter},
 };
 use rustls::{ServerConfig, server::ResolvesServerCert};
+use smtp::core::{Session, SessionAddress, SessionData, SessionParameters, State};
 use std::{borrow::Cow, path::PathBuf, sync::Arc};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     sync::watch,
 };
-
-use smtp::core::{Session, SessionAddress, SessionData, SessionParameters, State};
 use tokio_rustls::TlsAcceptor;
 use utils::snowflake::SnowflakeIdGenerator;
 

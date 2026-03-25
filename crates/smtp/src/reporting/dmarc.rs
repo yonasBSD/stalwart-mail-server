@@ -522,21 +522,22 @@ impl DmarcReporting for Server {
                 (object_id_v.object_id.id().id(), report)
             } else {
                 let item_id = self.inner.data.queue_id_gen.generate();
-                let created_at = UTCDateTime::now();
-                let deliver_at = UTCDateTime::from_timestamp(
-                    (event.interval.to_timestamp() + event.interval.as_secs()) as i64,
+                let date_range_begin =
+                    UTCDateTime::from_timestamp(event.interval.to_timestamp() as i64);
+                let date_range_end = UTCDateTime::from_timestamp(
+                    date_range_begin.timestamp() + event.interval.as_secs() as i64,
                 );
                 let policy =
                     PolicyPublished::from_record(event.domain.clone(), &event.dmarc_record);
 
                 let report = DmarcInternalReport {
-                    created_at,
-                    deliver_at,
+                    created_at: UTCDateTime::now(),
+                    deliver_at: date_range_end,
                     domain: event.domain.clone(),
                     report: DmarcReport {
-                        report_id: format!("{}_{policy_hash}", created_at.timestamp()),
-                        date_range_begin: created_at,
-                        date_range_end: deliver_at,
+                        report_id: format!("{}_{policy_hash}", date_range_begin.timestamp()),
+                        date_range_begin,
+                        date_range_end,
                         email: self
                             .eval_if(
                                 &config.address,

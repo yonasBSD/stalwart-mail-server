@@ -153,6 +153,12 @@ impl UTCDateTime {
     pub fn is_valid(&self) -> bool {
         self.0 != i64::MAX
     }
+
+    pub fn add_seconds(&mut self, seconds: i64) {
+        if self.is_valid() {
+            self.0 += seconds;
+        }
+    }
 }
 
 impl DateTime {

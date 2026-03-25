@@ -6,7 +6,6 @@
 
 use crate::utils::server::TestServer;
 use common::{
-    Server,
     config::smtp::queue::QueueName,
     ipc::{DmarcEvent, QueueEvent, QueueEventStatus, ReportingEvent, TlsEvent},
 };
@@ -20,6 +19,7 @@ use store::{
 use tokio::sync::mpsc::error::TryRecvError;
 use types::id::Id;
 
+pub mod antispam;
 pub mod asn;
 pub mod auth;
 pub mod basic;
@@ -36,13 +36,8 @@ pub mod sign;
 pub mod throttle;
 pub mod vrfy;
 
-/*
-pub mod antispam;
-*/
-
 impl TestServer {
     pub async fn read_event(&mut self) -> QueueEvent {
-        let todo = "fix antispam tests";
         match tokio::time::timeout(Duration::from_millis(100), self.queue_rx.recv()).await {
             Ok(Some(event)) => event,
             Ok(None) => panic!("Channel closed."),

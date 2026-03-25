@@ -260,7 +260,6 @@ impl EventType {
             b"mail-auth.dns-record-not-found" => EventType::MailAuth(MailAuthEvent::DnsRecordNotFound),
             b"mail-auth.dns-invalid-record-type" => EventType::MailAuth(MailAuthEvent::DnsInvalidRecordType),
             b"mail-auth.policy-not-aligned" => EventType::MailAuth(MailAuthEvent::PolicyNotAligned),
-            b"manage.reserved5" => EventType::Manage(ManageEvent::Reserved5),
             b"manage.reserved6" => EventType::Manage(ManageEvent::Reserved6),
             b"manage-sieve.connection-start" => EventType::ManageSieve(ManageSieveEvent::ConnectionStart),
             b"manage-sieve.connection-end" => EventType::ManageSieve(ManageSieveEvent::ConnectionEnd),
@@ -513,6 +512,7 @@ impl EventType {
             b"spam.model-loaded" => EventType::Spam(SpamEvent::ModelLoaded),
             b"spam.model-not-ready" => EventType::Spam(SpamEvent::ModelNotReady),
             b"spam.model-not-found" => EventType::Spam(SpamEvent::ModelNotFound),
+            b"spam.rules-updated" => EventType::Spam(SpamEvent::RulesUpdated),
             b"spf.pass" => EventType::Spf(SpfEvent::Pass),
             b"spf.fail" => EventType::Spf(SpfEvent::Fail),
             b"spf.soft-fail" => EventType::Spf(SpfEvent::SoftFail),
@@ -918,7 +918,6 @@ impl EventType {
                 "mail-auth.dns-invalid-record-type"
             }
             EventType::MailAuth(MailAuthEvent::PolicyNotAligned) => "mail-auth.policy-not-aligned",
-            EventType::Manage(ManageEvent::Reserved5) => "manage.reserved5",
             EventType::Manage(ManageEvent::Reserved6) => "manage.reserved6",
             EventType::ManageSieve(ManageSieveEvent::ConnectionStart) => {
                 "manage-sieve.connection-start"
@@ -1227,6 +1226,7 @@ impl EventType {
             EventType::Spam(SpamEvent::ModelLoaded) => "spam.model-loaded",
             EventType::Spam(SpamEvent::ModelNotReady) => "spam.model-not-ready",
             EventType::Spam(SpamEvent::ModelNotFound) => "spam.model-not-found",
+            EventType::Spam(SpamEvent::RulesUpdated) => "spam.rules-updated",
             EventType::Spf(SpfEvent::Pass) => "spf.pass",
             EventType::Spf(SpfEvent::Fail) => "spf.fail",
             EventType::Spf(SpfEvent::SoftFail) => "spf.soft-fail",
@@ -1591,7 +1591,6 @@ impl EventType {
             EventType::MailAuth(MailAuthEvent::DnsRecordNotFound) => 250,
             EventType::MailAuth(MailAuthEvent::DnsInvalidRecordType) => 249,
             EventType::MailAuth(MailAuthEvent::PolicyNotAligned) => 255,
-            EventType::Manage(ManageEvent::Reserved5) => 280,
             EventType::Manage(ManageEvent::Reserved6) => 277,
             EventType::ManageSieve(ManageSieveEvent::ConnectionStart) => 259,
             EventType::ManageSieve(ManageSieveEvent::ConnectionEnd) => 258,
@@ -1844,6 +1843,7 @@ impl EventType {
             EventType::Spam(SpamEvent::ModelLoaded) => 589,
             EventType::Spam(SpamEvent::ModelNotReady) => 496,
             EventType::Spam(SpamEvent::ModelNotFound) => 497,
+            EventType::Spam(SpamEvent::RulesUpdated) => 280,
             EventType::Spf(SpfEvent::Pass) => 501,
             EventType::Spf(SpfEvent::Fail) => 498,
             EventType::Spf(SpfEvent::SoftFail) => 503,
@@ -2210,7 +2210,6 @@ impl EventType {
             250 => Some(EventType::MailAuth(MailAuthEvent::DnsRecordNotFound)),
             249 => Some(EventType::MailAuth(MailAuthEvent::DnsInvalidRecordType)),
             255 => Some(EventType::MailAuth(MailAuthEvent::PolicyNotAligned)),
-            280 => Some(EventType::Manage(ManageEvent::Reserved5)),
             277 => Some(EventType::Manage(ManageEvent::Reserved6)),
             259 => Some(EventType::ManageSieve(ManageSieveEvent::ConnectionStart)),
             258 => Some(EventType::ManageSieve(ManageSieveEvent::ConnectionEnd)),
@@ -2483,6 +2482,7 @@ impl EventType {
             589 => Some(EventType::Spam(SpamEvent::ModelLoaded)),
             496 => Some(EventType::Spam(SpamEvent::ModelNotReady)),
             497 => Some(EventType::Spam(SpamEvent::ModelNotFound)),
+            280 => Some(EventType::Spam(SpamEvent::RulesUpdated)),
             501 => Some(EventType::Spf(SpfEvent::Pass)),
             498 => Some(EventType::Spf(SpfEvent::Fail)),
             503 => Some(EventType::Spf(SpfEvent::SoftFail)),
@@ -2822,6 +2822,7 @@ impl EventType {
             EventType::Spam(SpamEvent::ModelLoaded) => Level::Info,
             EventType::Spam(SpamEvent::ModelNotReady) => Level::Info,
             EventType::Spam(SpamEvent::ModelNotFound) => Level::Info,
+            EventType::Spam(SpamEvent::RulesUpdated) => Level::Info,
             EventType::Store(StoreEvent::BlobStorePurged) => Level::Info,
             EventType::Store(StoreEvent::DataStorePurged) => Level::Info,
             EventType::TaskManager(TaskManagerEvent::TaskQueued) => Level::Info,
@@ -3228,7 +3229,6 @@ impl EventType {
             EventType::MailAuth(MailAuthEvent::DnsRecordNotFound) => "DNS record not found",
             EventType::MailAuth(MailAuthEvent::DnsInvalidRecordType) => "Invalid DNS record type",
             EventType::MailAuth(MailAuthEvent::PolicyNotAligned) => "Policy not aligned",
-            EventType::Manage(ManageEvent::Reserved5) => "Management operation not supported",
             EventType::Manage(ManageEvent::Reserved6) => "Management error",
             EventType::ManageSieve(ManageSieveEvent::ConnectionStart) => {
                 "ManageSieve connection started"
@@ -3547,6 +3547,7 @@ impl EventType {
             EventType::Spam(SpamEvent::ModelLoaded) => "Spam classifier model loaded",
             EventType::Spam(SpamEvent::ModelNotReady) => "Spam classifier model not ready",
             EventType::Spam(SpamEvent::ModelNotFound) => "Spam classifier model not found",
+            EventType::Spam(SpamEvent::RulesUpdated) => "Spam filter rules updated",
             EventType::Spf(SpfEvent::Pass) => "SPF check passed",
             EventType::Spf(SpfEvent::Fail) => "SPF check failed",
             EventType::Spf(SpfEvent::SoftFail) => "SPF soft fail",
@@ -4095,9 +4096,6 @@ impl EventType {
                 "The DNS record type is invalid"
             }
             EventType::MailAuth(MailAuthEvent::PolicyNotAligned) => "The policy is not aligned",
-            EventType::Manage(ManageEvent::Reserved5) => {
-                "The management operation is not supported"
-            }
             EventType::Manage(ManageEvent::Reserved6) => "A management error occurred",
             EventType::ManageSieve(ManageSieveEvent::ConnectionStart) => {
                 "ManageSieve connection started"
@@ -4608,6 +4606,7 @@ impl EventType {
             EventType::Spam(SpamEvent::ModelNotFound) => {
                 "The spam classifier model has not been trained yet"
             }
+            EventType::Spam(SpamEvent::RulesUpdated) => "The spam filter rules have been updated",
             EventType::Spf(SpfEvent::Pass) => "The SPF check has passed",
             EventType::Spf(SpfEvent::Fail) => "The SPF check has failed",
             EventType::Spf(SpfEvent::SoftFail) => "The SPF check has soft failed",
@@ -4862,7 +4861,6 @@ impl EventType {
             EventType::Limit(LimitEvent::BlobQuota) => "Blob quota exceeded",
             EventType::Limit(LimitEvent::TenantQuota) => "Tenant quota exceeded",
             EventType::Limit(LimitEvent::TooManyRequests) => "Too many requests",
-            EventType::Manage(ManageEvent::Reserved5) => "Operation not supported",
             EventType::Manage(ManageEvent::Reserved6) => "Management API Error",
             EventType::ManageSieve(ManageSieveEvent::ConnectionStart) => "ManageSieve error",
             EventType::ManageSieve(ManageSieveEvent::ConnectionEnd) => "ManageSieve error",
@@ -5299,7 +5297,6 @@ impl EventType {
             EventType::MailAuth(MailAuthEvent::DnsRecordNotFound),
             EventType::MailAuth(MailAuthEvent::DnsInvalidRecordType),
             EventType::MailAuth(MailAuthEvent::PolicyNotAligned),
-            EventType::Manage(ManageEvent::Reserved5),
             EventType::Manage(ManageEvent::Reserved6),
             EventType::ManageSieve(ManageSieveEvent::ConnectionStart),
             EventType::ManageSieve(ManageSieveEvent::ConnectionEnd),
@@ -5552,6 +5549,7 @@ impl EventType {
             EventType::Spam(SpamEvent::ModelLoaded),
             EventType::Spam(SpamEvent::ModelNotReady),
             EventType::Spam(SpamEvent::ModelNotFound),
+            EventType::Spam(SpamEvent::RulesUpdated),
             EventType::Spf(SpfEvent::Pass),
             EventType::Spf(SpfEvent::Fail),
             EventType::Spf(SpfEvent::SoftFail),

@@ -300,17 +300,18 @@ impl TlsReporting for Server {
                 (object_id_v.object_id.id().id(), report)
             } else {
                 let item_id = self.inner.data.queue_id_gen.generate();
-                let created_at = UTCDateTime::now();
-                let deliver_at = UTCDateTime::from_timestamp(
-                    (event.interval.to_timestamp() + event.interval.as_secs()) as i64,
+                let date_range_start =
+                    UTCDateTime::from_timestamp(event.interval.to_timestamp() as i64);
+                let date_range_end = UTCDateTime::from_timestamp(
+                    date_range_start.timestamp() + event.interval.as_secs() as i64,
                 );
 
                 let report = TlsInternalReport {
-                    created_at,
-                    deliver_at,
+                    created_at: UTCDateTime::now(),
+                    deliver_at: date_range_end,
                     domain: event.domain.clone(),
                     report: TlsReport {
-                        report_id: format!("{}_{policy_hash}", created_at.timestamp()),
+                        report_id: format!("{}_{policy_hash}", date_range_start.timestamp()),
                         organization_name: self
                             .eval_if::<String, _>(
                                 &config.org_name,
@@ -327,8 +328,8 @@ impl TlsReporting for Server {
                             )
                             .await
                             .clone(),
-                        date_range_end: deliver_at,
-                        date_range_start: created_at,
+                        date_range_end,
+                        date_range_start,
                         policies: Default::default(),
                     },
                     ..Default::default()
