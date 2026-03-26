@@ -177,14 +177,14 @@ services:
       LDAP_TLS_KEY_FILENAME: "key.pem"
       LDAP_TLS_CA_CRT_FILENAME: "cert.pem"
       LDAP_TLS_VERIFY_CLIENT: "never"
-      LDAP_SEED_INTERNAL_LDIF_PATH: "/seed"
     ports:
       - "127.0.0.1:389:389"
       - "127.0.0.1:636:636"
     volumes:
-      - ./ldap/seed.ldif:/seed/50-stalwart.ldif:ro
+      - ./ldap/50-users.ldif:/seed/50-users.ldif:ro
+      - ./ldap/60-groups.ldif:/seed/60-groups.ldif:ro
       - certs:/certs-shared:ro
-    entrypoint: [ "/bin/bash", "-c", "cp /certs-shared/* /container/service/slapd/assets/certs/ 2>/dev/null; exec /container/tool/run" ]
+    entrypoint: [ "/bin/bash", "-c", "mkdir -p /container/service/slapd/assets/config/bootstrap/ldif/custom && cp /seed/*.ldif /container/service/slapd/assets/config/bootstrap/ldif/custom/ && cp /certs-shared/* /container/service/slapd/assets/certs/ 2>/dev/null; exec /container/tool/run" ]
 
   # ---------------------------------------------------------------------------
   # Pebble (ACME server)  –  ports 14000 (directory) + 15000 (management)

@@ -35,7 +35,11 @@ impl Directory {
     }
 
     pub fn oidc_authorization_endpoint(&self) -> Option<String> {
-        let todo = "implement";
-        None
+        match &self {
+            Directory::OpenId(directory) => {
+                Some(directory.discovery.authorization_endpoint.clone())
+            }
+            _ => None,
+        }
     }
 }

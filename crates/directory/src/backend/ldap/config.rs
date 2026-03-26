@@ -5,7 +5,7 @@
  */
 
 use super::{Bind, LdapConnectionManager, LdapDirectory, LdapFilter, LdapFilterItem, LdapMappings};
-use crate::{Directory, backend::ldap::AuthBind};
+use crate::Directory;
 use deadpool::{Runtime, managed::Pool};
 use ldap3::LdapConnSettings;
 use registry::schema::structs;
@@ -42,13 +42,53 @@ impl LdapDirectory {
             base_dn: config.base_dn,
             filter_login: LdapFilter::new(&config.filter_login)?,
             filter_mailbox: LdapFilter::new(&config.filter_mailbox)?,
-            attr_class: config.attr_class.into_inner(),
-            attr_groups: config.attr_groups.into_inner(),
-            attr_description: config.attr_description.into_inner(),
-            attr_secret: config.attr_secret.into_inner(),
-            attr_secret_changed: config.attr_secret_changed.into_inner(),
-            attr_email: config.attr_email.into_inner(),
-            attr_email_alias: config.attr_email_alias.into_inner(),
+            filter_member_of: if let Some(filter) = config.filter_member_of {
+                Some(LdapFilter::new(&filter)?)
+            } else {
+                None
+            },
+            attr_class: config
+                .attr_class
+                .into_inner()
+                .into_iter()
+                .map(|a| a.to_lowercase())
+                .collect(),
+            attr_groups: config
+                .attr_member_of
+                .into_inner()
+                .into_iter()
+                .map(|a| a.to_lowercase())
+                .collect(),
+            attr_description: config
+                .attr_description
+                .into_inner()
+                .into_iter()
+                .map(|a| a.to_lowercase())
+                .collect(),
+            attr_secret: config
+                .attr_secret
+                .into_inner()
+                .into_iter()
+                .map(|a| a.to_lowercase())
+                .collect(),
+            attr_secret_changed: config
+                .attr_secret_changed
+                .into_inner()
+                .into_iter()
+                .map(|a| a.to_lowercase())
+                .collect(),
+            attr_email: config
+                .attr_email
+                .into_inner()
+                .into_iter()
+                .map(|a| a.to_lowercase())
+                .collect(),
+            attr_email_alias: config
+                .attr_email_alias
+                .into_inner()
+                .into_iter()
+                .map(|a| a.to_lowercase())
+                .collect(),
             group_class: config.group_class,
             attrs_principal: vec![],
         };
@@ -67,20 +107,6 @@ impl LdapDirectory {
                 .extend(attr.iter().filter(|a| !a.is_empty()).cloned());
         }
 
-        let auth_bind = match config.password_verification {
-            structs::LdapPasswordVerification::Local => AuthBind::None,
-            structs::LdapPasswordVerification::Bind(bind) => {
-                if let Some(template) = bind.bind_auth_template {
-                    AuthBind::BindTemplate {
-                        template: LdapFilter::new(&template)?,
-                        can_search: bind.bind_auth_search,
-                    }
-                } else {
-                    AuthBind::Bind
-                }
-            }
-        };
-
         let pool = Pool::builder(manager)
             .runtime(Runtime::Tokio1)
             .max_size(config.pool_max_connections as usize)
@@ -93,7 +119,7 @@ impl LdapDirectory {
         Ok(Directory::Ldap(LdapDirectory {
             mappings,
             pool,
-            auth_bind,
+            auth_bind: config.bind_authentication,
         }))
     }
 }

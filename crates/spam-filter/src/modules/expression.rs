@@ -427,7 +427,7 @@ impl ResolveVariable for UrlParts<'_> {
                     .and_then(|p| p.parts.path_and_query().map(|p| p.as_str()))
                     .unwrap_or_default(),
             ),
-            ExpressionVariable::UrlPath => Variable::from(
+            ExpressionVariable::Path => Variable::from(
                 self.url_parsed
                     .as_ref()
                     .map(|p| p.parts.path())

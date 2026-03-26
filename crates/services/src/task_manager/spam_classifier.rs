@@ -275,6 +275,8 @@ async fn fetch_spam_rules(server: &Server) -> Result<Rules, RuleUpdateError> {
                 })
             })?;
 
+    let todo = "trigger task to reload settings and lookup stores";
+
     let mut rules = Rules::default();
     for (object_type, values) in rules_json {
         let Some(object_type) = ObjectType::parse(&object_type) else {

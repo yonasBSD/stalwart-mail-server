@@ -62,7 +62,7 @@ impl ResolveVariable for HttpContext<'_> {
             }
             ExpressionVariable::Listener => self.session.instance.id.as_str().into(),
             ExpressionVariable::Url => self.req.uri().to_compact_string().into(),
-            ExpressionVariable::UrlPath => self.req.uri().path().into(),
+            ExpressionVariable::Path => self.req.uri().path().into(),
             ExpressionVariable::Method => self.req.method().as_str().into(),
             ExpressionVariable::Headers => self
                 .req

@@ -4,33 +4,70 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use ahash::AHashMap;
+use jsonwebtoken::{Algorithm, DecodingKey};
+use serde::Deserialize;
+use std::{fmt, sync::Arc, time::Instant};
+use tokio::sync::RwLock;
+use utils::Client;
+
 pub mod config;
 pub mod lookup;
 
-use std::time::Duration;
-
-pub enum OpenIdDirectory {
-    Introspect {
-        client: reqwest::Client,
-        endpoint: String,
-        claim_email: String,
-        claim_name: Option<String>,
-        require_aud: Option<String>,
-        require_scopes: Vec<String>,
-    },
-    UserInfo {
-        endpoint: String,
-        timeout: Duration,
-        allow_invalid_certs: bool,
-        claim_email: String,
-        claim_name: Option<String>,
-    },
-    Jwt {
-        jwks_url: String,
-        jwks_cache: Duration,
-        claim_email: String,
-        claim_name: Option<String>,
-        require_aud: Option<String>,
-        require_iss: Option<String>,
-    },
+pub struct OpenIdConfig {
+    pub issue_url: String,
+    pub require_aud: Option<String>,
+    pub require_scopes: Vec<String>,
+    pub claim_email: String,
+    pub claim_name: Option<String>,
+    pub claim_groups: Option<String>,
+    pub default_domain: Option<String>,
 }
+
+#[derive(Deserialize)]
+pub struct DiscoveryDocument {
+    issuer: String,
+    jwks_uri: String,
+    pub userinfo_endpoint: String,
+    pub authorization_endpoint: String,
+    scopes_supported: Option<Vec<String>>,
+    claims_supported: Option<Vec<String>>,
+}
+
+struct CachedKey {
+    decoding_key: DecodingKey,
+    algorithm: Algorithm,
+}
+
+struct JwksCache {
+    keys: AHashMap<String, Arc<CachedKey>>,
+    last_updated: Instant,
+}
+
+pub struct OpenIdDirectory {
+    config: OpenIdConfig,
+    pub discovery: DiscoveryDocument,
+    http: Client,
+    cache: RwLock<JwksCache>,
+}
+
+#[derive(Debug)]
+pub enum OidcError {
+    TokenValidation(String),
+    AuthorizationFailed(String),
+    Network(String),
+    Provider(String),
+}
+
+impl fmt::Display for OidcError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            OidcError::TokenValidation(msg) => write!(f, "Token validation error: {msg}"),
+            OidcError::AuthorizationFailed(msg) => write!(f, "Authorization failed: {msg}"),
+            OidcError::Network(msg) => write!(f, "Network error: {msg}"),
+            OidcError::Provider(msg) => write!(f, "Provider error: {msg}"),
+        }
+    }
+}
+
+impl std::error::Error for OidcError {}

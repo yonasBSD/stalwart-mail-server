@@ -11,19 +11,10 @@ pub mod config;
 pub mod lookup;
 pub mod pool;
 
-pub(crate) enum AuthBind {
-    Bind,
-    BindTemplate {
-        template: LdapFilter,
-        can_search: bool,
-    },
-    None,
-}
-
 pub struct LdapDirectory {
     pool: Pool<LdapConnectionManager>,
     mappings: LdapMappings,
-    auth_bind: AuthBind,
+    auth_bind: bool,
 }
 
 #[derive(Debug, Default)]
@@ -31,6 +22,7 @@ pub struct LdapMappings {
     base_dn: String,
     filter_login: LdapFilter,
     filter_mailbox: LdapFilter,
+    filter_member_of: Option<LdapFilter>,
     attr_class: Vec<String>,
     attr_groups: Vec<String>,
     attr_description: Vec<String>,

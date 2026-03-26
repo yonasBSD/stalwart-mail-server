@@ -5,10 +5,7 @@
  */
 
 use super::{LdapDirectory, LdapMappings};
-use crate::{
-    Account, Credentials, Group, IntoError, Recipient, backend::ldap::AuthBind,
-    core::secret::verify_secret_hash,
-};
+use crate::{Account, Credentials, Group, IntoError, Recipient, core::secret::verify_secret_hash};
 use ldap3::{Ldap, LdapConnAsync, ResultEntry, Scope, SearchEntry};
 use store::xxhash_rust;
 use utils::sanitize_email;
@@ -23,11 +20,10 @@ impl LdapDirectory {
         };
         let mut conn = self.pool.get().await.map_err(|err| err.into_error())?;
 
-        let mut account = match &self.auth_bind {
-            AuthBind::BindTemplate {
-                template,
-                can_search,
-            } => {
+        let mut result = if self.auth_bind {
+            let filter = self.mappings.filter_login.build(username);
+            if let Some(mut result) = self.find_object(&mut conn, &filter).await? {
+                // Perform bind auth using the found dn
                 let (auth_bind_conn, mut ldap) = LdapConnAsync::with_settings(
                     self.pool.manager().settings.clone(),
                     &self.pool.manager().address,
@@ -37,127 +33,95 @@ impl LdapDirectory {
 
                 ldap3::drive!(auth_bind_conn);
 
-                let dn = template.build(username);
-
                 if ldap
-                    .simple_bind(&dn, secret)
+                    .simple_bind(&result.dn, secret)
                     .await
                     .map_err(|err| err.into_error().caused_by(trc::location!()))?
                     .success()
-                    .is_err()
+                    .is_ok()
                 {
-                    return Err(trc::AuthEvent::Failed
-                        .into_err()
-                        .details("Invalid credentials for auth bind using template")
-                        .details(dn));
-                }
-
-                let filter = self.mappings.filter_login.build(username);
-                let result = if *can_search {
-                    self.find_object(&mut ldap, &filter).await
-                } else {
-                    self.find_object(&mut conn, &filter).await
-                };
-
-                match result {
-                    Ok(Some(mut result)) => {
-                        if result.account.email.is_empty() {
-                            result.account.email =
-                                sanitize_email(username).unwrap_or_else(|| username.to_lowercase());
-                        }
-                        result.account
-                    }
-                    Err(err)
-                        if err.matches(trc::EventType::Store(trc::StoreEvent::LdapError))
-                            && err
-                                .value(trc::Key::Code)
-                                .and_then(|v| v.to_uint())
-                                .is_some_and(|rc| [49, 50].contains(&rc)) =>
-                    {
-                        return Err(trc::AuthEvent::Failed
-                            .into_err()
-                            .details("Error codes 49 or 50 returned by LDAP server")
-                            .details(vec![dn, filter]));
-                    }
-                    Ok(None) => {
-                        return Err(trc::AuthEvent::Failed
-                            .into_err()
-                            .details("Auth bind successful but filter yielded no results")
-                            .details(vec![dn, filter]));
-                    }
-                    Err(err) => return Err(err),
-                }
-            }
-            AuthBind::Bind => {
-                let filter = self.mappings.filter_login.build(username);
-                if let Some(mut result) = self.find_object(&mut conn, &filter).await? {
-                    // Perform bind auth using the found dn
-                    let (auth_bind_conn, mut ldap) = LdapConnAsync::with_settings(
-                        self.pool.manager().settings.clone(),
-                        &self.pool.manager().address,
-                    )
-                    .await
-                    .map_err(|err| err.into_error().caused_by(trc::location!()))?;
-
-                    ldap3::drive!(auth_bind_conn);
-
-                    if ldap
-                        .simple_bind(&result.dn, secret)
-                        .await
-                        .map_err(|err| err.into_error().caused_by(trc::location!()))?
-                        .success()
-                        .is_ok()
-                    {
-                        if result.account.email.is_empty() {
-                            result.account.email =
-                                sanitize_email(username).unwrap_or_else(|| username.to_lowercase());
-                        }
-                        result.account
-                    } else {
-                        return Err(trc::AuthEvent::Failed
-                            .into_err()
-                            .details("Secret rejected during auth bind using lookup filter")
-                            .details(vec![result.dn, filter]));
-                    }
-                } else {
-                    return Err(trc::AuthEvent::Failed
-                        .into_err()
-                        .details("Auth bind lookup filter yielded no results")
-                        .details(vec![filter]));
-                }
-            }
-            AuthBind::None => {
-                let filter = self.mappings.filter_login.build(username);
-                if let Some(mut result) = self.find_object(&mut conn, &filter).await? {
-                    if let Some(account_secret) = &result.account.secret {
-                        if !verify_secret_hash(account_secret, secret.as_bytes()).await? {
-                            return Err(trc::AuthEvent::Failed
-                                .into_err()
-                                .details("Invalid credentials")
-                                .details(vec![filter]));
-                        }
-                    } else {
-                        return Err(trc::AuthEvent::Error
-                            .into_err()
-                            .details("Account does not have a secret")
-                            .details(vec![filter]));
-                    }
                     if result.account.email.is_empty() {
                         result.account.email =
                             sanitize_email(username).unwrap_or_else(|| username.to_lowercase());
                     }
-                    result.account
+                    result
                 } else {
                     return Err(trc::AuthEvent::Failed
                         .into_err()
-                        .details("Authentication filter yielded no results")
+                        .details("Secret rejected during auth bind using lookup filter")
+                        .details(vec![result.dn, filter]));
+                }
+            } else {
+                return Err(trc::AuthEvent::Failed
+                    .into_err()
+                    .details("Auth bind lookup filter yielded no results")
+                    .details(vec![filter]));
+            }
+        } else {
+            let filter = self.mappings.filter_login.build(username);
+            if let Some(mut result) = self.find_object(&mut conn, &filter).await? {
+                if let Some(account_secret) = &result.account.secret {
+                    if !verify_secret_hash(account_secret, secret.as_bytes()).await? {
+                        return Err(trc::AuthEvent::Failed
+                            .into_err()
+                            .details("Invalid credentials")
+                            .details(vec![filter]));
+                    }
+                } else {
+                    return Err(trc::AuthEvent::Error
+                        .into_err()
+                        .details("Account does not have a secret")
                         .details(vec![filter]));
                 }
+                if result.account.email.is_empty() {
+                    result.account.email =
+                        sanitize_email(username).unwrap_or_else(|| username.to_lowercase());
+                }
+                result
+            } else {
+                return Err(trc::AuthEvent::Failed
+                    .into_err()
+                    .details("Authentication filter yielded no results")
+                    .details(vec![filter]));
             }
         };
 
-        if !account.groups.is_empty() {
-            for name in std::mem::take(&mut account.groups)
+        self.add_group_membership(&mut conn, &mut result).await?;
+
+        Ok(result.account)
+    }
+
+    pub async fn recipient(&self, address: &str) -> trc::Result<Recipient> {
+        let mut conn = self.pool.get().await.map_err(|err| err.into_error())?;
+        let filter = self.mappings.filter_mailbox.build(address);
+        if let Some(mut result) = self.find_object(&mut conn, &filter).await? {
+            if !result.is_group {
+                self.add_group_membership(&mut conn, &mut result).await?;
+                Ok(Recipient::Account(result.account))
+            } else {
+                Ok(Recipient::Group(Group {
+                    email: result.account.email,
+                    email_aliases: result.account.email_aliases,
+                    description: result.account.description,
+                }))
+            }
+        } else {
+            trc::event!(
+                Store(trc::StoreEvent::LdapWarning),
+                Reason = "Mailbox filter yielded no results",
+                Details = filter
+            );
+            Ok(Recipient::Invalid)
+        }
+    }
+
+    async fn add_group_membership(
+        &self,
+        conn: &mut Ldap,
+        result: &mut LdapResult,
+    ) -> trc::Result<()> {
+        if !result.account.groups.is_empty() {
+            for name in std::mem::take(&mut result.account.groups)
                 .into_iter()
                 .filter(|name| name.contains('='))
             {
@@ -178,69 +142,48 @@ impl LdapDirectory {
                             && let Some(email) =
                                 value.first().map(|s| s.as_str()).and_then(sanitize_email)
                         {
-                            account.groups.push(email);
+                            result.account.groups.push(email);
                             break 'outer;
                         }
                     }
                 }
             }
-        }
-
-        Ok(account)
-    }
-
-    pub async fn recipient(&self, address: &str) -> trc::Result<Recipient> {
-        let mut conn = self.pool.get().await.map_err(|err| err.into_error())?;
-        let filter = self.mappings.filter_mailbox.build(address);
-        if let Some(result) = self.find_object(&mut conn, &filter).await? {
-            let mut account = result.account;
-
-            if !account.groups.is_empty() {
-                for name in std::mem::take(&mut account.groups)
-                    .into_iter()
-                    .filter(|name| name.contains('='))
-                {
-                    let (rs, _res) = conn
-                        .search(
-                            &name,
-                            Scope::Base,
-                            "objectClass=*",
-                            &self.mappings.attr_email,
-                        )
-                        .await
-                        .map_err(|err| err.into_error().caused_by(trc::location!()))?
-                        .success()
-                        .map_err(|err| err.into_error().caused_by(trc::location!()))?;
-                    for entry in rs {
-                        'outer: for (attr, value) in SearchEntry::construct(entry).attrs {
-                            if self.mappings.attr_email.contains(&attr.to_lowercase())
-                                && let Some(email) =
-                                    value.first().map(|s| s.as_str()).and_then(sanitize_email)
-                            {
-                                account.groups.push(email);
-                                break 'outer;
-                            }
-                        }
+        } else if let Some(filter) = &self.mappings.filter_member_of {
+            let filter = filter.build(&result.dn);
+            let rs = conn
+                .search(
+                    &self.mappings.base_dn,
+                    Scope::Subtree,
+                    &filter,
+                    &self.mappings.attr_email,
+                )
+                .await
+                .map_err(|err| err.into_error().caused_by(trc::location!()))?
+                .success()
+                .map_err(|err| err.into_error().caused_by(trc::location!()))?
+                .0;
+            for entry in rs {
+                for (attr, value) in SearchEntry::construct(entry).attrs {
+                    if self.mappings.attr_email.contains(&attr.to_lowercase()) {
+                        result
+                            .account
+                            .groups
+                            .extend(value.into_iter().filter_map(|v| {
+                                sanitize_email(&v).or_else(|| {
+                                    trc::event!(
+                                        Store(trc::StoreEvent::LdapWarning),
+                                        Reason = "Group entry missing valid email attribute",
+                                        Details = v
+                                    );
+                                    None
+                                })
+                            }));
                     }
                 }
             }
-            if result.is_group {
-                Ok(Recipient::Group(Group {
-                    email: account.email,
-                    email_aliases: account.email_aliases,
-                    description: account.description,
-                }))
-            } else {
-                Ok(Recipient::Account(account))
-            }
-        } else {
-            trc::event!(
-                Store(trc::StoreEvent::LdapWarning),
-                Reason = "Mailbox filter yielded no results",
-                Details = filter
-            );
-            Ok(Recipient::Invalid)
         }
+
+        Ok(())
     }
 }
 

@@ -16,9 +16,9 @@ static GLOBAL: Jemalloc = Jemalloc;
 /*
 #[cfg(test)]
 pub mod cluster;
+*/
 #[cfg(test)]
 pub mod directory;
-*/
 #[cfg(test)]
 pub mod imap;
 #[cfg(test)]
@@ -45,6 +45,7 @@ pub trait AssertConfig {
 #[cfg(test)]
 impl AssertConfig for Bootstrap {
     fn assert_no_errors(self) -> Self {
+        let todo = "cluster tests";
         if !self.errors.is_empty() {
             panic!("Errors: {:#?}", self.errors);
         }

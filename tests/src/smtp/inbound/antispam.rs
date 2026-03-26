@@ -28,13 +28,15 @@ use mail_parser::MessageParser;
 use registry::{
     schema::{
         enums::{AiModelType, TaskSpamFilterMaintenanceType},
+        prelude::{ObjectType, Property},
         structs::{
-            self, AiModel, MemoryLookupKey, SpamLlm, SpamLlmProperties, SpamSettings,
-            SpamTrainingSample, Task, TaskSpamFilterMaintenance, TaskStatus,
+            self, AiModel, MemoryLookupKey, SpamLlm, SpamLlmProperties, SpamSettings, Task,
+            TaskSpamFilterMaintenance, TaskStatus,
         },
     },
     types::{float::Float, map::Map},
 };
+use serde_json::json;
 use smtp::core::SessionAddress;
 use smtp_proto::{MAIL_BODY_8BITMIME, MAIL_SMTPUTF8};
 use spam_filter::{
@@ -62,118 +64,6 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-
-const CONFIG: &str = r#"
-[spam-filter.score]
-spam = "5.0"
-
-[spam-filter.llm]
-enable = true
-model = "dummy"
-prompt = "You are an AI assistant specialized in analyzing email content to detect unsolicited, commercial, or harmful messages. Format your response as follows, separated by commas: Category,Confidence,Explanation
-Here's the email to analyze, please provide your analysis based on the above instructions, ensuring your response is in the specified comma-separated format."
-separator = ","
-categories = ["Unsolicited", "Commercial", "Harmful", "Legitimate"]
-confidence = ["High", "Medium", "Low"]
-
-[spam-filter.llm.index]
-category = 0
-confidence = 1
-explanation = 2
-
-[spam-filter.classifier.samples]
-min-ham = 10
-min-spam = 10
-
-[session.rcpt]
-relay = true
-
-[storage]
-data = "spamdb"
-lookup = "spamdb"
-blob = "spamdb"
-fts = "spamdb"
-directory = "spamdb"
-
-[directory."spamdb"]
-type = "internal"
-store = "spamdb"
-
-[store."spamdb"]
-type = "rocksdb"
-path = "{PATH}/test_antispam.db"
-
-#[store."redis"]
-#type = "redis"
-#url = "redis://127.0.0.1"
-
-[http-lookup.STWT_OPENPHISH]
-enable = true
-url = "https://openphish.com/feed.txt"
-format = "list"
-retry = "1h"
-refresh = "12h"
-timeout = "30s"
-limits.size = 104857600
-limits.entries = 900000
-limits.entry-size = 512
-
-[http-lookup.STWT_PHISHTANK]
-enable = true
-url = "http://data.phishtank.com/data/online-valid.csv.gz"
-format = "csv"
-separator = ","
-index.key = 1
-skip-first = true
-gzipped = true
-retry = "1h"
-refresh = "6h"
-timeout = "30s"
-limits.size = 104857600
-limits.entries = 900000
-limits.entry-size = 512
-
-[http-lookup.STWT_DISPOSABLE_DOMAINS]
-enable = true
-url = "https://disposable.github.io/disposable-email-domains/domains_mx.txt"
-format = "list"
-retry = "1h"
-refresh = "24h"
-timeout = "30s"
-limits.size = 104857600
-limits.entries = 900000
-limits.entry-size = 512
-
-[http-lookup.STWT_FREE_DOMAINS]
-enable = true
-url = "https://gist.githubusercontent.com/okutbay/5b4974b70673dfdcc21c517632c1f984/raw/993a35930a8d24a1faab1b988d19d38d92afbba4/free_email_provider_domains.txt"
-format = "list"
-retry = "1h"
-refresh = "720h"
-timeout = "30s"
-limits.size = 104857600
-limits.entries = 900000
-limits.entry-size = 512
-
-[enterprise.ai.dummy]
-url = "https://127.0.0.1:9090/v1/chat/completions"
-type = "chat"
-model = "gpt-dummy"
-allow-invalid-certs = true
-
-[spam-filter.list]
-"file-extensions" = { "html" = "text/html|BAD", 
-                "pdf" = "application/pdf|NZ", 
-                "txt" = "text/plain|message/disposition-notification|text/rfc822-headers", 
-                "zip" = "AR", 
-                "js" = "BAD|NZ", 
-                "hta" = "BAD|NZ" }
-[lookup]
-"url-redirectors" = {"bit.ly", "redirect.io", "redirect.me", "redirect.org", "redirect.com", "redirect.net", "t.ly", "tinyurl.com"}
-"spam-traps" = {"spamtrap@*"}
-"trusted-domains" = {"stalw.art"}
-"surbl-hashbl" = {"bit.ly", "drive.google.com", "lnkiy.in"}
-"#;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn antispam() {
@@ -264,6 +154,7 @@ async fn antispam() {
         .await;
     test.wait_for_tasks().await;
     admin.reload_settings().await;
+    admin.reload_lookup_stores().await;
     test.reload_core();
     let admin = test.account("admin");
 
@@ -296,7 +187,7 @@ async fn antispam() {
             "127.0.0.64",
         ),
         (
-            "637d6717761b5de0c84108c894bb68f2.hashbl.surbl.org",
+            "ef6f530a68b77d782983e8712ff31fe5.hashbl.surbl.org",
             "127.0.0.8",
         ),
     ] {
@@ -425,16 +316,16 @@ async fn antispam() {
                             .put_jmap_blob(u32::MAX, sample.as_bytes())
                             .await
                             .unwrap();
-
                         admin
-                            .registry_create_object(SpamTrainingSample {
-                                blob_id,
-                                from: "unknown".to_string(),
-                                is_spam: class == "spam",
-                                subject: "unknown".to_string(),
-                                ..Default::default()
-                            })
-                            .await;
+                            .registry_create_many(
+                                ObjectType::SpamTrainingSample,
+                                [json!({
+                                    Property::BlobId: blob_id,
+                                    Property::IsSpam: class == "spam",
+                                })],
+                            )
+                            .await
+                            .created_id(0);
                     }
                 }
                 admin
