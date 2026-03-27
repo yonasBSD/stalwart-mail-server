@@ -215,7 +215,7 @@ impl EmailIngest for Server {
 
             // Skip duplicate messages
             let target_mailbox_id = params.mailbox_ids.first().copied().unwrap_or(INBOX_ID);
-            if !cache
+            if cache
                 .in_mailboxes(&[target_mailbox_id, JUNK_ID])
                 .any(|m| thread_result.duplicate_ids.contains(&m.document_id))
             {

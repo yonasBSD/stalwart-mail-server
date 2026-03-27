@@ -7,11 +7,64 @@ All notable changes to this project will be documented in this file. This projec
 This version includes **multiple breaking changes**. If you are upgrading from v0.15.x and below, please read the [upgrading documentation](https://github.com/stalwartlabs/stalwart/blob/main/UPGRADING/v0_16.md) for more information on how to upgrade from previous versions.
 
 ## Added
+- Masked email addresses for enhanced privacy (Enterprise feature).
+- App password enhancements:
+  - Limited access (#1609)
+  - Labels (#2255)
+  - IP address restrictions.
+  - Expiration dates.
+- API key enhancements:
+  - Limited access.
+  - Labels.
+  - IP address restrictions.
+  - Expiration dates.
+- Password enhancements:
+  - Password strength enforcement using the `zxcvbn` algorithm.
+  - Expiration and rotation policies.
+- Fail2ban:
+  - Auto-expire bans after a configurable time period (#964).
+  - Add comments to bans with details about the triggering event (#1321).
+- MTA:
+  - RCPT TO stage settings improvements (#2217 #394)
+- OIDC:
+  - JWT token validation without requesting userinfo from the OIDC provider.
+  - Audience (`aud`) claim support (#2603)
+  - Scope validation support.
+  - Groups support (#1448)
+- LDAP:
+  - Separate filter for groups (#1841)
+  - Improve support for OpenLDAP schemas (#760)
+  - Improve and simplify LDAP settings (#2194 #2174)
+- DKIM:
+  - Store DKIM keys in the database (#1264)
+- Clustering:
+  - Unified cluster management (#960)
+  - Outbound role (#1692)
+- Directory:
+  - Domain aliases (#583)
+  - E-mail alias descriptions and disable alias (#506)
+- Account archiving and undelete features (#2767) (Enterprise feature).
+- Sieve: Allow deactivating scripts without deleting them (#1251).
+- Tracing: Enable events only mode (#2276)
 
 ## Changed
+- Replaced REST API with JMAP API (#2262 #959 #1480)
 - Directory: Removed `smtp`, `imap` and `memory` directory backends.
 
 ## Fixed
+- Directory:
+  - Cannot remove built-in "admin" role from user once it was assigend (#1467)
+  - Delete associated records (#963)
+  - Updated Role permissions not applied (#2038)
+  - Recreated account cannot log in until server is restarted (#1469)
+  - Subaddressing does not work for groups (#475)
+  - New LDAP aliases are rejected (#1318). 
+- MTA
+  - Relay to IP addresses (#838)
+  - Duplicate delivery inverted check
+- Configuration: Prefix parsing issues (#2495)
+- OIDC: JWKS Exposes Symmetric Signing Key, Enabling ID Token Forgery
+
 
 ## [0.15.5] - 2026-02-14
 

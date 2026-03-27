@@ -4123,14 +4123,12 @@ dependencies = [
 name = "mail-auth"
 version = "0.8.0"
 dependencies = [
- "ahash",
  "flate2",
  "hashify",
  "hickory-resolver",
  "mail-builder",
  "mail-parser",
  "quick-xml 0.39.0",
- "quick_cache",
  "rand 0.8.5",
  "ring",
  "rkyv",
