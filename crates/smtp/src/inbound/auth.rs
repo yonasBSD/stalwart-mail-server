@@ -51,7 +51,7 @@ impl<T: SessionStream> Session<T> {
         if response.is_empty() {
             match (token.mechanism, &token.credentials) {
                 (AUTH_PLAIN | AUTH_XOAUTH2 | AUTH_OAUTHBEARER, _) => {
-                    self.write(b"334 Go ahead.\r\n").await?;
+                    self.write(b"334 \r\n").await?;
                     return Ok(true);
                 }
                 (
