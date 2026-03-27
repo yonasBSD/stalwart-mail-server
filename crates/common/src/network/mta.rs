@@ -103,13 +103,36 @@ impl Server {
         }
         // SPDX-SnippetEnd
 
+        // Obtain external directory, if configured
+        let directory = self
+            .get_directory_for_cached_domain(&domain)
+            .filter(|directory| directory.can_lookup_recipients());
+        if let Some(directory) = directory {
+            let address = if local_part.as_ref() == local_part_orig {
+                Cow::Borrowed(rcpt)
+            } else {
+                Cow::Owned(format!("{local_part}@{domain_part}"))
+            };
+            match directory.recipient(address.as_ref()).await? {
+                Recipient::Account(account) => {
+                    self.synchronize_account(account).await?;
+                    return Ok(RcptResolution::Accept);
+                }
+                Recipient::Group(group) => {
+                    self.synchronize_group(group).await?;
+                    return Ok(RcptResolution::Accept);
+                }
+                Recipient::Invalid => {}
+            }
+        }
+
         // Try resolving address from registry
         if let Some(address_type) = self
             .rcpt_id_from_parts(local_part.as_ref(), domain.id)
             .await?
         {
             match address_type {
-                EmailCache::Account(id) => {
+                EmailCache::Account(id) if directory.is_none() => {
                     if self.try_account(id).await?.is_some() {
                         return if local_part.as_ref() == local_part_orig {
                             Ok(RcptResolution::Accept)
@@ -135,29 +158,7 @@ impl Server {
                             .remove(&EmailAddressRef::new(local_part.as_ref(), domain.id));
                     }
                 }
-            }
-        }
-
-        // Obtain external directory, if configured
-        if let Some(directory) = self
-            .get_directory_for_cached_domain(&domain)
-            .filter(|directory| directory.can_lookup_recipients())
-        {
-            let address = if local_part.as_ref() == local_part_orig {
-                Cow::Borrowed(rcpt)
-            } else {
-                Cow::Owned(format!("{local_part}@{domain_part}"))
-            };
-            match directory.recipient(address.as_ref()).await? {
-                Recipient::Account(account) => {
-                    self.synchronize_account(account).await?;
-                    return Ok(RcptResolution::Accept);
-                }
-                Recipient::Group(group) => {
-                    self.synchronize_group(group).await?;
-                    return Ok(RcptResolution::Accept);
-                }
-                Recipient::Invalid => {}
+                _ => {}
             }
         }
 

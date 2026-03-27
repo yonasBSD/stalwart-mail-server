@@ -10,7 +10,7 @@ use crate::{
 };
 use ahash::AHashMap;
 use jsonwebtoken::{
-    Algorithm, DecodingKey, Validation, decode, decode_header,
+    Algorithm, DecodingKey, Header, Validation, decode, decode_header,
     jwk::{self, JwkSet},
 };
 use reqwest::Client;
@@ -21,38 +21,33 @@ use trc::AuthEvent;
 impl OpenIdDirectory {
     pub async fn authenticate(&self, credentials: &Credentials) -> trc::Result<Account> {
         match credentials {
-            Credentials::Bearer { token, .. } => {
-                if token.chars().filter(|&c| c == '.').count() == 2 {
-                    self.authenticate_jwt(token).await
-                } else {
-                    #[cfg(feature = "test_mode")]
-                    let token = token.strip_prefix(".").unwrap_or(token);
-                    self.authenticate_opaque(token).await
-                }
-                .map_err(|err| match err {
-                    OidcError::AuthorizationFailed(reason) => {
-                        AuthEvent::Failed.into_err().reason(reason)
-                    }
-                    err => AuthEvent::Error.into_err().reason(err),
-                })
+            Credentials::Bearer { token, .. } => if let Ok(header) = decode_header(token) {
+                self.authenticate_jwt(token, header).await
+            } else {
+                #[cfg(feature = "test_mode")]
+                let token = token.strip_prefix(".").unwrap_or(token);
+                self.authenticate_opaque(token).await
             }
+            .map_err(|err| match err {
+                OidcError::AuthorizationFailed(reason) => {
+                    AuthEvent::Failed.into_err().reason(reason)
+                }
+                err => AuthEvent::Error.into_err().reason(err),
+            }),
             _ => Err(AuthEvent::Error
                 .into_err()
                 .reason("Unsupported credentials type for OIDC backend")),
         }
     }
 
-    async fn authenticate_jwt(&self, token: &str) -> Result<Account, OidcError> {
-        let header = decode_header(token)
-            .map_err(|e| OidcError::TokenValidation(format!("Failed to decode JWT header: {e}")))?;
-
-        match header.alg {
-            Algorithm::HS256 | Algorithm::HS384 | Algorithm::HS512 => {
-                return Err(OidcError::TokenValidation(
-                    "Unsupported algorithm".to_string(),
-                ));
-            }
-            _ => {}
+    async fn authenticate_jwt(&self, token: &str, header: Header) -> Result<Account, OidcError> {
+        if matches!(
+            header.alg,
+            Algorithm::HS256 | Algorithm::HS384 | Algorithm::HS512
+        ) {
+            return Err(OidcError::TokenValidation(
+                "Unsupported algorithm".to_string(),
+            ));
         }
 
         let candidates = self.get_key(header.kid.as_deref()).await?;
@@ -196,28 +191,24 @@ impl OpenIdDirectory {
     }
 
     fn build_account(&self, claims: &serde_json::Value) -> Result<Account, OidcError> {
-        let email = self.resolve_email(claims)?;
-        let description = self
-            .config
-            .claim_name
-            .as_ref()
-            .and_then(|name_claim| claims.get(name_claim))
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-        let groups = self
-            .config
-            .claim_groups
-            .as_ref()
-            .and_then(|groups_claim| claims.get(groups_claim))
-            .map(extract_string_list)
-            .unwrap_or_default();
-
         Ok(Account {
-            email,
+            email: self.resolve_email(claims)?,
             email_aliases: Vec::new(),
             secret: None,
-            groups,
-            description,
+            groups: self
+                .config
+                .claim_groups
+                .as_ref()
+                .and_then(|groups_claim| claims.get(groups_claim))
+                .map(extract_string_list)
+                .unwrap_or_default(),
+            description: self
+                .config
+                .claim_name
+                .as_ref()
+                .and_then(|name_claim| claims.get(name_claim))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
         })
     }
 
@@ -318,23 +309,9 @@ pub(super) async fn fetch_jwks_keys(
             }
         };
 
-        if matches!(
-            algorithm,
-            Algorithm::HS256 | Algorithm::HS384 | Algorithm::HS512
-        ) {
-            trc::event!(
-                Auth(AuthEvent::Warning),
-                Url = jwks_uri.to_string(),
-                Reason = format!(
-                    "HMAC algorithm {:?} in JWKS (kid={:?}) is not accepted, skipping",
-                    algorithm, key.common.key_id
-                )
-            );
-            continue;
-        }
-
-        let decoding_key = DecodingKey::from_jwk(key)
-            .map_err(|e| {
+        let decoding_key = match DecodingKey::from_jwk(key) {
+            Ok(decoding_key) => decoding_key,
+            Err(e) => {
                 trc::event!(
                     Auth(AuthEvent::Warning),
                     Url = jwks_uri.to_string(),
@@ -343,25 +320,19 @@ pub(super) async fn fetch_jwks_keys(
                         key.common.key_id
                     )
                 );
-            })
-            .ok();
-
-        let decoding_key = match decoding_key {
-            Some(dk) => dk,
-            None => continue,
-        };
-
-        let kid = match &key.common.key_id {
-            Some(id) => id.clone(),
-            None => {
-                let id = format!("_synthetic_{synthetic_id}");
-                synthetic_id += 1;
-                id
+                continue;
             }
         };
 
         map.insert(
-            kid,
+            match &key.common.key_id {
+                Some(id) => id.clone(),
+                None => {
+                    let id = format!("_synthetic_{synthetic_id}");
+                    synthetic_id += 1;
+                    id
+                }
+            },
             CachedKey {
                 decoding_key,
                 algorithm,

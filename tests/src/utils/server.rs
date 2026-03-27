@@ -40,10 +40,10 @@ use pop3::Pop3SessionManager;
 use registry::{
     schema::{
         enums::{DataStoreType, EventPolicy, NetworkListenerProtocol, TracingLevel},
-        prelude::{Object, SocketAddr},
+        prelude::{Object, ObjectType, SocketAddr},
         structs::{
-            Certificate, Expression, Http, NetworkListener, PublicText, SecretKeyFile, SecretText,
-            Tracer, TracerStdout,
+            Authentication, Certificate, Expression, Http, NetworkListener, PublicText,
+            SecretKeyFile, SecretText, Tracer, TracerStdout,
         },
     },
     types::{EnumImpl, map::Map},
@@ -61,7 +61,7 @@ use smtp::{
 use std::{path::PathBuf, str::FromStr, sync::Arc};
 use store::{
     RegistryStore, Store, ValueKey,
-    registry::{bootstrap::Bootstrap, write::RegistryWrite},
+    registry::{RegistryQuery, bootstrap::Bootstrap, write::RegistryWrite},
     write::{AlignedBytes, Archive},
 };
 use tokio::sync::{mpsc, watch};
@@ -92,6 +92,16 @@ pub struct TestServerBuilder {
 impl TestServerBuilder {
     pub async fn new(test_name: &str) -> Self {
         let reset = std::env::var("NO_INSERT").is_err();
+
+        Self::new_with_role(test_name, "mail.example.org".to_string(), None, reset).await
+    }
+
+    pub async fn new_with_role(
+        test_name: &str,
+        hostname: String,
+        node_role: Option<String>,
+        reset: bool,
+    ) -> Self {
         let temp_dir = TempDir::new(test_name, reset);
         let path = temp_dir.path.to_string_lossy().to_string();
         let data_store = build_data_store(
@@ -114,7 +124,7 @@ impl TestServerBuilder {
 
         Self {
             bootstrap: Bootstrap::new(
-                RegistryStore::new(&path, store, "mail.example.org".to_string(), 1, None).await,
+                RegistryStore::new(&path, store, hostname, 1, node_role).await,
             )
             .await,
             http_listener_port: 8899,
@@ -149,8 +159,7 @@ impl TestServerBuilder {
         .await
     }
 
-    pub async fn with_http_listener(mut self, port: u16) -> Self {
-        self.http_listener_port = port;
+    pub async fn with_http_listener(self, port: u16) -> Self {
         self.with_listener(NetworkListenerProtocol::Http, "jmap", port, true)
             .await
             .with_object(Http {
@@ -166,6 +175,11 @@ impl TestServerBuilder {
 
     pub async fn with_smtp_listener(self, port: u16) -> Self {
         self.with_listener(NetworkListenerProtocol::Smtp, "smtp", port, false)
+            .await
+    }
+
+    pub async fn with_imap_listener(self, port: u16) -> Self {
+        self.with_listener(NetworkListenerProtocol::Imap, "imap", port, false)
             .await
     }
 
@@ -191,12 +205,15 @@ impl TestServerBuilder {
     }
 
     pub async fn with_listener(
-        self,
+        mut self,
         protocol: NetworkListenerProtocol,
         name: &str,
         port: u16,
         tls_implicit: bool,
     ) -> Self {
+        if protocol == NetworkListenerProtocol::Http {
+            self.http_listener_port = port;
+        }
         self.insert_object(NetworkListener {
             bind: Map::new(vec![
                 SocketAddr::from_str(&format!("127.0.0.1:{port}")).unwrap(),
@@ -245,58 +262,90 @@ impl TestServerBuilder {
             .unwrap_id(trc::location!())
     }
 
-    pub async fn build(mut self) -> TestServer {
-        // Register stores from environment
-        self.bootstrap.registry.insert_stores_from_env().await;
+    pub async fn build(self) -> TestServer {
+        self.build_with_opts(true).await
+    }
 
-        // Enable logging if requested
-        let level = std::env::var("LOG")
-            .map(|log| TracingLevel::parse(&log).expect("Invalid log level"))
-            .ok();
+    pub async fn build_with_opts(mut self, init_store: bool) -> TestServer {
+        if init_store {
+            // Register stores from environment
+            self.bootstrap.registry.insert_stores_from_env().await;
 
-        self.insert_object(Tracer::Stdout(TracerStdout {
-            enable: level.is_some() || self.logging_enabled,
-            level: level.unwrap_or(TracingLevel::Info),
-            ansi: true,
-            multiline: false,
-            events: Map::new(
-                EventType::variants()
-                    .iter()
-                    .filter(|ev| {
-                        let ev = ev.as_str();
-                        ev.starts_with("network.")
-                            || ev.starts_with("http.connection-")
-                            || ev == "telemetry.webhook-error"
-                            || ev == "http.request-body"
-                            || ev == "http.request-url"
-                            || ev == "tls.no-certificates-available"
-                            || ev == "store.cache-hit"
-                    })
-                    .copied()
-                    .collect(),
-            ),
-            events_policy: EventPolicy::Exclude,
-            ..Default::default()
-        }))
-        .await;
+            // Enable logging if requested
+            let level = std::env::var("LOG")
+                .map(|log| TracingLevel::parse(&log).expect("Invalid log level"))
+                .ok();
+
+            self.insert_object(Tracer::Stdout(TracerStdout {
+                enable: level.is_some() || self.logging_enabled,
+                level: level.unwrap_or(TracingLevel::Info),
+                ansi: true,
+                multiline: false,
+                events: Map::new(
+                    EventType::variants()
+                        .iter()
+                        .filter(|ev| {
+                            let ev = ev.as_str();
+                            ev.starts_with("network.")
+                                || ev.starts_with("http.connection-")
+                                || ev == "telemetry.webhook-error"
+                                || ev == "http.request-body"
+                                || ev == "http.request-url"
+                                || ev == "tls.no-certificates-available"
+                                || ev == "store.cache-hit"
+                        })
+                        .copied()
+                        .collect(),
+                ),
+                events_policy: EventPolicy::Exclude,
+                ..Default::default()
+            }))
+            .await;
+        }
 
         // Start listeners
         let mut servers = Listeners::parse(&mut self.bootstrap).await;
         servers.bind_and_drop_priv(&mut self.bootstrap);
 
+        if init_store {
+            // Add safe defaults if missing
+            self.bootstrap.insert_safe_defaults().await;
+
+            // Add directory
+            if let Some(directory_id) = self
+                .bootstrap
+                .registry
+                .query::<Vec<Id>>(RegistryQuery::new(ObjectType::Directory))
+                .await
+                .unwrap()
+                .first()
+            {
+                let mut auth = self
+                    .bootstrap
+                    .registry
+                    .object::<Authentication>(Id::singleton())
+                    .await
+                    .unwrap()
+                    .unwrap();
+                auth.directory_id = Some(*directory_id);
+                self.bootstrap
+                    .registry
+                    .write(RegistryWrite::insert(&auth.into()))
+                    .await
+                    .unwrap();
+            }
+        }
+
         // Parse storage
         let storage = Storage::parse(&mut self.bootstrap).await;
 
         // Reset search store
-        if self.reset {
+        if init_store && self.reset {
             search_store_destroy(&storage.search).await;
         }
 
         // Parse telemetry
         let telemetry = Telemetry::parse(&mut self.bootstrap, &storage).await;
-
-        // Add safe defaults if missing
-        self.bootstrap.insert_safe_defaults().await;
 
         // Parse components
         let core = Box::pin(Core::parse(&mut self.bootstrap, storage)).await;

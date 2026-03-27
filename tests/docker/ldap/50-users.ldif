@@ -40,11 +40,13 @@ dn: uid=bill.foobar,ou=users,dc=stalwart,dc=test
 objectClass: inetOrgPerson
 objectClass: posixAccount
 objectClass: shadowAccount
+objectClass: extensibleObject
 uid: bill.foobar
 cn: Bill Foobar
 sn: Foobar
 givenName: Bill
 mail: bill.foobar@example.org
+mailAlias: bill@example.org
 userPassword: this is Bill's LDAP password
 uidNumber: 10003
 gidNumber: 10003

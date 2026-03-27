@@ -124,4 +124,11 @@ impl Credential {
             Credential::Password(_) => None,
         }
     }
+
+    pub fn as_main_credential(&self) -> Option<&PasswordCredential> {
+        match self {
+            Credential::Password(credential) => Some(credential),
+            Credential::AppPassword(_) | Credential::ApiKey(_) => None,
+        }
+    }
 }

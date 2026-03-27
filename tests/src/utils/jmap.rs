@@ -44,19 +44,35 @@ impl Account {
             .into_iter()
             .map(|id| Value::String(id.to_string()))
             .collect::<Vec<Value>>();
-        self.jmap_method_calls(json!([[
-            format!("{object}/get"),
-            {
-                "accountId": account.id_string(),
-                "properties": properties
-                .into_iter()
-                .map(|p| Value::String(p.to_string()))
-                .collect::<Vec<_>>(),
-                "ids": if !ids.is_empty() { Some(ids) } else { None }
-            },
-            "0"
-        ]]))
-        .await
+
+        if account.id().document_id() != u32::MAX {
+            self.jmap_method_calls(json!([[
+                format!("{object}/get"),
+                {
+                    "accountId": account.id_string(),
+                    "properties": properties
+                    .into_iter()
+                    .map(|p| Value::String(p.to_string()))
+                    .collect::<Vec<_>>(),
+                    "ids": if !ids.is_empty() { Some(ids) } else { None }
+                },
+                "0"
+            ]]))
+            .await
+        } else {
+            self.jmap_method_calls(json!([[
+                format!("{object}/get"),
+                {
+                    "properties": properties
+                    .into_iter()
+                    .map(|p| Value::String(p.to_string()))
+                    .collect::<Vec<_>>(),
+                    "ids": if !ids.is_empty() { Some(ids) } else { None }
+                },
+                "0"
+            ]]))
+            .await
+        }
     }
 
     pub async fn jmap_query(

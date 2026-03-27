@@ -5,7 +5,7 @@
  */
 
 use common::ipc::{
-    BroadcastEvent, CacheInvalidation, CalendarAlert, PushNotification, RegistryChange,
+    BroadcastEvent, CacheInvalidation, CalendarAlert, EmailPush, PushNotification, RegistryChange,
 };
 use registry::{
     schema::prelude::ObjectType,
@@ -186,6 +186,13 @@ where
                         }),
                     )))
                 }
+                2 => Ok(Some(BroadcastEvent::PushNotification(
+                    PushNotification::EmailPush(EmailPush {
+                        account_id: self.messages.next_leb128().ok_or(())?,
+                        email_id: self.messages.next_leb128().ok_or(())?,
+                        change_id: self.messages.next_leb128().ok_or(())?,
+                    }),
+                ))),
                 3 => {
                     let account_id = self.messages.next_leb128().ok_or(())?;
                     Ok(Some(BroadcastEvent::PushServerUpdate(account_id)))

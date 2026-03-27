@@ -73,9 +73,9 @@ pub fn build_data_store(typ: DataStoreType, path: &str) -> DataStore {
         DataStoreType::PostgreSql => DataStore::PostgreSql(PostgreSqlStore {
             host: "localhost".into(),
             port: 5432,
-            auth_username: "postgres".to_string().into(),
+            auth_username: "stalwart".to_string().into(),
             auth_secret: SecretKeyOptional::Value(SecretKeyValue {
-                secret: "mysecretpassword".into(),
+                secret: "stalwart".into(),
             }),
             database: "stalwart".into(),
             use_tls: false,

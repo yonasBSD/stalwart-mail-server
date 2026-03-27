@@ -6,7 +6,7 @@
 
 use crate::{
     Server,
-    auth::EmailCache,
+    auth::{EmailAddressRef, EmailCache},
     ipc::{BroadcastEvent, CacheInvalidation},
 };
 use ahash::AHashSet;
@@ -281,6 +281,13 @@ impl Server {
     pub fn invalidate_all_local_negative_caches(&self) {
         self.inner.cache.domain_names_negative.clear();
         self.inner.cache.emails_negative.clear();
+    }
+
+    pub fn invalidate_local_negative_account_cache(&self, local_part: &str, domain_id: u32) {
+        self.inner
+            .cache
+            .emails_negative
+            .remove(&EmailAddressRef::new(local_part, domain_id));
     }
 
     pub async fn invalidate_local_caches(&self, changes: &[CacheInvalidation]) {

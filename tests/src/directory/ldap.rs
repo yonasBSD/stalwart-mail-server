@@ -10,34 +10,8 @@ use registry::{
     types::map::Map,
 };
 
-#[tokio::test]
-async fn ldap_directory() {
-    let mut config = structs::LdapDirectory {
-        url: "ldap://localhost".into(),
-        use_tls: false,
-        attr_class: Map::new(vec!["objectClass".to_string()]),
-        attr_description: Map::new(vec!["cn".to_string()]),
-        attr_email: Map::new(vec!["mail".to_string()]),
-        attr_email_alias: Map::new(vec!["mailAlias".to_string()]),
-        attr_member_of: Map::new(vec!["memberOf".to_string()]),
-        attr_secret: Map::new(vec![]),
-        attr_secret_changed: Map::new(vec!["shadowLastChange".to_string()]),
-        base_dn: "dc=stalwart,dc=test".into(),
-        bind_dn: "cn=admin,dc=stalwart,dc=test".to_string().into(),
-        bind_secret: SecretKeyOptional::Value(SecretKeyValue {
-            secret: "admin".into(),
-        }),
-        filter_member_of: "(&(objectClass=groupOfNames)(member=?))".to_string().into(),
-        filter_login: "(&(objectClass=inetOrgPerson)(mail=?))".into(),
-        filter_mailbox: concat!(
-            "(|(&(objectClass=inetOrgPerson)(|(mail=?)(mailAlias=?)))",
-            "(&(objectClass=groupOfNames)(|(mail=?)(mailAlias=?))))"
-        )
-        .into(),
-        group_class: "groupOfNames".into(),
-        bind_authentication: true,
-        ..Default::default()
-    };
+pub async fn test() {
+    let mut config = ldap_test_directory();
 
     // Test bind authentication
     let ldap = LdapDirectory::open(config.clone()).await.unwrap();
@@ -155,4 +129,33 @@ async fn ldap_directory() {
         ldap.recipient("nonexistent@example.org").await.unwrap(),
         Recipient::Invalid
     );
+}
+
+pub fn ldap_test_directory() -> structs::LdapDirectory {
+    structs::LdapDirectory {
+        url: "ldap://localhost".into(),
+        use_tls: false,
+        attr_class: Map::new(vec!["objectClass".to_string()]),
+        attr_description: Map::new(vec!["cn".to_string()]),
+        attr_email: Map::new(vec!["mail".to_string()]),
+        attr_email_alias: Map::new(vec!["mailAlias".to_string()]),
+        attr_member_of: Map::new(vec!["memberOf".to_string()]),
+        attr_secret: Map::new(vec![]),
+        attr_secret_changed: Map::new(vec!["shadowLastChange".to_string()]),
+        base_dn: "dc=stalwart,dc=test".into(),
+        bind_dn: "cn=admin,dc=stalwart,dc=test".to_string().into(),
+        bind_secret: SecretKeyOptional::Value(SecretKeyValue {
+            secret: "admin".into(),
+        }),
+        filter_member_of: "(&(objectClass=groupOfNames)(member=?))".to_string().into(),
+        filter_login: "(&(objectClass=inetOrgPerson)(mail=?))".into(),
+        filter_mailbox: concat!(
+            "(|(&(objectClass=inetOrgPerson)(|(mail=?)(mailAlias=?)))",
+            "(&(objectClass=groupOfNames)(|(mail=?)(mailAlias=?))))"
+        )
+        .into(),
+        group_class: "groupOfNames".into(),
+        bind_authentication: true,
+        ..Default::default()
+    }
 }

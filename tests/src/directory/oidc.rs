@@ -11,8 +11,7 @@
 use directory::{Account, Credentials, Directory, backend::oidc::OpenIdDirectory};
 use registry::{schema::structs, types::map::Map};
 
-#[tokio::test]
-async fn oidc_directory() {
+pub async fn test() {
     let config = structs::OidcDirectory {
         issuer_url: "http://localhost:9080/realms/stalwart".to_string(),
         claim_username: "preferred_username".to_string(),

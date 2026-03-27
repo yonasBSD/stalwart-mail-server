@@ -163,7 +163,7 @@ pub async fn test(
         .assert_contains("* 0 EXISTS");
 
     // Test SMTP delivery notifications
-    let mut lmtp = SmtpConnection::connect_port(if is_cluster_test { 17000 } else { 11200 }).await;
+    let mut lmtp = SmtpConnection::connect().await;
     lmtp.ingest(
         "bill@example.com",
         &["jdoe@example.com"],

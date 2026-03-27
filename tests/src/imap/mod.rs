@@ -41,7 +41,7 @@ use serde_json::json;
 use std::{path::PathBuf, time::Instant};
 use utils::map::vec_map::VecMap;
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 pub async fn imap_tests() {
     let mut test = TestServerBuilder::new("imap_tests")
         .await

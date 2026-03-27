@@ -101,10 +101,9 @@ async fn store_destroy_sql_indexes(store: &Store) {
                 #[cfg(feature = "mysql")]
                 let table = index.mysql_table();
 
-                store
+                let _ = store
                     .sql_query::<usize>(&format!("TRUNCATE TABLE {table}"), vec![])
-                    .await
-                    .unwrap();
+                    .await;
             }
         }
     }

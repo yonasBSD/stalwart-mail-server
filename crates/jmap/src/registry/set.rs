@@ -321,6 +321,7 @@ impl RegistrySet for Server {
 
                     if is_create {
                         // Patch object
+
                         match new_object.patch(
                             JsonPointerPatch::new(&JsonPointer::new(vec![]))
                                 .with_create(true)

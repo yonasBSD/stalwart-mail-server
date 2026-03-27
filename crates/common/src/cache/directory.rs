@@ -4,9 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::sync::Arc;
-
-use crate::{Server, auth::DomainCache};
+use crate::{Server, auth::DomainCache, ipc::BroadcastEvent};
 use registry::{
     schema::{
         prelude::{Object, ObjectType},
@@ -17,21 +15,23 @@ use registry::{
     },
     types::{datetime::UTCDateTime, id::ObjectId, list::List},
 };
+use std::sync::Arc;
 use store::registry::write::{RegistryWrite, RegistryWriteResult};
 use trc::AddContext;
 use types::id::Id;
 
-pub(crate) struct AccountWithId {
+pub struct AccountWithId {
     pub id: u32,
     pub account: Account,
 }
 
 impl Server {
-    pub(crate) async fn synchronize_account(
+    pub async fn synchronize_account(
         &self,
         account: directory::Account,
     ) -> trc::Result<AccountWithId> {
         let (local, domain) = self.validate_address(&account.email).await?;
+
         match self
             .account_id_from_parts(local, domain.id)
             .await
@@ -159,6 +159,8 @@ impl Server {
                             enabled: true,
                             description: None,
                         });
+
+                        self.invalidate_local_negative_account_cache(local, alias_domain.id);
                     }
                 }
                 let mut member_group_ids = Vec::with_capacity(account.groups.len());
@@ -182,10 +184,13 @@ impl Server {
                     member_group_ids: member_group_ids.into(),
                     member_tenant_id: domain.id_tenant.map(Id::from),
                     roles: UserRoles::User,
-                    credentials: List::from_iter([Credential::Password(PasswordCredential {
-                        secret: account.secret.unwrap_or_default(),
-                        ..Default::default()
-                    })]),
+                    credentials: List::from_iter(account.secret.map(|secret| {
+                        Credential::Password(PasswordCredential {
+                            credential_id: 0u64.into(),
+                            secret,
+                            ..Default::default()
+                        })
+                    })),
                     ..Default::default()
                 }));
 
@@ -206,10 +211,16 @@ impl Server {
                     .await
                     .caused_by(trc::location!())?
                 {
-                    RegistryWriteResult::Success(id) => Ok(AccountWithId {
-                        id: id.document_id(),
-                        account: account.into(),
-                    }),
+                    RegistryWriteResult::Success(id) => {
+                        self.invalidate_local_negative_account_cache(local, domain.id);
+                        self.cluster_broadcast(BroadcastEvent::CacheInvalidateNegative)
+                            .await;
+
+                        Ok(AccountWithId {
+                            id: id.document_id(),
+                            account: account.into(),
+                        })
+                    }
                     failure => Err(trc::AuthEvent::Error
                         .into_err()
                         .caused_by(trc::location!())
@@ -220,7 +231,7 @@ impl Server {
         }
     }
 
-    pub(crate) async fn synchronize_group(&self, group: directory::Group) -> trc::Result<u32> {
+    pub async fn synchronize_group(&self, group: directory::Group) -> trc::Result<u32> {
         let (local, domain) = self.validate_address(&group.email).await?;
 
         match self
@@ -313,6 +324,8 @@ impl Server {
                             enabled: true,
                             description: None,
                         });
+
+                        self.invalidate_local_negative_account_cache(local, alias_domain.id);
                     }
                 }
 
@@ -344,7 +357,11 @@ impl Server {
                     .await
                     .caused_by(trc::location!())?
                 {
-                    RegistryWriteResult::Success(id) => Ok(id.document_id()),
+                    RegistryWriteResult::Success(id) => {
+                        self.invalidate_local_negative_account_cache(local, domain.id);
+
+                        Ok(id.document_id())
+                    }
                     failure => Err(trc::AuthEvent::Error
                         .into_err()
                         .caused_by(trc::location!())
