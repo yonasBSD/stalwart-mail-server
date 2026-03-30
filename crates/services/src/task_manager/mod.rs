@@ -97,6 +97,9 @@ impl TaskInfo for Task {
             Task::AccountMaintenance(_) => "AccountMaintenance",
             Task::StoreMaintenance(_) => "StoreMaintenance",
             Task::SpamFilterMaintenance(_) => "SpamFilterMaintenance",
+            Task::AcmeRenewal(_) => "AcmeRenewal",
+            Task::DkimKeyRotation(_) => "DkimKeyRotation",
+            Task::DnsManagement(_) => "DnsManagement",
         }
     }
 }

@@ -260,7 +260,6 @@ impl EventType {
             b"mail-auth.dns-record-not-found" => EventType::MailAuth(MailAuthEvent::DnsRecordNotFound),
             b"mail-auth.dns-invalid-record-type" => EventType::MailAuth(MailAuthEvent::DnsInvalidRecordType),
             b"mail-auth.policy-not-aligned" => EventType::MailAuth(MailAuthEvent::PolicyNotAligned),
-            b"manage.reserved6" => EventType::Manage(ManageEvent::Reserved6),
             b"manage-sieve.connection-start" => EventType::ManageSieve(ManageSieveEvent::ConnectionStart),
             b"manage-sieve.connection-end" => EventType::ManageSieve(ManageSieveEvent::ConnectionEnd),
             b"manage-sieve.create-script" => EventType::ManageSieve(ManageSieveEvent::CreateScript),
@@ -588,6 +587,7 @@ impl EventType {
             b"tls.certificate-not-found" => EventType::Tls(TlsEvent::CertificateNotFound),
             b"tls.no-certificates-available" => EventType::Tls(TlsEvent::NoCertificatesAvailable),
             b"tls.multiple-certificates-available" => EventType::Tls(TlsEvent::MultipleCertificatesAvailable),
+            b"tls.expired-certificate-removed" => EventType::Tls(TlsEvent::ExpiredCertificateRemoved),
             b"tls-rpt.record-fetch" => EventType::TlsRpt(TlsRptEvent::RecordFetch),
             b"tls-rpt.record-fetch-error" => EventType::TlsRpt(TlsRptEvent::RecordFetchError),
             b"tls-rpt.record-not-found" => EventType::TlsRpt(TlsRptEvent::RecordNotFound),
@@ -918,7 +918,6 @@ impl EventType {
                 "mail-auth.dns-invalid-record-type"
             }
             EventType::MailAuth(MailAuthEvent::PolicyNotAligned) => "mail-auth.policy-not-aligned",
-            EventType::Manage(ManageEvent::Reserved6) => "manage.reserved6",
             EventType::ManageSieve(ManageSieveEvent::ConnectionStart) => {
                 "manage-sieve.connection-start"
             }
@@ -1318,6 +1317,9 @@ impl EventType {
             EventType::Tls(TlsEvent::MultipleCertificatesAvailable) => {
                 "tls.multiple-certificates-available"
             }
+            EventType::Tls(TlsEvent::ExpiredCertificateRemoved) => {
+                "tls.expired-certificate-removed"
+            }
             EventType::TlsRpt(TlsRptEvent::RecordFetch) => "tls-rpt.record-fetch",
             EventType::TlsRpt(TlsRptEvent::RecordFetchError) => "tls-rpt.record-fetch-error",
             EventType::TlsRpt(TlsRptEvent::RecordNotFound) => "tls-rpt.record-not-found",
@@ -1591,7 +1593,6 @@ impl EventType {
             EventType::MailAuth(MailAuthEvent::DnsRecordNotFound) => 250,
             EventType::MailAuth(MailAuthEvent::DnsInvalidRecordType) => 249,
             EventType::MailAuth(MailAuthEvent::PolicyNotAligned) => 255,
-            EventType::Manage(ManageEvent::Reserved6) => 277,
             EventType::ManageSieve(ManageSieveEvent::ConnectionStart) => 259,
             EventType::ManageSieve(ManageSieveEvent::ConnectionEnd) => 258,
             EventType::ManageSieve(ManageSieveEvent::CreateScript) => 260,
@@ -1919,6 +1920,7 @@ impl EventType {
             EventType::Tls(TlsEvent::CertificateNotFound) => 542,
             EventType::Tls(TlsEvent::NoCertificatesAvailable) => 546,
             EventType::Tls(TlsEvent::MultipleCertificatesAvailable) => 545,
+            EventType::Tls(TlsEvent::ExpiredCertificateRemoved) => 277,
             EventType::TlsRpt(TlsRptEvent::RecordFetch) => 540,
             EventType::TlsRpt(TlsRptEvent::RecordFetchError) => 541,
             EventType::TlsRpt(TlsRptEvent::RecordNotFound) => 560,
@@ -2210,7 +2212,6 @@ impl EventType {
             250 => Some(EventType::MailAuth(MailAuthEvent::DnsRecordNotFound)),
             249 => Some(EventType::MailAuth(MailAuthEvent::DnsInvalidRecordType)),
             255 => Some(EventType::MailAuth(MailAuthEvent::PolicyNotAligned)),
-            277 => Some(EventType::Manage(ManageEvent::Reserved6)),
             259 => Some(EventType::ManageSieve(ManageSieveEvent::ConnectionStart)),
             258 => Some(EventType::ManageSieve(ManageSieveEvent::ConnectionEnd)),
             260 => Some(EventType::ManageSieve(ManageSieveEvent::CreateScript)),
@@ -2562,6 +2563,7 @@ impl EventType {
             542 => Some(EventType::Tls(TlsEvent::CertificateNotFound)),
             546 => Some(EventType::Tls(TlsEvent::NoCertificatesAvailable)),
             545 => Some(EventType::Tls(TlsEvent::MultipleCertificatesAvailable)),
+            277 => Some(EventType::Tls(TlsEvent::ExpiredCertificateRemoved)),
             540 => Some(EventType::TlsRpt(TlsRptEvent::RecordFetch)),
             541 => Some(EventType::TlsRpt(TlsRptEvent::RecordFetchError)),
             560 => Some(EventType::TlsRpt(TlsRptEvent::RecordNotFound)),
@@ -2832,6 +2834,7 @@ impl EventType {
             EventType::Telemetry(TelemetryEvent::AlertMessage) => Level::Info,
             EventType::Telemetry(TelemetryEvent::MetricsCollected) => Level::Info,
             EventType::Tls(TlsEvent::Handshake) => Level::Info,
+            EventType::Tls(TlsEvent::ExpiredCertificateRemoved) => Level::Info,
             EventType::TlsRpt(TlsRptEvent::RecordFetch) => Level::Info,
             EventType::TlsRpt(TlsRptEvent::RecordFetchError) => Level::Info,
             EventType::TlsRpt(TlsRptEvent::RecordNotFound) => Level::Info,
@@ -3229,7 +3232,6 @@ impl EventType {
             EventType::MailAuth(MailAuthEvent::DnsRecordNotFound) => "DNS record not found",
             EventType::MailAuth(MailAuthEvent::DnsInvalidRecordType) => "Invalid DNS record type",
             EventType::MailAuth(MailAuthEvent::PolicyNotAligned) => "Policy not aligned",
-            EventType::Manage(ManageEvent::Reserved6) => "Management error",
             EventType::ManageSieve(ManageSieveEvent::ConnectionStart) => {
                 "ManageSieve connection started"
             }
@@ -3640,6 +3642,9 @@ impl EventType {
             EventType::Tls(TlsEvent::NoCertificatesAvailable) => "No TLS certificates available",
             EventType::Tls(TlsEvent::MultipleCertificatesAvailable) => {
                 "Multiple TLS certificates available"
+            }
+            EventType::Tls(TlsEvent::ExpiredCertificateRemoved) => {
+                "Certificate expired and removed"
             }
             EventType::TlsRpt(TlsRptEvent::RecordFetch) => "Fetched TLS-RPT record",
             EventType::TlsRpt(TlsRptEvent::RecordFetchError) => "Error fetching TLS-RPT record",
@@ -4096,7 +4101,6 @@ impl EventType {
                 "The DNS record type is invalid"
             }
             EventType::MailAuth(MailAuthEvent::PolicyNotAligned) => "The policy is not aligned",
-            EventType::Manage(ManageEvent::Reserved6) => "A management error occurred",
             EventType::ManageSieve(ManageSieveEvent::ConnectionStart) => {
                 "ManageSieve connection started"
             }
@@ -4742,6 +4746,9 @@ impl EventType {
             EventType::Tls(TlsEvent::MultipleCertificatesAvailable) => {
                 "Multiple TLS certificates are available"
             }
+            EventType::Tls(TlsEvent::ExpiredCertificateRemoved) => {
+                "A TLS certificate has expired and was removed from the store"
+            }
             EventType::TlsRpt(TlsRptEvent::RecordFetch) => "The TLS-RPT record has been fetched",
             EventType::TlsRpt(TlsRptEvent::RecordFetchError) => {
                 "An error occurred while fetching the TLS-RPT record"
@@ -4861,7 +4868,6 @@ impl EventType {
             EventType::Limit(LimitEvent::BlobQuota) => "Blob quota exceeded",
             EventType::Limit(LimitEvent::TenantQuota) => "Tenant quota exceeded",
             EventType::Limit(LimitEvent::TooManyRequests) => "Too many requests",
-            EventType::Manage(ManageEvent::Reserved6) => "Management API Error",
             EventType::ManageSieve(ManageSieveEvent::ConnectionStart) => "ManageSieve error",
             EventType::ManageSieve(ManageSieveEvent::ConnectionEnd) => "ManageSieve error",
             EventType::ManageSieve(ManageSieveEvent::CreateScript) => "ManageSieve error",
@@ -5297,7 +5303,6 @@ impl EventType {
             EventType::MailAuth(MailAuthEvent::DnsRecordNotFound),
             EventType::MailAuth(MailAuthEvent::DnsInvalidRecordType),
             EventType::MailAuth(MailAuthEvent::PolicyNotAligned),
-            EventType::Manage(ManageEvent::Reserved6),
             EventType::ManageSieve(ManageSieveEvent::ConnectionStart),
             EventType::ManageSieve(ManageSieveEvent::ConnectionEnd),
             EventType::ManageSieve(ManageSieveEvent::CreateScript),
@@ -5625,6 +5630,7 @@ impl EventType {
             EventType::Tls(TlsEvent::CertificateNotFound),
             EventType::Tls(TlsEvent::NoCertificatesAvailable),
             EventType::Tls(TlsEvent::MultipleCertificatesAvailable),
+            EventType::Tls(TlsEvent::ExpiredCertificateRemoved),
             EventType::TlsRpt(TlsRptEvent::RecordFetch),
             EventType::TlsRpt(TlsRptEvent::RecordFetchError),
             EventType::TlsRpt(TlsRptEvent::RecordNotFound),

@@ -80,7 +80,7 @@ pub enum BroadcastEvent {
     MtaQueueStatus { is_running: bool },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum RegistryChange {
     Insert(ObjectId),
     Delete(ObjectId),

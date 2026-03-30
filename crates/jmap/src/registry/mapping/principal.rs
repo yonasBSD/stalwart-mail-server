@@ -347,6 +347,10 @@ pub(crate) async fn validate_tenant_quota(
                 }
                 TenantStorageQuota::MaxDkimKeys => (ObjectType::DkimSignature, None, "DKIM keys"),
                 TenantStorageQuota::MaxDnsServers => (ObjectType::DnsServer, None, "DNS servers"),
+                TenantStorageQuota::MaxDirectories => (ObjectType::Directory, None, "directories"),
+                TenantStorageQuota::MaxAcmeProviders => {
+                    (ObjectType::AcmeProvider, None, "ACME providers")
+                }
                 TenantStorageQuota::MaxDiskQuota => unreachable!(),
             };
             let query = RegistryQuery::new(object_type).with_tenant(tenant_id.into());

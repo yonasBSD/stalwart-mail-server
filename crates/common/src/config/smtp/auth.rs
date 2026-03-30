@@ -139,7 +139,11 @@ impl DkimSigner {
 
         match signature {
             DkimSignature::Dkim1Ed25519Sha256(signature) => {
-                let private_key = signature.private_key.pem().await?;
+                let private_key = signature
+                    .private_key
+                    .secret()
+                    .await
+                    .map_err(|err| trc::DkimEvent::BuildError.reason(err))?;
                 let private_key = simple_pem_parse(&private_key).ok_or_else(|| {
                     trc::DkimEvent::BuildError
                         .reason("Failed to parse ED25519 private key PEM")
@@ -157,7 +161,11 @@ impl DkimSigner {
                 )))
             }
             DkimSignature::Dkim1RsaSha256(signature) => {
-                let private_key = signature.private_key.pem().await?;
+                let private_key = signature
+                    .private_key
+                    .secret()
+                    .await
+                    .map_err(|err| trc::DkimEvent::BuildError.reason(err))?;
                 let key = rsa_key_parse(private_key.as_bytes())?;
 
                 Ok(DkimSigner::RsaSha256(build_dkim1_signer(

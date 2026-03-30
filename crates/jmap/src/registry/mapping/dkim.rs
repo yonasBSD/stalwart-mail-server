@@ -7,22 +7,12 @@
 use crate::registry::mapping::{
     ObjectResponse, RegistrySetResponse, ValidationResult, principal::validate_tenant_quota,
 };
-use common::{
-    config::smtp::auth::{DkimSigner, rsa_key_parse, simple_pem_parse},
-    network::dkim::generate_dkim_private_key,
-};
+use common::config::smtp::auth::{DkimSigner, rsa_key_parse, simple_pem_parse};
 use jmap_proto::error::set::SetError;
 use mail_auth::common::crypto::Ed25519Key;
 use mail_builder::encoders::base64::base64_encode;
 use pkcs8::Document;
-use registry::{
-    jmap::IntoValue,
-    schema::{
-        enums::TenantStorageQuota,
-        prelude::{MASKED_PASSWORD, Property},
-        structs::{DkimPrivateKey, DkimSignature, SecretTextValue},
-    },
-};
+use registry::schema::{enums::TenantStorageQuota, structs::DkimSignature};
 use rsa::pkcs1::DecodeRsaPublicKey;
 
 pub(crate) async fn validate_dkim_signature(
@@ -30,7 +20,7 @@ pub(crate) async fn validate_dkim_signature(
     key: &mut DkimSignature,
     old_key: Option<&DkimSignature>,
 ) -> ValidationResult {
-    let mut response = if old_key.is_none() {
+    let response = if old_key.is_none() {
         match validate_tenant_quota(set, TenantStorageQuota::MaxDkimKeys).await? {
             Ok(response) => response,
             Err(err) => {
@@ -42,7 +32,7 @@ pub(crate) async fn validate_dkim_signature(
     };
 
     // Generate private key if requested
-    let key_type = key.object_type();
+    /*let key_type = key.object_type();
     let pk = key.private_key_mut();
     if let Some(old_key) = old_key
         && matches!(pk, DkimPrivateKey::Value(value) if value.secret == MASKED_PASSWORD)
@@ -64,22 +54,26 @@ pub(crate) async fn validate_dkim_signature(
                 return Ok(Err(SetError::forbidden().with_description(err.to_string())));
             }
         }
+    }*/
+
+    if old_key.is_none_or(|old_key| old_key.private_key() != key.private_key())
+        && let Err(err) = DkimSigner::new("example.com".to_string(), key.clone()).await
+    {
+        return Ok(Err(SetError::invalid_properties().with_description(
+            format!("Failed to validate DKIM signature: {err}"),
+        )));
     }
 
-    // Verify signature
-    match DkimSigner::new("example.com".to_string(), key.clone()).await {
-        Ok(_) => Ok(Ok(response)),
-        Err(err) => Ok(Err(SetError::invalid_properties()
-            .with_description(format!("Failed to build DKIM signature: {err}")))),
-    }
+    Ok(Ok(response))
 }
 
 pub async fn generate_dkim_public_key(key: &DkimSignature) -> trc::Result<String> {
     match key {
         DkimSignature::Dkim1RsaSha256(key) => key
             .private_key
-            .pem()
+            .secret()
             .await
+            .map_err(|err| trc::DkimEvent::BuildError.reason(err))
             .and_then(|pem| rsa_key_parse(pem.as_bytes()))
             .and_then(|pk| {
                 Document::from_pkcs1_der(&pk.public_key()).map_err(|err| {
@@ -94,8 +88,9 @@ pub async fn generate_dkim_public_key(key: &DkimSignature) -> trc::Result<String
             }),
         DkimSignature::Dkim1Ed25519Sha256(key) => key
             .private_key
-            .pem()
+            .secret()
             .await
+            .map_err(|err| trc::DkimEvent::BuildError.reason(err))
             .and_then(|pem| {
                 simple_pem_parse(&pem).ok_or_else(|| {
                     trc::EventType::Dkim(trc::DkimEvent::BuildError)

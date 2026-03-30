@@ -38,36 +38,59 @@ impl<T: MapItem> Map<T> {
         Self(Vec::with_capacity(capacity))
     }
 
+    #[inline(always)]
+    pub fn contains(&self, item: &T) -> bool {
+        self.0.contains(item)
+    }
+
+    #[inline(always)]
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
+    #[inline(always)]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
+    #[inline(always)]
     pub fn into_inner(self) -> Vec<T> {
         self.0
     }
 
+    #[inline(always)]
+    pub fn inner_mut(&mut self) -> &mut Vec<T> {
+        &mut self.0
+    }
+
+    #[inline(always)]
     pub fn iter(&self) -> impl Iterator<Item = &T> {
         self.0.iter()
     }
 
+    #[inline(always)]
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> {
+        self.0.iter_mut()
+    }
+
+    #[inline(always)]
     pub fn as_slice(&self) -> &[T] {
         &self.0
     }
 
+    #[inline(always)]
     pub fn push(&mut self, item: T) {
         if !self.0.contains(&item) {
             self.0.push(item);
         }
     }
 
+    #[inline(always)]
     pub fn push_unchecked(&mut self, item: T) {
         self.0.push(item);
     }
 
+    #[inline(always)]
     pub fn clear(&mut self) {
         self.0.clear();
     }

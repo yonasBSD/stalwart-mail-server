@@ -11,6 +11,7 @@ use crate::registry::{
         account::account_set,
         action::action_set,
         dkim::validate_dkim_signature,
+        domain::validate_domain,
         map_bootstrap_error,
         principal::{
             schedule_account_destruction, validate_account, validate_role, validate_tenant_quota,
@@ -20,6 +21,7 @@ use crate::registry::{
         report::report_set,
         spam_sample::spam_sample_set,
         task::task_set,
+        tls::{validate_acme_provider, validate_certificate},
     },
 };
 use common::{
@@ -42,14 +44,17 @@ use registry::{
             OBJ_FILTER_ACCOUNT, OBJ_FILTER_TENANT, OBJ_SINGLETON, Object, ObjectInner, ObjectType,
             Property,
         },
-        structs::{Account, DkimSignature, PublicKey, Role},
+        structs::{Account, Certificate, DkimSignature, Domain, PublicKey, Role, Task},
     },
     types::id::ObjectId,
 };
 use std::borrow::Cow;
-use store::registry::{
-    bootstrap::Bootstrap,
-    write::{RegistryWrite, RegistryWriteResult},
+use store::{
+    registry::{
+        bootstrap::Bootstrap,
+        write::{RegistryWrite, RegistryWriteResult},
+    },
+    write::BatchBuilder,
 };
 use trc::AddContext;
 use types::id::Id;
@@ -392,6 +397,7 @@ impl RegistrySet for Server {
                     }
 
                     // Validate objects
+                    let mut tasks = Vec::new();
                     let result = match &mut new_object.inner {
                         ObjectInner::Account(account) => {
                             validate_account(&set, account, modification.as_account()).await?
@@ -420,8 +426,9 @@ impl RegistrySet for Server {
                             validate_dkim_signature(&set, key, modification.as_dkim_signature())
                                 .await?
                         }
-                        ObjectInner::Domain(_) if is_create => {
-                            validate_tenant_quota(&set, TenantStorageQuota::MaxDomains).await?
+                        ObjectInner::Domain(domain) => {
+                            validate_domain(&set, domain, modification.as_domain(), &mut tasks)
+                                .await?
                         }
                         ObjectInner::MailingList(_) if is_create => {
                             validate_tenant_quota(&set, TenantStorageQuota::MaxMailingLists).await?
@@ -431,6 +438,15 @@ impl RegistrySet for Server {
                         }
                         ObjectInner::DnsServer(_) if is_create => {
                             validate_tenant_quota(&set, TenantStorageQuota::MaxDnsServers).await?
+                        }
+                        ObjectInner::Directory(_) if is_create => {
+                            validate_tenant_quota(&set, TenantStorageQuota::MaxDirectories).await?
+                        }
+                        ObjectInner::AcmeProvider(provider) if is_create => {
+                            validate_acme_provider(&set, provider, unpatched_properties).await?
+                        }
+                        ObjectInner::Certificate(cert) => {
+                            validate_certificate(cert, modification.as_certificate()).await?
                         }
                         _ => Ok(ObjectResponse::default()),
                     };
@@ -504,7 +520,7 @@ impl RegistrySet for Server {
                         }
                     };
 
-                    match (modification, result) {
+                    let object_id = match (modification, result) {
                         (Modification::Update { id, object }, RegistryWriteResult::Success(_)) => {
                             cache_invalidator.process_update(id, &object, &new_object);
                             set.response.updated.append(
@@ -515,6 +531,7 @@ impl RegistrySet for Server {
                                     None
                                 },
                             );
+                            Some(id)
                         }
                         (
                             Modification::Create { client_id, .. },
@@ -524,15 +541,36 @@ impl RegistrySet for Server {
                             set.response
                                 .created
                                 .insert(client_id, JmapValue::Object(response.object));
+                            Some(id)
                         }
                         (Modification::Update { id, .. }, err) => {
                             set.response.not_updated.append(id, map_write_error(err));
+                            None
                         }
                         (Modification::Create { client_id, .. }, err) => {
                             set.response
                                 .not_created
                                 .append(client_id, map_write_error(err));
+                            None
                         }
+                    };
+
+                    // Dispatch tasks
+                    if !tasks.is_empty()
+                        && let Some(object_id) = object_id
+                    {
+                        let mut batch = BatchBuilder::new();
+                        for mut task in tasks.drain(..) {
+                            match &mut task {
+                                Task::AcmeRenewal(task) => task.domain_id = object_id,
+                                Task::DkimKeyRotation(task) => task.domain_id = object_id,
+                                Task::DnsManagement(task) => task.domain_id = object_id,
+                                _ => unreachable!(),
+                            }
+                            batch.schedule_task(task);
+                        }
+                        set.server.store().write(batch.build_all()).await?;
+                        set.server.notify_task_queue();
                     }
                 }
 
@@ -719,6 +757,26 @@ impl Modification {
             Modification::Create { .. } => None,
             Modification::Update { object, .. } => match &object.inner {
                 ObjectInner::DkimSignature(key) => Some(key),
+                _ => None,
+            },
+        }
+    }
+
+    fn as_domain(&self) -> Option<&Domain> {
+        match self {
+            Modification::Create { .. } => None,
+            Modification::Update { object, .. } => match &object.inner {
+                ObjectInner::Domain(domain) => Some(domain),
+                _ => None,
+            },
+        }
+    }
+
+    fn as_certificate(&self) -> Option<&Certificate> {
+        match self {
+            Modification::Create { .. } => None,
+            Modification::Update { object, .. } => match &object.inner {
+                ObjectInner::Certificate(cert) => Some(cert),
                 _ => None,
             },
         }

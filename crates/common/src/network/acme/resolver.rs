@@ -4,11 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use super::{
-    AcmeProvider, StaticResolver,
-    directory::{ACME_TLS_ALPN_NAME, SerializedCert},
+use crate::{
+    KV_ACME, Server,
+    network::acme::{SerializedCert, StaticResolver, directory::ACME_TLS_ALPN_NAME},
 };
-use crate::{KV_ACME, Server};
 use rustls::{
     ServerConfig,
     crypto::ring::sign::any_ecdsa_type,
@@ -24,24 +23,6 @@ use store::{
 use trc::AcmeEvent;
 
 impl Server {
-    pub(crate) fn set_cert(&self, provider: &AcmeProvider, cert: Arc<CertifiedKey>) {
-        // Add certificates
-        let mut certificates = self.inner.data.tls_certificates.load().as_ref().clone();
-        for domain in provider.domains.iter() {
-            certificates.insert(
-                domain.strip_prefix("*.").unwrap_or(domain.as_str()).into(),
-                cert.clone(),
-            );
-        }
-
-        // Add default certificate
-        if provider.default {
-            certificates.insert("*".into(), cert);
-        }
-
-        self.inner.data.tls_certificates.store(certificates.into());
-    }
-
     pub(crate) async fn build_acme_certificate(&self, domain: &str) -> Option<Arc<CertifiedKey>> {
         match self
             .in_memory_store()
@@ -92,6 +73,26 @@ impl Server {
                 None
             }
         }
+    }
+
+    pub fn has_acme_tls_providers(&self) -> bool {
+        let todo = "fix";
+        false
+        /*self.core
+        .acme
+        .providers
+        .values()
+        .any(|p| matches!(p.challenge, ChallengeSettings::TlsAlpn01))*/
+    }
+
+    pub fn has_acme_http_providers(&self) -> bool {
+        let todo = "fix";
+        false
+        /*self.core
+        .acme
+        .providers
+        .values()
+        .any(|p| matches!(p.challenge, ChallengeSettings::Http01))*/
     }
 }
 

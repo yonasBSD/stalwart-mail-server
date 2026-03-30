@@ -4,110 +4,155 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-pub mod cache;
+pub mod account;
 pub mod directory;
+pub mod http;
 pub mod jose;
 pub mod order;
+pub mod renew;
 pub mod resolver;
 
-use self::directory::{Account, ChallengeType};
-use crate::Server;
-use arc_swap::ArcSwap;
-use dns_update::DnsUpdater;
-use registry::schema::structs;
+use chrono::{DateTime, Utc};
+use registry::schema::enums::AcmeChallengeType;
 use rustls::sign::CertifiedKey;
-use std::{fmt::Debug, sync::Arc, time::Duration};
+use serde::Deserialize;
+use std::{
+    fmt::{Debug, Display},
+    sync::Arc,
+    time::Duration,
+};
+use store::registry::write::RegistryWriteResult;
 
-pub struct AcmeProvider {
-    pub id: String,
-    pub directory_url: String,
-    pub domains: Vec<String>,
-    pub contact: Vec<String>,
-    pub challenge: ChallengeSettings,
-    pub eab: Option<EabSettings>,
-    renew_before: chrono::Duration,
-    account_key: ArcSwap<Vec<u8>>,
-    default: bool,
-}
+pub type AcmeResult<T> = Result<T, AcmeError>;
 
-#[derive(Clone)]
-pub struct EabSettings {
-    pub kid: String,
-    pub hmac_key: Vec<u8>,
-}
-
-#[derive(Clone)]
-pub enum ChallengeSettings {
-    Http01,
-    TlsAlpn01,
-    Dns01 {
-        updater: DnsUpdater,
-        origin: Option<String>,
-        polling_interval: Duration,
-        propagation_timeout: Duration,
-        ttl: u32,
+pub enum AcmeError {
+    Http(reqwest::Error),
+    HttpStatus(reqwest::StatusCode),
+    Json(serde_json::Error),
+    Crypto(String),
+    Invalid(String),
+    AuthInvalid(AuthStatus),
+    OrderTimeout,
+    OrderInvalid,
+    AuthTimeout,
+    ChallengeNotSupported {
+        requested: ChallengeType,
+        supported: Vec<Challenge>,
     },
+    Internal(trc::Error),
+    Registry(RegistryWriteResult),
+    RetryAt {
+        time: Option<Duration>,
+    },
+}
+
+#[derive(
+    rkyv::Serialize, rkyv::Deserialize, rkyv::Archive, Debug, Clone, serde::Serialize, Deserialize,
+)]
+pub struct SerializedCert {
+    pub certificate: Vec<u8>,
+    pub private_key: Vec<u8>,
+}
+
+pub struct PemCert {
+    pub certificate: String,
+    pub private_key: String,
+}
+
+pub struct ParsedCert {
+    pub sans: Vec<String>,
+    pub issuer: String,
+    pub valid_not_before: DateTime<Utc>,
+    pub valid_not_after: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Directory {
+    pub new_nonce: String,
+    pub new_account: String,
+    pub new_order: String,
+}
+
+#[derive(Debug, Deserialize, Eq, PartialEq, Clone, Copy)]
+pub enum ChallengeType {
+    #[serde(rename = "http-01")]
+    Http01,
+    #[serde(rename = "dns-01")]
+    Dns01,
+    #[serde(rename = "dns-persist-01")]
+    DnsPersist01,
+    #[serde(rename = "tls-alpn-01")]
+    TlsAlpn01,
+    #[serde(other)]
+    Unknown,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Order {
+    #[serde(flatten)]
+    pub status: OrderStatus,
+    pub authorizations: Vec<String>,
+    pub finalize: String,
+    pub error: Option<Problem>,
+}
+
+#[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
+#[serde(tag = "status", rename_all = "camelCase")]
+pub enum OrderStatus {
+    Pending,
+    Ready,
+    Valid { certificate: String },
+    Invalid,
+    Processing,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Auth {
+    pub status: AuthStatus,
+    pub identifier: Identifier,
+    pub challenges: Vec<Challenge>,
+    pub wildcard: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AuthStatus {
+    Pending,
+    Valid,
+    Invalid,
+    Revoked,
+    Expired,
+    Deactivated,
+}
+
+#[derive(Clone, Debug, serde::Serialize, Deserialize)]
+#[serde(tag = "type", content = "value", rename_all = "camelCase")]
+pub enum Identifier {
+    Dns(String),
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct Challenge {
+    #[serde(rename = "type")]
+    pub typ: ChallengeType,
+    pub url: String,
+    pub token: String,
+    pub error: Option<Problem>,
+}
+
+#[derive(Clone, Debug, serde::Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Problem {
+    #[serde(rename = "type")]
+    pub typ: Option<String>,
+    pub detail: Option<String>,
 }
 
 pub struct StaticResolver {
     pub key: Option<Arc<CertifiedKey>>,
-}
-
-impl AcmeProvider {
-    pub fn new(obj: structs::AcmeProvider) -> Self {
-        // TODO: Prefix contact with "mailto:" if not present
-        todo!()
-    }
-}
-
-impl Server {
-    pub async fn init_acme(&self, provider: &AcmeProvider) -> trc::Result<Duration> {
-        // Load account key from cache or generate a new one
-        if let Some(account_key) = self.load_account(provider).await? {
-            provider.account_key.store(Arc::new(account_key));
-        } else {
-            let account_key = Account::generate_key_pair();
-            self.store_account(provider, &account_key).await?;
-            provider.account_key.store(Arc::new(account_key));
-        }
-
-        // Load certificate from cache or request a new one
-        Ok(if let Some(pem) = self.load_cert(provider).await? {
-            self.process_cert(provider, pem, true).await?
-        } else {
-            Duration::from_millis(1000)
-        })
-    }
-
-    pub fn has_acme_tls_providers(&self) -> bool {
-        let todo = "fix";
-        false
-        /*self.core
-        .acme
-        .providers
-        .values()
-        .any(|p| matches!(p.challenge, ChallengeSettings::TlsAlpn01))*/
-    }
-
-    pub fn has_acme_http_providers(&self) -> bool {
-        let todo = "fix";
-        false
-        /*self.core
-        .acme
-        .providers
-        .values()
-        .any(|p| matches!(p.challenge, ChallengeSettings::Http01))*/
-    }
-}
-
-impl ChallengeSettings {
-    pub fn challenge_type(&self) -> ChallengeType {
-        match self {
-            ChallengeSettings::Http01 => ChallengeType::Http01,
-            ChallengeSettings::TlsAlpn01 => ChallengeType::TlsAlpn01,
-            ChallengeSettings::Dns01 { .. } => ChallengeType::Dns01,
-        }
-    }
 }
 
 impl Debug for StaticResolver {
@@ -116,18 +161,66 @@ impl Debug for StaticResolver {
     }
 }
 
-impl Clone for AcmeProvider {
-    fn clone(&self) -> Self {
-        Self {
-            id: self.id.clone(),
-            directory_url: self.directory_url.clone(),
-            domains: self.domains.clone(),
-            contact: self.contact.clone(),
-            challenge: self.challenge.clone(),
-            renew_before: self.renew_before,
-            account_key: ArcSwap::from_pointee(self.account_key.load().as_ref().clone()),
-            eab: self.eab.clone(),
-            default: self.default,
+impl From<reqwest::Error> for AcmeError {
+    fn from(err: reqwest::Error) -> Self {
+        AcmeError::Http(err)
+    }
+}
+
+impl From<serde_json::Error> for AcmeError {
+    fn from(err: serde_json::Error) -> Self {
+        AcmeError::Json(err)
+    }
+}
+
+impl From<trc::Error> for AcmeError {
+    fn from(err: trc::Error) -> Self {
+        AcmeError::Internal(err)
+    }
+}
+
+impl From<AcmeChallengeType> for ChallengeType {
+    fn from(value: AcmeChallengeType) -> Self {
+        match value {
+            AcmeChallengeType::Http01 => ChallengeType::Http01,
+            AcmeChallengeType::Dns01 => ChallengeType::Dns01,
+            AcmeChallengeType::TlsAlpn01 => ChallengeType::TlsAlpn01,
+            AcmeChallengeType::DnsPersist01 => ChallengeType::DnsPersist01,
+        }
+    }
+}
+
+impl Display for AcmeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AcmeError::Http(err) => write!(f, "HTTP error: {}", err),
+            AcmeError::HttpStatus(status) => write!(f, "HTTP error: status code {}", status),
+            AcmeError::Json(err) => write!(f, "JSON error: {}", err),
+            AcmeError::Crypto(err) => write!(f, "Cryptographic error: {}", err),
+            AcmeError::Invalid(err) => write!(f, "Invalid request: {}", err),
+            AcmeError::AuthInvalid(status) => write!(f, "Authentication failed: {:?}", status),
+            AcmeError::OrderTimeout => write!(f, "Order processing timed out"),
+            AcmeError::OrderInvalid => write!(f, "Order is invalid"),
+            AcmeError::AuthTimeout => write!(f, "Authentication timed out"),
+            AcmeError::ChallengeNotSupported {
+                requested,
+                supported,
+            } => {
+                write!(
+                    f,
+                    "Challenge type {:?} not supported. Supported types: {:?}",
+                    requested, supported
+                )
+            }
+            AcmeError::Internal(err) => write!(f, "Internal error: {}", err),
+            AcmeError::Registry(err) => write!(f, "Registry error: {:?}", err),
+            AcmeError::RetryAt { time } => {
+                if let Some(time) = time {
+                    write!(f, "Rate limited. Retry after {} seconds", time.as_secs())
+                } else {
+                    write!(f, "Rate limited. Retry after some time")
+                }
+            }
         }
     }
 }

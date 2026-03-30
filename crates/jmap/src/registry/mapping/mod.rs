@@ -24,6 +24,7 @@ use utils::map::vec_map::VecMap;
 pub mod account;
 pub mod action;
 pub mod dkim;
+pub mod domain;
 pub mod log;
 pub mod principal;
 pub mod public_key;
@@ -31,6 +32,7 @@ pub mod queued_message;
 pub mod report;
 pub mod spam_sample;
 pub mod task;
+pub mod tls;
 
 // SPDX-SnippetBegin
 // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>

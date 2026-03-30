@@ -4,62 +4,41 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{Server, network::acme::AcmeProvider};
+use crate::Server;
 use ahash::{AHashMap, AHashSet};
 use dns_update::{
     Algorithm, DnsUpdater, TsigAlgorithm,
+    dnssec::{
+        self, SigningKey,
+        crypto::{EcdsaSigningKey, Ed25519SigningKey},
+    },
     providers::{ovh::OvhEndpoint, rfc2136::DnsAddress},
 };
-use hickory_proto::rr::dnssec::KeyPair;
 use rcgen::generate_simple_self_signed;
 use registry::schema::{
     enums,
-    structs::{self, Certificate, DnsServer, SystemSettings},
+    prelude::Object,
+    structs::{Certificate, DnsServer, SystemSettings},
 };
-use ring::signature::{EcdsaKeyPair, Ed25519KeyPair};
 use rustls::{
     SupportedProtocolVersion,
     crypto::ring::sign::any_supported_type,
     sign::CertifiedKey,
     version::{TLS12, TLS13},
 };
-use rustls_pemfile::{Item, certs, read_one};
-use rustls_pki_types::PrivateKeyDer;
-use std::{
-    io::Cursor,
-    net::{Ipv4Addr, Ipv6Addr, SocketAddr},
-    sync::Arc,
+use rustls_pemfile::{Item, certs, read_all};
+use rustls_pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
+use std::{io::Cursor, net::SocketAddr, sync::Arc};
+use store::{
+    registry::{bootstrap::Bootstrap, write::RegistryWrite},
+    write::now,
 };
-use store::registry::bootstrap::Bootstrap;
 use trc::AddContext;
-use x509_parser::{
-    certificate::X509Certificate,
-    der_parser::asn1_rs::FromDer,
-    extensions::{GeneralName, ParsedExtension},
-};
 
 pub static TLS13_VERSION: &[&SupportedProtocolVersion] = &[&TLS13];
 pub static TLS12_VERSION: &[&SupportedProtocolVersion] = &[&TLS12];
 
 impl Server {
-    pub async fn build_acme_provider(&self, id: u64) -> trc::Result<AcmeProvider> {
-        if let Some(server) = self
-            .registry()
-            .object::<structs::AcmeProvider>(id.into())
-            .await
-            .caused_by(trc::location!())?
-        {
-            Ok(AcmeProvider::new(server))
-        } else {
-            trc::bail!(
-                trc::AcmeEvent::Error
-                    .into_err()
-                    .id(id.to_string())
-                    .details("ACME provider not found")
-            )
-        }
-    }
-
     pub async fn build_dns_updater(&self, id: u64) -> trc::Result<DnsUpdater> {
         let Some(server) = self
             .registry()
@@ -113,94 +92,72 @@ impl Server {
                     enums::TsigAlgorithm::HmacSha512256 => TsigAlgorithm::HmacSha512_256,
                 },
             ),
-            DnsServer::Sig0(server) => DnsUpdater::new_rfc2136_sig0(
-                match server.protocol {
-                    enums::IpProtocol::Udp => DnsAddress::Tcp(SocketAddr::new(
-                        server.host.into_inner(),
-                        server.port as u16,
-                    )),
-                    enums::IpProtocol::Tcp => DnsAddress::Udp(SocketAddr::new(
-                        server.host.into_inner(),
-                        server.port as u16,
-                    )),
-                },
-                server.signer_name,
-                match server.sig0_algorithm {
-                    enums::Sig0Algorithm::EcdsaP256Sha256 => KeyPair::ECDSA(
-                        EcdsaKeyPair::from_pkcs8(
-                            &ring::signature::ECDSA_P256_SHA256_ASN1_SIGNING,
-                            server
-                                .key
-                                .secret()
-                                .await
-                                .map_err(|err| {
-                                    trc::DnsEvent::BuildError
-                                        .reason(err)
-                                        .details("Failed to obtain key secret")
-                                        .id(id.to_string())
-                                })?
-                                .as_bytes(),
-                            &ring::rand::SystemRandom::new(),
-                        )
-                        .map_err(|err| {
+            DnsServer::Sig0(server) => {
+                let key_bytes = server.key.secret().await.map_err(|err| {
+                    trc::DnsEvent::BuildError
+                        .reason(err)
+                        .details("Failed to obtain key secret")
+                        .id(id.to_string())
+                })?;
+
+                let pem_parsed = pem::parse(key_bytes.as_bytes()).map_err(|err| {
+                    trc::DnsEvent::BuildError
+                        .reason(err)
+                        .details("Failed to parse PEM key")
+                        .id(id.to_string())
+                })?;
+                let pkcs8_der = PrivatePkcs8KeyDer::from(pem_parsed.contents());
+
+                let signing_key: Box<dyn SigningKey> = match server.sig0_algorithm {
+                    enums::Sig0Algorithm::EcdsaP256Sha256 => Box::new(
+                        EcdsaSigningKey::from_pkcs8(&pkcs8_der, dnssec::Algorithm::ECDSAP256SHA256)
+                            .map_err(|err| {
+                                trc::DnsEvent::BuildError
+                                    .reason(err)
+                                    .details("Failed to build ECDSA P-256 signing key")
+                                    .id(id.to_string())
+                            })?,
+                    ),
+                    enums::Sig0Algorithm::EcdsaP384Sha384 => Box::new(
+                        EcdsaSigningKey::from_pkcs8(&pkcs8_der, dnssec::Algorithm::ECDSAP384SHA384)
+                            .map_err(|err| {
+                                trc::DnsEvent::BuildError
+                                    .reason(err)
+                                    .details("Failed to build ECDSA P-384 signing key")
+                                    .id(id.to_string())
+                            })?,
+                    ),
+                    enums::Sig0Algorithm::Ed25519 => {
+                        Box::new(Ed25519SigningKey::from_pkcs8(&pkcs8_der).map_err(|err| {
                             trc::DnsEvent::BuildError
                                 .reason(err)
-                                .details("Failed to build ECDSA P-256 key pair")
+                                .details("Failed to build Ed25519 signing key")
                                 .id(id.to_string())
-                        })?,
-                    ),
-                    enums::Sig0Algorithm::EcdsaP384Sha384 => KeyPair::ECDSA(
-                        EcdsaKeyPair::from_pkcs8(
-                            &ring::signature::ECDSA_P384_SHA384_ASN1_SIGNING,
-                            server
-                                .key
-                                .secret()
-                                .await
-                                .map_err(|err| {
-                                    trc::DnsEvent::BuildError
-                                        .reason(err)
-                                        .details("Failed to obtain key secret")
-                                        .id(id.to_string())
-                                })?
-                                .as_bytes(),
-                            &ring::rand::SystemRandom::new(),
-                        )
-                        .map_err(|err| {
-                            trc::DnsEvent::BuildError
-                                .reason(err)
-                                .details("Failed to build ECDSA P-384 key pair")
-                                .id(id.to_string())
-                        })?,
-                    ),
-                    enums::Sig0Algorithm::Ed25519 => KeyPair::ED25519(
-                        Ed25519KeyPair::from_pkcs8(
-                            server
-                                .key
-                                .secret()
-                                .await
-                                .map_err(|err| {
-                                    trc::DnsEvent::BuildError
-                                        .reason(err)
-                                        .details("Failed to obtain key secret")
-                                        .id(id.to_string())
-                                })?
-                                .as_bytes(),
-                        )
-                        .map_err(|err| {
-                            trc::DnsEvent::BuildError
-                                .reason(err)
-                                .details("Failed to build Ed25519 key pair")
-                                .id(id.to_string())
-                        })?,
-                    ),
-                },
-                server.public_key,
-                match server.sig0_algorithm {
-                    enums::Sig0Algorithm::EcdsaP256Sha256 => Algorithm::ECDSAP256SHA256,
-                    enums::Sig0Algorithm::EcdsaP384Sha384 => Algorithm::ECDSAP384SHA384,
-                    enums::Sig0Algorithm::Ed25519 => Algorithm::ED25519,
-                },
-            ),
+                        })?)
+                    }
+                };
+
+                DnsUpdater::new_rfc2136_sig0(
+                    match server.protocol {
+                        enums::IpProtocol::Udp => DnsAddress::Tcp(SocketAddr::new(
+                            server.host.into_inner(),
+                            server.port as u16,
+                        )),
+                        enums::IpProtocol::Tcp => DnsAddress::Udp(SocketAddr::new(
+                            server.host.into_inner(),
+                            server.port as u16,
+                        )),
+                    },
+                    server.signer_name,
+                    signing_key,
+                    server.public_key,
+                    match server.sig0_algorithm {
+                        enums::Sig0Algorithm::EcdsaP256Sha256 => Algorithm::ECDSAP256SHA256,
+                        enums::Sig0Algorithm::EcdsaP384Sha384 => Algorithm::ECDSAP384SHA384,
+                        enums::Sig0Algorithm::Ed25519 => Algorithm::ED25519,
+                    },
+                )
+            }
             DnsServer::Cloudflare(server) => DnsUpdater::new_cloudflare(
                 server.secret.secret().await.map_err(|err| {
                     trc::DnsEvent::BuildError
@@ -271,8 +228,33 @@ pub(crate) async fn parse_certificates(
     let system = bp.setting_infallible::<SystemSettings>().await;
 
     // Parse certificates
+    let now = now() as i64;
+    let mut certs_expired = Vec::new();
+    let mut certs_expirations = AHashMap::new();
     for cert_obj in bp.list_infallible::<Certificate>().await {
-        let secret = match cert_obj.object.private_key.secret().await {
+        let not_valid_after = cert_obj.object.not_valid_after.timestamp();
+        let not_valid_before = cert_obj.object.not_valid_before.timestamp();
+
+        if not_valid_after <= now {
+            certs_expired.push((
+                cert_obj.id,
+                cert_obj
+                    .object
+                    .subject_alternative_names
+                    .clone()
+                    .into_inner(),
+                Object {
+                    inner: cert_obj.object.into(),
+                    revision: cert_obj.revision,
+                },
+            ));
+            continue;
+        } else if not_valid_before > now {
+            continue; // Skip certificates that are not yet valid
+        }
+
+        let mut cert = cert_obj.object;
+        let secret = match cert.private_key.secret().await {
             Ok(secret) => secret.into_owned().into_bytes(),
             Err(err) => {
                 bp.build_error(
@@ -282,7 +264,7 @@ pub(crate) async fn parse_certificates(
                 continue;
             }
         };
-        let public = match cert_obj.object.certificate.value().await {
+        let public = match cert.certificate.value().await {
             Ok(value) => value.into_owned().into_bytes(),
             Err(err) => {
                 bp.build_error(
@@ -293,83 +275,41 @@ pub(crate) async fn parse_certificates(
             }
         };
 
+        // Add default certificate
+        if system
+            .default_certificate_id
+            .as_ref()
+            .is_some_and(|id| *id == cert_obj.id.id())
+        {
+            cert.subject_alternative_names
+                .push_unchecked("*".to_string());
+        }
+
+        // Ensure that the most up-to-date certificate is used
+        cert.subject_alternative_names.inner_mut().retain(|name| {
+            if certs_expirations
+                .get(name)
+                .is_none_or(|expires| *expires < not_valid_after)
+            {
+                certs_expirations.insert(name.clone(), not_valid_after);
+                true
+            } else {
+                false
+            }
+        });
+
         match build_certified_key(public, secret) {
-            Ok(cert) => {
-                match cert
-                    .end_entity_cert()
-                    .map_err(|err| format!("Failed to obtain end entity cert: {err}"))
-                    .and_then(|cert| {
-                        X509Certificate::from_der(cert.as_ref())
-                            .map_err(|err| format!("Failed to parse end entity cert: {err}"))
-                    }) {
-                    Ok((_, parsed)) => {
-                        // Add CNs and SANs to the list of names
-                        let mut names: AHashSet<Box<str>> = AHashSet::new();
-                        for name in parsed.subject().iter_common_name() {
-                            if let Ok(name) = name.as_str() {
-                                names.insert(name.into());
-                            }
-                        }
-                        for ext in parsed.extensions() {
-                            if let ParsedExtension::SubjectAlternativeName(san) =
-                                ext.parsed_extension()
-                            {
-                                for name in &san.general_names {
-                                    let name: Box<str> = match name {
-                                        GeneralName::DNSName(name) => (*name).into(),
-                                        GeneralName::IPAddress(ip) => match ip.len() {
-                                            4 => Ipv4Addr::from(<[u8; 4]>::try_from(*ip).unwrap())
-                                                .to_string()
-                                                .into(),
-                                            16 => {
-                                                Ipv6Addr::from(<[u8; 16]>::try_from(*ip).unwrap())
-                                                    .to_string()
-                                                    .into()
-                                            }
-                                            _ => continue,
-                                        },
-                                        _ => {
-                                            continue;
-                                        }
-                                    };
-                                    names.insert(name);
-                                }
-                            }
-                        }
-
-                        // Add custom SNIs
-                        names.extend(
-                            cert_obj
-                                .object
-                                .subject_alternative_names
-                                .into_iter()
-                                .map(Into::into),
-                        );
-
-                        // Add domain names
-                        subject_names.extend(names.iter().cloned());
-
-                        // Add certificates
-                        let cert = Arc::new(cert);
-                        for name in names {
-                            certificates.insert(
-                                name.strip_prefix("*.").map(Into::into).unwrap_or(name),
-                                cert.clone(),
-                            );
-                        }
-
-                        // Add default certificate
-                        if system
-                            .default_certificate_id
-                            .as_ref()
-                            .is_some_and(|id| *id == cert_obj.id.id())
-                        {
-                            certificates.insert("*".into(), cert.clone());
-                        }
-                    }
-                    Err(err) => {
-                        bp.build_error(cert_obj.id, format!("Invalid certificate: {err}"));
-                    }
+            Ok(key) => {
+                // Add certificates
+                let key = Arc::new(key);
+                for name in cert.subject_alternative_names.into_inner() {
+                    subject_names.insert(name.as_str().into());
+                    certificates.insert(
+                        name.strip_prefix("*.")
+                            .map(Into::into)
+                            .unwrap_or_else(|| name.into_boxed_str()),
+                        key.clone(),
+                    );
                 }
             }
             Err(err) => {
@@ -377,33 +317,66 @@ pub(crate) async fn parse_certificates(
             }
         }
     }
+
+    // Remove expired certificates
+    if !certs_expired.is_empty() {
+        for (id, sans, object) in certs_expired {
+            if let Err(err) = bp
+                .registry
+                .write(RegistryWrite::delete_object(id, &object))
+                .await
+            {
+                trc::error!(
+                    err.details("Failed to delete expired TLS certificate from registry.")
+                        .caused_by(trc::location!())
+                );
+            } else {
+                trc::event!(
+                    Tls(trc::TlsEvent::ExpiredCertificateRemoved),
+                    Details = sans
+                );
+            }
+        }
+    }
 }
 
-pub(crate) fn build_certified_key(cert: Vec<u8>, pk: Vec<u8>) -> Result<CertifiedKey, String> {
+pub(crate) fn build_certified_key(
+    cert: Vec<u8>,
+    pk_bytes: Vec<u8>,
+) -> Result<CertifiedKey, String> {
+    let mut pk = None;
+    for item in read_all(&mut Cursor::new(pk_bytes)) {
+        match item.map_err(|err| format!("Failed to read private key PEM: {err}"))? {
+            Item::Pkcs8Key(key) => {
+                pk = Some(PrivateKeyDer::Pkcs8(key));
+                break;
+            }
+            Item::Pkcs1Key(key) => {
+                pk = Some(PrivateKeyDer::Pkcs1(key));
+                break;
+            }
+            Item::Sec1Key(key) => {
+                pk = Some(PrivateKeyDer::Sec1(key));
+                break;
+            }
+            _ => continue, // Skip certificates, DH params, etc.
+        }
+    }
+    let pk = pk.ok_or_else(|| "No private keys found.".to_string())?;
     let cert = certs(&mut Cursor::new(cert))
         .collect::<Result<Vec<_>, _>>()
         .map_err(|err| format!("Failed to read certificates: {err}"))?;
-    if cert.is_empty() {
-        return Err("No certificates found.".to_string());
-    }
-    let pk = match read_one(&mut Cursor::new(pk))
-        .map_err(|err| format!("Failed to read private keys.: {err}",))?
-        .into_iter()
-        .next()
-    {
-        Some(Item::Pkcs8Key(key)) => PrivateKeyDer::Pkcs8(key),
-        Some(Item::Pkcs1Key(key)) => PrivateKeyDer::Pkcs1(key),
-        Some(Item::Sec1Key(key)) => PrivateKeyDer::Sec1(key),
-        Some(_) => return Err("Unsupported private keys found.".to_string()),
-        None => return Err("No private keys found.".to_string()),
-    };
 
-    Ok(CertifiedKey {
-        cert,
-        key: any_supported_type(&pk)
-            .map_err(|err| format!("Failed to sign certificate: {err}",))?,
-        ocsp: None,
-    })
+    if !cert.is_empty() {
+        Ok(CertifiedKey {
+            cert,
+            key: any_supported_type(&pk)
+                .map_err(|err| format!("Failed to sign certificate: {err}",))?,
+            ocsp: None,
+        })
+    } else {
+        Err("No certificates found.".to_string())
+    }
 }
 
 pub(crate) fn build_self_signed_cert(

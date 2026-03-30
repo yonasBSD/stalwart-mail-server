@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use chrono::Utc;
 use mail_auth::dkim::generate::DkimKeyPair;
 use mail_builder::encoders::base64::base64_encode;
 use registry::schema::enums::DkimSignatureType;
@@ -46,4 +47,165 @@ pub async fn generate_dkim_private_key(
             String::from_utf8(pem).unwrap_or_default()
         })
         .map_err(|err| err.to_string()))
+}
+
+/// Generate a DKIM selector from a template string.
+///
+/// Supported variables:
+/// - `{algorithm}` — signing algorithm in lowercase (`rsa`, `ed25519`)
+/// - `{hash}` — hash algorithm (`sha256`)
+/// - `{version}` — DKIM version number (`1`)
+/// - `{date-<fmt>}` — current UTC date formatted with chrono strftime (e.g. `{date-%Y%m%d}`)
+/// - `{epoch}` — current UTC unix timestamp
+///
+/// The output is sanitized to only contain valid DKIM selector characters (`a-zA-Z0-9._-`).
+/// Returns an error if the template contains unrecognized variables or produces an empty selector.
+pub fn generate_dkim_selector(
+    template: &str,
+    sig_type: DkimSignatureType,
+) -> Result<String, String> {
+    let now = Utc::now();
+    let mut result = Vec::with_capacity(template.len());
+    let mut chars = template.as_bytes();
+
+    while !chars.is_empty() {
+        // Find next '{' or consume literal text
+        let Some(open) = memchr(b'{', chars) else {
+            // No more variables — append remaining literal
+            // SAFETY: template is valid UTF-8, and we only slice on ASCII boundaries
+            result.extend(
+                chars
+                    .iter()
+                    .filter(|&&c| c.is_ascii_alphanumeric() || c == b'.' || c == b'-' || c == b'_'),
+            );
+            break;
+        };
+
+        // Append literal before '{'
+        if open > 0 {
+            result.extend(
+                chars[..open]
+                    .iter()
+                    .filter(|&&c| c.is_ascii_alphanumeric() || c == b'.' || c == b'-' || c == b'_'),
+            );
+        }
+
+        // Find matching '}'
+        let rest = chars.get(open + 1..).unwrap_or_default();
+        let Some(close) = memchr(b'}', rest) else {
+            return Err("unclosed '{' in template".into());
+        };
+
+        let var =
+            std::str::from_utf8(&rest[..close]).map_err(|_| "invalid UTF-8 in variable name")?;
+
+        match var {
+            "algorithm" => result.extend_from_slice(sig_type.algorithm().as_bytes()),
+            "hash" => result.extend_from_slice(sig_type.hash().as_bytes()),
+            "version" => result.extend_from_slice(sig_type.version().as_bytes()),
+            "epoch" => {
+                result.extend_from_slice(now.timestamp().to_string().as_bytes());
+            }
+            v => {
+                if let Some(fmt) = v.strip_prefix("date-") {
+                    if fmt.is_empty() {
+                        return Err("empty strftime format in {date-}".into());
+                    }
+                    let formatted = now.format(fmt).to_string();
+                    if formatted.is_empty() {
+                        return Err(format!("date format '{fmt}' produced empty output"));
+                    }
+                    result.extend(formatted.as_bytes().iter().filter(|&&c| {
+                        c.is_ascii_alphanumeric() || c == b'.' || c == b'-' || c == b'_'
+                    }));
+                } else {
+                    return Err(format!("unrecognized variable '{{{var}}}'"));
+                }
+            }
+        }
+
+        chars = rest.get(close + 1..).unwrap_or_default();
+    }
+
+    if !result.is_empty() {
+        Ok(String::from_utf8(result).unwrap_or_default())
+    } else {
+        Err("Selector cannot be empty".into())
+    }
+}
+
+#[inline]
+fn memchr(needle: u8, haystack: &[u8]) -> Option<usize> {
+    haystack.iter().position(|&b| b == needle)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn basic_algorithm_date() {
+        let sel = generate_dkim_selector(
+            "{algorithm}-{date-%Y%m%d}",
+            DkimSignatureType::Dkim1RsaSha256,
+        )
+        .unwrap();
+        let today = Utc::now().format("%Y%m%d").to_string();
+        assert_eq!(sel, format!("rsa-{today}"));
+    }
+
+    #[test]
+    fn all_variables() {
+        let sel = generate_dkim_selector(
+            "v{version}-{algorithm}-{hash}-{epoch}",
+            DkimSignatureType::Dkim1Ed25519Sha256,
+        )
+        .unwrap();
+        assert!(sel.starts_with("v1-ed25519-sha256-"));
+    }
+
+    #[test]
+    fn literal_only() {
+        let sel =
+            generate_dkim_selector("my-static-selector", DkimSignatureType::default()).unwrap();
+        assert_eq!(sel, "my-static-selector");
+    }
+
+    #[test]
+    fn invalid_chars_stripped() {
+        let sel = generate_dkim_selector("{algorithm} {hash}", DkimSignatureType::Dkim1RsaSha256)
+            .unwrap();
+        assert_eq!(sel, "rsasha256");
+    }
+
+    #[test]
+    fn unrecognized_variable_errors() {
+        let err = generate_dkim_selector("{bogus}", DkimSignatureType::default()).unwrap_err();
+        assert!(err.contains("unrecognized variable"));
+    }
+
+    #[test]
+    fn unclosed_brace_errors() {
+        let err = generate_dkim_selector("{algorithm", DkimSignatureType::default()).unwrap_err();
+        assert!(err.contains("unclosed"));
+    }
+
+    #[test]
+    fn empty_after_sanitization_errors() {
+        let err = generate_dkim_selector("   ", DkimSignatureType::default()).unwrap_err();
+        assert!(err.contains("empty"));
+    }
+
+    #[test]
+    fn empty_date_format_errors() {
+        let err = generate_dkim_selector("{date-}", DkimSignatureType::default()).unwrap_err();
+        assert!(err.contains("empty strftime"));
+    }
+
+    #[test]
+    fn date_month_only() {
+        let sel = generate_dkim_selector("{date-%Y%m}", DkimSignatureType::Dkim1RsaSha256).unwrap();
+        let expected = Utc::now().format("%Y%m").to_string();
+        assert_eq!(sel, expected);
+    }
 }

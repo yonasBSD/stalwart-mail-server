@@ -1,5 +1,12 @@
+/*
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
+ *
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
+
 // Adapted from rustls-acme (https://github.com/FlorianUekermann/rustls-acme), licensed under MIT/Apache-2.0.
 
+use crate::network::acme::{AcmeError, AcmeResult};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use ring::digest::{Digest, SHA256, digest};
@@ -14,7 +21,7 @@ pub(crate) fn sign(
     nonce: String,
     url: &str,
     payload: &str,
-) -> trc::Result<String> {
+) -> AcmeResult<String> {
     let jwk = match kid {
         None => Some(Jwk::new(key)),
         Some(_) => None,
@@ -24,18 +31,14 @@ pub(crate) fn sign(
     let combined = format!("{}.{}", &protected, &payload);
     let signature = key
         .sign(&SystemRandom::new(), combined.as_bytes())
-        .map_err(|err| {
-            trc::EventType::Acme(trc::AcmeEvent::Error)
-                .caused_by(trc::location!())
-                .reason(err)
-        })?;
+        .map_err(|err| AcmeError::Crypto(format!("Failed to sign payload: {}", err)))?;
 
     serde_json::to_string(&Body {
         protected,
         payload,
         signature: URL_SAFE_NO_PAD.encode(signature.as_ref()),
     })
-    .map_err(|err| trc::EventType::Acme(trc::AcmeEvent::Error).from_json_error(err))
+    .map_err(Into::into)
 }
 
 pub(crate) fn eab_sign(
@@ -43,7 +46,7 @@ pub(crate) fn eab_sign(
     kid: &str,
     hmac_key: &[u8],
     url: &str,
-) -> trc::Result<Body> {
+) -> AcmeResult<Body> {
     let protected = Protected::encode("HS256", None, kid.into(), None, url)?;
     let payload = Jwk::new(key).base64()?;
     let combined = format!("{}.{}", &protected, &payload);
@@ -59,7 +62,7 @@ pub(crate) fn eab_sign(
     })
 }
 
-pub(crate) fn key_authorization(key: &EcdsaKeyPair, token: &str) -> trc::Result<String> {
+pub(crate) fn key_authorization(key: &EcdsaKeyPair, token: &str) -> AcmeResult<String> {
     Ok(format!(
         "{}.{}",
         token,
@@ -67,14 +70,14 @@ pub(crate) fn key_authorization(key: &EcdsaKeyPair, token: &str) -> trc::Result<
     ))
 }
 
-pub(crate) fn key_authorization_sha256(key: &EcdsaKeyPair, token: &str) -> trc::Result<Digest> {
+pub(crate) fn key_authorization_sha256(key: &EcdsaKeyPair, token: &str) -> AcmeResult<Digest> {
     key_authorization(key, token).map(|s| digest(&SHA256, s.as_bytes()))
 }
 
 pub(crate) fn key_authorization_sha256_base64(
     key: &EcdsaKeyPair,
     token: &str,
-) -> trc::Result<String> {
+) -> AcmeResult<String> {
     key_authorization_sha256(key, token).map(|s| URL_SAFE_NO_PAD.encode(s.as_ref()))
 }
 
@@ -104,7 +107,7 @@ impl<'a> Protected<'a> {
         kid: Option<&'a str>,
         nonce: Option<String>,
         url: &'a str,
-    ) -> trc::Result<String> {
+    ) -> AcmeResult<String> {
         serde_json::to_vec(&Protected {
             alg,
             jwk,
@@ -112,7 +115,7 @@ impl<'a> Protected<'a> {
             nonce,
             url,
         })
-        .map_err(|err| trc::EventType::Acme(trc::AcmeEvent::Error).from_json_error(err))
+        .map_err(Into::into)
         .map(|v| URL_SAFE_NO_PAD.encode(v.as_slice()))
     }
 }
@@ -141,13 +144,13 @@ impl Jwk {
         }
     }
 
-    pub(crate) fn base64(&self) -> trc::Result<String> {
+    pub(crate) fn base64(&self) -> AcmeResult<String> {
         serde_json::to_vec(self)
-            .map_err(|err| trc::EventType::Acme(trc::AcmeEvent::Error).from_json_error(err))
+            .map_err(Into::into)
             .map(|v| URL_SAFE_NO_PAD.encode(v.as_slice()))
     }
 
-    pub(crate) fn thumb_sha256_base64(&self) -> trc::Result<String> {
+    pub(crate) fn thumb_sha256_base64(&self) -> AcmeResult<String> {
         Ok(URL_SAFE_NO_PAD.encode(digest(
             &SHA256,
             &serde_json::to_vec(&JwkThumb {
@@ -156,7 +159,7 @@ impl Jwk {
                 x: &self.x,
                 y: &self.y,
             })
-            .map_err(|err| trc::EventType::Acme(trc::AcmeEvent::Error).from_json_error(err))?,
+            .map_err(AcmeError::Json)?,
         )))
     }
 }

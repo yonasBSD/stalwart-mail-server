@@ -98,7 +98,10 @@ pub fn spawn_task_manager(inner: Arc<Inner>) {
             | TaskType::MergeThreads
             | TaskType::DmarcReport
             | TaskType::TlsReport
-            | TaskType::RestoreArchivedItem => TASK_QUEUE_BUFFER,
+            | TaskType::RestoreArchivedItem
+            | TaskType::AcmeRenewal
+            | TaskType::DkimKeyRotation
+            | TaskType::DnsManagement => TASK_QUEUE_BUFFER,
         };
 
         let (tx, mut rx) = mpsc::channel::<TaskJob>(channel_capacity);
@@ -237,6 +240,9 @@ pub fn spawn_task_manager(inner: Arc<Inner>) {
                                 Task::IndexDocument(_)
                                 | Task::UnindexDocument(_)
                                 | Task::IndexTrace(_) => unreachable!(),
+                                Task::AcmeRenewal(task_domain_management) => todo!(),
+                                Task::DkimKeyRotation(task_dkim_rotation) => todo!(),
+                                Task::DnsManagement(task_dns_management) => todo!(),
                             };
 
                             refresh_queue = result.is_retry();
@@ -353,7 +359,10 @@ impl TaskQueueManager for Server {
                                 | TaskType::MergeThreads
                                 | TaskType::DmarcReport
                                 | TaskType::TlsReport
-                                | TaskType::RestoreArchivedItem => true,
+                                | TaskType::RestoreArchivedItem
+                                | TaskType::AcmeRenewal
+                                | TaskType::DkimKeyRotation
+                                | TaskType::DnsManagement => true,
                             };
 
                             if !enabled {

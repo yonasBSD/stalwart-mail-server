@@ -4,14 +4,13 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::borrow::Cow;
-
-use crate::schema::prelude::{DkimPrivateKey, DkimSignature, Roles};
+use crate::schema::prelude::{DkimSignature, Roles, SecretKey};
 use types::id::Id;
 
 pub mod account;
 pub mod archived_item;
 pub mod cron;
+pub mod dkim;
 pub mod http;
 pub mod report;
 pub mod secret;
@@ -27,28 +26,17 @@ impl Roles {
 }
 
 impl DkimSignature {
-    pub fn private_key(&self) -> &DkimPrivateKey {
+    pub fn private_key(&self) -> &SecretKey {
         match self {
             DkimSignature::Dkim1Ed25519Sha256(signature) => &signature.private_key,
             DkimSignature::Dkim1RsaSha256(signature) => &signature.private_key,
         }
     }
 
-    pub fn private_key_mut(&mut self) -> &mut DkimPrivateKey {
+    pub fn private_key_mut(&mut self) -> &mut SecretKey {
         match self {
             DkimSignature::Dkim1Ed25519Sha256(signature) => &mut signature.private_key,
             DkimSignature::Dkim1RsaSha256(signature) => &mut signature.private_key,
         }
-    }
-}
-
-impl DkimPrivateKey {
-    pub async fn pem(&self) -> trc::Result<Cow<'_, str>> {
-        match self {
-            DkimPrivateKey::Value(value) => Ok(Cow::Borrowed(value.secret.as_str())),
-            DkimPrivateKey::File(file) => file.secret().await.map(Cow::Owned),
-            DkimPrivateKey::Generate => Err("Key is in invalid generate state".to_string()),
-        }
-        .map_err(|err| trc::DkimEvent::BuildError.reason(err))
     }
 }

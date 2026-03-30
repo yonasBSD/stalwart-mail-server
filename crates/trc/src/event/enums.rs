@@ -30,7 +30,6 @@ pub enum EventType {
     Jmap(JmapEvent),
     Limit(LimitEvent),
     MailAuth(MailAuthEvent),
-    Manage(ManageEvent),
     ManageSieve(ManageSieveEvent),
     MessageIngest(MessageIngestEvent),
     Milter(MilterEvent),
@@ -397,12 +396,6 @@ pub enum MailAuthEvent {
     DnsRecordNotFound = 250,
     DnsInvalidRecordType = 249,
     PolicyNotAligned = 255,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[repr(u16)]
-pub enum ManageEvent {
-    Reserved6 = 277,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -840,6 +833,7 @@ pub enum TlsEvent {
     CertificateNotFound = 542,
     NoCertificatesAvailable = 546,
     MultipleCertificatesAvailable = 545,
+    ExpiredCertificateRemoved = 277,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

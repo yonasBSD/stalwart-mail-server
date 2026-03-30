@@ -89,7 +89,10 @@ pub(crate) async fn task_set(
             | TaskType::IndexTrace
             | TaskType::AccountMaintenance
             | TaskType::StoreMaintenance
-            | TaskType::SpamFilterMaintenance => {
+            | TaskType::SpamFilterMaintenance
+            | TaskType::AcmeRenewal
+            | TaskType::DkimKeyRotation
+            | TaskType::DnsManagement => {
                 let mut index = IndexBuilder::default();
                 task.index(&mut index);
 

@@ -7,7 +7,6 @@ All notable changes to this project will be documented in this file. This projec
 This version includes **multiple breaking changes**. If you are upgrading from v0.15.x and below, please read the [upgrading documentation](https://github.com/stalwartlabs/stalwart/blob/main/UPGRADING/v0_16.md) for more information on how to upgrade from previous versions.
 
 ## Added
-- Masked email addresses for enhanced privacy (Enterprise feature).
 - App password enhancements:
   - Limited access (#1609)
   - Labels (#2255)
@@ -28,8 +27,7 @@ This version includes **multiple breaking changes**. If you are upgrading from v
   - RCPT TO stage settings improvements (#2217 #394)
 - OIDC:
   - JWT token validation without requesting userinfo from the OIDC provider.
-  - Audience (`aud`) claim support (#2603)
-  - Scope validation support.
+  - Audience (`aud`) claim (#2603) and scope validation support.
   - Groups support (#1448)
 - LDAP:
   - Separate filter for groups (#1841)
@@ -37,15 +35,21 @@ This version includes **multiple breaking changes**. If you are upgrading from v
   - Improve and simplify LDAP settings (#2194 #2174)
 - DKIM:
   - Store DKIM keys in the database (#1264)
+- DNS Management:
+  - RFC2136 SIG0 support (#856)
 - Clustering:
+  - Automatic cluster node ID generation and management.
   - Unified cluster management (#960)
   - Outbound role (#1692)
 - Directory:
   - Domain aliases (#583)
   - E-mail alias descriptions and disable alias (#506)
-- Account archiving and undelete features (#2767) (Enterprise feature).
 - Sieve: Allow deactivating scripts without deleting them (#1251).
 - Tracing: Enable events only mode (#2276)
+- Enterprise features:
+  - Masked email addresses for enhanced privacy.
+  - Account archiving and undelete features (#2767).
+  - Per-domain directory backends.
 
 ## Changed
 - Replaced REST API with JMAP API (#2262 #959 #1480)
@@ -62,8 +66,19 @@ This version includes **multiple breaking changes**. If you are upgrading from v
 - MTA
   - Relay to IP addresses (#838)
   - Duplicate delivery inverted check
+  - SASL challenge responses include invalid `Go ahead` text
+- JMAP: 
+  - Fix `inMailboxOtherThan` query logic.
+  - Fix `hasAttachment` search field (#2778)
+- IMAP: Increment argument max length to `8000` bytes
+- WebDAV: Return `304` `NOT_MODIFIED` on `If-None-Match`.
 - Configuration: Prefix parsing issues (#2495)
-- OIDC: JWKS Exposes Symmetric Signing Key, Enabling ID Token Forgery
+- OIDC: JWKS Exposes Symmetric Signing Key
+- SQLite: Fix thread pool exhaustion.
+- PostgreSQL: Use clean recycling method on connection pool
+- Meilisearch: Make `id` sorteable.
+- Spam filter: Skip invalid messages during training.
+- Calendar: Include minutes in localized invite templates (#2828)
 
 
 ## [0.15.5] - 2026-02-14
