@@ -7,6 +7,7 @@
 use crate::task_manager::{TaskFailureType, TaskResult};
 use common::{
     Server,
+    ipc::{BroadcastEvent, RegistryChange},
     manager::{SPAM_CLASSIFIER_KEY, SPAM_TRAINER_KEY, fetch_resource},
 };
 use registry::{
@@ -78,7 +79,7 @@ async fn spam_filter_maintenance(
         }
     }
 
-    Ok(TaskResult::Success)
+    Ok(TaskResult::Success(vec![]))
 }
 
 struct RuleUpdateError {
@@ -111,6 +112,7 @@ async fn update_spam_rules(server: &Server) -> trc::Result<TaskResult> {
             return Ok(TaskResult::Failure {
                 typ: err.typ,
                 message: err.reason,
+                max_attempts: None,
             });
         }
     };
@@ -118,10 +120,14 @@ async fn update_spam_rules(server: &Server) -> trc::Result<TaskResult> {
     let registry = server.registry();
     let mut stats: AHashMap<ObjectType, RuleUpdateResult> = AHashMap::new();
 
+    let mut reload_settings = false;
+    let mut reload_lookups = false;
+
     for rule in rules.rules {
         match registry.write(RegistryWrite::insert(&rule.into())).await? {
             RegistryWriteResult::Success(_) => {
                 stats.entry(ObjectType::SpamRule).or_default().success += 1;
+                reload_settings = true;
             }
             RegistryWriteResult::PrimaryKeyConflict { .. } => {
                 stats
@@ -142,6 +148,7 @@ async fn update_spam_rules(server: &Server) -> trc::Result<TaskResult> {
                     .entry(ObjectType::SpamDnsblServer)
                     .or_default()
                     .success += 1;
+                reload_settings = true;
             }
             RegistryWriteResult::PrimaryKeyConflict { .. } => {
                 stats
@@ -159,6 +166,7 @@ async fn update_spam_rules(server: &Server) -> trc::Result<TaskResult> {
         match registry.write(RegistryWrite::insert(&tag.into())).await? {
             RegistryWriteResult::Success(_) => {
                 stats.entry(ObjectType::SpamTag).or_default().success += 1;
+                reload_settings = true;
             }
             RegistryWriteResult::PrimaryKeyConflict { .. } => {
                 stats.entry(ObjectType::SpamTag).or_default().already_exists += 1;
@@ -176,6 +184,7 @@ async fn update_spam_rules(server: &Server) -> trc::Result<TaskResult> {
         {
             RegistryWriteResult::Success(_) => {
                 stats.entry(ObjectType::HttpLookup).or_default().success += 1;
+                reload_lookups = true;
             }
             RegistryWriteResult::PrimaryKeyConflict { .. } => {
                 stats
@@ -199,6 +208,7 @@ async fn update_spam_rules(server: &Server) -> trc::Result<TaskResult> {
                     .entry(ObjectType::MemoryLookupKey)
                     .or_default()
                     .success += 1;
+                reload_lookups = true;
             }
             RegistryWriteResult::PrimaryKeyConflict { .. } => {
                 stats
@@ -219,6 +229,7 @@ async fn update_spam_rules(server: &Server) -> trc::Result<TaskResult> {
                     .entry(ObjectType::SpamFileExtension)
                     .or_default()
                     .success += 1;
+                reload_settings = true;
             }
             RegistryWriteResult::PrimaryKeyConflict { .. } => {
                 stats
@@ -233,6 +244,34 @@ async fn update_spam_rules(server: &Server) -> trc::Result<TaskResult> {
                     .failed += 1;
             }
         }
+    }
+
+    if reload_settings {
+        if let Err(err) = server
+            .reload_registry(RegistryChange::Reload(ObjectType::SpamRule))
+            .await
+        {
+            trc::error!(err.details("Failed to reload registry after updating spam rules"));
+        }
+        server
+            .cluster_broadcast(BroadcastEvent::RegistryChange(RegistryChange::Reload(
+                ObjectType::SpamRule,
+            )))
+            .await;
+    }
+
+    if reload_lookups {
+        if let Err(err) = server
+            .reload_registry(RegistryChange::Reload(ObjectType::MemoryLookupKey))
+            .await
+        {
+            trc::error!(err.details("Failed to reload registry after updating spam rules"));
+        }
+        server
+            .cluster_broadcast(BroadcastEvent::RegistryChange(RegistryChange::Reload(
+                ObjectType::MemoryLookupKey,
+            )))
+            .await;
     }
 
     trc::event!(
@@ -251,7 +290,7 @@ async fn update_spam_rules(server: &Server) -> trc::Result<TaskResult> {
         Elapsed = started.elapsed(),
     );
 
-    Ok(TaskResult::Success)
+    Ok(TaskResult::Success(vec![]))
 }
 
 async fn fetch_spam_rules(server: &Server) -> Result<Rules, RuleUpdateError> {
@@ -274,8 +313,6 @@ async fn fetch_spam_rules(server: &Server) -> Result<Rules, RuleUpdateError> {
                     reason: format!("Failed to parse spam rules JSON: {err}"),
                 })
             })?;
-
-    let todo = "trigger task to reload settings and lookup stores";
 
     let mut rules = Rules::default();
     for (object_type, values) in rules_json {

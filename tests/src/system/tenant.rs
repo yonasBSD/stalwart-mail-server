@@ -18,10 +18,10 @@ use registry::{
         enums::{AccountType, Permission, TenantStorageQuota},
         prelude::{ObjectType, Property},
         structs::{
-            Account, Credential, Dkim1Signature, DkimPrivateKey, DkimSignature, DnsServer,
-            DnsServerCloudflare, Domain, GroupAccount, MailingList, OAuthClient,
-            PasswordCredential, Permissions, PermissionsList, Role, SecretKey, SecretKeyValue,
-            SecretTextValue, Tenant, UserAccount, UserRoles,
+            Account, Credential, Dkim1Signature, DkimSignature, DnsServer, DnsServerCloudflare,
+            Domain, GroupAccount, MailingList, OAuthClient, PasswordCredential, Permissions,
+            PermissionsList, Role, SecretKey, SecretKeyValue, SecretText, SecretTextValue, Tenant,
+            UserAccount, UserRoles,
         },
     },
     types::{EnumImpl, ObjectImpl, list::List, map::Map},
@@ -233,7 +233,7 @@ pub async fn test(test: &mut TestServer) {
                         domain_id,
                         member_tenant_id,
                         selector: "ed-key".to_string(),
-                        private_key: DkimPrivateKey::Value(SecretTextValue {
+                        private_key: SecretText::Text(SecretTextValue {
                             secret: DKIM_KEY.to_string(),
                         }),
                         ..Default::default()

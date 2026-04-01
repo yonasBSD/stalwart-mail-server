@@ -4,10 +4,16 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::config::smtp::auth::{rsa_key_parse, simple_pem_parse};
 use chrono::Utc;
+use dns_update::{DnsRecord, NamedDnsRecord};
+use mail_auth::common::crypto::Ed25519Key;
 use mail_auth::dkim::generate::DkimKeyPair;
 use mail_builder::encoders::base64::base64_encode;
+use pkcs8::Document;
 use registry::schema::enums::DkimSignatureType;
+use registry::schema::structs::DkimSignature;
+use rsa::pkcs1::DecodeRsaPublicKey;
 
 pub async fn generate_dkim_private_key(
     key_type: DkimSignatureType,
@@ -49,6 +55,78 @@ pub async fn generate_dkim_private_key(
         .map_err(|err| err.to_string()))
 }
 
+pub async fn generate_dkim_public_key(key: &DkimSignature) -> trc::Result<String> {
+    match key {
+        DkimSignature::Dkim1RsaSha256(key) => key
+            .private_key
+            .secret()
+            .await
+            .map_err(|err| trc::DkimEvent::BuildError.reason(err))
+            .and_then(|pem| rsa_key_parse(pem.as_bytes()))
+            .and_then(|pk| {
+                Document::from_pkcs1_der(&pk.public_key()).map_err(|err| {
+                    trc::EventType::Dkim(trc::DkimEvent::BuildError)
+                        .into_err()
+                        .reason(err)
+                })
+            })
+            .map(|pk| {
+                String::from_utf8(base64_encode(pk.as_bytes()).unwrap_or_default())
+                    .unwrap_or_default()
+            }),
+        DkimSignature::Dkim1Ed25519Sha256(key) => key
+            .private_key
+            .secret()
+            .await
+            .map_err(|err| trc::DkimEvent::BuildError.reason(err))
+            .and_then(|pem| {
+                simple_pem_parse(&pem).ok_or_else(|| {
+                    trc::EventType::Dkim(trc::DkimEvent::BuildError)
+                        .into_err()
+                        .details("Failed to parse private key PEM")
+                })
+            })
+            .and_then(|der| {
+                Ed25519Key::from_pkcs8_maybe_unchecked_der(&der).map_err(|err| {
+                    trc::EventType::Dkim(trc::DkimEvent::BuildError)
+                        .into_err()
+                        .reason(err)
+                })
+            })
+            .map(|pk| {
+                String::from_utf8(base64_encode(&pk.public_key()).unwrap_or_default())
+                    .unwrap_or_default()
+            }),
+    }
+}
+
+pub async fn generate_dkim_dns_record(
+    key: &DkimSignature,
+    domain: &str,
+) -> trc::Result<NamedDnsRecord> {
+    let public_key = generate_dkim_public_key(key).await?;
+
+    let (selector, record) = match key {
+        DkimSignature::Dkim1Ed25519Sha256(sign) => (
+            &sign.selector,
+            format!("v=DKIM1; k=ed25519; h=sha256; p={public_key}"),
+        ),
+        DkimSignature::Dkim1RsaSha256(sign) => (
+            &sign.selector,
+            format!("v=DKIM1; k=rsa; h=sha256; p={public_key}"),
+        ),
+    };
+
+    Ok(NamedDnsRecord {
+        name: format!("{selector}._domainkey.{domain}."),
+        record: DnsRecord::TXT(record),
+    })
+}
+
+pub fn generate_dkim_dns_record_name(key: &DkimSignature, domain: &str) -> String {
+    format!("{}._domainkey.{domain}.", key.selector())
+}
+
 /// Generate a DKIM selector from a template string.
 ///
 /// Supported variables:
@@ -58,8 +136,6 @@ pub async fn generate_dkim_private_key(
 /// - `{date-<fmt>}` — current UTC date formatted with chrono strftime (e.g. `{date-%Y%m%d}`)
 /// - `{epoch}` — current UTC unix timestamp
 ///
-/// The output is sanitized to only contain valid DKIM selector characters (`a-zA-Z0-9._-`).
-/// Returns an error if the template contains unrecognized variables or produces an empty selector.
 pub fn generate_dkim_selector(
     template: &str,
     sig_type: DkimSignatureType,

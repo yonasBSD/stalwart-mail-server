@@ -271,7 +271,7 @@ async fn send_imip(
         }
     }
 
-    Ok(TaskResult::Success)
+    Ok(TaskResult::Success(vec![]))
 }
 
 pub struct Details {

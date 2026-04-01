@@ -91,7 +91,7 @@ pub(crate) async fn task_set(
             | TaskType::StoreMaintenance
             | TaskType::SpamFilterMaintenance
             | TaskType::AcmeRenewal
-            | TaskType::DkimKeyRotation
+            | TaskType::DkimManagement
             | TaskType::DnsManagement => {
                 let mut index = IndexBuilder::default();
                 task.index(&mut index);

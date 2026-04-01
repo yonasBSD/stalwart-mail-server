@@ -7,11 +7,13 @@
 use crate::{
     Server,
     ipc::{BroadcastEvent, RegistryChange},
-    network::acme::{AcmeError, AcmeResult, ParsedCert, directory::AcmeRequestBuilder},
+    network::acme::{
+        AcmeDnsParameters, AcmeError, AcmeResult, ParsedCert, directory::AcmeRequestBuilder,
+    },
 };
 use registry::{
     schema::{
-        enums::{AcmeRenewBefore, DnsRecordType},
+        enums::{AcmeChallengeType, AcmeRenewBefore, DnsRecordType},
         prelude::ObjectType,
         structs::{
             AcmeProvider, Certificate, CertificateManagement, DnsManagement, Domain, PublicText,
@@ -53,6 +55,31 @@ impl Server {
                 cert.acme_provider_id
             )));
         };
+        let dns_parameters = match &domain.dns_management {
+            DnsManagement::Automatic(props)
+                if acme_provider.challenge_type == AcmeChallengeType::Dns01 =>
+            {
+                match self.build_dns_updater(props.dns_server_id).await? {
+                    Ok(updater) => Some(AcmeDnsParameters {
+                        updater,
+                        origin: props.origin.clone(),
+                    }),
+                    Err(err) => {
+                        return Err(AcmeError::Invalid(format!(
+                            "Failed to build DNS updater: {}",
+                            err
+                        )));
+                    }
+                }
+            }
+            _ => None,
+        };
+        if acme_provider.challenge_type == AcmeChallengeType::Dns01 && dns_parameters.is_none() {
+            return Err(AcmeError::Invalid(
+                "ACME provider requires DNS challenge but a DNS provider was not configured"
+                    .to_string(),
+            ));
+        }
         let renew_before = acme_provider.renew_before;
         let pem_cert = AcmeRequestBuilder::new(acme_provider)
             .await?
@@ -60,10 +87,10 @@ impl Server {
                 self,
                 &domain.name,
                 &cert.subject_alternative_names.into_inner(),
+                dns_parameters,
             )
             .await?;
         let parsed_cert = ParsedCert::parse(&pem_cert.certificate)?;
-
         let certificate = Certificate {
             private_key: SecretText::Text(SecretTextValue {
                 secret: pem_cert.private_key,
@@ -123,7 +150,7 @@ impl Server {
 
                 // Update TLSA records
                 if let DnsManagement::Automatic(props) = &domain.dns_management
-                    && props.dns_publish_records.contains(&DnsRecordType::Tlsa)
+                    && props.publish_records.contains(&DnsRecordType::Tlsa)
                 {
                     tasks.push(Task::DnsManagement(TaskDnsManagement {
                         domain_id,

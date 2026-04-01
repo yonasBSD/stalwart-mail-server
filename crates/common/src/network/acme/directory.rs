@@ -36,6 +36,7 @@ pub struct AcmeRequestBuilder {
     pub directory: Directory,
     pub kid: String,
     pub challenge: ChallengeType,
+    pub max_retries: u32,
 }
 
 pub struct AcmeResponse<L, B> {
@@ -48,7 +49,8 @@ static ALG: &EcdsaSigningAlgorithm = &ECDSA_P256_SHA256_FIXED_SIGNING;
 
 impl AcmeRequestBuilder {
     pub async fn new(provider: AcmeProvider) -> AcmeResult<Self> {
-        let directory = Directory::discover(&provider.directory).await?;
+        let directory =
+            Directory::discover(&provider.directory, provider.max_retries as u32).await?;
         let key_pair = EcdsaKeyPair::from_pkcs8(
             ALG,
             &URL_SAFE_NO_PAD
@@ -64,7 +66,8 @@ impl AcmeRequestBuilder {
             key_pair,
             directory,
             kid: provider.account_uri,
-            challenge: provider.class.into(),
+            challenge: provider.challenge_type.into(),
+            max_retries: provider.max_retries as u32,
         })
     }
 
@@ -76,11 +79,11 @@ impl AcmeRequestBuilder {
         let body = sign(
             &self.key_pair,
             Some(&self.kid),
-            self.directory.nonce().await?,
+            self.directory.nonce(self.max_retries).await?,
             url.as_ref(),
             payload,
         )?;
-        let response = https(url.as_ref(), Method::POST, Some(body)).await?;
+        let response = https(url.as_ref(), Method::POST, Some(body), self.max_retries).await?;
 
         Ok(AcmeResponse {
             location: get_header(&response, "Location").ok(),
@@ -173,14 +176,19 @@ impl AcmeRequestBuilder {
 }
 
 impl Directory {
-    pub async fn discover(url: impl AsRef<str>) -> AcmeResult<Self> {
-        serde_json::from_str(&https(url, Method::GET, None).await?.text().await?)
-            .map_err(Into::into)
+    pub async fn discover(url: impl AsRef<str>, max_retries: u32) -> AcmeResult<Self> {
+        serde_json::from_str(
+            &https(url, Method::GET, None, max_retries)
+                .await?
+                .text()
+                .await?,
+        )
+        .map_err(Into::into)
     }
 
-    pub async fn nonce(&self) -> AcmeResult<String> {
+    pub async fn nonce(&self, max_retries: u32) -> AcmeResult<String> {
         get_header(
-            &https(&self.new_nonce.as_str(), Method::HEAD, None).await?,
+            &https(&self.new_nonce.as_str(), Method::HEAD, None, max_retries).await?,
             "replay-nonce",
         )
     }
@@ -199,12 +207,13 @@ impl<L, T: DeserializeOwned> AcmeResponse<L, T> {
 }
 
 impl<L, T> AcmeResponse<L, T> {
-    pub fn assert_reasonable_retry_after(self) -> AcmeResult<Self> {
+    pub fn assert_reasonable_retry_after(self, max_retries: u32) -> AcmeResult<Self> {
         if let Some(retry_after) = self.retry_after
             && retry_after > Duration::from_secs(10 * 60)
         {
-            return Err(AcmeError::RetryAt {
-                time: Some(retry_after),
+            return Err(AcmeError::Backoff {
+                max_retries,
+                wait: retry_after.into(),
             });
         }
 

@@ -24,6 +24,7 @@ pub async fn test() {
             "profile".to_string(),
             "openid".to_string(),
         ]),
+        member_tenant_id: None,
     };
     let mut oidc = OpenIdDirectory::open(config.clone()).await.unwrap();
     let token = get_token("john.doe@example.org", "this is an OIDC password").await;

@@ -287,7 +287,7 @@ async fn store_maintenance(
                 // Simulate success for testing purposes
                 match test_var {
                     0 => {
-                        return Ok(TaskResult::Success);
+                        return Ok(TaskResult::Success(vec![]));
                     }
                     1 => {
                         return Ok(TaskResult::temporary(
@@ -302,6 +302,7 @@ async fn store_maintenance(
                         return Ok(TaskResult::Failure {
                             typ: TaskFailureType::Retry(retry),
                             message: "Simulated retry failure".to_string(),
+                            max_attempts: None,
                         });
                     }
                 }
@@ -338,7 +339,7 @@ async fn store_maintenance(
         }
     }
 
-    Ok(TaskResult::Success)
+    Ok(TaskResult::Success(vec![]))
 }
 
 async fn account_maintenance(
@@ -360,7 +361,7 @@ async fn account_maintenance(
         }
     }
 
-    Ok(TaskResult::Success)
+    Ok(TaskResult::Success(vec![]))
 }
 
 async fn recalculate_quota(server: &Server, account_id: u32) -> trc::Result<()> {

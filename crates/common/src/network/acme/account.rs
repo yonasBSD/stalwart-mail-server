@@ -49,7 +49,7 @@ pub async fn acme_create_account(
         *contact = format!("mailto:{}", email);
     }
 
-    let directory = Directory::discover(&provider.directory).await?;
+    let directory = Directory::discover(&provider.directory, provider.max_retries as u32).await?;
     let account_key = EcdsaKeyPair::generate_pkcs8(ALG, &SystemRandom::new()).unwrap();
     let key_pair = EcdsaKeyPair::from_pkcs8(ALG, account_key.as_ref(), &SystemRandom::new())
         .map_err(|err| AcmeError::Crypto(format!("Failed to create ECDSA key pair: {}", err)))?;
@@ -68,13 +68,19 @@ pub async fn acme_create_account(
     let body = sign(
         &key_pair,
         None,
-        directory.nonce().await?,
+        directory.nonce(provider.max_retries as u32).await?,
         &directory.new_account,
         &payload,
     )?;
 
     provider.account_uri = get_header(
-        &https(&directory.new_account, Method::POST, Some(body)).await?,
+        &https(
+            &directory.new_account,
+            Method::POST,
+            Some(body),
+            provider.max_retries as u32,
+        )
+        .await?,
         "Location",
     )?;
     provider.account_key = URL_SAFE_NO_PAD.encode(account_key.as_ref());

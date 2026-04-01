@@ -15,8 +15,11 @@ use store::{ahash::AHashMap, write::now};
 use tokio::sync::mpsc;
 use trc::TaskManagerEvent;
 
+pub mod acme;
 pub mod alarm;
 pub mod destroy_account;
+pub mod dkim;
+pub mod dns;
 pub mod imip;
 pub mod index;
 pub mod lock;
@@ -59,11 +62,12 @@ pub(crate) struct TaskJob {
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum TaskResult {
-    Success,
+    Success(Vec<Task>),
     Update([Operation; 2]),
     Failure {
         typ: TaskFailureType,
         message: String,
+        max_attempts: Option<u64>,
     },
     Ignored,
 }
@@ -98,7 +102,7 @@ impl TaskInfo for Task {
             Task::StoreMaintenance(_) => "StoreMaintenance",
             Task::SpamFilterMaintenance(_) => "SpamFilterMaintenance",
             Task::AcmeRenewal(_) => "AcmeRenewal",
-            Task::DkimKeyRotation(_) => "DkimKeyRotation",
+            Task::DkimManagement(_) => "DkimManagement",
             Task::DnsManagement(_) => "DnsManagement",
         }
     }
@@ -109,6 +113,7 @@ impl TaskResult {
         TaskResult::Failure {
             typ: TaskFailureType::Permanent,
             message: message.into(),
+            max_attempts: None,
         }
     }
 
@@ -116,6 +121,7 @@ impl TaskResult {
         TaskResult::Failure {
             typ: TaskFailureType::Temporary,
             message: message.into(),
+            max_attempts: None,
         }
     }
 }

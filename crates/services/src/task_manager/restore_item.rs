@@ -80,7 +80,7 @@ async fn restore_item(server: &Server, task: &TaskRestoreArchivedItem) -> trc::R
                     });
                     server.store().write(batch.build_all()).await?;
 
-                    Ok(TaskResult::Success)
+                    Ok(TaskResult::Success(vec![]))
                 }
                 Err(mut err)
                     if err.matches(trc::EventType::MessageIngest(

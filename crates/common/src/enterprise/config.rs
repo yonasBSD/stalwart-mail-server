@@ -166,7 +166,7 @@ impl Enterprise {
             let api = api.object;
             let api = Arc::new(AiApiConfig {
                 id: api.name,
-                api_type: match api.class {
+                api_type: match api.model_type {
                     AiModelType::Chat => ApiType::ChatCompletion,
                     AiModelType::Text => ApiType::TextCompletion,
                 },

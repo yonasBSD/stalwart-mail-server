@@ -12,6 +12,7 @@ pub mod order;
 pub mod renew;
 pub mod resolver;
 
+use crate::network::dns::update::DnsUpdater;
 use chrono::{DateTime, Utc};
 use registry::schema::enums::AcmeChallengeType;
 use rustls::sign::CertifiedKey;
@@ -31,18 +32,24 @@ pub enum AcmeError {
     Json(serde_json::Error),
     Crypto(String),
     Invalid(String),
+    Dns(String),
     AuthInvalid(AuthStatus),
-    OrderTimeout,
     OrderInvalid,
-    AuthTimeout,
     ChallengeNotSupported {
         requested: ChallengeType,
         supported: Vec<Challenge>,
     },
     Internal(trc::Error),
     Registry(RegistryWriteResult),
-    RetryAt {
-        time: Option<Duration>,
+    OrderTimeout {
+        max_retries: u32,
+    },
+    AuthTimeout {
+        max_retries: u32,
+    },
+    Backoff {
+        max_retries: u32,
+        wait: Option<Duration>,
     },
 }
 
@@ -128,6 +135,11 @@ pub enum AuthStatus {
     Deactivated,
 }
 
+pub struct AcmeDnsParameters {
+    pub updater: DnsUpdater,
+    pub origin: Option<String>,
+}
+
 #[derive(Clone, Debug, serde::Serialize, Deserialize)]
 #[serde(tag = "type", content = "value", rename_all = "camelCase")]
 pub enum Identifier {
@@ -196,12 +208,13 @@ impl Display for AcmeError {
             AcmeError::Http(err) => write!(f, "HTTP error: {}", err),
             AcmeError::HttpStatus(status) => write!(f, "HTTP error: status code {}", status),
             AcmeError::Json(err) => write!(f, "JSON error: {}", err),
+            AcmeError::Dns(err) => write!(f, "DNS error: {}", err),
             AcmeError::Crypto(err) => write!(f, "Cryptographic error: {}", err),
             AcmeError::Invalid(err) => write!(f, "Invalid request: {}", err),
             AcmeError::AuthInvalid(status) => write!(f, "Authentication failed: {:?}", status),
-            AcmeError::OrderTimeout => write!(f, "Order processing timed out"),
+            AcmeError::OrderTimeout { .. } => write!(f, "Order processing timed out"),
             AcmeError::OrderInvalid => write!(f, "Order is invalid"),
-            AcmeError::AuthTimeout => write!(f, "Authentication timed out"),
+            AcmeError::AuthTimeout { .. } => write!(f, "Authentication timed out"),
             AcmeError::ChallengeNotSupported {
                 requested,
                 supported,
@@ -214,8 +227,8 @@ impl Display for AcmeError {
             }
             AcmeError::Internal(err) => write!(f, "Internal error: {}", err),
             AcmeError::Registry(err) => write!(f, "Registry error: {:?}", err),
-            AcmeError::RetryAt { time } => {
-                if let Some(time) = time {
+            AcmeError::Backoff { wait, .. } => {
+                if let Some(time) = wait {
                     write!(f, "Rate limited. Retry after {} seconds", time.as_secs())
                 } else {
                     write!(f, "Rate limited. Retry after some time")

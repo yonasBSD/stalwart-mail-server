@@ -156,7 +156,7 @@ async fn destroy_account(server: &Server, task: &TaskDestroyAccount) -> trc::Res
         .await
         .caused_by(trc::location!())?;
 
-    Ok(TaskResult::Success)
+    Ok(TaskResult::Success(vec![]))
 }
 
 pub async fn destroy_account_blobs(server: &Server, account_id: u32) -> trc::Result<()> {

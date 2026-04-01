@@ -43,6 +43,21 @@ impl ResolvesServerCert for CertificateResolver {
     }
 }
 
+impl Server {
+    pub fn resolve_certificate(&self, name: &str) -> Option<Arc<CertifiedKey>> {
+        let certs = self.inner.data.tls_certificates.load();
+
+        certs
+            .get(name)
+            .or_else(|| {
+                // Try with a wildcard certificate
+                name.split_once('.')
+                    .and_then(|(_, domain)| certs.get(domain))
+            })
+            .cloned()
+    }
+}
+
 impl CertificateResolver {
     pub(crate) fn resolve_certificate(&self, name: Option<&str>) -> Option<Arc<CertifiedKey>> {
         let certs = self.inner.data.tls_certificates.load();

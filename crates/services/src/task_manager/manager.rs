@@ -4,8 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::task_manager::acme::AcmeTask;
 use crate::task_manager::alarm::SendAlarmTask;
 use crate::task_manager::destroy_account::DestroyAccountTask;
+use crate::task_manager::dkim::DkimManagementTask;
+use crate::task_manager::dns::DnsManagementTask;
 use crate::task_manager::imip::SendImipTask;
 use crate::task_manager::index::SearchIndexTask;
 use crate::task_manager::lock::TaskLockManager;
@@ -100,7 +103,7 @@ pub fn spawn_task_manager(inner: Arc<Inner>) {
             | TaskType::TlsReport
             | TaskType::RestoreArchivedItem
             | TaskType::AcmeRenewal
-            | TaskType::DkimKeyRotation
+            | TaskType::DkimManagement
             | TaskType::DnsManagement => TASK_QUEUE_BUFFER,
         };
 
@@ -237,12 +240,16 @@ pub fn spawn_task_manager(inner: Arc<Inner>) {
                                 Task::SpamFilterMaintenance(task) => {
                                     server.spam_filter_maintenance(task).await
                                 }
+                                Task::AcmeRenewal(task) => server.acme_management(task).await,
+                                Task::DkimManagement(task_dkim_rotation) => {
+                                    server.dkim_management(task_dkim_rotation).await
+                                }
+                                Task::DnsManagement(task_dns_management) => {
+                                    server.dns_management(task_dns_management).await
+                                }
                                 Task::IndexDocument(_)
                                 | Task::UnindexDocument(_)
                                 | Task::IndexTrace(_) => unreachable!(),
-                                Task::AcmeRenewal(task_domain_management) => todo!(),
-                                Task::DkimKeyRotation(task_dkim_rotation) => todo!(),
-                                Task::DnsManagement(task_dns_management) => todo!(),
                             };
 
                             refresh_queue = result.is_retry();
@@ -361,7 +368,7 @@ impl TaskQueueManager for Server {
                                 | TaskType::TlsReport
                                 | TaskType::RestoreArchivedItem
                                 | TaskType::AcmeRenewal
-                                | TaskType::DkimKeyRotation
+                                | TaskType::DkimManagement
                                 | TaskType::DnsManagement => true,
                             };
 
@@ -488,7 +495,13 @@ async fn update_tasks(
             due: task.info.due,
         }));
         match result {
-            TaskResult::Success | TaskResult::Ignored => {
+            TaskResult::Success(tasks) => {
+                for task in tasks {
+                    batch.schedule_task(task);
+                }
+                batch.clear(ValueClass::TaskQueue(TaskQueueClass::Task { id }));
+            }
+            TaskResult::Ignored => {
                 batch.clear(ValueClass::TaskQueue(TaskQueueClass::Task { id }));
             }
             TaskResult::Update(ops) => {
@@ -496,7 +509,11 @@ async fn update_tasks(
                     batch.any_op(op);
                 }
             }
-            TaskResult::Failure { typ, message } => {
+            TaskResult::Failure {
+                typ,
+                message,
+                max_attempts,
+            } => {
                 let (attempt_number, created_at) = match task.task.status() {
                     TaskStatus::Pending(status) => (0, status.created_at),
                     TaskStatus::Retry(status) => (status.attempt_number, status.created_at),
@@ -504,7 +521,7 @@ async fn update_tasks(
                 };
                 let retry_at = match typ {
                     TaskFailureType::Retry(retry_at) => (attempt_number
-                        < server.core.network.task_manager.max_attempts
+                        < max_attempts.unwrap_or(server.core.network.task_manager.max_attempts)
                         && retry_at
                             < retry_at.saturating_add(
                                 server.core.network.task_manager.total_deadline.as_secs(),
@@ -512,6 +529,7 @@ async fn update_tasks(
                     .then_some(retry_at),
                     TaskFailureType::Temporary => next_retry_time(
                         &server.core.network.task_manager,
+                        max_attempts,
                         created_at.timestamp() as u64,
                         attempt_number,
                         now(),
@@ -576,11 +594,12 @@ async fn update_tasks(
 
 pub fn next_retry_time(
     manager: &TaskManager,
+    max_attempts_override: Option<u64>,
     create_time: u64,
     attempt: u64,
     now: u64,
 ) -> Option<u64> {
-    if attempt >= manager.max_attempts {
+    if attempt >= max_attempts_override.unwrap_or(manager.max_attempts) {
         return None;
     }
 
@@ -610,6 +629,10 @@ pub fn next_retry_time(
 }
 
 impl TaskResult {
+    pub fn is_success(&self) -> bool {
+        matches!(self, TaskResult::Success(_))
+    }
+
     pub fn is_retry(&self) -> bool {
         matches!(
             self,

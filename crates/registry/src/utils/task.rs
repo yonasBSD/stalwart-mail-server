@@ -27,7 +27,7 @@ impl Task {
             Task::StoreMaintenance(task) => task.status = status,
             Task::SpamFilterMaintenance(task) => task.status = status,
             Task::AcmeRenewal(task) => task.status = status,
-            Task::DkimKeyRotation(task) => task.status = status,
+            Task::DkimManagement(task) => task.status = status,
             Task::DnsManagement(task) => task.status = status,
         }
     }
@@ -49,7 +49,7 @@ impl Task {
             Task::StoreMaintenance(task) => &task.status,
             Task::SpamFilterMaintenance(task) => &task.status,
             Task::AcmeRenewal(task) => &task.status,
-            Task::DkimKeyRotation(task) => &task.status,
+            Task::DkimManagement(task) => &task.status,
             Task::DnsManagement(task) => &task.status,
         }
     }
@@ -87,7 +87,7 @@ impl Task {
             Task::StoreMaintenance(_) => Permission::TaskStoreMaintenance,
             Task::SpamFilterMaintenance(_) => Permission::TaskSpamFilterMaintenance,
             Task::AcmeRenewal(_) => Permission::TaskAcmeRenewal,
-            Task::DkimKeyRotation(_) => Permission::TaskDkimKeyRotation,
+            Task::DkimManagement(_) => Permission::TaskDkimManagement,
             Task::DnsManagement(_) => Permission::TaskDnsManagement,
         }
     }

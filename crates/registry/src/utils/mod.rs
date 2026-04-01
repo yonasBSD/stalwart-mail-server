@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::schema::prelude::{DkimSignature, Roles, SecretKey};
+use crate::schema::prelude::{DkimSignature, Roles, SecretText};
 use types::id::Id;
 
 pub mod account;
@@ -26,14 +26,14 @@ impl Roles {
 }
 
 impl DkimSignature {
-    pub fn private_key(&self) -> &SecretKey {
+    pub fn private_key(&self) -> &SecretText {
         match self {
             DkimSignature::Dkim1Ed25519Sha256(signature) => &signature.private_key,
             DkimSignature::Dkim1RsaSha256(signature) => &signature.private_key,
         }
     }
 
-    pub fn private_key_mut(&mut self) -> &mut SecretKey {
+    pub fn private_key_mut(&mut self) -> &mut SecretText {
         match self {
             DkimSignature::Dkim1Ed25519Sha256(signature) => &mut signature.private_key,
             DkimSignature::Dkim1RsaSha256(signature) => &mut signature.private_key,

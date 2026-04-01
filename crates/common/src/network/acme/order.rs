@@ -8,10 +8,12 @@
 
 use crate::network::acme::directory::AcmeRequestBuilder;
 use crate::network::acme::{
-    AcmeError, AcmeResult, AuthStatus, ChallengeType, Identifier, OrderStatus, ParsedCert, PemCert,
+    AcmeDnsParameters, AcmeError, AcmeResult, AuthStatus, ChallengeType, Identifier, OrderStatus,
+    ParsedCert, PemCert,
 };
 use crate::{KV_ACME, Server};
 use chrono::{TimeZone, Utc};
+use dns_update::DnsRecord;
 use futures::future::try_join_all;
 use rcgen::{CertificateParams, DistinguishedName, PKCS_ECDSA_P256_SHA256};
 use std::collections::BTreeSet;
@@ -30,6 +32,7 @@ impl AcmeRequestBuilder {
         server: &Server,
         domain: &str,
         hostnames: &[String],
+        dns_parameters: Option<AcmeDnsParameters>,
     ) -> AcmeResult<PemCert> {
         let domains = if hostnames.is_empty() {
             if matches!(
@@ -76,7 +79,7 @@ impl AcmeRequestBuilder {
                     let auth_futures = order
                         .authorizations
                         .iter()
-                        .map(|url| self.authorize(server, url));
+                        .map(|url| self.authorize(server, url, dns_parameters.as_ref()));
                     try_join_all(auth_futures).await?;
                     trc::event!(
                         Acme(AcmeEvent::AuthCompleted),
@@ -103,7 +106,7 @@ impl AcmeRequestBuilder {
                         let response = self
                             .order(&order_url)
                             .await?
-                            .assert_reasonable_retry_after()?;
+                            .assert_reasonable_retry_after(self.max_retries)?;
                         order = response.body;
                         retry_after = response.retry_after;
                         if order.status != OrderStatus::Processing {
@@ -111,7 +114,9 @@ impl AcmeRequestBuilder {
                         }
                     }
                     if order.status == OrderStatus::Processing {
-                        return Err(AcmeError::OrderTimeout);
+                        return Err(AcmeError::OrderTimeout {
+                            max_retries: self.max_retries,
+                        });
                     }
                 }
                 OrderStatus::Ready => {
@@ -147,8 +152,16 @@ impl AcmeRequestBuilder {
         }
     }
 
-    async fn authorize(&self, server: &Server, url: &String) -> AcmeResult<()> {
-        let response = self.auth(url).await?.assert_reasonable_retry_after()?;
+    async fn authorize(
+        &self,
+        server: &Server,
+        url: &String,
+        dns_parameters: Option<&AcmeDnsParameters>,
+    ) -> AcmeResult<()> {
+        let response = self
+            .auth(url)
+            .await?
+            .assert_reasonable_retry_after(self.max_retries)?;
         let mut retry_after = response.retry_after;
         let auth = response.body;
 
@@ -200,105 +213,19 @@ impl AcmeRequestBuilder {
                             .await?;
                     }
                     ChallengeType::Dns01 => {
-                        let todo = "fix";
-                        todo!()
-                        /*let dns_proof = self.dns_proof(challenge)?;
+                        let dns_parameters = dns_parameters.unwrap();
                         let domain = domain.strip_prefix("*.").unwrap_or(&domain);
-                        let name = format!("_acme-challenge.{}", domain);
-                        let origin = origin
-                            .as_deref()
-                            .or_else(|| psl::domain_str(domain))
-                            .unwrap_or(domain)
-                            .to_string();
 
-                        // First try deleting the record
-                        if let Err(err) = updater.delete(&name, &origin, DnsRecordType::TXT).await {
-                            // Errors are expected if the record does not exist
-                            trc::event!(
-                                Dns(DnsEvent::RecordDeletionFailed),
-                                Hostname = name.to_string(),
-                                Reason = err.to_string(),
-                                Details = origin.to_string(),
-                                Url = self.directory.new_order.to_string(),
-                            );
-                        }
-
-                        // Create the record
-                        if let Err(err) = updater
+                        dns_parameters
+                            .updater
                             .create(
-                                &name,
-                                DnsRecord::TXT {
-                                    content: dns_proof.clone(),
-                                },
-                                *ttl,
-                                &origin,
+                                dns_parameters.origin.as_deref().unwrap_or(domain),
+                                &format!("_acme-challenge.{}", domain),
+                                DnsRecord::TXT(self.dns_proof(challenge)?),
+                                true,
                             )
                             .await
-                        {
-                            return Err(EventType::Dns(DnsEvent::RecordCreationFailed)
-                                .ctx(trc::Key::Id, self.id.to_string())
-                                .ctx(trc::Key::Hostname, name)
-                                .ctx(trc::Key::Details, origin)
-                                .reason(err));
-                        }
-
-                        trc::event!(
-                            Dns(DnsEvent::RecordCreated),
-                            Hostname = name.to_string(),
-                            Details = origin.to_string(),
-                            Url = self.directory.new_order.to_string(),
-                        );
-
-                        // Wait for changes to propagate
-                        let wait_until = Instant::now() + *propagation_timeout;
-                        let mut did_propagate = false;
-                        while Instant::now() < wait_until {
-                            match self.core.smtp.resolvers.dns.txt_raw_lookup(&name).await {
-                                Ok(result) => {
-                                    let result = std::str::from_utf8(&result).unwrap_or_default();
-                                    if result.contains(&dns_proof) {
-                                        did_propagate = true;
-                                        break;
-                                    } else {
-                                        trc::event!(
-                                            Dns(DnsEvent::RecordNotPropagated),
-                                            Url = self.directory.new_order.to_string(),
-                                            Hostname = name.to_string(),
-                                            Details = origin.to_string(),
-                                            Result = result.to_string(),
-                                            Value = dns_proof.to_string(),
-                                        );
-                                    }
-                                }
-                                Err(err) => {
-                                    trc::event!(
-                                        Dns(DnsEvent::RecordLookupFailed),
-                                        Url = self.directory.new_order.to_string(),
-                                        Hostname = name.to_string(),
-                                        Details = origin.to_string(),
-                                        Reason = err.to_string(),
-                                    );
-                                }
-                            }
-
-                            tokio::time::sleep(*polling_interval).await;
-                        }
-
-                        if did_propagate {
-                            trc::event!(
-                                Dns(DnsEvent::RecordPropagated),
-                                Url = self.directory.new_order.to_string(),
-                                Hostname = name.to_string(),
-                                Details = origin.to_string(),
-                            );
-                        } else {
-                            trc::event!(
-                                Dns(DnsEvent::RecordPropagationTimeout),
-                                Url = self.directory.new_order.to_string(),
-                                Hostname = name.to_string(),
-                                Details = origin.to_string(),
-                            );
-                        }*/
+                            .map_err(AcmeError::Dns)?;
                     }
                     ChallengeType::DnsPersist01 => return Ok(()),
                     ChallengeType::Unknown => unreachable!(),
@@ -315,7 +242,10 @@ impl AcmeRequestBuilder {
 
         for i in 0u64..5 {
             tokio::time::sleep(retry_after.unwrap_or_else(|| Duration::from_secs(1u64 << i))).await;
-            let response = self.auth(url).await?.assert_reasonable_retry_after()?;
+            let response = self
+                .auth(url)
+                .await?
+                .assert_reasonable_retry_after(self.max_retries)?;
             retry_after = response.retry_after;
 
             match response.body.status {
@@ -344,7 +274,9 @@ impl AcmeRequestBuilder {
             }
         }
 
-        Err(AcmeError::AuthTimeout)
+        Err(AcmeError::AuthTimeout {
+            max_retries: self.max_retries,
+        })
     }
 }
 

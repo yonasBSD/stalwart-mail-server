@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::Server;
 use mail_auth::{
     MessageAuthenticator,
     hickory_resolver::{
@@ -17,7 +16,7 @@ use mail_auth::{
 use registry::schema::{
     enums::{DnsResolverProtocol, PolicyEnforcement},
     prelude::ObjectType,
-    structs::{DnsResolver, MtaSts},
+    structs::{DnsResolver, MtaSts, SystemSettings},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -214,7 +213,22 @@ impl Resolvers {
 impl Policy {
     pub async fn try_parse(bp: &mut Bootstrap) -> Option<Self> {
         let mta = bp.setting_infallible::<MtaSts>().await;
-        if !mta.mx_hosts.is_empty() {
+        let mut mx_hosts = mta.mx_hosts.into_inner();
+
+        if mx_hosts.is_empty() {
+            let settings = bp.setting_infallible::<SystemSettings>().await;
+            let default_host = settings.default_hostname.as_str();
+            mx_hosts = settings
+                .mail_exchangers
+                .iter()
+                .map(|mx| mx.hostname.as_deref().unwrap_or(default_host).to_string())
+                .collect();
+        }
+
+        if !mx_hosts.is_empty() {
+            mx_hosts.sort_unstable();
+            mx_hosts.dedup();
+
             let mut policy = Policy {
                 id: Default::default(),
                 mode: match mta.mode {
@@ -222,8 +236,7 @@ impl Policy {
                     PolicyEnforcement::Testing => Mode::Testing,
                     PolicyEnforcement::Disable => Mode::None,
                 },
-                mx: mta
-                    .mx_hosts
+                mx: mx_hosts
                     .into_iter()
                     .map(|mx| {
                         if let Some(mx) = mx.strip_prefix("*.") {
@@ -236,41 +249,11 @@ impl Policy {
                 max_age: mta.max_age.into_inner().as_secs(),
             };
 
-            policy.mx.sort_unstable();
             policy.id = policy.hash().to_string();
 
             Some(policy)
         } else {
             None
-        }
-    }
-
-    pub fn try_build<I, T>(mut self, names: I) -> Option<Self>
-    where
-        I: IntoIterator<Item = T>,
-        T: AsRef<str>,
-    {
-        if self.mx.is_empty() {
-            let mut mx = Vec::new();
-            for name in names {
-                let name = name.as_ref();
-                if let Some(domain) = name.strip_prefix('.') {
-                    mx.push(MxPattern::StartsWith(domain.to_string()));
-                } else if name != "*" && !name.is_empty() {
-                    mx.push(MxPattern::Equals(name.to_string()));
-                }
-            }
-
-            if !mx.is_empty() {
-                mx.sort_unstable();
-                self.id = self.hash().to_string();
-                self.mx = mx.into_boxed_slice();
-                Some(self)
-            } else {
-                None
-            }
-        } else {
-            Some(self)
         }
     }
 
@@ -280,30 +263,6 @@ impl Policy {
         self.max_age.hash(&mut s);
         self.mx.hash(&mut s);
         s.finish()
-    }
-}
-
-impl Server {
-    pub fn build_mta_sts_policy(&self) -> Option<Policy> {
-        self.core
-            .smtp
-            .session
-            .mta_sts_policy
-            .clone()
-            .and_then(|policy| {
-                policy.try_build(
-                    self.inner
-                        .data
-                        .tls_certificates
-                        .load()
-                        .keys()
-                        .filter(|key| {
-                            !key.starts_with("mta-sts.")
-                                && !key.starts_with("autoconfig.")
-                                && !key.starts_with("autodiscover.")
-                        }),
-                )
-            })
     }
 }
 

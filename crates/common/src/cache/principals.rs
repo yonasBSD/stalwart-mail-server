@@ -24,7 +24,7 @@ use crate::{
 };
 use registry::{
     schema::{
-        enums::{Locale, StorageQuota, TenantStorageQuota},
+        enums::{DkimRotationStage, Locale, StorageQuota, TenantStorageQuota},
         prelude::{ObjectType, Property},
         structs::{
             Account, DkimSignature, Domain, EncryptionAtRest, MailingList, MaskedEmail,
@@ -804,7 +804,9 @@ impl Server {
                     .await?;
                 let mut signatures = Vec::with_capacity(ids.len());
                 for id in ids {
-                    if let Some(signature) = self.registry().object::<DkimSignature>(id).await? {
+                    if let Some(signature) = self.registry().object::<DkimSignature>(id).await?
+                        && matches!(signature.stage(), DkimRotationStage::Active)
+                    {
                         match DkimSigner::new(domain.names[0].to_string(), signature).await {
                             Ok(signer) => signatures.push(signer),
                             Err(err) => {

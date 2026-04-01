@@ -18,8 +18,7 @@ use mail_auth::{
 use registry::schema::{
     enums::DkimCanonicalization,
     structs::{
-        Dkim1Signature, DkimPrivateKey, DkimSignature, Domain, Expression, SecretTextValue,
-        SenderAuth,
+        Dkim1Signature, DkimSignature, Domain, Expression, SecretText, SecretTextValue, SenderAuth,
     },
 };
 use std::time::{Duration, Instant};
@@ -183,7 +182,7 @@ impl Account {
                 selector: "rsa".to_string(),
                 canonicalization: DkimCanonicalization::SimpleRelaxed,
                 domain_id,
-                private_key: DkimPrivateKey::Value(SecretTextValue {
+                private_key: SecretText::Text(SecretTextValue {
                     secret: RSA_KEY.to_string(),
                 }),
                 ..Default::default()
@@ -196,7 +195,7 @@ impl Account {
                 selector: "ed".to_string(),
                 canonicalization: DkimCanonicalization::RelaxedSimple,
                 domain_id,
-                private_key: DkimPrivateKey::Value(SecretTextValue {
+                private_key: SecretText::Text(SecretTextValue {
                     secret: ED25519_KEY.to_string(),
                 }),
                 ..Default::default()

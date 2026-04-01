@@ -301,17 +301,29 @@ impl ParseHttp for Server {
                     self.is_http_anonymous_request_allowed(session.remote_ip)
                         .await?;
 
-                    return if let Some(policy) = self.build_mta_sts_policy() {
+                    return if let Some(policy) = &self.core.smtp.session.mta_sts_policy {
                         Ok(Resource::new("text/plain", policy.to_string().into_bytes())
                             .into_http_response())
                     } else {
                         Err(trc::ResourceEvent::NotFound.into_err())
                     };
                 }
+                ("user-agent-configuration.json", &Method::GET) => {
+                    // Limit anonymous requests
+                    self.is_http_anonymous_request_allowed(session.remote_ip)
+                        .await?;
+                    return Ok(Resource::new(
+                        "application/json",
+                        self.core.network.info.pacc.clone().into_bytes(),
+                    )
+                    .into_http_response());
+                }
                 ("mail-v1.xml", &Method::GET) => {
                     // Limit anonymous requests
                     self.is_http_anonymous_request_allowed(session.remote_ip)
                         .await?;
+
+                    let todo = "fix autoconfig generation";
 
                     return self.handle_autoconfig_request(&req).await;
                 }

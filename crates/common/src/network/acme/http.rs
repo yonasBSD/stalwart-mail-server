@@ -18,6 +18,7 @@ pub(crate) async fn https(
     url: impl AsRef<str>,
     method: Method,
     body: Option<String>,
+    max_retries: u32,
 ) -> AcmeResult<Response> {
     let url = url.as_ref();
     let mut builder = reqwest::Client::builder()
@@ -49,8 +50,9 @@ pub(crate) async fn https(
         response.status(),
         StatusCode::TOO_MANY_REQUESTS | StatusCode::SERVICE_UNAVAILABLE
     ) {
-        Err(AcmeError::RetryAt {
-            time: parse_retry_after(&response),
+        Err(AcmeError::Backoff {
+            wait: parse_retry_after(&response),
+            max_retries,
         })
     } else {
         Err(AcmeError::HttpStatus(response.status()))

@@ -7,14 +7,24 @@
 use super::*;
 use crate::{
     expr::if_block::{BootstrapExprExt, IfBlock},
-    network::security::Security,
+    network::{
+        autoconfig::pacc::{
+            Authentication, Configuration, HttpServer, Info, Logo, OAuthPublic, Protocols,
+            Provider, TextServer,
+        },
+        security::Security,
+    },
 };
 use registry::schema::{
-    enums::ClusterTaskType,
+    enums::{AcmeChallengeType, ClusterTaskType, ProviderInfo, ServiceProtocol},
     prelude::ObjectType,
-    structs::{self, Asn, ClusterTaskGroup, HttpForm, Rate, SystemSettings, TaskManager},
+    structs::{
+        self, AcmeProvider, Asn, ClusterTaskGroup, HttpForm, MailExchanger, Rate, Service,
+        SystemSettings, TaskManager,
+    },
 };
 use std::{str::FromStr, time::Duration};
+use utils::map::vec_map::VecMap;
 
 #[derive(Clone)]
 pub struct Network {
@@ -26,6 +36,16 @@ pub struct Network {
     pub contact_form: Option<ContactForm>,
     pub asn_geo_lookup: AsnGeoLookupConfig,
     pub task_manager: TaskManager,
+    pub has_acme_tls_challenge: bool,
+    pub has_acme_http_challenge: bool,
+    pub info: NetworkInfo,
+}
+
+#[derive(Clone)]
+pub struct NetworkInfo {
+    pub pacc: String,
+    pub mxs: Vec<MailExchanger>,
+    pub services: VecMap<ServiceProtocol, Service>,
 }
 
 #[derive(Clone)]
@@ -131,6 +151,156 @@ impl ContactForm {
 impl Network {
     pub async fn parse(bp: &mut Bootstrap) -> Self {
         let system = bp.setting_infallible::<SystemSettings>().await;
+        let mut has_acme_tls_challenge = false;
+        let mut has_acme_http_challenge = false;
+        let mut has_acme_challenges = false;
+
+        for provider in bp.list_infallible::<AcmeProvider>().await {
+            match provider.object.challenge_type {
+                AcmeChallengeType::Http01 => has_acme_http_challenge = true,
+                AcmeChallengeType::TlsAlpn01 => has_acme_tls_challenge = true,
+                _ => {}
+            }
+            has_acme_challenges = true;
+        }
+
+        if !has_acme_challenges {
+            // Assume this is an initial deployment and optimistically set both to true
+            // to avoid requiring a reload after ACME providers are added
+            has_acme_http_challenge = true;
+            has_acme_tls_challenge = true;
+        }
+
+        let mut pacc = Configuration {
+            protocols: Protocols::default(),
+            authentication: Some(Authentication {
+                oauth_public: None,
+                password: true,
+            }),
+            info: Info {
+                provider: Provider {
+                    name: "Stalwart".into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        };
+
+        for (service, details) in &system.services {
+            let hostname = details
+                .hostname
+                .as_deref()
+                .unwrap_or(&system.default_hostname);
+
+            match service {
+                ServiceProtocol::Jmap => {
+                    pacc.authentication.as_mut().unwrap().oauth_public = OAuthPublic {
+                        issuer: format!("https://{hostname}/",),
+                    }
+                    .into();
+                    pacc.protocols.jmap = HttpServer {
+                        url: format!("https://{hostname}/jmap/session",),
+                    }
+                    .into();
+                }
+                ServiceProtocol::Caldav => {
+                    pacc.protocols.caldav = HttpServer {
+                        url: format!("https://{hostname}/dav/cal/",),
+                    }
+                    .into();
+                }
+                ServiceProtocol::Carddav => {
+                    pacc.protocols.carddav = HttpServer {
+                        url: format!("https://{hostname}/dav/card/",),
+                    }
+                    .into();
+                }
+                ServiceProtocol::Webdav => {
+                    pacc.protocols.webdav = HttpServer {
+                        url: format!("https://{hostname}/dav/file/",),
+                    }
+                    .into();
+                }
+                ServiceProtocol::Imap => {
+                    pacc.protocols.imap = TextServer {
+                        host: hostname.to_string(),
+                    }
+                    .into();
+                }
+                ServiceProtocol::Pop3 => {
+                    pacc.protocols.pop3 = TextServer {
+                        host: hostname.to_string(),
+                    }
+                    .into();
+                }
+                ServiceProtocol::Smtp => {
+                    pacc.protocols.smtp = TextServer {
+                        host: hostname.to_string(),
+                    }
+                    .into();
+                }
+                ServiceProtocol::Managesieve => {
+                    pacc.protocols.managesieve = TextServer {
+                        host: hostname.to_string(),
+                    }
+                    .into();
+                }
+            }
+        }
+
+        for (tag, text) in system.provider_info {
+            match tag {
+                ProviderInfo::ProviderName => pacc.info.provider.name = text,
+                ProviderInfo::ProviderShortName => pacc.info.provider.short_name = Some(text),
+                ProviderInfo::UserDocumentation => {
+                    pacc.info.help.get_or_insert_default().documentation = Some(text)
+                }
+                ProviderInfo::DeveloperDocumentation => {
+                    pacc.info.help.get_or_insert_default().developer = Some(text)
+                }
+                ProviderInfo::ContactUri => {
+                    pacc.info
+                        .help
+                        .get_or_insert_default()
+                        .contact
+                        .get_or_insert_default()
+                        .push(text);
+                }
+                ProviderInfo::LogoUrl => {
+                    let logo = pacc.info.provider.logo.get_or_insert_default();
+                    if logo.is_empty() {
+                        logo.push(Logo {
+                            url: text,
+                            ..Default::default()
+                        });
+                    } else {
+                        logo[0].url = text;
+                    }
+                }
+                ProviderInfo::LogoWidth => {
+                    let logo = pacc.info.provider.logo.get_or_insert_default();
+                    if logo.is_empty() {
+                        logo.push(Logo {
+                            width: text.parse().ok(),
+                            ..Default::default()
+                        });
+                    } else {
+                        logo[0].width = text.parse().ok();
+                    }
+                }
+                ProviderInfo::LogoHeight => {
+                    let logo = pacc.info.provider.logo.get_or_insert_default();
+                    if logo.is_empty() {
+                        logo.push(Logo {
+                            height: text.parse().ok(),
+                            ..Default::default()
+                        });
+                    } else {
+                        logo[0].height = text.parse().ok();
+                    }
+                }
+            }
+        }
 
         let mut network = Network {
             node_id: bp.node_id() as u64,
@@ -141,6 +311,13 @@ impl Network {
             roles: ClusterRoles::default(),
             http: Http::parse(bp).await,
             task_manager: bp.setting_infallible::<TaskManager>().await,
+            has_acme_tls_challenge,
+            has_acme_http_challenge,
+            info: NetworkInfo {
+                mxs: system.mail_exchangers.into_iter().collect(),
+                services: system.services,
+                pacc: serde_json::to_string(&pacc).unwrap_or_default(),
+            },
         };
 
         if let Some(role) = &bp.role {

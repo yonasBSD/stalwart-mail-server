@@ -11,7 +11,7 @@ use crate::registry::{
         account::account_set,
         action::action_set,
         dkim::validate_dkim_signature,
-        domain::validate_domain,
+        domain::{validate_dns_server, validate_domain},
         map_bootstrap_error,
         principal::{
             schedule_account_destruction, validate_account, validate_role, validate_tenant_quota,
@@ -44,7 +44,7 @@ use registry::{
             OBJ_FILTER_ACCOUNT, OBJ_FILTER_TENANT, OBJ_SINGLETON, Object, ObjectInner, ObjectType,
             Property,
         },
-        structs::{Account, Certificate, DkimSignature, Domain, PublicKey, Role, Task},
+        structs::{Account, Certificate, DkimSignature, DnsServer, Domain, PublicKey, Role, Task},
     },
     types::id::ObjectId,
 };
@@ -430,14 +430,14 @@ impl RegistrySet for Server {
                             validate_domain(&set, domain, modification.as_domain(), &mut tasks)
                                 .await?
                         }
+                        ObjectInner::DnsServer(dns) => {
+                            validate_dns_server(&set, dns, modification.as_dns_server()).await?
+                        }
                         ObjectInner::MailingList(_) if is_create => {
                             validate_tenant_quota(&set, TenantStorageQuota::MaxMailingLists).await?
                         }
                         ObjectInner::OAuthClient(_) if is_create => {
                             validate_tenant_quota(&set, TenantStorageQuota::MaxOauthClients).await?
-                        }
-                        ObjectInner::DnsServer(_) if is_create => {
-                            validate_tenant_quota(&set, TenantStorageQuota::MaxDnsServers).await?
                         }
                         ObjectInner::Directory(_) if is_create => {
                             validate_tenant_quota(&set, TenantStorageQuota::MaxDirectories).await?
@@ -563,7 +563,7 @@ impl RegistrySet for Server {
                         for mut task in tasks.drain(..) {
                             match &mut task {
                                 Task::AcmeRenewal(task) => task.domain_id = object_id,
-                                Task::DkimKeyRotation(task) => task.domain_id = object_id,
+                                Task::DkimManagement(task) => task.domain_id = object_id,
                                 Task::DnsManagement(task) => task.domain_id = object_id,
                                 _ => unreachable!(),
                             }
@@ -767,6 +767,16 @@ impl Modification {
             Modification::Create { .. } => None,
             Modification::Update { object, .. } => match &object.inner {
                 ObjectInner::Domain(domain) => Some(domain),
+                _ => None,
+            },
+        }
+    }
+
+    fn as_dns_server(&self) -> Option<&DnsServer> {
+        match self {
+            Modification::Create { .. } => None,
+            Modification::Update { object, .. } => match &object.inner {
+                ObjectInner::DnsServer(dns) => Some(dns),
                 _ => None,
             },
         }

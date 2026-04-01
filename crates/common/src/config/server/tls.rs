@@ -4,21 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::Server;
 use ahash::{AHashMap, AHashSet};
-use dns_update::{
-    Algorithm, DnsUpdater, TsigAlgorithm,
-    dnssec::{
-        self, SigningKey,
-        crypto::{EcdsaSigningKey, Ed25519SigningKey},
-    },
-    providers::{ovh::OvhEndpoint, rfc2136::DnsAddress},
-};
 use rcgen::generate_simple_self_signed;
 use registry::schema::{
-    enums,
     prelude::Object,
-    structs::{Certificate, DnsServer, SystemSettings},
+    structs::{Certificate, SystemSettings},
 };
 use rustls::{
     SupportedProtocolVersion,
@@ -27,198 +17,15 @@ use rustls::{
     version::{TLS12, TLS13},
 };
 use rustls_pemfile::{Item, certs, read_all};
-use rustls_pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
-use std::{io::Cursor, net::SocketAddr, sync::Arc};
+use rustls_pki_types::PrivateKeyDer;
+use std::{io::Cursor, sync::Arc};
 use store::{
     registry::{bootstrap::Bootstrap, write::RegistryWrite},
     write::now,
 };
-use trc::AddContext;
 
 pub static TLS13_VERSION: &[&SupportedProtocolVersion] = &[&TLS13];
 pub static TLS12_VERSION: &[&SupportedProtocolVersion] = &[&TLS12];
-
-impl Server {
-    pub async fn build_dns_updater(&self, id: u64) -> trc::Result<DnsUpdater> {
-        let Some(server) = self
-            .registry()
-            .object::<DnsServer>(id.into())
-            .await
-            .caused_by(trc::location!())?
-        else {
-            trc::bail!(
-                trc::DnsEvent::BuildError
-                    .into_err()
-                    .id(id.to_string())
-                    .details("DNS server settings not found")
-            );
-        };
-
-        match server {
-            DnsServer::Tsig(server) => DnsUpdater::new_rfc2136_tsig(
-                match server.protocol {
-                    enums::IpProtocol::Udp => DnsAddress::Tcp(SocketAddr::new(
-                        server.host.into_inner(),
-                        server.port as u16,
-                    )),
-                    enums::IpProtocol::Tcp => DnsAddress::Udp(SocketAddr::new(
-                        server.host.into_inner(),
-                        server.port as u16,
-                    )),
-                },
-                server.key_name,
-                server
-                    .key
-                    .secret()
-                    .await
-                    .map_err(|err| {
-                        trc::DnsEvent::BuildError
-                            .reason(err)
-                            .details("Failed to obtain TSIG key secret")
-                            .id(id.to_string())
-                    })?
-                    .into_owned()
-                    .into_bytes(),
-                match server.tsig_algorithm {
-                    enums::TsigAlgorithm::HmacMd5 => TsigAlgorithm::HmacMd5,
-                    enums::TsigAlgorithm::Gss => TsigAlgorithm::Gss,
-                    enums::TsigAlgorithm::HmacSha1 => TsigAlgorithm::HmacSha1,
-                    enums::TsigAlgorithm::HmacSha224 => TsigAlgorithm::HmacSha224,
-                    enums::TsigAlgorithm::HmacSha256 => TsigAlgorithm::HmacSha256,
-                    enums::TsigAlgorithm::HmacSha256128 => TsigAlgorithm::HmacSha256_128,
-                    enums::TsigAlgorithm::HmacSha384 => TsigAlgorithm::HmacSha384,
-                    enums::TsigAlgorithm::HmacSha384192 => TsigAlgorithm::HmacSha384_192,
-                    enums::TsigAlgorithm::HmacSha512 => TsigAlgorithm::HmacSha512,
-                    enums::TsigAlgorithm::HmacSha512256 => TsigAlgorithm::HmacSha512_256,
-                },
-            ),
-            DnsServer::Sig0(server) => {
-                let key_bytes = server.key.secret().await.map_err(|err| {
-                    trc::DnsEvent::BuildError
-                        .reason(err)
-                        .details("Failed to obtain key secret")
-                        .id(id.to_string())
-                })?;
-
-                let pem_parsed = pem::parse(key_bytes.as_bytes()).map_err(|err| {
-                    trc::DnsEvent::BuildError
-                        .reason(err)
-                        .details("Failed to parse PEM key")
-                        .id(id.to_string())
-                })?;
-                let pkcs8_der = PrivatePkcs8KeyDer::from(pem_parsed.contents());
-
-                let signing_key: Box<dyn SigningKey> = match server.sig0_algorithm {
-                    enums::Sig0Algorithm::EcdsaP256Sha256 => Box::new(
-                        EcdsaSigningKey::from_pkcs8(&pkcs8_der, dnssec::Algorithm::ECDSAP256SHA256)
-                            .map_err(|err| {
-                                trc::DnsEvent::BuildError
-                                    .reason(err)
-                                    .details("Failed to build ECDSA P-256 signing key")
-                                    .id(id.to_string())
-                            })?,
-                    ),
-                    enums::Sig0Algorithm::EcdsaP384Sha384 => Box::new(
-                        EcdsaSigningKey::from_pkcs8(&pkcs8_der, dnssec::Algorithm::ECDSAP384SHA384)
-                            .map_err(|err| {
-                                trc::DnsEvent::BuildError
-                                    .reason(err)
-                                    .details("Failed to build ECDSA P-384 signing key")
-                                    .id(id.to_string())
-                            })?,
-                    ),
-                    enums::Sig0Algorithm::Ed25519 => {
-                        Box::new(Ed25519SigningKey::from_pkcs8(&pkcs8_der).map_err(|err| {
-                            trc::DnsEvent::BuildError
-                                .reason(err)
-                                .details("Failed to build Ed25519 signing key")
-                                .id(id.to_string())
-                        })?)
-                    }
-                };
-
-                DnsUpdater::new_rfc2136_sig0(
-                    match server.protocol {
-                        enums::IpProtocol::Udp => DnsAddress::Tcp(SocketAddr::new(
-                            server.host.into_inner(),
-                            server.port as u16,
-                        )),
-                        enums::IpProtocol::Tcp => DnsAddress::Udp(SocketAddr::new(
-                            server.host.into_inner(),
-                            server.port as u16,
-                        )),
-                    },
-                    server.signer_name,
-                    signing_key,
-                    server.public_key,
-                    match server.sig0_algorithm {
-                        enums::Sig0Algorithm::EcdsaP256Sha256 => Algorithm::ECDSAP256SHA256,
-                        enums::Sig0Algorithm::EcdsaP384Sha384 => Algorithm::ECDSAP384SHA384,
-                        enums::Sig0Algorithm::Ed25519 => Algorithm::ED25519,
-                    },
-                )
-            }
-            DnsServer::Cloudflare(server) => DnsUpdater::new_cloudflare(
-                server.secret.secret().await.map_err(|err| {
-                    trc::DnsEvent::BuildError
-                        .reason(err)
-                        .details("Failed to obtain key secret")
-                        .id(id.to_string())
-                })?,
-                server.email,
-                server.timeout.into_inner().into(),
-            ),
-            DnsServer::DigitalOcean(server) => DnsUpdater::new_digitalocean(
-                server.secret.secret().await.map_err(|err| {
-                    trc::DnsEvent::BuildError
-                        .reason(err)
-                        .details("Failed to obtain key secret")
-                        .id(id.to_string())
-                })?,
-                server.timeout.into_inner().into(),
-            ),
-            DnsServer::DeSEC(server) => DnsUpdater::new_desec(
-                server.secret.secret().await.map_err(|err| {
-                    trc::DnsEvent::BuildError
-                        .reason(err)
-                        .details("Failed to obtain key secret")
-                        .id(id.to_string())
-                })?,
-                server.timeout.into_inner().into(),
-            ),
-            DnsServer::Ovh(server) => DnsUpdater::new_ovh(
-                server.application_key,
-                server.application_secret.secret().await.map_err(|err| {
-                    trc::DnsEvent::BuildError
-                        .reason(err)
-                        .details("Failed to obtain application secret")
-                        .id(id.to_string())
-                })?,
-                server.consumer_key.secret().await.map_err(|err| {
-                    trc::DnsEvent::BuildError
-                        .reason(err)
-                        .details("Failed to obtain consumer key")
-                        .id(id.to_string())
-                })?,
-                match server.ovh_endpoint {
-                    enums::OvhEndpoint::OvhEu => OvhEndpoint::OvhEu,
-                    enums::OvhEndpoint::OvhCa => OvhEndpoint::OvhCa,
-                    enums::OvhEndpoint::KimsufiEu => OvhEndpoint::KimsufiEu,
-                    enums::OvhEndpoint::KimsufiCa => OvhEndpoint::KimsufiCa,
-                    enums::OvhEndpoint::SoyoustartEu => OvhEndpoint::SoyoustartEu,
-                    enums::OvhEndpoint::SoyoustartCa => OvhEndpoint::SoyoustartCa,
-                },
-                server.timeout.into_inner().into(),
-            ),
-        }
-        .map_err(|err| {
-            trc::DnsEvent::BuildError
-                .reason(err)
-                .details("Failed to build DNS updater")
-                .id(id.to_string())
-        })
-    }
-}
 
 pub(crate) async fn parse_certificates(
     bp: &mut Bootstrap,

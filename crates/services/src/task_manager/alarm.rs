@@ -116,7 +116,7 @@ async fn send_email_alarm(
             AccountId = account_id,
             DocumentId = document_id,
         );
-        return Ok(TaskResult::Success);
+        return Ok(TaskResult::Success(vec![]));
     }
     let account_info = server
         .account_info(account_id)
@@ -130,7 +130,7 @@ async fn send_email_alarm(
             AccountId = account_id,
             DocumentId = document_id,
         );
-        return Ok(TaskResult::Success);
+        return Ok(TaskResult::Success(vec![]));
     }
 
     // Fetch event
@@ -151,7 +151,7 @@ async fn send_email_alarm(
             DocumentId = document_id,
         );
 
-        return Ok(TaskResult::Success);
+        return Ok(TaskResult::Success(vec![]));
     };
 
     // Unarchive event
@@ -164,7 +164,7 @@ async fn send_email_alarm(
     let account_main_domain = account_main_email.rsplit('@').next().unwrap_or("localhost");
     let logo_cid = format!("logo.{}@{account_main_domain}", now());
     let Some(tpl) = build_template(server, &account_info, task, event, &logo_cid).await? else {
-        return Ok(TaskResult::Success);
+        return Ok(TaskResult::Success(vec![]));
     };
     let txt_body = html_to_text(&tpl.body);
 
@@ -335,7 +335,7 @@ async fn send_display_alarm(
             DocumentId = document_id,
         );
 
-        return Ok(TaskResult::Success);
+        return Ok(TaskResult::Success(vec![]));
     };
 
     // Unarchive event
@@ -411,7 +411,7 @@ fn build_next_alarm(
             next_alarm.build_write_ops(account_id, document_id),
         ))
     } else {
-        Ok(TaskResult::Success)
+        Ok(TaskResult::Success(vec![]))
     }
 }
 

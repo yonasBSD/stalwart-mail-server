@@ -120,8 +120,13 @@ impl CacheInvalidationBuilder {
                 }
             }
 
-            (ObjectInner::DkimSignature(_), ObjectInner::DkimSignature(_)) => {
-                self.invalidate(CacheInvalidation::DkimSignature(id));
+            (ObjectInner::DkimSignature(current), ObjectInner::DkimSignature(new)) => {
+                let current_domain_id = current.domain_id().document_id();
+                let new_domain_id = new.domain_id().document_id();
+                self.invalidate(CacheInvalidation::DkimSignature(current_domain_id));
+                if current_domain_id != new_domain_id {
+                    self.invalidate(CacheInvalidation::DkimSignature(new_domain_id));
+                }
             }
 
             (ObjectInner::Tenant(current), ObjectInner::Tenant(new)) => {
@@ -172,8 +177,10 @@ impl CacheInvalidationBuilder {
                 self.invalidate(CacheInvalidation::Domain(id));
                 self.invalidate(CacheInvalidation::DomainLogo(id));
             }
-            ObjectInner::DkimSignature(_) => {
-                self.invalidate(CacheInvalidation::DkimSignature(id));
+            ObjectInner::DkimSignature(object) => {
+                self.invalidate(CacheInvalidation::DkimSignature(
+                    object.domain_id().document_id(),
+                ));
             }
             ObjectInner::Tenant(_) => {
                 self.invalidate(CacheInvalidation::Tenant(id));
@@ -191,6 +198,11 @@ impl CacheInvalidationBuilder {
 
     pub fn invalidate(&mut self, change: CacheInvalidation) {
         self.changes.insert(change);
+    }
+
+    pub fn with_invalidation(mut self, change: CacheInvalidation) -> Self {
+        self.invalidate(change);
+        self
     }
 }
 

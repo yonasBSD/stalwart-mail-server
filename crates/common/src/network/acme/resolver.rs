@@ -75,24 +75,14 @@ impl Server {
         }
     }
 
+    #[inline(always)]
     pub fn has_acme_tls_providers(&self) -> bool {
-        let todo = "fix";
-        false
-        /*self.core
-        .acme
-        .providers
-        .values()
-        .any(|p| matches!(p.challenge, ChallengeSettings::TlsAlpn01))*/
+        self.core.network.has_acme_tls_challenge
     }
 
+    #[inline(always)]
     pub fn has_acme_http_providers(&self) -> bool {
-        let todo = "fix";
-        false
-        /*self.core
-        .acme
-        .providers
-        .values()
-        .any(|p| matches!(p.challenge, ChallengeSettings::Http01))*/
+        self.core.network.has_acme_http_challenge
     }
 }
 

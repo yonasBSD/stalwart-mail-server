@@ -398,6 +398,7 @@ async fn insert_safe_defaults(bp: &mut Bootstrap) -> trc::Result<()> {
             }
         }
 
+        let todo = "review";
         #[cfg(not(feature = "test_mode"))]
         if let Some(domain_id) = default_domain_id {
             let now = store::write::now();
@@ -467,11 +468,8 @@ async fn insert_safe_defaults(bp: &mut Bootstrap) -> trc::Result<()> {
     {
         for (protocol, name, port, tls_implicit) in [
             (NetworkListenerProtocol::Smtp, "smtp", 25, false),
-            (NetworkListenerProtocol::Smtp, "submission", 587, false),
             (NetworkListenerProtocol::Smtp, "submissions", 465, true),
-            (NetworkListenerProtocol::Imap, "imap", 143, false),
             (NetworkListenerProtocol::Imap, "imaps", 993, true),
-            (NetworkListenerProtocol::Pop3, "pop3", 110, false),
             (NetworkListenerProtocol::Pop3, "pop3s", 995, true),
             (NetworkListenerProtocol::ManageSieve, "sieve", 4190, false),
             (NetworkListenerProtocol::Http, "https", 443, true),

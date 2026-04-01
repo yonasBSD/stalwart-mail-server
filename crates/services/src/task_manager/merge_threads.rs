@@ -129,7 +129,7 @@ async fn merge_threads(
 
         if thread_merge.num_thread_ids() < 2 {
             // Another process merged the threads already?
-            return Ok(TaskResult::Success);
+            return Ok(TaskResult::Success(vec![]));
         }
 
         // Add other messages with the same subject to the merge if they share a
@@ -239,7 +239,7 @@ async fn merge_threads(
         }
 
         match server.commit_batch(batch).await {
-            Ok(_) => return Ok(TaskResult::Success),
+            Ok(_) => return Ok(TaskResult::Success(vec![])),
             Err(err) if err.is_assertion_failure() && try_count < MAX_RETRIES => {
                 let backoff = store::rand::rng().random_range(50..=300);
                 tokio::time::sleep(Duration::from_millis(backoff)).await;

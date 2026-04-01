@@ -209,7 +209,7 @@ impl From<SPFDomainScope> for enums::SpfDomainScope {
 impl From<structs::DmarcPolicyOverrideReason> for PolicyOverrideReason {
     fn from(value: structs::DmarcPolicyOverrideReason) -> Self {
         PolicyOverrideReason {
-            type_: value.class.into(),
+            type_: value.override_type.into(),
             comment: value.comment,
         }
     }
@@ -218,7 +218,7 @@ impl From<structs::DmarcPolicyOverrideReason> for PolicyOverrideReason {
 impl From<PolicyOverrideReason> for structs::DmarcPolicyOverrideReason {
     fn from(value: PolicyOverrideReason) -> Self {
         structs::DmarcPolicyOverrideReason {
-            class: value.type_.into(),
+            override_type: value.type_.into(),
             comment: value.comment,
         }
     }

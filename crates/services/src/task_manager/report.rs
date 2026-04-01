@@ -35,10 +35,10 @@ async fn submit_report(server: &Server, report_id: ReportId) -> trc::Result<Task
         ReportId::Dmarc(item_id) => server
             .send_dmarc_aggregate_report(item_id)
             .await
-            .map(|_| TaskResult::Success),
+            .map(|_| TaskResult::Success(vec![])),
         ReportId::Tls(item_id) => server
             .send_tls_aggregate_report(item_id)
             .await
-            .map(|_| TaskResult::Success),
+            .map(|_| TaskResult::Success(vec![])),
     }
 }

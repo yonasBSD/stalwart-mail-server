@@ -37,6 +37,9 @@ This version includes **multiple breaking changes**. If you are upgrading from v
   - Store DKIM keys in the database (#1264)
 - DNS Management:
   - RFC2136 SIG0 support (#856)
+  - BunnyDNS provider support
+  - Porkbun provider support
+  - DNSimple provider support
 - Clustering:
   - Automatic cluster node ID generation and management.
   - Unified cluster management (#960)
@@ -53,6 +56,7 @@ This version includes **multiple breaking changes**. If you are upgrading from v
 
 ## Changed
 - Replaced REST API with JMAP API (#2262 #959 #1480)
+- Removed support for Authenticated Received Chain (ARC) sealing ([learn more](https://mailarchive.ietf.org/arch/msg/dmarc/KvX3-H1SL0Gh3IDl7FuR2hoR87M/)).
 - Directory: Removed `smtp`, `imap` and `memory` directory backends.
 
 ## Fixed
@@ -63,7 +67,7 @@ This version includes **multiple breaking changes**. If you are upgrading from v
   - Recreated account cannot log in until server is restarted (#1469)
   - Subaddressing does not work for groups (#475)
   - New LDAP aliases are rejected (#1318). 
-- MTA
+- MTA:
   - Relay to IP addresses (#838)
   - Duplicate delivery inverted check
   - SASL challenge responses include invalid `Go ahead` text
@@ -79,7 +83,6 @@ This version includes **multiple breaking changes**. If you are upgrading from v
 - Meilisearch: Make `id` sorteable.
 - Spam filter: Skip invalid messages during training.
 - Calendar: Include minutes in localized invite templates (#2828)
-
 
 ## [0.15.5] - 2026-02-14
 

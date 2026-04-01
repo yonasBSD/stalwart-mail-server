@@ -7,12 +7,12 @@
 use crate::registry::{
     EnterpriseRegistry,
     mapping::{
-        RegistryGetResponse, account::account_get, dkim::generate_dkim_public_key, log::log_get,
+        RegistryGetResponse, account::account_get, log::log_get,
         queued_message::queued_message_get, report::report_get, spam_sample::spam_sample_get,
         task::task_get,
     },
 };
-use common::{Server, auth::AccessToken};
+use common::{Server, auth::AccessToken, network::dkim::generate_dkim_public_key};
 use jmap_proto::{
     method::get::{GetRequest, GetResponse},
     object::registry::Registry,
@@ -257,7 +257,10 @@ impl RegistryGet for Server {
                             if get.properties.is_empty()
                                 || get.properties.contains(&Property::DnsZoneFile) =>
                         {
-                            let todo = "domain dns zone file";
+                            extra_properties.append(
+                                Property::DnsZoneFile,
+                                JmapValue::Str(self.build_bind_dns_records(id, obj).await?.into()),
+                            );
                         }
                         _ => {}
                     }

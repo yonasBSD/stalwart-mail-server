@@ -7,15 +7,15 @@
 use crate::registry::mapping::{
     ObjectResponse, RegistrySetResponse, ValidationResult, principal::validate_tenant_quota,
 };
-use common::network::dkim::generate_dkim_selector;
+use common::network::{dkim::generate_dkim_selector, dns::update::DnsUpdater};
 use jmap_proto::error::set::SetError;
 use registry::{
     schema::{
-        enums::{AcmeChallengeType, DkimSignatureType, TaskDkimRotationStage, TenantStorageQuota},
+        enums::{AcmeChallengeType, DkimSignatureType, DnsRecordType, TenantStorageQuota},
         prelude::Property,
         structs::{
             AcmeProvider, CertificateManagement, DkimManagement, DkimManagementProperties,
-            DnsManagement, Domain, Task, TaskDkimRotation, TaskDnsManagement, TaskDomainManagement,
+            DnsManagement, DnsServer, Domain, Task, TaskDnsManagement, TaskDomainManagement,
             TaskStatus,
         },
     },
@@ -62,6 +62,9 @@ pub(crate) async fn validate_domain(
     }
 
     // Schedule DNS update task
+    let will_trigger_dkim = matches!(domain.dkim_management, DkimManagement::Automatic(_))
+        && old_domain
+            .is_none_or(|old| !matches!(old.dkim_management, DkimManagement::Automatic(_)));
     let will_trigger_acme = if let DnsManagement::Automatic(details) = &domain.dns_management
         && old_domain.is_none_or(|old| !matches!(old.dns_management, DnsManagement::Automatic(_)))
     {
@@ -72,7 +75,14 @@ pub(crate) async fn validate_domain(
             );
         tasks.push(Task::DnsManagement(TaskDnsManagement {
             domain_id: Id::default(),
-            update_records: Map::new(details.dns_publish_records.as_slice().to_vec()),
+            update_records: Map::new(
+                details
+                    .publish_records
+                    .iter()
+                    .filter(|&&r| r != DnsRecordType::Dkim || !will_trigger_dkim)
+                    .copied()
+                    .collect(),
+            ),
             on_success_renew_certificate,
             status: TaskStatus::now(),
         }));
@@ -82,16 +92,9 @@ pub(crate) async fn validate_domain(
     };
 
     // Schedule DKIM key rotation task
-    if matches!(domain.dkim_management, DkimManagement::Automatic(_))
-        && old_domain.is_none_or(|old| !matches!(old.dkim_management, DkimManagement::Automatic(_)))
-    {
-        tasks.push(Task::DkimKeyRotation(TaskDkimRotation {
+    if will_trigger_dkim {
+        tasks.push(Task::DkimManagement(TaskDomainManagement {
             domain_id: Id::default(),
-            stage: if matches!(domain.dkim_management, DkimManagement::Automatic(_)) {
-                TaskDkimRotationStage::GenerateAndPublish
-            } else {
-                TaskDkimRotationStage::Generate
-            },
             status: TaskStatus::now(),
         }));
     }
@@ -117,7 +120,7 @@ pub(crate) async fn validate_domain(
                 .with_description("ACME provider not found")));
         };
 
-        if matches!(provider.class, AcmeChallengeType::Dns01)
+        if matches!(provider.challenge_type, AcmeChallengeType::Dns01)
             && !matches!(domain.dns_management, DnsManagement::Automatic(_))
         {
             return Ok(Err(SetError::invalid_properties()
@@ -131,6 +134,32 @@ pub(crate) async fn validate_domain(
             domain_id: Id::default(),
             status: TaskStatus::now(),
         }));
+    }
+
+    Ok(Ok(response))
+}
+
+pub(crate) async fn validate_dns_server(
+    set: &RegistrySetResponse<'_>,
+    dns: &mut DnsServer,
+    old_dns: Option<&DnsServer>,
+) -> ValidationResult {
+    let response = if old_dns.is_none() {
+        match validate_tenant_quota(set, TenantStorageQuota::MaxDnsServers).await? {
+            Ok(response) => response,
+            Err(err) => {
+                return Ok(Err(err));
+            }
+        }
+    } else {
+        ObjectResponse::default()
+    };
+
+    if old_dns.is_none_or(|old_dns| old_dns != dns)
+        && let Err(err) = DnsUpdater::build(dns.clone(), set.server.core.clone()).await
+    {
+        return Ok(Err(SetError::invalid_properties()
+            .with_description(format!("Failed to build DNS server: {err}"))));
     }
 
     Ok(Ok(response))

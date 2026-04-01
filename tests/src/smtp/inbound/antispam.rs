@@ -95,7 +95,7 @@ async fn antispam() {
         .await;
     let model_id = admin
         .registry_create_object(AiModel {
-            class: AiModelType::Chat,
+            model_type: AiModelType::Chat,
             allow_invalid_certs: true,
             model: "gpt-dummy".to_string(),
             name: "dummy".to_string(),

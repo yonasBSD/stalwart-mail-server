@@ -86,7 +86,7 @@ impl SearchIndexTask for Server {
                     let result = match document {
                         Ok(Some(doc)) if !doc.is_empty() => {
                             document_insertions.push(doc);
-                            TaskResult::Success
+                            TaskResult::Success(vec![])
                         }
                         Err(err) => {
                             let result = TaskResult::temporary(err.to_string());
@@ -121,7 +121,7 @@ impl SearchIndexTask for Server {
                     let result = match build_tracing_span_document(self, task.trace_id.id()).await {
                         Ok(Some(doc)) if !doc.is_empty() => {
                             document_insertions.push(doc);
-                            TaskResult::Success
+                            TaskResult::Success(vec![])
                         }
                         Err(err) => {
                             let result = TaskResult::temporary(err.to_string());
@@ -187,7 +187,7 @@ impl SearchIndexTask for Server {
                     results.push(IndexTaskResult {
                         task_type: TaskType::Delete,
                         index: task.document_type,
-                        result: TaskResult::Success,
+                        result: TaskResult::Success(vec![]),
                     });
                 }
                 _ => unreachable!(),
@@ -204,7 +204,7 @@ impl SearchIndexTask for Server {
             );
             for r in results.iter_mut() {
                 if r.task_type == TaskType::Delete
-                    && r.result == TaskResult::Success
+                    && r.result.is_success()
                     && r.index == IndexDocumentType::Email
                 {
                     r.result =
@@ -223,7 +223,7 @@ impl SearchIndexTask for Server {
                     .details("Failed to index documents")
             );
             for r in results.iter_mut() {
-                if r.task_type == TaskType::Insert && r.result == TaskResult::Success {
+                if r.task_type == TaskType::Insert && r.result.is_success() {
                     r.result = TaskResult::temporary("Failed to index documents");
                 }
             }
@@ -278,7 +278,7 @@ impl SearchIndexTask for Server {
                         .ctx(trc::Key::Collection, index.name())
                 );
                 for r in results.iter_mut() {
-                    if r.task_type == TaskType::Delete && r.result == TaskResult::Success {
+                    if r.task_type == TaskType::Delete && r.result.is_success() {
                         r.result = TaskResult::temporary("Failed to delete documents from index");
                     }
                 }
