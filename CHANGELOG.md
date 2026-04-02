@@ -61,12 +61,13 @@ This version includes **multiple breaking changes**. If you are upgrading from v
 
 ## Fixed
 - Directory:
-  - Cannot remove built-in "admin" role from user once it was assigend (#1467)
+  - Cannot remove built-in "admin" role from user once it was assigned (#1467)
   - Delete associated records (#963)
   - Updated Role permissions not applied (#2038)
   - Recreated account cannot log in until server is restarted (#1469)
   - Subaddressing does not work for groups (#475)
   - New LDAP aliases are rejected (#1318). 
+  - Validate account and group names (#2209)
 - MTA:
   - Relay to IP addresses (#838)
   - Duplicate delivery inverted check

@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::{HttpContext, HttpRequest, HttpSessionData};
 use common::{
     Server,
     expr::{functions::ResolveVariable, *},
@@ -12,29 +13,20 @@ use compact_str::{ToCompactString, format_compact};
 use hyper::StatusCode;
 use registry::schema::enums::ExpressionVariable;
 
-use crate::{HttpContext, HttpRequest, HttpSessionData};
-
 impl<'x> HttpContext<'x> {
     pub fn new(session: &'x HttpSessionData, req: &'x HttpRequest) -> Self {
         Self { session, req }
     }
 
-    pub async fn resolve_response_url(&self, server: &Server) -> String {
-        server
-            .eval_if(
-                &server.core.network.http.response_url,
-                self,
-                self.session.session_id,
+    pub fn resolve_response_url(&self, server: &Server) -> String {
+        if self.session.is_tls {
+            server.core.network.http.url_https.clone()
+        } else {
+            format!(
+                "{}:{}",
+                server.core.network.http.url_http, self.session.local_port
             )
-            .await
-            .unwrap_or_else(|| {
-                format!(
-                    "http{}://{}:{}",
-                    if self.session.is_tls { "s" } else { "" },
-                    self.session.local_ip,
-                    self.session.local_port
-                )
-            })
+        }
     }
 
     pub async fn has_endpoint_access(&self, server: &Server) -> StatusCode {

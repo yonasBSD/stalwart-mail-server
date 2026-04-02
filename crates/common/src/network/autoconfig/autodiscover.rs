@@ -4,121 +4,17 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{Server, manager::application::Resource};
-use http_proto::*;
+use crate::{Server, manager::application::Resource};
 use quick_xml::Reader;
 use quick_xml::events::Event;
-use registry::schema::enums::NetworkListenerProtocol;
-use registry::schema::structs::NetworkListener;
+use registry::schema::enums::ServiceProtocol;
 use std::fmt::Write;
-use std::future::Future;
-use utils::url_params::UrlParams;
 
-pub trait Autoconfig: Sync + Send {
-    fn handle_autoconfig_request(
-        &self,
-        req: &HttpRequest,
-    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
-    fn handle_autodiscover_request(
+impl Server {
+    pub async fn handle_autodiscover_request(
         &self,
         body: Option<Vec<u8>>,
-    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
-}
-
-impl Autoconfig for Server {
-    async fn handle_autoconfig_request(&self, req: &HttpRequest) -> trc::Result<HttpResponse> {
-        // Obtain parameters
-        let params = UrlParams::new(req.uri().query());
-        let emailaddress = params
-            .get("emailaddress")
-            .unwrap_or_default()
-            .to_lowercase();
-        let Some((_, domain)) = emailaddress.rsplit_once('@') else {
-            return Err(trc::ResourceEvent::BadParameters
-                .into_err()
-                .details("Missing domain in email address"));
-        };
-        let listeners = self.registry().list::<NetworkListener>().await?;
-        let server_name = &self.core.network.server_name;
-
-        // Build XML response
-        let mut config = String::with_capacity(1024);
-        config.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
-        config.push_str("<clientConfig version=\"1.1\">\n");
-        let _ = writeln!(&mut config, "\t<emailProvider id=\"{domain}\">");
-        let _ = writeln!(&mut config, "\t\t<domain>{domain}</domain>");
-        let _ = writeln!(&mut config, "\t\t<displayName>{emailaddress}</displayName>");
-        let _ = writeln!(
-            &mut config,
-            "\t\t<displayShortName>{domain}</displayShortName>"
-        );
-        for listener in listeners {
-            let listener = listener.object;
-            let Some(port) = listener.bind.as_slice().first().map(|l| l.0.port()) else {
-                continue;
-            };
-            let (protocol, tag) = match listener.protocol {
-                NetworkListenerProtocol::Smtp if port != 25 => ("smtp", "outgoingServer"),
-                NetworkListenerProtocol::Imap => ("imap", "incomingServer"),
-                NetworkListenerProtocol::Pop3 => ("pop3", "incomingServer"),
-                _ => continue,
-            };
-            let _ = writeln!(&mut config, "\t\t<{tag} type=\"{protocol}\">");
-            let _ = writeln!(&mut config, "\t\t\t<hostname>{server_name}</hostname>");
-            let _ = writeln!(&mut config, "\t\t\t<port>{port}</port>");
-            let _ = writeln!(
-                &mut config,
-                "\t\t\t<socketType>{}</socketType>",
-                if listener.tls_implicit {
-                    "SSL"
-                } else {
-                    "STARTTLS"
-                }
-            );
-            let _ = writeln!(&mut config, "\t\t\t<username>{emailaddress}</username>");
-            let _ = writeln!(
-                &mut config,
-                "\t\t\t<authentication>password-cleartext</authentication>"
-            );
-            let _ = writeln!(&mut config, "\t\t</{tag}>");
-        }
-
-        config.push_str("\t</emailProvider>\n");
-
-        for (tag, protocol, url) in [
-            ("addressBook", "carddav", "card"),
-            ("calendar", "caldav", "cal"),
-            ("fileShare", "webdav", "file"),
-        ] {
-            let _ = writeln!(&mut config, "\t<{tag} type=\"{protocol}\">");
-            let _ = writeln!(&mut config, "\t\t<username>{emailaddress}</username>");
-            let _ = writeln!(
-                &mut config,
-                "\t\t<authentication>http-basic</authentication>"
-            );
-            let _ = writeln!(
-                &mut config,
-                "\t\t<serverURL>https://{server_name}/dav/{url}</serverURL>"
-            );
-            let _ = writeln!(&mut config, "\t</{tag}>");
-        }
-
-        let _ = writeln!(
-            &mut config,
-            "\t<clientConfigUpdate url=\"https://autoconfig.{domain}/mail/config-v1.1.xml\"></clientConfigUpdate>"
-        );
-        config.push_str("</clientConfig>\n");
-
-        Ok(
-            Resource::new("application/xml; charset=utf-8", config.into_bytes())
-                .into_http_response(),
-        )
-    }
-
-    async fn handle_autodiscover_request(
-        &self,
-        body: Option<Vec<u8>>,
-    ) -> trc::Result<HttpResponse> {
+    ) -> trc::Result<Resource<Vec<u8>>> {
         // Obtain parameters
         let emailaddress = parse_autodiscover_request(body.as_deref().unwrap_or_default())
             .map_err(|err| {
@@ -127,8 +23,7 @@ impl Autoconfig for Server {
                     .details("Failed to parse autodiscover request")
                     .ctx(trc::Key::Reason, err)
             })?;
-        let listeners = self.registry().list::<NetworkListener>().await?;
-        let server_name = &self.core.network.server_name;
+        let default_host = &self.core.network.server_name;
 
         // Build XML response
         let mut config = String::with_capacity(1024);
@@ -159,47 +54,47 @@ impl Autoconfig for Server {
         let _ = writeln!(&mut config, "\t\t<Account>");
         let _ = writeln!(&mut config, "\t\t\t<AccountType>email</AccountType>");
         let _ = writeln!(&mut config, "\t\t\t<Action>settings</Action>");
-        for listener in listeners {
-            let listener = listener.object;
-            let Some(port) = listener.bind.as_slice().first().map(|l| l.0.port()) else {
-                continue;
-            };
-
-            let protocol = match listener.protocol {
-                NetworkListenerProtocol::Imap => "IMAP",
-                NetworkListenerProtocol::Pop3 => "POP3",
-                NetworkListenerProtocol::Smtp if port != 25 => "SMTP",
+        for (protocol, service) in &self.core.network.info.services {
+            let (protocol, ports) = match protocol {
+                ServiceProtocol::Imap => ("IMAP", [143, 993]),
+                ServiceProtocol::Pop3 => ("POP3", [110, 995]),
+                ServiceProtocol::Smtp => ("SMTP", [587, 465]),
                 _ => continue,
             };
 
-            let _ = writeln!(&mut config, "\t\t\t<Protocol>");
-            let _ = writeln!(&mut config, "\t\t\t\t<Type>{protocol}</Type>",);
-            let _ = writeln!(&mut config, "\t\t\t\t<Server>{server_name}</Server>");
-            let _ = writeln!(&mut config, "\t\t\t\t<Port>{port}</Port>");
-            let _ = writeln!(&mut config, "\t\t\t\t<LoginName>{emailaddress}</LoginName>");
-            let _ = writeln!(&mut config, "\t\t\t\t<AuthRequired>on</AuthRequired>");
-            let _ = writeln!(&mut config, "\t\t\t\t<DirectoryPort>0</DirectoryPort>");
-            let _ = writeln!(&mut config, "\t\t\t\t<ReferralPort>0</ReferralPort>");
-            let _ = writeln!(
-                &mut config,
-                "\t\t\t\t<SSL>{}</SSL>",
-                if listener.tls_implicit { "on" } else { "off" }
-            );
-            if listener.tls_implicit {
-                let _ = writeln!(&mut config, "\t\t\t\t<Encryption>TLS</Encryption>");
+            for (is_tls, port) in ports.into_iter().enumerate() {
+                if is_tls == 1 || service.cleartext {
+                    let server_name = service.hostname.as_deref().unwrap_or(default_host);
+                    let _ = writeln!(&mut config, "\t\t\t<Protocol>");
+                    let _ = writeln!(&mut config, "\t\t\t\t<Type>{protocol}</Type>",);
+                    let _ = writeln!(&mut config, "\t\t\t\t<Server>{server_name}</Server>");
+                    let _ = writeln!(&mut config, "\t\t\t\t<Port>{port}</Port>");
+                    let _ = writeln!(&mut config, "\t\t\t\t<LoginName>{emailaddress}</LoginName>");
+                    let _ = writeln!(&mut config, "\t\t\t\t<AuthRequired>on</AuthRequired>");
+                    let _ = writeln!(&mut config, "\t\t\t\t<DirectoryPort>0</DirectoryPort>");
+                    let _ = writeln!(&mut config, "\t\t\t\t<ReferralPort>0</ReferralPort>");
+                    let _ = writeln!(
+                        &mut config,
+                        "\t\t\t\t<SSL>{}</SSL>",
+                        if is_tls == 1 { "on" } else { "off" }
+                    );
+                    if is_tls == 1 {
+                        let _ = writeln!(&mut config, "\t\t\t\t<Encryption>TLS</Encryption>");
+                    }
+                    let _ = writeln!(&mut config, "\t\t\t\t<SPA>off</SPA>");
+                    let _ = writeln!(&mut config, "\t\t\t</Protocol>");
+                }
             }
-            let _ = writeln!(&mut config, "\t\t\t\t<SPA>off</SPA>");
-            let _ = writeln!(&mut config, "\t\t\t</Protocol>");
         }
 
         let _ = writeln!(&mut config, "\t\t</Account>");
         let _ = writeln!(&mut config, "\t</Response>");
         let _ = writeln!(&mut config, "</Autodiscover>");
 
-        Ok(
-            Resource::new("application/xml; charset=utf-8", config.into_bytes())
-                .into_http_response(),
-        )
+        Ok(Resource::new(
+            "application/xml; charset=utf-8",
+            config.into_bytes(),
+        ))
     }
 }
 

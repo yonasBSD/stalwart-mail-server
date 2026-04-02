@@ -85,6 +85,7 @@ rasn-pkix = "0.10"
 sequoia-openpgp = { version = "2.0", default-features = false, features = ["crypto-rust", "allow-experimental-crypto", "allow-variable-time-crypto"] }
 zxcvbn = "3.1.0"
 pkcs8 = { version = "0.10.2", features = ["alloc", "std"] }
+quick-xml = "0.39"
 
 [target.'cfg(unix)'.dependencies]
 privdrop = "0.5.3"

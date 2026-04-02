@@ -13,7 +13,6 @@ use crate::{
             registration::ClientRegistrationHandler, token::TokenHandler,
         },
     },
-    autoconfig::Autoconfig,
     form::FormHandler,
     management::{ManagementApi, ToManageHttpResponse},
 };
@@ -200,14 +199,14 @@ impl ParseHttp for Server {
                                 self.authenticate_headers(&req, &session).await?;
 
                             self.handle_session_resource(
-                                ctx.resolve_response_url(self).await,
+                                ctx.resolve_response_url(self),
                                 &access_token,
                             )
                             .await
                             .map(|s| s.into_http_response())
                         } else {
                             Ok(Session::new(
-                                ctx.resolve_response_url(self).await,
+                                ctx.resolve_response_url(self),
                                 &self.core.jmap.capabilities,
                             )
                             .into_http_response())
@@ -323,9 +322,10 @@ impl ParseHttp for Server {
                     self.is_http_anonymous_request_allowed(session.remote_ip)
                         .await?;
 
-                    let todo = "fix autoconfig generation";
-
-                    return self.handle_autoconfig_request(&req).await;
+                    return self
+                        .handle_autoconfig_request(req.uri().query())
+                        .await
+                        .map(|resource| resource.into_http_response());
                 }
                 ("autoconfig", &Method::GET) => {
                     if path.next().unwrap_or_default() == "mail"
@@ -335,7 +335,10 @@ impl ParseHttp for Server {
                         self.is_http_anonymous_request_allowed(session.remote_ip)
                             .await?;
 
-                        return self.handle_autoconfig_request(&req).await;
+                        return self
+                            .handle_autoconfig_request(req.uri().query())
+                            .await
+                            .map(|resource| resource.into_http_response());
                     }
                 }
                 (_, &Method::OPTIONS) => {
@@ -455,7 +458,10 @@ impl ParseHttp for Server {
                     self.is_http_anonymous_request_allowed(session.remote_ip)
                         .await?;
 
-                    return self.handle_autoconfig_request(&req).await;
+                    return self
+                        .handle_autoconfig_request(req.uri().query())
+                        .await
+                        .map(|resource| resource.into_http_response());
                 }
             }
             "calendar" => {
@@ -487,7 +493,7 @@ impl ParseHttp for Server {
                         });
                 }
             }
-            "autodiscover" | "Autodiscover" => {
+            "autodiscover" | "Autodiscover" | "AutoDiscover" => {
                 if req.method() == Method::POST
                     && path
                         .next()
@@ -502,7 +508,27 @@ impl ParseHttp for Server {
                         .handle_autodiscover_request(
                             fetch_body(&mut req, 8192, session.session_id).await,
                         )
-                        .await;
+                        .await
+                        .map(|resource| resource.into_http_response());
+                } else if req.method() == Method::POST
+                    && path
+                        .next()
+                        .unwrap_or_default()
+                        .eq_ignore_ascii_case("autodiscover.json")
+                {
+                    // Limit anonymous requests
+                    self.is_http_anonymous_request_allowed(session.remote_ip)
+                        .await?;
+
+                    return self
+                        .handle_autodiscover_v2_request(req.uri().query())
+                        .await
+                        .map(|result| match result {
+                            Ok(resource) => resource.into_http_response(),
+                            Err(err) => HttpResponse::new(StatusCode::BAD_REQUEST)
+                                .with_content_type("application/json; charset=utf-8")
+                                .with_text_body(err),
+                        });
                 }
             }
             "robots.txt" => {

@@ -16,7 +16,7 @@ use mail_auth::{
     spf::Spf,
 };
 use registry::schema::{
-    enums::DkimCanonicalization,
+    enums::{DkimCanonicalization, DkimRotationStage},
     structs::{
         Dkim1Signature, DkimSignature, Domain, Expression, SecretText, SecretTextValue, SenderAuth,
     },
@@ -178,7 +178,7 @@ impl Account {
     pub async fn create_dkim_signatures(&self, domain_id: Id) -> Vec<Id> {
         let rsa_id = self
             .registry_create_object(DkimSignature::Dkim1RsaSha256(Dkim1Signature {
-                enabled: true,
+                stage: DkimRotationStage::Active,
                 selector: "rsa".to_string(),
                 canonicalization: DkimCanonicalization::SimpleRelaxed,
                 domain_id,
@@ -191,7 +191,7 @@ impl Account {
 
         let ed_id = self
             .registry_create_object(DkimSignature::Dkim1Ed25519Sha256(Dkim1Signature {
-                enabled: true,
+                stage: DkimRotationStage::Active,
                 selector: "ed".to_string(),
                 canonicalization: DkimCanonicalization::RelaxedSimple,
                 domain_id,

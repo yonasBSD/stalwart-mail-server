@@ -14,6 +14,8 @@ use pkcs8::Document;
 use registry::schema::enums::DkimSignatureType;
 use registry::schema::structs::DkimSignature;
 use rsa::pkcs1::DecodeRsaPublicKey;
+use store::rand::distr::Alphanumeric;
+use store::rand::{self, Rng};
 
 pub async fn generate_dkim_private_key(
     key_type: DkimSignatureType,
@@ -130,11 +132,12 @@ pub fn generate_dkim_dns_record_name(key: &DkimSignature, domain: &str) -> Strin
 /// Generate a DKIM selector from a template string.
 ///
 /// Supported variables:
-/// - `{algorithm}` — signing algorithm in lowercase (`rsa`, `ed25519`)
-/// - `{hash}` — hash algorithm (`sha256`)
-/// - `{version}` — DKIM version number (`1`)
-/// - `{date-<fmt>}` — current UTC date formatted with chrono strftime (e.g. `{date-%Y%m%d}`)
-/// - `{epoch}` — current UTC unix timestamp
+/// - `{algorithm}`: signing algorithm in lowercase (`rsa`, `ed25519`)
+/// - `{hash}`: hash algorithm (`sha256`)
+/// - `{version}`: DKIM version number (`1`)
+/// - `{date-<fmt>}`: current UTC date formatted with chrono strftime (e.g. `{date-%Y%m%d}`)
+/// - `{epoch}`: current UTC unix timestamp
+/// - `{random}`: random 8-character alphanumeric string
 ///
 pub fn generate_dkim_selector(
     template: &str,
@@ -147,7 +150,7 @@ pub fn generate_dkim_selector(
     while !chars.is_empty() {
         // Find next '{' or consume literal text
         let Some(open) = memchr(b'{', chars) else {
-            // No more variables — append remaining literal
+            // No more variables: append remaining literal
             // SAFETY: template is valid UTF-8, and we only slice on ASCII boundaries
             result.extend(
                 chars
@@ -181,6 +184,14 @@ pub fn generate_dkim_selector(
             "version" => result.extend_from_slice(sig_type.version().as_bytes()),
             "epoch" => {
                 result.extend_from_slice(now.timestamp().to_string().as_bytes());
+            }
+            "random" => {
+                let rand_str: String = rand::rng()
+                    .sample_iter(Alphanumeric)
+                    .take(8)
+                    .map(|ch| char::from(ch.to_ascii_lowercase()))
+                    .collect::<String>();
+                result.extend(rand_str.as_bytes());
             }
             v => {
                 if let Some(fmt) = v.strip_prefix("date-") {

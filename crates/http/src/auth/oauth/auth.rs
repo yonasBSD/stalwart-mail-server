@@ -379,9 +379,7 @@ impl OAuthApiHandler for Server {
             .await?;
 
         // Build response
-        let base_url = HttpContext::new(&session, req)
-            .resolve_response_url(self)
-            .await;
+        let base_url = HttpContext::new(&session, req).resolve_response_url(self);
         Ok(JsonResponse::new(DeviceAuthResponse {
             verification_uri: format!("{base_url}/authorize"),
             verification_uri_complete: format!("{base_url}/authorize/?code={user_code}"),
@@ -399,10 +397,7 @@ impl OAuthApiHandler for Server {
         req: HttpRequest,
         session: HttpSessionData,
     ) -> trc::Result<HttpResponse> {
-        let base_url = HttpContext::new(&session, &req)
-            .resolve_response_url(self)
-            .await
-            .to_string();
+        let base_url = HttpContext::new(&session, &req).resolve_response_url(self);
 
         Ok(JsonResponse::new(OAuthMetadata {
             authorization_endpoint: format!("{base_url}/authorize/code",),

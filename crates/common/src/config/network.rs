@@ -52,7 +52,8 @@ pub struct NetworkInfo {
 pub struct Http {
     pub rate_authenticated: Option<Rate>,
     pub rate_anonymous: Option<Rate>,
-    pub response_url: IfBlock,
+    pub url_https: String,
+    pub url_http: String,
     pub allowed_endpoint: IfBlock,
     pub response_headers: Vec<(hyper::header::HeaderName, hyper::header::HeaderValue)>,
     pub use_forwarded: bool,
@@ -186,6 +187,7 @@ impl Network {
             },
         };
 
+        let mut http_host = system.default_hostname.clone();
         for (service, details) in &system.services {
             let hostname = details
                 .hostname
@@ -194,6 +196,9 @@ impl Network {
 
             match service {
                 ServiceProtocol::Jmap => {
+                    if hostname != http_host {
+                        http_host = hostname.to_string();
+                    }
                     pacc.authentication.as_mut().unwrap().oauth_public = OAuthPublic {
                         issuer: format!("https://{hostname}/",),
                     }
@@ -309,7 +314,7 @@ impl Network {
             contact_form: ContactForm::parse(bp).await,
             asn_geo_lookup: AsnGeoLookupConfig::parse(bp).await.unwrap_or_default(),
             roles: ClusterRoles::default(),
-            http: Http::parse(bp).await,
+            http: Http::parse(bp, &http_host).await,
             task_manager: bp.setting_infallible::<TaskManager>().await,
             has_acme_tls_challenge,
             has_acme_http_challenge,
@@ -349,7 +354,7 @@ impl Network {
 }
 
 impl Http {
-    pub async fn parse(bp: &mut Bootstrap) -> Self {
+    pub async fn parse(bp: &mut Bootstrap, server_name: &str) -> Self {
         let http = bp.setting_infallible::<structs::Http>().await;
 
         // Parse HTTP headers
@@ -404,7 +409,8 @@ impl Http {
         }
 
         Http {
-            response_url: bp.compile_expr(ObjectType::Http.singleton(), &http.ctx_base_url()),
+            url_https: format!("https://{}", server_name),
+            url_http: format!("http://{}", server_name),
             allowed_endpoint: bp
                 .compile_expr(ObjectType::Http.singleton(), &http.ctx_allowed_endpoints()),
             rate_authenticated: http.rate_limit_authenticated,

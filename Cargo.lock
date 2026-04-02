@@ -1123,6 +1123,7 @@ dependencies = [
  "proxy-header",
  "psl",
  "pwhash",
+ "quick-xml 0.39.0",
  "quick_cache",
  "rasn",
  "rasn-cms",
@@ -1631,7 +1632,7 @@ dependencies = [
  "hashify",
  "hyper 1.8.1",
  "mail-parser",
- "quick-xml 0.38.4",
+ "quick-xml 0.39.0",
  "rkyv",
  "serde",
  "serde_json",
@@ -3011,7 +3012,7 @@ dependencies = [
  "mail-send",
  "mime",
  "pkcs8",
- "quick-xml 0.38.4",
+ "quick-xml 0.39.0",
  "registry",
  "rkyv",
  "rsa",
@@ -5672,15 +5673,6 @@ dependencies = [
 
 [[package]]
 name = "quick-xml"
-version = "0.38.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b66c2058c55a409d601666cffe35f04333cf1013010882cec174a7467cd4e21c"
-dependencies = [
- "memchr",
-]
-
-[[package]]
-name = "quick-xml"
 version = "0.39.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2e3bf4aa9d243beeb01a7b3bc30b77cfe2c44e24ec02d751a7104a53c2c49a1"
@@ -7792,7 +7784,7 @@ dependencies = [
  "nlp",
  "num_cpus",
  "pop3",
- "quick-xml 0.38.4",
+ "quick-xml 0.39.0",
  "rayon",
  "registry",
  "reqwest 0.12.28",

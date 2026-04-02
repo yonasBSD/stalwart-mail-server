@@ -243,6 +243,15 @@ impl Server {
                                 }),
                             });
                         }
+
+                        // ACME DNS-PERSIST-01 validation record
+                        records.push(NamedDnsRecord {
+                            name: format!("_validation-persist.{domain_name}."),
+                            record: DnsRecord::TXT(format!(
+                                "{provider_name}; accounturi={}",
+                                provider.account_uri
+                            )),
+                        });
                     }
                 }
                 DnsRecordType::Tlsa => {

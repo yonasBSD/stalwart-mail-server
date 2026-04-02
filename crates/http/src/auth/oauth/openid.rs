@@ -60,9 +60,7 @@ impl OpenIdHandler for Server {
         req: HttpRequest,
         session: HttpSessionData,
     ) -> trc::Result<HttpResponse> {
-        let base_url = HttpContext::new(&session, &req)
-            .resolve_response_url(self)
-            .await;
+        let base_url = HttpContext::new(&session, &req).resolve_response_url(self);
 
         Ok(JsonResponse::new(OpenIdMetadata {
             authorization_endpoint: format!("{base_url}/authorize/code",),

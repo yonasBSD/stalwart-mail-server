@@ -30,7 +30,7 @@ use common::{
 };
 use mail_auth::{
     AuthenticatedMessage, AuthenticationResults, DkimResult, DmarcResult, ReceivedSpf,
-    common::{headers::HeaderWriter, verify::VerifySignature},
+    common::{crypto::Algorithm, headers::HeaderWriter, verify::VerifySignature},
     dmarc::{self, verify::DmarcParameters},
 };
 use mail_builder::headers::{date::Date, message_id::generate_message_id_header};
@@ -67,7 +67,7 @@ impl<T: SessionStream> Session<T> {
         };
 
         // Authenticate message
-        let auth_message = AuthenticatedMessage::from_parsed(
+        let mut auth_message = AuthenticatedMessage::from_parsed(
             &parsed_message,
             self.server.core.smtp.mail_auth.dkim.strict,
         );
@@ -107,6 +107,19 @@ impl<T: SessionStream> Session<T> {
             .await
             .unwrap_or(VerifyStrategy::Relaxed);
         let dkim_output = if dkim.verify() || dmarc.verify() {
+            // Remove insecure DKIM signatures before verification
+            for header in &mut auth_message.dkim_headers {
+                if let Ok(signature) = &mut header.header
+                    && (signature.algorithm() == Algorithm::RsaSha1
+                        || (signature.algorithm() == Algorithm::RsaSha256
+                            && signature.b.len() < 128))
+                {
+                    header.header = Err(mail_auth::Error::CryptoError(
+                        "Insecure DKIM signature".into(),
+                    ));
+                }
+            }
+
             let time = Instant::now();
             let dkim_output = self
                 .server
