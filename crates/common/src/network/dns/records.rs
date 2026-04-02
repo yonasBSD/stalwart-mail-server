@@ -212,8 +212,7 @@ impl Server {
                             .object::<AcmeProvider>(props.acme_provider_id)
                             .await?
                         && let Ok(provider_url) = Url::parse(&provider.directory)
-                        && let Some(provider_name) =
-                            provider_url.host_str().and_then(psl::domain_str)
+                        && let Some(provider_name) = provider_domain(&provider_url)
                     {
                         records.push(NamedDnsRecord {
                             name: format!("{domain_name}."),
@@ -248,8 +247,13 @@ impl Server {
                         records.push(NamedDnsRecord {
                             name: format!("_validation-persist.{domain_name}."),
                             record: DnsRecord::TXT(format!(
-                                "{provider_name}; accounturi={}",
-                                provider.account_uri
+                                "{provider_name}; accounturi={}{}",
+                                provider.account_uri,
+                                if props.subject_alternative_names.is_empty() {
+                                    "; policy=wildcard"
+                                } else {
+                                    ""
+                                }
                             )),
                         });
                     }
@@ -372,5 +376,19 @@ impl Server {
         )
         .await
         .map(|records| BindSerializer::serialize(&records))
+    }
+}
+
+#[inline(always)]
+#[allow(unused)]
+fn provider_domain(url: &Url) -> Option<&str> {
+    #[cfg(feature = "test_mode")]
+    {
+        Some("pebble.letsencrypt.org")
+    }
+
+    #[cfg(not(feature = "test_mode"))]
+    {
+        url.host_str().and_then(psl::domain_str)
     }
 }

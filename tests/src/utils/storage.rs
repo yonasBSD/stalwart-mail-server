@@ -21,6 +21,7 @@ use registry::{
     },
     types::{EnumImpl, duration::Duration},
 };
+use store::write::now;
 use store::{
     Deserialize, IterateParams, ValueKey,
     write::{TaskQueueClass, ValueClass},
@@ -153,7 +154,7 @@ fn build_search_store(typ: SearchStoreType, _path: &str) -> SearchStore {
     }
 }
 
-pub async fn wait_for_tasks(server: &Server, skip_permanent_failures: bool) {
+pub async fn wait_for_tasks(server: &Server, skip_not_due: bool, skip_permanent_failures: bool) {
     let mut count = 0;
     loop {
         let mut has_index_tasks = None;
@@ -169,7 +170,9 @@ pub async fn wait_for_tasks(server: &Server, skip_permanent_failures: bool) {
                 .ascending(),
                 |_, value| {
                     let task = Task::deserialize(value)?;
-                    if skip_permanent_failures && matches!(task.status(), TaskStatus::Failed(_)) {
+                    if (skip_permanent_failures && matches!(task.status(), TaskStatus::Failed(_)))
+                        || (skip_not_due && task.due_timestamp() > now())
+                    {
                         Ok(true)
                     } else {
                         has_index_tasks = Some(task);
@@ -195,7 +198,7 @@ pub async fn wait_for_tasks(server: &Server, skip_permanent_failures: bool) {
 
 pub async fn assert_is_empty(server: &Server, include_registry: bool) {
     // Wait for pending index tasks
-    wait_for_tasks(server, false).await;
+    wait_for_tasks(server, false, false).await;
 
     // Assert is empty
     store_assert_is_empty(

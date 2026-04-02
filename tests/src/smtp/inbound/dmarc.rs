@@ -21,8 +21,8 @@ use mail_auth::{
 };
 use registry::{
     schema::structs::{
-        DkimReportSettings, DmarcReportSettings, Domain, Expression, ExpressionMatch, SenderAuth,
-        SpfReportSettings,
+        CertificateManagement, DkimManagement, DkimReportSettings, DmarcReportSettings,
+        DnsManagement, Domain, Expression, ExpressionMatch, SenderAuth, SpfReportSettings,
     },
     types::list::List,
 };
@@ -45,6 +45,9 @@ async fn dmarc() {
     let domain_id = admin
         .registry_create_object(Domain {
             name: "localdomain.org".into(),
+            certificate_management: CertificateManagement::Manual,
+            dns_management: DnsManagement::Manual,
+            dkim_management: DkimManagement::Manual,
             allow_relaying: true,
             ..Default::default()
         })

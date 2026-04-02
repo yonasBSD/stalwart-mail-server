@@ -18,7 +18,8 @@ use mail_auth::{
 use registry::schema::{
     enums::{DkimCanonicalization, DkimRotationStage},
     structs::{
-        Dkim1Signature, DkimSignature, Domain, Expression, SecretText, SecretTextValue, SenderAuth,
+        CertificateManagement, Dkim1Signature, DkimManagement, DkimSignature, DnsManagement,
+        Domain, Expression, SecretText, SecretTextValue, SenderAuth,
     },
 };
 use std::time::{Duration, Instant};
@@ -40,6 +41,9 @@ async fn sign_and_seal() {
     let domain_id = admin
         .registry_create_object(Domain {
             name: "example.com".into(),
+            certificate_management: CertificateManagement::Manual,
+            dns_management: DnsManagement::Manual,
+            dkim_management: DkimManagement::Manual,
             allow_relaying: true,
             ..Default::default()
         })

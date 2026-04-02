@@ -13,9 +13,9 @@ use crate::{
 };
 use core::panic;
 use registry::schema::structs::{
-    Domain, Expression, LookupStore, MtaStageConnect, MtaStageData, MtaStageEhlo,
-    MtaStageMail, MtaStageRcpt, SieveSystemInterpreter, SieveSystemScript, SqliteStore,
-    StoreLookup,
+    CertificateManagement, DkimManagement, DnsManagement, Domain, Expression, LookupStore,
+    MtaStageConnect, MtaStageData, MtaStageEhlo, MtaStageMail, MtaStageRcpt,
+    SieveSystemInterpreter, SieveSystemScript, SqliteStore, StoreLookup,
 };
 use smtp::scripts::{ScriptResult, event_loop::RunScript};
 use std::{fs, path::PathBuf};
@@ -36,6 +36,9 @@ async fn sieve_scripts() {
     let domain_id = admin
         .registry_create_object(Domain {
             name: "foobar.org".into(),
+            certificate_management: CertificateManagement::Manual,
+            dns_management: DnsManagement::Manual,
+            dkim_management: DkimManagement::Manual,
             allow_relaying: true,
             ..Default::default()
         })

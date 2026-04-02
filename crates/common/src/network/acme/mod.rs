@@ -28,13 +28,13 @@ pub type AcmeResult<T> = Result<T, AcmeError>;
 
 pub enum AcmeError {
     Http(reqwest::Error),
-    HttpStatus(reqwest::StatusCode),
+    HttpStatus(String),
     Json(serde_json::Error),
     Crypto(String),
     Invalid(String),
     Dns(String),
-    AuthInvalid(AuthStatus),
-    OrderInvalid,
+    AuthInvalid(String),
+    OrderInvalid(String),
     ChallengeNotSupported {
         requested: ChallengeType,
         supported: Vec<Challenge>,
@@ -151,7 +151,7 @@ pub struct Challenge {
     #[serde(rename = "type")]
     pub typ: ChallengeType,
     pub url: String,
-    pub token: String,
+    pub token: Option<String>,
     pub error: Option<Problem>,
 }
 
@@ -202,18 +202,64 @@ impl From<AcmeChallengeType> for ChallengeType {
     }
 }
 
+impl Display for AuthStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AuthStatus::Pending => write!(f, "pending"),
+            AuthStatus::Valid => write!(f, "valid"),
+            AuthStatus::Invalid => write!(f, "invalid"),
+            AuthStatus::Revoked => write!(f, "revoked"),
+            AuthStatus::Expired => write!(f, "expired"),
+            AuthStatus::Deactivated => write!(f, "deactivated"),
+        }
+    }
+}
+
+impl Auth {
+    pub fn into_error(self) -> String {
+        let mut errors = format!("Status: {}", self.status);
+        for challenge in self.challenges {
+            if let Some(error) = challenge.error {
+                errors.push_str(&format!(
+                    "; Challenge type: {}, error: {}",
+                    challenge.typ.as_str(),
+                    error
+                ));
+            }
+        }
+
+        errors
+    }
+}
+
+impl Display for Problem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(typ) = &self.typ {
+            if let Some(detail) = &self.detail {
+                write!(f, "{}: {}", typ, detail)
+            } else {
+                write!(f, "{}", typ)
+            }
+        } else if let Some(detail) = &self.detail {
+            write!(f, "{}", detail)
+        } else {
+            write!(f, "Unknown error")
+        }
+    }
+}
+
 impl Display for AcmeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AcmeError::Http(err) => write!(f, "HTTP error: {}", err),
-            AcmeError::HttpStatus(status) => write!(f, "HTTP error: status code {}", status),
+            AcmeError::HttpStatus(status) => write!(f, "HTTP error: {}", status),
             AcmeError::Json(err) => write!(f, "JSON error: {}", err),
             AcmeError::Dns(err) => write!(f, "DNS error: {}", err),
             AcmeError::Crypto(err) => write!(f, "Cryptographic error: {}", err),
             AcmeError::Invalid(err) => write!(f, "Invalid request: {}", err),
             AcmeError::AuthInvalid(status) => write!(f, "Authentication failed: {:?}", status),
             AcmeError::OrderTimeout { .. } => write!(f, "Order processing timed out"),
-            AcmeError::OrderInvalid => write!(f, "Order is invalid"),
+            AcmeError::OrderInvalid(reason) => write!(f, "Order is invalid: {}", reason),
             AcmeError::AuthTimeout { .. } => write!(f, "Authentication timed out"),
             AcmeError::ChallengeNotSupported {
                 requested,

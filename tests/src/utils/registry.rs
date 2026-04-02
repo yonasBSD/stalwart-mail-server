@@ -407,7 +407,14 @@ fn remove_server_set_props(value: &mut serde_json::Value) {
             .and_then(|v| v.as_str())
             .is_some_and(|t| ["AppPassword", "ApiKey"].contains(&t));
         obj.retain(|k, v| {
-            !(["createdAt", "credentialId", "retireAt"].contains(&k.as_str())
+            !([
+                "createdAt",
+                "credentialId",
+                "retireAt",
+                "accountKey",
+                "accountUri",
+            ]
+            .contains(&k.as_str())
                 || (is_app_pass && k == "secret")
                 || (k == "memberTenantId" && v.is_null()))
         });

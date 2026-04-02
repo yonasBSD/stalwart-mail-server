@@ -103,7 +103,8 @@ impl Server {
             not_valid_before: UTCDateTime::from_timestamp(parsed_cert.valid_not_before.timestamp()),
             subject_alternative_names: Map::new(parsed_cert.sans),
         };
-        let expires_in = (parsed_cert.valid_not_after.timestamp() as u64).saturating_sub(now());
+        let now = now();
+        let expires_in = (parsed_cert.valid_not_after.timestamp() as u64).saturating_sub(now);
         if expires_in < 86400 {
             return Err(AcmeError::Invalid(format!(
                 "Certificate expires in {} seconds, expected at least 86400 seconds",
@@ -145,7 +146,7 @@ impl Server {
                 };
                 tasks.push(Task::AcmeRenewal(TaskDomainManagement {
                     domain_id,
-                    status: TaskStatus::at(renew_in as i64),
+                    status: TaskStatus::at((now + renew_in) as i64),
                 }));
 
                 // Update TLSA records

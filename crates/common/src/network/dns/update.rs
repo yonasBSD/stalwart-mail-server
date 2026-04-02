@@ -35,6 +35,11 @@ pub struct DnsUpdater {
     core: Arc<Core>,
 }
 
+#[cfg(feature = "test_mode")]
+pub static DNS_RECORDS: std::sync::LazyLock<
+    Arc<std::sync::Mutex<Vec<dns_update::NamedDnsRecord>>>,
+> = std::sync::LazyLock::new(|| Arc::new(std::sync::Mutex::new(Vec::new())));
+
 impl DnsUpdater {
     pub async fn build(server: DnsServer, core: Arc<Core>) -> Result<Self, String> {
         match server {
@@ -126,19 +131,43 @@ impl DnsUpdater {
                     .map_err(|err| format!("Failed to build DNS updater: {}", err))?,
                 })
             }
-            DnsServer::Cloudflare(server) => Ok(DnsUpdater {
-                polling_interval: server.polling_interval.into_inner(),
-                propagation_timeout: server.propagation_timeout.into_inner(),
-                propagation_delay: server.propagation_delay.map(|d| d.into_inner()),
-                ttl: server.ttl.into_inner(),
-                core,
-                updater: dns_update::DnsUpdater::new_cloudflare(
-                    server.secret.secret().await?,
-                    server.email,
-                    server.timeout.into_inner().into(),
-                )
-                .map_err(|err| format!("Failed to build DNS updater: {}", err))?,
-            }),
+            DnsServer::Cloudflare(server) => {
+                let updater = {
+                    #[cfg(feature = "test_mode")]
+                    match server.email.as_deref() {
+                        Some("test@pebble.org") => dns_update::DnsUpdater::new_pebble(
+                            "http://localhost:8055",
+                            server.timeout.into_inner().into(),
+                        ),
+                        Some("test@memory.org") => {
+                            dns_update::DnsUpdater::new_in_memory(DNS_RECORDS.clone())
+                        }
+                        _ => dns_update::DnsUpdater::new_cloudflare(
+                            server.secret.secret().await?,
+                            server.email,
+                            server.timeout.into_inner().into(),
+                        )
+                        .map_err(|err| format!("Failed to build DNS updater: {}", err))?,
+                    }
+
+                    #[cfg(not(feature = "test_mode"))]
+                    dns_update::DnsUpdater::new_cloudflare(
+                        server.secret.secret().await?,
+                        server.email,
+                        server.timeout.into_inner().into(),
+                    )
+                    .map_err(|err| format!("Failed to build DNS updater: {}", err))?
+                };
+
+                Ok(DnsUpdater {
+                    polling_interval: server.polling_interval.into_inner(),
+                    propagation_timeout: server.propagation_timeout.into_inner(),
+                    propagation_delay: server.propagation_delay.map(|d| d.into_inner()),
+                    ttl: server.ttl.into_inner(),
+                    core,
+                    updater,
+                })
+            }
             DnsServer::DigitalOcean(server) => Ok(DnsUpdater {
                 polling_interval: server.polling_interval.into_inner(),
                 propagation_timeout: server.propagation_timeout.into_inner(),
@@ -260,6 +289,14 @@ impl DnsUpdater {
         );
 
         if verify && let DnsRecord::TXT(txt_record) = &record {
+            #[cfg(feature = "test_mode")]
+            if matches!(
+                self.updater,
+                dns_update::DnsUpdater::Pebble(_) | dns_update::DnsUpdater::InMemory(_)
+            ) {
+                return Ok(true);
+            }
+
             // Wait for changes to propagate
             if let Some(initial_wait) = self.propagation_delay {
                 tokio::time::sleep(initial_wait).await;

@@ -440,7 +440,7 @@ impl TaskQueueManager for Server {
                 );
             });
 
-        if !tasks.is_empty() || !ipc.locked.is_empty() {
+        if !tasks.is_empty() {
             trc::event!(
                 TaskManager(TaskManagerEvent::TaskAcquired),
                 Total = tasks.len(),

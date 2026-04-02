@@ -6,7 +6,9 @@
 
 use crate::task_manager::TaskResult;
 use common::Server;
-use registry::schema::structs::{DnsManagement, Domain, TaskDnsManagement};
+use registry::schema::structs::{
+    DnsManagement, Domain, Task, TaskDnsManagement, TaskDomainManagement, TaskStatus,
+};
 use std::fmt::Write;
 use store::ahash::AHashSet;
 
@@ -85,8 +87,17 @@ async fn dns_management(server: &Server, task: &TaskDnsManagement) -> trc::Resul
         }
     }
 
-    if !errors.is_empty() {
-        Ok(TaskResult::Success(vec![]))
+    if errors.is_empty() {
+        if task.on_success_renew_certificate {
+            Ok(TaskResult::Success(vec![Task::AcmeRenewal(
+                TaskDomainManagement {
+                    domain_id: task.domain_id,
+                    status: TaskStatus::now(),
+                },
+            )]))
+        } else {
+            Ok(TaskResult::Success(vec![]))
+        }
     } else {
         Ok(TaskResult::permanent(errors))
     }

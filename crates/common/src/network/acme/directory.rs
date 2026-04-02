@@ -141,16 +141,25 @@ impl AcmeRequestBuilder {
     }
 
     pub fn http_proof(&self, challenge: &Challenge) -> AcmeResult<Vec<u8>> {
-        key_authorization(&self.key_pair, &challenge.token).map(|key| key.into_bytes())
+        let challenge_token = challenge.token.as_deref().ok_or_else(|| {
+            AcmeError::Invalid("Missing http-01 challenge token in response".to_string())
+        })?;
+        key_authorization(&self.key_pair, challenge_token).map(|key| key.into_bytes())
     }
 
     pub fn dns_proof(&self, challenge: &Challenge) -> AcmeResult<String> {
-        key_authorization_sha256_base64(&self.key_pair, &challenge.token)
+        let challenge_token = challenge.token.as_deref().ok_or_else(|| {
+            AcmeError::Invalid("Missing dns-01 challenge token in response".to_string())
+        })?;
+        key_authorization_sha256_base64(&self.key_pair, challenge_token)
     }
 
     pub fn tls_alpn_key(&self, challenge: &Challenge, domain: String) -> AcmeResult<Vec<u8>> {
+        let challenge_token = challenge.token.as_deref().ok_or_else(|| {
+            AcmeError::Invalid("Missing tls-alpn-01 challenge token in response".to_string())
+        })?;
         let mut params = rcgen::CertificateParams::new(vec![domain]);
-        let key_auth = key_authorization_sha256(&self.key_pair, &challenge.token)?;
+        let key_auth = key_authorization_sha256(&self.key_pair, challenge_token)?;
         params.alg = &PKCS_ECDSA_P256_SHA256;
         params.custom_extensions = vec![CustomExtension::new_acme_identifier(key_auth.as_ref())];
         let cert = Certificate::from_params(params).map_err(|err| {
@@ -197,7 +206,12 @@ impl Directory {
 impl<L, T: DeserializeOwned> AcmeResponse<L, T> {
     pub fn parse(input: AcmeResponse<L, String>) -> AcmeResult<AcmeResponse<L, T>> {
         serde_json::from_str(&input.body)
-            .map_err(Into::into)
+            .map_err(|err| {
+                AcmeError::Invalid(format!(
+                    "ACME response parsing error: {}, body: {}",
+                    err, input.body
+                ))
+            })
             .map(|body| AcmeResponse {
                 location: input.location,
                 body,

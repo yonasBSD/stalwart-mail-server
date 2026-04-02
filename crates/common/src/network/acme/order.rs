@@ -41,20 +41,39 @@ impl AcmeRequestBuilder {
             ) {
                 vec![format!("*.{domain}")]
             } else {
-                server
-                    .core
-                    .network
-                    .server_name
-                    .strip_suffix(domain)
-                    .and_then(|host| host.strip_suffix("."))
-                    .map(|h| h.to_string())
-                    .into_iter()
-                    .chain(
-                        HOSTNAMES
-                            .iter()
-                            .map(|hostname| format!("{hostname}.{domain}")),
-                    )
-                    .collect()
+                let server_name = server.core.network.server_name.as_str();
+                let domain_suffix = format!(".{domain}");
+
+                // Add technical domains
+                let mut domains = HOSTNAMES
+                    .iter()
+                    .map(|hostname| format!("{hostname}.{domain}"))
+                    .collect::<BTreeSet<_>>();
+
+                // Add server name if it matches the domain
+                if server_name.ends_with(&domain_suffix) {
+                    domains.insert(server_name.to_string());
+                }
+
+                // Add mail exchangers
+                for exchanger in &server.core.network.info.mxs {
+                    if let Some(exchanger) = &exchanger.hostname
+                        && exchanger.ends_with(&domain_suffix)
+                    {
+                        domains.insert(exchanger.to_string());
+                    }
+                }
+
+                // Add service hosts
+                for (_, service) in &server.core.network.info.services {
+                    if let Some(service) = &service.hostname
+                        && service.ends_with(&domain_suffix)
+                    {
+                        domains.insert(service.to_string());
+                    }
+                }
+
+                domains.into_iter().collect()
             }
         } else {
             hostnames
@@ -146,7 +165,13 @@ impl AcmeRequestBuilder {
                     });
                 }
                 OrderStatus::Invalid => {
-                    return Err(AcmeError::OrderInvalid);
+                    let reason = if let Some(reason) = order.error {
+                        reason.to_string()
+                    } else {
+                        "Unknown reason".to_string()
+                    };
+
+                    return Err(AcmeError::OrderInvalid(reason));
                 }
             }
         }
@@ -205,7 +230,12 @@ impl AcmeRequestBuilder {
                             .key_set(
                                 KeyValue::with_prefix(
                                     KV_ACME,
-                                    &challenge.token,
+                                    challenge.token.as_deref().ok_or_else(|| {
+                                        AcmeError::Invalid(
+                                            "Missing http-01 challenge token in response"
+                                                .to_string(),
+                                        )
+                                    })?,
                                     self.http_proof(challenge)?,
                                 )
                                 .expires(3600),
@@ -227,7 +257,7 @@ impl AcmeRequestBuilder {
                             .await
                             .map_err(AcmeError::Dns)?;
                     }
-                    ChallengeType::DnsPersist01 => return Ok(()),
+                    ChallengeType::DnsPersist01 => {}
                     ChallengeType::Unknown => unreachable!(),
                 }
 
@@ -236,7 +266,7 @@ impl AcmeRequestBuilder {
             }
             AuthStatus::Valid => return Ok(()),
             _ => {
-                return Err(AcmeError::AuthInvalid(auth.status));
+                return Err(AcmeError::AuthInvalid(auth.into_error()));
             }
         };
 
@@ -269,7 +299,7 @@ impl AcmeRequestBuilder {
                     return Ok(());
                 }
                 _ => {
-                    return Err(AcmeError::AuthInvalid(response.body.status));
+                    return Err(AcmeError::AuthInvalid(response.body.into_error()));
                 }
             }
         }

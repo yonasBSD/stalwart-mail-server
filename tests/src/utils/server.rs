@@ -42,8 +42,8 @@ use registry::{
         enums::{DataStoreType, EventPolicy, NetworkListenerProtocol, TracingLevel},
         prelude::{Object, ObjectType, SocketAddr},
         structs::{
-            Authentication, Certificate, Expression, Http, NetworkListener, PublicText,
-            SecretKeyFile, SecretText, Tracer, TracerStdout,
+            Authentication, Certificate, NetworkListener, PublicText, SecretKeyFile, SecretText,
+            Tracer, TracerStdout,
         },
     },
     types::{EnumImpl, map::Map},
@@ -149,27 +149,11 @@ impl TestServerBuilder {
         ] {
             this = this.with_listener(protocol, name, port, use_tls).await;
         }
-        this.with_object(Http {
-            base_url: Expression {
-                else_: "'https://127.0.0.1:8899'".to_string(),
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-        .await
+        this
     }
 
     pub async fn with_http_listener(self, port: u16) -> Self {
         self.with_listener(NetworkListenerProtocol::Http, "jmap", port, true)
-            .await
-            .with_object(Http {
-                base_url: Expression {
-                    else_: format!("'https://127.0.0.1:{}'", port),
-
-                    ..Default::default()
-                },
-                ..Default::default()
-            })
             .await
     }
 
@@ -216,7 +200,7 @@ impl TestServerBuilder {
         }
         self.insert_object(NetworkListener {
             bind: Map::new(vec![
-                SocketAddr::from_str(&format!("127.0.0.1:{port}")).unwrap(),
+                SocketAddr::from_str(&format!("0.0.0.0:{port}")).unwrap(),
             ]),
             name: name.to_string(),
             protocol,
@@ -469,11 +453,15 @@ impl TestServer {
     }
 
     pub async fn wait_for_tasks(&self) {
-        wait_for_tasks(&self.server, false).await;
+        wait_for_tasks(&self.server, false, false).await;
     }
 
     pub async fn wait_for_tasks_skip_failures(&self) {
-        wait_for_tasks(&self.server, true).await;
+        wait_for_tasks(&self.server, false, true).await;
+    }
+
+    pub async fn wait_for_tasks_skip_not_due(&self) {
+        wait_for_tasks(&self.server, true, false).await;
     }
 
     pub async fn blob_expire_all(&self) {

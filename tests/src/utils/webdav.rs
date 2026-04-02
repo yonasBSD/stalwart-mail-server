@@ -1174,7 +1174,8 @@ fn flatten_xml(xml: &str) -> Vec<(String, String)> {
                 }
             }
             Event::GeneralRef(entity) => {
-                let value: Cow<str> = match entity.as_ref() {
+                let entity_slice: &[u8] = entity.as_ref();
+                let value: Cow<str> = match entity_slice {
                     b"lt" => "<".into(),
                     b"gt" => ">".into(),
                     b"amp" => "&".into(),

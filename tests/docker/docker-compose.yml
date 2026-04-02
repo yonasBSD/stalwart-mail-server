@@ -187,19 +187,43 @@ services:
     entrypoint: [ "/bin/bash", "-c", "mkdir -p /container/service/slapd/assets/config/bootstrap/ldif/custom && cp /seed/*.ldif /container/service/slapd/assets/config/bootstrap/ldif/custom/ && cp /certs-shared/* /container/service/slapd/assets/certs/ 2>/dev/null; exec /container/tool/run" ]
 
   # ---------------------------------------------------------------------------
+  # Pebble Challenge Test Server  –  port 8055 (management API)
+  # Provides controllable DNS, HTTP, and TLS-ALPN challenge responders.
+  # Use the management API to add/remove challenge responses before requesting
+  # certificates from Pebble.
+  # ---------------------------------------------------------------------------
+  pebble-challtestsrv:
+    image: ghcr.io/letsencrypt/pebble-challtestsrv:latest
+    ports:
+      - "127.0.0.1:8055:8055"
+    command: [ "-defaultIPv6", "", "-defaultIPv4", "0.0.0.0" ]
+
+  pebble-challtestsrv-init:
+    image: alpine:latest
+    depends_on:
+      - pebble-challtestsrv
+    network_mode: "service:pebble-challtestsrv"
+    entrypoint: [ "/bin/sh", "-c", "HOSTIP=$$(getent hosts host.docker.internal | awk '{print $$1}') && wget -qO- --post-data='{\"ip\":\"'$$HOSTIP'\"}' http://localhost:8055/set-default-ipv4" ]
+
+  # ---------------------------------------------------------------------------
   # Pebble (ACME server)  –  ports 14000 (directory) + 15000 (management)
   # ---------------------------------------------------------------------------
   pebble:
     image: ghcr.io/letsencrypt/pebble:latest
+    depends_on:
+      pebble-challtestsrv-init:
+        condition: service_completed_successfully
     environment:
       PEBBLE_VA_NOSLEEP: "1"
-      PEBBLE_VA_ALWAYS_VALID: "1"
+      PEBBLE_WFE_NONCEREJECT: "0"
     ports:
       - "127.0.0.1:14000:14000"
       - "127.0.0.1:15000:15000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./pebble/pebble-config.json:/test/config/pebble-config.json:ro
-    command: -config /test/config/pebble-config.json
+    command: -config /test/config/pebble-config.json -dnsserver pebble-challtestsrv:8053
 
   # ---------------------------------------------------------------------------
   # PowerDNS (DNS with TLSA + RFC2136)  –  port 5300 (moved from 53)

@@ -18,7 +18,7 @@ use registry::{
         prelude::{ObjectType, Property, SocketAddr},
         structs::{
             ClusterListenerGroup, ClusterListenerGroupProperties, ClusterRole, ClusterTaskGroup,
-            Coordinator, Expression, Http, NatsCoordinator, NetworkListener, RedisStore,
+            Coordinator, NatsCoordinator, NetworkListener, RedisStore,
         },
     },
     types::map::Map,
@@ -60,14 +60,6 @@ fn cluster_tests() {
 
             // Create initial server
             let test = TestServerBuilder::new("cluster_test_0")
-                .await
-                .with_object(Http {
-                    base_url: Expression {
-                        else_: "'https://127.0.0.1:' + local_port".to_string(),
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                })
                 .await
                 .with_object(coordinator)
                 .await

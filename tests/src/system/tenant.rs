@@ -18,10 +18,10 @@ use registry::{
         enums::{AccountType, Permission, TenantStorageQuota},
         prelude::{ObjectType, Property},
         structs::{
-            Account, Credential, Dkim1Signature, DkimSignature, DnsServer, DnsServerCloudflare,
-            Domain, GroupAccount, MailingList, OAuthClient, PasswordCredential, Permissions,
-            PermissionsList, Role, SecretKey, SecretKeyValue, SecretText, SecretTextValue, Tenant,
-            UserAccount, UserRoles,
+            Account, CertificateManagement, Credential, Dkim1Signature, DkimManagement,
+            DkimSignature, DnsManagement, DnsServer, DnsServerCloudflare, Domain, GroupAccount,
+            MailingList, OAuthClient, PasswordCredential, Permissions, PermissionsList, Role,
+            SecretKey, SecretKeyValue, SecretText, SecretTextValue, Tenant, UserAccount, UserRoles,
         },
     },
     types::{EnumImpl, ObjectImpl, list::List, map::Map},
@@ -60,6 +60,9 @@ pub async fn test(test: &mut TestServer) {
             .registry_create_object(Domain {
                 name: format!("tenant{name}.org"),
                 member_tenant_id: tenant_id.into(),
+                certificate_management: CertificateManagement::Manual,
+                dns_management: DnsManagement::Manual,
+                dkim_management: DkimManagement::Manual,
                 ..Default::default()
             })
             .await;
@@ -176,6 +179,9 @@ pub async fn test(test: &mut TestServer) {
                         Domain {
                             name: format!("tenant{tenant_id_pos}.org"),
                             member_tenant_id,
+                            certificate_management: CertificateManagement::Manual,
+                            dns_management: DnsManagement::Manual,
+                            dkim_management: DkimManagement::Manual,
                             ..Default::default()
                         },
                     )

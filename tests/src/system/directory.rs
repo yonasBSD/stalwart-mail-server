@@ -15,8 +15,9 @@ use registry::{
         enums::{AccountType, StorageQuota},
         prelude::{ObjectType, Property},
         structs::{
-            Account, Credential, Domain, EmailAlias, Expression, ExpressionMatch, GroupAccount,
-            MailingList, PasswordCredential, SubAddressing, SubAddressingCustom, UserAccount,
+            Account, CertificateManagement, Credential, DkimManagement, DnsManagement, Domain,
+            EmailAlias, Expression, ExpressionMatch, GroupAccount, MailingList, PasswordCredential,
+            SubAddressing, SubAddressingCustom, UserAccount,
         },
     },
     types::{EnumImpl, list::List, map::Map},
@@ -33,6 +34,9 @@ pub async fn test(test: &TestServer) {
     let domain_id = account
         .registry_create_object(Domain {
             name: "example.com".to_string(),
+            certificate_management: CertificateManagement::Manual,
+            dns_management: DnsManagement::Manual,
+            dkim_management: DkimManagement::Manual,
             aliases: Map::new(vec!["beispiel.de".to_string()]),
             is_enabled: true,
             catch_all_address: Some("catchy@example.com".to_string()),
@@ -60,6 +64,9 @@ pub async fn test(test: &TestServer) {
     account
         .registry_create_object_expect_err(Domain {
             name: "example.com".to_string(),
+            certificate_management: CertificateManagement::Manual,
+            dns_management: DnsManagement::Manual,
+            dkim_management: DkimManagement::Manual,
             ..Default::default()
         })
         .await
@@ -371,6 +378,9 @@ pub async fn test(test: &TestServer) {
         .registry_create_object(Domain {
             name: "another-example.com".to_string(),
             is_enabled: true,
+            certificate_management: CertificateManagement::Manual,
+            dns_management: DnsManagement::Manual,
+            dkim_management: DkimManagement::Manual,
             sub_addressing: SubAddressing::Custom(SubAddressingCustom {
                 custom_rule: Expression {
                     else_: "false".to_string(),

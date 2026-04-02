@@ -20,7 +20,15 @@ impl<'x> HttpContext<'x> {
 
     pub fn resolve_response_url(&self, server: &Server) -> String {
         if self.session.is_tls {
-            server.core.network.http.url_https.clone()
+            #[cfg(not(feature = "test_mode"))]
+            {
+                server.core.network.http.url_https.clone()
+            }
+
+            #[cfg(feature = "test_mode")]
+            {
+                format!("https://127.0.0.1:{}", self.session.local_port)
+            }
         } else {
             format!(
                 "{}:{}",

@@ -1090,7 +1090,7 @@ dependencies = [
  "dns-update",
  "futures",
  "hashify",
- "hickory-proto 0.24.4",
+ "hickory-proto 0.25.2",
  "hostname",
  "hyper 1.8.1",
  "idna",
@@ -1100,7 +1100,7 @@ dependencies = [
  "infer 0.19.0",
  "jmap_proto",
  "libc",
- "lz4_flex 0.12.0",
+ "lz4_flex 0.13.0",
  "mail-auth",
  "mail-builder",
  "mail-parser",
@@ -1156,7 +1156,7 @@ dependencies = [
  "whatlang",
  "x509-parser",
  "xxhash-rust",
- "zip",
+ "zip 8.5.0",
  "zxcvbn",
 ]
 
@@ -1328,21 +1328,6 @@ checksum = "59ed5838eebb26a2bb2e58f6d5b5316989ae9d08bab10e0e6d103e656d1b0280"
 dependencies = [
  "libc",
 ]
-
-[[package]]
-name = "crc"
-version = "3.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5eb8a2a1cd12ab0d987a5d5e825195d372001a4094a0376319d5a0ad71c1ba0d"
-dependencies = [
- "crc-catalog",
-]
-
-[[package]]
-name = "crc-catalog"
-version = "2.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "19d374276b40fb8bbdee95aef7c7fa6b5316ec764510eb64b8dd0e2ed0d7e7f5"
 
 [[package]]
 name = "crc16"
@@ -2612,10 +2597,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "139ef39800118c7683f2fd3c98c1b23c09ae076556b435f8e9064ae108aaeeec"
 dependencies = [
  "cfg-if",
+ "js-sys",
  "libc",
  "r-efi",
  "wasip2",
  "wasip3",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -2813,30 +2800,6 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
-]
-
-[[package]]
-name = "hickory-proto"
-version = "0.24.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92652067c9ce6f66ce53cc38d1169daa36e6e7eb7dd3b63b5103bd9d97117248"
-dependencies = [
- "async-trait",
- "cfg-if",
- "data-encoding",
- "enum-as-inner",
- "futures-channel",
- "futures-io",
- "futures-util",
- "idna",
- "ipnet",
- "once_cell",
- "rand 0.8.5",
- "thiserror 1.0.69",
- "tinyvec",
- "tokio",
- "tracing",
- "url",
 ]
 
 [[package]]
@@ -3687,7 +3650,7 @@ dependencies = [
  "hyper-util",
  "jmap-tools",
  "jmap_proto",
- "lz4_flex 0.12.0",
+ "lz4_flex 0.13.0",
  "mail-auth",
  "mail-builder",
  "mail-parser",
@@ -4154,20 +4117,19 @@ dependencies = [
 
 [[package]]
 name = "lz4_flex"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab6473172471198271ff72e9379150e9dfd70d8e533e0752a27e515b48dd375e"
+checksum = "db9a0d582c2874f68138a16ce1867e0ffde6c0bb0a0df85e1f36d04146db488a"
 dependencies = [
  "twox-hash",
 ]
 
 [[package]]
 name = "lzma-rust2"
-version = "0.13.0"
+version = "0.16.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c60a23ffb90d527e23192f1246b14746e2f7f071cb84476dd879071696c18a4a"
+checksum = "47bb1e988e6fb779cf720ad431242d3f03167c1b3f2b1aae7f1a94b2495b36ae"
 dependencies = [
- "crc",
  "sha2 0.10.9",
 ]
 
@@ -4188,7 +4150,7 @@ dependencies = [
  "rustls-pki-types",
  "serde",
  "serde_json",
- "zip",
+ "zip 6.0.0",
 ]
 
 [[package]]
@@ -4354,7 +4316,7 @@ dependencies = [
  "email",
  "futures",
  "groupware",
- "lz4_flex 0.12.0",
+ "lz4_flex 0.13.0",
  "mail-auth",
  "mail-parser",
  "nlp",
@@ -7585,7 +7547,7 @@ dependencies = [
  "futures",
  "gethostname",
  "lru-cache",
- "lz4_flex 0.12.0",
+ "lz4_flex 0.13.0",
  "memchr",
  "mysql_async",
  "nlp",
@@ -7757,6 +7719,7 @@ dependencies = [
  "dav",
  "dav-proto",
  "directory",
+ "dns-update",
  "ece",
  "email",
  "flate2",
@@ -8388,6 +8351,12 @@ name = "twox-hash"
 version = "2.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9ea3136b675547379c4bd395ca6b938e5ad3c3d20fad76e7fe85f9e0d011419c"
+
+[[package]]
+name = "typed-path"
+version = "0.12.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e28f89b80c87b8fb0cf04ab448d5dd0dd0ade2f8891bae878de66a75a28600e"
 
 [[package]]
 name = "typeid"
@@ -10072,14 +10041,26 @@ version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eb2a05c7c36fde6c09b08576c9f7fb4cda705990f73b58fe011abf7dfb24168b"
 dependencies = [
- "aes",
  "arbitrary",
+ "crc32fast",
+ "flate2",
+ "indexmap 2.13.0",
+ "memchr",
+]
+
+[[package]]
+name = "zip"
+version = "8.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2726508a48f38dceb22b35ecbbd2430efe34ff05c62bd3285f965d7911b33464"
+dependencies = [
+ "aes",
  "bzip2",
- "constant_time_eq 0.3.1",
+ "constant_time_eq 0.4.2",
  "crc32fast",
  "deflate64",
  "flate2",
- "getrandom 0.3.4",
+ "getrandom 0.4.1",
  "hmac 0.12.1",
  "indexmap 2.13.0",
  "lzma-rust2",
@@ -10088,6 +10069,7 @@ dependencies = [
  "ppmd-rust",
  "sha1",
  "time",
+ "typed-path",
  "zeroize",
  "zopfli",
  "zstd",

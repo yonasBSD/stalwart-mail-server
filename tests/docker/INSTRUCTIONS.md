@@ -25,7 +25,8 @@ Wait ~30 seconds for all services to initialize (Keycloak takes the longest).
 | MinIO (S3)     | localhost         | 9000 / 9001     | `minioadmin` / `minioadmin`, bucket: `stalwart` |
 | Keycloak (OIDC)| localhost         | 9080            | Admin: `admin` / `admin`                   |
 | OpenLDAP       | localhost         | 389 / 636 (TLS) | Admin DN: `cn=admin,dc=stalwart,dc=test`, pw: `admin` |
-| Pebble (ACME)  | localhost         | 14000 / 15000   | Self-signed TLS, auto-valid challenges     |
+| Pebble (ACME)  | localhost         | 14000 / 15000   | Self-signed TLS, uses challtestsrv         |
+| Challtestsrv   | localhost         | 8055            | ACME challenge test server (management API)|
 | PowerDNS       | localhost         | 5300 / 8081     | API key: `stalwart-api-key`                |
 | NATS           | localhost         | 4222 / 8222     | No auth                                    |
 
@@ -127,12 +128,64 @@ send
 EOF
 ```
 
-## ACME (Pebble) Details
+## ACME (Pebble + Challenge Test Server) Details
 
 - **Directory URL**: `https://localhost:14000/dir`
-- **Management URL**: `https://localhost:15000`
-- **TLS**: Self-signed (use `PEBBLE_VA_ALWAYS_VALID=1` — all challenges auto-pass)
-- Stalwart must be configured to trust the Pebble CA or skip TLS verification.
+- **Pebble Management URL**: `https://localhost:15000`
+- **Challenge Test Server API**: `http://localhost:8055`
+- **TLS**: Self-signed — Stalwart must trust the Pebble CA or skip TLS verification
+- Pebble uses the challenge test server (`pebble-challtestsrv`) as its DNS resolver,
+  so challenge validation goes through controllable DNS/HTTP/TLS-ALPN responders.
+
+### Challenge Test Server (challtestsrv)
+
+The challenge test server provides a management API on port 8055 to programmatically
+control DNS records and challenge responses used during ACME validation.
+
+**Default behavior**: All A/AAAA queries resolve to `host.docker.internal` (the Docker
+host), so Pebble can reach your test server on localhost automatically. Tests only need
+to add challenge-specific records (TXT for DNS-01, HTTP tokens, etc.).
+
+### How Pebble Reaches Your Test Server
+
+When Pebble validates an HTTP-01 or TLS-ALPN-01 challenge, it:
+
+1. Resolves the domain via challtestsrv — by default all domains resolve to the Docker host
+2. Connects to the resolved IP on port **5002** (HTTP-01) or **5001** (TLS-ALPN-01)
+
+These ports are configured in `pebble/pebble-config.json` (`httpPort` / `tlsPort`).
+Change them to match whatever port your test Stalwart instance listens on.
+
+#### Management API Examples
+
+```bash
+# Add a DNS-01 TXT challenge response
+curl -s -X POST http://localhost:8055/add-dns \
+  -d '{"host": "_acme-challenge.mail.stalwart.test.", "value": "dns-challenge-token"}'
+
+# Remove a DNS-01 TXT challenge response
+curl -s -X POST http://localhost:8055/del-dns \
+  -d '{"host": "_acme-challenge.mail.stalwart.test."}'
+
+# Add an HTTP-01 challenge response (served by challtestsrv itself)
+curl -s -X POST http://localhost:8055/add-http \
+  -d '{"token": "challenge-token", "content": "challenge-key-authorization"}'
+
+# Remove an HTTP-01 challenge response
+curl -s -X POST http://localhost:8055/del-http \
+  -d '{"token": "challenge-token"}'
+
+# Add a TLS-ALPN-01 challenge response (served by challtestsrv itself)
+curl -s -X POST http://localhost:8055/add-tlsalpn \
+  -d '{"host": "mail.stalwart.test", "content": "base64-encoded-key-authz"}'
+
+# Remove a TLS-ALPN-01 challenge response
+curl -s -X POST http://localhost:8055/del-tlsalpn \
+  -d '{"host": "mail.stalwart.test"}'
+
+# Clear all mock DNS/challenge data
+curl -s -X POST http://localhost:8055/clear-request-count
+```
 
 ## Self-Signed TLS Certificate
 

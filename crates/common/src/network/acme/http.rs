@@ -55,7 +55,12 @@ pub(crate) async fn https(
             max_retries,
         })
     } else {
-        Err(AcmeError::HttpStatus(response.status()))
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        Err(AcmeError::HttpStatus(format!(
+            "Unexpected status {}: {}",
+            status, text
+        )))
     }
 }
 

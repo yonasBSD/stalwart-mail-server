@@ -12,8 +12,9 @@ use registry::{
         enums::{AccountType, Locale, Permission, StorageQuota},
         prelude::{Object, ObjectType, Property},
         structs::{
-            Account, Credential, CredentialPermissions, CredentialPermissionsList, CustomRoles,
-            Domain, EmailAlias, EncryptionAtRest, EncryptionSettings, GroupAccount, MailingList,
+            Account, CertificateManagement, Credential, CredentialPermissions,
+            CredentialPermissionsList, CustomRoles, DkimManagement, DnsManagement, Domain,
+            EmailAlias, EncryptionAtRest, EncryptionSettings, GroupAccount, MailingList,
             PasswordCredential, Permissions, PermissionsList, PublicKey, Roles,
             SecondaryCredential, UserAccount, UserRoles,
         },
@@ -114,6 +115,9 @@ pub async fn test(test: &TestServer) {
         .write(RegistryWrite::insert(
             &Domain {
                 name: "test.org".into(),
+                certificate_management: CertificateManagement::Manual,
+                dns_management: DnsManagement::Manual,
+                dkim_management: DkimManagement::Manual,
                 is_enabled: true,
                 ..Default::default()
             }
@@ -126,6 +130,9 @@ pub async fn test(test: &TestServer) {
         .write(RegistryWrite::insert(
             &Domain {
                 name: "test.net".into(),
+                certificate_management: CertificateManagement::Manual,
+                dns_management: DnsManagement::Manual,
+                dkim_management: DkimManagement::Manual,
                 is_enabled: true,
                 ..Default::default()
             }
@@ -243,6 +250,9 @@ pub async fn test(test: &TestServer) {
         Domain {
             name: "test.org".into(),
             is_enabled: true,
+            certificate_management: CertificateManagement::Manual,
+            dns_management: DnsManagement::Manual,
+            dkim_management: DkimManagement::Manual,
             ..Default::default()
         },
         RegistryWriteResult::PrimaryKeyConflict {

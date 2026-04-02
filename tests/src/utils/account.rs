@@ -12,8 +12,9 @@ use registry::{
         enums::Permission,
         prelude::{ObjectType, Property},
         structs::{
-            self, Credential, CustomRoles, Domain, EmailAlias, GroupAccount, PasswordCredential,
-            Permissions, PermissionsList, Roles, UserAccount,
+            self, CertificateManagement, Credential, CustomRoles, DkimManagement, DnsManagement,
+            Domain, EmailAlias, GroupAccount, PasswordCredential, Permissions, PermissionsList,
+            Roles, UserAccount,
         },
     },
     types::{list::List, map::Map},
@@ -244,6 +245,9 @@ impl Account {
         self.registry_create_object(Domain {
             is_enabled: true,
             name: name.to_string(),
+            certificate_management: CertificateManagement::Manual,
+            dns_management: DnsManagement::Manual,
+            dkim_management: DkimManagement::Manual,
             ..Default::default()
         })
         .await
