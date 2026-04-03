@@ -35,11 +35,19 @@ This version includes **multiple breaking changes**. If you are upgrading from v
   - Improve and simplify LDAP settings (#2194 #2174)
 - DKIM:
   - Store DKIM keys in the database (#1264)
+  - Ignore insecure signatures when verifying DKIM (#1068 #467)
 - DNS Management:
-  - RFC2136 SIG0 support (#856)
+  - RFC2136 `SIG(0)` support (#856)
+  - Auto updating `TLSA` records when certificates change (#1664)
+  - `CAA` record support (#468)
+  - Create only `3 1 1` and `2 1 1` `TLSA` records (#2193).
   - BunnyDNS provider support
   - Porkbun provider support
   - DNSimple provider support
+- ACME:
+  - `DNS-PERSIST-01` ACME challenge support (#2837)
+  - Renew certificates on demand, view certificate details (#675 #1162 #2566)
+  - `CAA` records with `accounturi` parameter support (#1933)
 - Clustering:
   - Automatic cluster node ID generation and management.
   - Unified cluster management (#960)
@@ -47,6 +55,9 @@ This version includes **multiple breaking changes**. If you are upgrading from v
 - Directory:
   - Domain aliases (#583)
   - E-mail alias descriptions and disable alias (#506)
+- Account configuration and discovery:
+  - Automatic Configuration of Email, Calendar, and Contact Server Settings ([draft-mailmaint-uaautoconf-04](https://datatracker.ietf.org/doc/html/draft-eggert-mailmaint-uaautoconf-04)) (#2201)
+  - MS Autodiscover V2 support (#679)
 - Sieve: Allow deactivating scripts without deleting them (#1251).
 - Tracing: Enable events only mode (#2276)
 - Enterprise features:
@@ -76,12 +87,13 @@ This version includes **multiple breaking changes**. If you are upgrading from v
   - Fix `inMailboxOtherThan` query logic.
   - Fix `hasAttachment` search field (#2778)
 - IMAP: Increment argument max length to `8000` bytes
-- WebDAV: Return `304` `NOT_MODIFIED` on `If-None-Match`.
+- WebDAV: Return `304` `NOT_MODIFIED` on `If-None-Match`
 - Configuration: Prefix parsing issues (#2495)
 - OIDC: JWKS Exposes Symmetric Signing Key
 - SQLite: Fix thread pool exhaustion.
 - PostgreSQL: Use clean recycling method on connection pool
 - Meilisearch: Make `id` sorteable.
+- ACME: Fix wrong origin for subdomain updates (#2360)
 - Spam filter: Skip invalid messages during training.
 - Calendar: Include minutes in localized invite templates (#2828)
 

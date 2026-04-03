@@ -7770,6 +7770,7 @@ dependencies = [
  "trc",
  "types",
  "utils",
+ "x509-parser",
 ]
 
 [[package]]

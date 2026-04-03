@@ -73,7 +73,7 @@ async fn dns_management(server: &Server, task: &TaskDnsManagement) -> trc::Resul
     let mut errors = String::new();
     for record in records {
         if let Err(err) = dns_updater
-            .create(origin, &record.name, record.record, false)
+            .create(origin, &record.name, record.record, false, false)
             .await
         {
             if !errors.is_empty() {

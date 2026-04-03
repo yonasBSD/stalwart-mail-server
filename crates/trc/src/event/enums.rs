@@ -6,7 +6,7 @@
 
 // This file is auto-generated. Do not edit directly.
 
-pub const TOTAL_EVENT_COUNT: usize = 596;
+pub const TOTAL_EVENT_COUNT: usize = 601;
 pub const TOTAL_METRIC_COUNT: usize = 339;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -223,6 +223,11 @@ pub enum DkimEvent {
     SignatureLength = 125,
     SignerNotFound = 126,
     BuildError = 592,
+    SignatureCreated = 596,
+    SignaturePublished = 597,
+    SignatureRetiring = 598,
+    SignatureRetired = 599,
+    SignatureDeleted = 600,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

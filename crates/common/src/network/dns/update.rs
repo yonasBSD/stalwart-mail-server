@@ -261,9 +261,12 @@ impl DnsUpdater {
         name: &str,
         record: DnsRecord,
         verify: bool,
+        delete_before_create: bool,
     ) -> Result<bool, String> {
         // First try deleting the record
-        if let Err(err) = self.updater.delete(name, origin, record.as_type()).await {
+        if delete_before_create
+            && let Err(err) = self.updater.delete(name, origin, record.as_type()).await
+        {
             // Errors are expected if the record does not exist
             trc::event!(
                 Dns(DnsEvent::RecordDeletionFailed),

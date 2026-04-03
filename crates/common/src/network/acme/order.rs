@@ -253,6 +253,7 @@ impl AcmeRequestBuilder {
                                 &format!("_acme-challenge.{}", domain),
                                 DnsRecord::TXT(self.dns_proof(challenge)?),
                                 true,
+                                true,
                             )
                             .await
                             .map_err(AcmeError::Dns)?;

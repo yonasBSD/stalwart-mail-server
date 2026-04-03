@@ -137,6 +137,11 @@ impl EventType {
             b"dkim.signature-length" => EventType::Dkim(DkimEvent::SignatureLength),
             b"dkim.signer-not-found" => EventType::Dkim(DkimEvent::SignerNotFound),
             b"dkim.build-error" => EventType::Dkim(DkimEvent::BuildError),
+            b"dkim.signature-created" => EventType::Dkim(DkimEvent::SignatureCreated),
+            b"dkim.signature-published" => EventType::Dkim(DkimEvent::SignaturePublished),
+            b"dkim.signature-retiring" => EventType::Dkim(DkimEvent::SignatureRetiring),
+            b"dkim.signature-retired" => EventType::Dkim(DkimEvent::SignatureRetired),
+            b"dkim.signature-deleted" => EventType::Dkim(DkimEvent::SignatureDeleted),
             b"dmarc.pass" => EventType::Dmarc(DmarcEvent::Pass),
             b"dmarc.fail" => EventType::Dmarc(DmarcEvent::Fail),
             b"dmarc.perm-error" => EventType::Dmarc(DmarcEvent::PermError),
@@ -759,6 +764,11 @@ impl EventType {
             EventType::Dkim(DkimEvent::SignatureLength) => "dkim.signature-length",
             EventType::Dkim(DkimEvent::SignerNotFound) => "dkim.signer-not-found",
             EventType::Dkim(DkimEvent::BuildError) => "dkim.build-error",
+            EventType::Dkim(DkimEvent::SignatureCreated) => "dkim.signature-created",
+            EventType::Dkim(DkimEvent::SignaturePublished) => "dkim.signature-published",
+            EventType::Dkim(DkimEvent::SignatureRetiring) => "dkim.signature-retiring",
+            EventType::Dkim(DkimEvent::SignatureRetired) => "dkim.signature-retired",
+            EventType::Dkim(DkimEvent::SignatureDeleted) => "dkim.signature-deleted",
             EventType::Dmarc(DmarcEvent::Pass) => "dmarc.pass",
             EventType::Dmarc(DmarcEvent::Fail) => "dmarc.fail",
             EventType::Dmarc(DmarcEvent::PermError) => "dmarc.perm-error",
@@ -1470,6 +1480,11 @@ impl EventType {
             EventType::Dkim(DkimEvent::SignatureLength) => 125,
             EventType::Dkim(DkimEvent::SignerNotFound) => 126,
             EventType::Dkim(DkimEvent::BuildError) => 592,
+            EventType::Dkim(DkimEvent::SignatureCreated) => 596,
+            EventType::Dkim(DkimEvent::SignaturePublished) => 597,
+            EventType::Dkim(DkimEvent::SignatureRetiring) => 598,
+            EventType::Dkim(DkimEvent::SignatureRetired) => 599,
+            EventType::Dkim(DkimEvent::SignatureDeleted) => 600,
             EventType::Dmarc(DmarcEvent::Pass) => 134,
             EventType::Dmarc(DmarcEvent::Fail) => 132,
             EventType::Dmarc(DmarcEvent::PermError) => 135,
@@ -2071,6 +2086,11 @@ impl EventType {
             125 => Some(EventType::Dkim(DkimEvent::SignatureLength)),
             126 => Some(EventType::Dkim(DkimEvent::SignerNotFound)),
             592 => Some(EventType::Dkim(DkimEvent::BuildError)),
+            596 => Some(EventType::Dkim(DkimEvent::SignatureCreated)),
+            597 => Some(EventType::Dkim(DkimEvent::SignaturePublished)),
+            598 => Some(EventType::Dkim(DkimEvent::SignatureRetiring)),
+            599 => Some(EventType::Dkim(DkimEvent::SignatureRetired)),
+            600 => Some(EventType::Dkim(DkimEvent::SignatureDeleted)),
             134 => Some(EventType::Dmarc(DmarcEvent::Pass)),
             132 => Some(EventType::Dmarc(DmarcEvent::Fail)),
             135 => Some(EventType::Dmarc(DmarcEvent::PermError)),
@@ -2696,6 +2716,11 @@ impl EventType {
             EventType::Delivery(DeliveryEvent::DsnSuccess) => Level::Info,
             EventType::Delivery(DeliveryEvent::DsnTempFail) => Level::Info,
             EventType::Delivery(DeliveryEvent::DsnPermFail) => Level::Info,
+            EventType::Dkim(DkimEvent::SignatureCreated) => Level::Info,
+            EventType::Dkim(DkimEvent::SignaturePublished) => Level::Info,
+            EventType::Dkim(DkimEvent::SignatureRetiring) => Level::Info,
+            EventType::Dkim(DkimEvent::SignatureRetired) => Level::Info,
+            EventType::Dkim(DkimEvent::SignatureDeleted) => Level::Info,
             EventType::Dns(DnsEvent::RecordCreated) => Level::Info,
             EventType::Dns(DnsEvent::RecordPropagated) => Level::Info,
             EventType::IncomingReport(IncomingReportEvent::DmarcReport) => Level::Info,
@@ -3079,6 +3104,11 @@ impl EventType {
             EventType::Dkim(DkimEvent::SignatureLength) => "DKIM signature length issue",
             EventType::Dkim(DkimEvent::SignerNotFound) => "DKIM signer not found",
             EventType::Dkim(DkimEvent::BuildError) => "DKIM build error",
+            EventType::Dkim(DkimEvent::SignatureCreated) => "DKIM signature created",
+            EventType::Dkim(DkimEvent::SignaturePublished) => "DKIM signature published",
+            EventType::Dkim(DkimEvent::SignatureRetiring) => "DKIM signature retiring",
+            EventType::Dkim(DkimEvent::SignatureRetired) => "DKIM signature retired",
+            EventType::Dkim(DkimEvent::SignatureDeleted) => "DKIM signature deleted",
             EventType::Dmarc(DmarcEvent::Pass) => "DMARC check passed",
             EventType::Dmarc(DmarcEvent::Fail) => "DMARC check failed",
             EventType::Dmarc(DmarcEvent::PermError) => "DMARC permanent error",
@@ -3907,6 +3937,19 @@ impl EventType {
             EventType::Dkim(DkimEvent::SignerNotFound) => "The DKIM signer was not found",
             EventType::Dkim(DkimEvent::BuildError) => {
                 "An error occurred while building DKIM signature"
+            }
+            EventType::Dkim(DkimEvent::SignatureCreated) => "A new DKIM signature has been created",
+            EventType::Dkim(DkimEvent::SignaturePublished) => {
+                "A DKIM signature has been published to DNS"
+            }
+            EventType::Dkim(DkimEvent::SignatureRetiring) => {
+                "A DKIM signature is retiring and will be removed from DNS soon"
+            }
+            EventType::Dkim(DkimEvent::SignatureRetired) => {
+                "A DKIM signature has been retired and removed from DNS"
+            }
+            EventType::Dkim(DkimEvent::SignatureDeleted) => {
+                "A DKIM signature has been deleted from the system"
             }
             EventType::Dmarc(DmarcEvent::Pass) => "The DMARC check has passed",
             EventType::Dmarc(DmarcEvent::Fail) => "The DMARC check has failed",
@@ -5180,6 +5223,11 @@ impl EventType {
             EventType::Dkim(DkimEvent::SignatureLength),
             EventType::Dkim(DkimEvent::SignerNotFound),
             EventType::Dkim(DkimEvent::BuildError),
+            EventType::Dkim(DkimEvent::SignatureCreated),
+            EventType::Dkim(DkimEvent::SignaturePublished),
+            EventType::Dkim(DkimEvent::SignatureRetiring),
+            EventType::Dkim(DkimEvent::SignatureRetired),
+            EventType::Dkim(DkimEvent::SignatureDeleted),
             EventType::Dmarc(DmarcEvent::Pass),
             EventType::Dmarc(DmarcEvent::Fail),
             EventType::Dmarc(DmarcEvent::PermError),

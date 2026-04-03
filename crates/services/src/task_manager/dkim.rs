@@ -33,6 +33,7 @@ use store::{
     },
     write::now,
 };
+use trc::DkimEvent;
 use types::id::Id;
 
 pub(crate) trait DkimManagementTask: Sync + Send {
@@ -143,7 +144,20 @@ async fn dkim_management(server: &Server, task: &TaskDomainManagement) -> trc::R
     let mut do_refresh = false;
 
     for algorithm in create_signatures {
+        #[cfg(feature = "test_mode")]
+        let secret = {
+            if dkim.selector_template.contains("dummy") {
+                match algorithm {
+                    DkimSignatureType::Dkim1Ed25519Sha256 => TEST_ED25519_KEY.to_string(),
+                    DkimSignatureType::Dkim1RsaSha256 => TEST_RSA_KEY.to_string(),
+                }
+            } else {
+                generate_dkim_private_key(algorithm).await.unwrap().unwrap()
+            }
+        };
+
         // Generate new key and selector
+        #[cfg(not(feature = "test_mode"))]
         let secret = match generate_dkim_private_key(algorithm).await? {
             Ok(secret) => secret,
             Err(err) => {
@@ -165,7 +179,7 @@ async fn dkim_management(server: &Server, task: &TaskDomainManagement) -> trc::R
             stage: DkimRotationStage::Active,
             domain_id: task.domain_id,
             member_tenant_id: domain.member_tenant_id,
-            selector,
+            selector: selector.clone(),
             private_key: SecretText::Text(SecretTextValue { secret }),
             ..Default::default()
         };
@@ -178,10 +192,16 @@ async fn dkim_management(server: &Server, task: &TaskDomainManagement) -> trc::R
         if let Some((updater, origin)) = &dns_updater {
             let record = generate_dkim_dns_record(&signature, &domain.name).await?;
             let signature_transition = if updater
-                .create(origin, &record.name, record.record, true)
+                .create(origin, &record.name, record.record, true, true)
                 .await
                 .is_ok_and(|did_propagate| did_propagate)
             {
+                trc::event!(
+                    Dkim(DkimEvent::SignaturePublished),
+                    Id = selector.clone(),
+                    Details = domain.name.clone()
+                );
+
                 do_refresh = true;
                 UTCDateTime::from_timestamp((now + dkim.rotate_after.as_secs()) as i64)
             } else {
@@ -203,7 +223,13 @@ async fn dkim_management(server: &Server, task: &TaskDomainManagement) -> trc::R
             .write(RegistryWrite::insert(&signature.into()))
             .await?
         {
-            RegistryWriteResult::Success(_) => (),
+            RegistryWriteResult::Success(_) => {
+                trc::event!(
+                    Dkim(DkimEvent::SignatureCreated),
+                    Id = selector,
+                    Details = domain.name.clone()
+                );
+            }
             err => {
                 return Ok(TaskResult::permanent(format!(
                     "Failed to write DKIM signature: {err}"
@@ -218,7 +244,7 @@ async fn dkim_management(server: &Server, task: &TaskDomainManagement) -> trc::R
         let record = generate_dkim_dns_record(&signature.object, &domain.name).await?;
         if let Some((updater, origin)) = &dns_updater {
             match updater
-                .create(origin, &record.name, record.record, true)
+                .create(origin, &record.name, record.record, true, true)
                 .await
             {
                 Ok(true) => {
@@ -233,6 +259,12 @@ async fn dkim_management(server: &Server, task: &TaskDomainManagement) -> trc::R
 
                     new_signature.set_next_transition(signature_transition);
                     new_signature.set_stage(DkimRotationStage::Active);
+
+                    trc::event!(
+                        Dkim(DkimEvent::SignaturePublished),
+                        Id = new_signature.selector().to_string(),
+                        Details = domain.name.clone()
+                    );
 
                     // Write key
                     if let Some(task_result) = update_signature(
@@ -296,6 +328,12 @@ async fn dkim_management(server: &Server, task: &TaskDomainManagement) -> trc::R
         new_signature.set_next_transition(signature_transition);
         new_signature.set_stage(DkimRotationStage::Retiring);
 
+        trc::event!(
+            Dkim(DkimEvent::SignatureRetiring),
+            Id = new_signature.selector().to_string(),
+            Details = domain.name.clone()
+        );
+
         // Write key
         if let Some(task_result) = update_signature(
             server,
@@ -331,6 +369,12 @@ async fn dkim_management(server: &Server, task: &TaskDomainManagement) -> trc::R
 
                     new_signature.set_next_transition(signature_transition);
                     new_signature.set_stage(DkimRotationStage::Retired);
+
+                    trc::event!(
+                        Dkim(DkimEvent::SignatureRetired),
+                        Id = new_signature.selector().to_string(),
+                        Details = domain.name.clone()
+                    );
 
                     // Write key
                     if let Some(task_result) = update_signature(
@@ -373,6 +417,13 @@ async fn dkim_management(server: &Server, task: &TaskDomainManagement) -> trc::R
     // Delete signatures
     for signature in delete_signatures {
         let record = generate_dkim_dns_record_name(&signature.object, &domain.name);
+
+        trc::event!(
+            Dkim(DkimEvent::SignatureDeleted),
+            Id = signature.object.selector().to_string(),
+            Details = domain.name.clone()
+        );
+
         match server
             .registry()
             .write(RegistryWrite::delete_object(
@@ -474,3 +525,37 @@ async fn update_signature(
         }
     }
 }
+
+const TEST_RSA_KEY: &str = r#"-----BEGIN RSA PRIVATE KEY-----
+MIIEowIBAAKCAQEAv9XYXG3uK95115mB4nJ37nGeNe2CrARm1agrbcnSk5oIaEfM
+ZLUR/X8gPzoiNHZcfMZEVR6bAytxUhc5EvZIZrjSuEEeny+fFd/cTvcm3cOUUbIa
+UmSACj0dL2/KwW0LyUaza9z9zor7I5XdIl1M53qVd5GI62XBB76FH+Q0bWPZNkT4
+NclzTLspD/MTpNCCPhySM4Kdg5CuDczTH4aNzyS0TqgXdtw6A4Sdsp97VXT9fkPW
+9rso3lrkpsl/9EQ1mR/DWK6PBmRfIuSFuqnLKY6v/z2hXHxF7IoojfZLa2kZr9Ae
+d4l9WheQOTA19k5r2BmlRw/W9CrgCBo0Sdj+KQIDAQABAoIBAFPChEi/OvnulReB
+ECQWhOUYuNKlFKQU++2YEvZJ4+bMn5UgnE7wfJ1pj2Pr9xlfALz+OMHNrjMxGbaV
+KzdrT2uCkYcf78XjnhuH9gKIiXDUv4L4N+P3u6w8yOx4bFgOS9IjS53yDOPM7SC5
+g6dIg5aigHaHlffqIuFFv4yQMI/+Ai+zBKxS7wRhxK/7nnAuo28fe5MEdp57ho9/
+AGlDNsdg9zCgjwhokwFE3+AaD+bkUFm4gQ1XjkUFrlmnQn8vDQ0i9toEWhCj+UPY
+iOKL63MJnr90MXTXWLHoFj99wBp//mYygbF9Lj8fa28/oa8LWp3Jhb7QeMgH46iv
+3aLHbTECgYEA5M2dAw+nyMw9vYlkMejhwObKYP8Mr/6zcGMLCalYvRJM5iUAM0JI
+H6sM6pV9/nv167cbKocj3xYPdtE7FPOn4132MLM8Ne1f8nPE64Qrcbj5WBXvLnU8
+hpWbwe2Z8h7UUMKx6q4F1/TXYkc3ScxYwfjM4mP/pLsAOgVzRSEEgrUCgYEA1qNQ
+xaQHNWZ1O8WuTnqWd5JSsic6iURAmUcLeFDZY2PWhVoaQ8L/xMQhDYs1FIbLWArW
+4Qq3Ibu8AbSejAKuaJz7Uf26PX+PYVUwAOO0qamCJ8d/qd6So7qWMDyAY2yXI39Y
+1nMqRjr7bkEsggAZao7BKqA7ZtmogjOusBT38iUCgYEA06agJ8TDoKvOMRZ26PRU
+YO0dKLzGL8eclcoI29cbj0rud7aiiMg3j5PbTuUat95TjsjDCIQaWrM9etvxm2AJ
+Xfn9Uu96MyhyKQWOk46f4YMKpMElkARDCPw8KRhx39dE77AqhLyWCz8iPndCXbH6
+KPTOEl4OjYOuof2Is9nnIkECgYBh948RdsnXhNlzm8nwhiGRmBbou+EK8D0v+O5y
+Tyy6IcKzgSnFzgZh8EdJ4EUtBk1f9SqY8wQdgIvSl3daXorusuA/TzkngsaV3YUY
+ktZOLlF7CKLrjOyPkMWmZKcROmpNyH1q/IvKHHfQnizLdXIkYd4nL5WNX0F7lE1i
+j1+QhQKBgB2lviBK7rJFwlFYdQUP1NAN2dKxMZk8uJS8JglHrM0+8nRI83HbTdEQ
+vB0ManEKBkbS4T5n+gRtdEqKSDmWDTXDlrBfcdCHNQLwYtBpOotCqQn/AmfjcPBl
+byAbwh4+HiZ5JISoRZpiZqy67aJNVoXmdtb/E9mi7ozzytpxMNql
+-----END RSA PRIVATE KEY-----
+"#;
+
+const TEST_ED25519_KEY: &str = r#"-----BEGIN PRIVATE KEY-----
+MC4CAQAwBQYDK2VwBCIEIAO3hAf144lTAVjTkht3ZwBTK0CMCCd1bI0alggneN3B
+-----END PRIVATE KEY-----
+"#;
