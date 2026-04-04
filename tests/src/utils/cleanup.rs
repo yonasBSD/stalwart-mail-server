@@ -419,6 +419,8 @@ fn is_allowed_registry_type(object_type: ObjectType) -> bool {
                 | ObjectType::MtaRoute
                 | ObjectType::MtaTlsStrategy
                 | ObjectType::MtaVirtualQueue
+                | ObjectType::MtaConnectionStrategy
+                | ObjectType::MtaInboundThrottle
                 | ObjectType::Tracer
                 | ObjectType::Domain
         )

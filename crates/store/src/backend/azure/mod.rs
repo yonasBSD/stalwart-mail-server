@@ -5,7 +5,7 @@
  */
 
 use azure_core::error::ErrorKind;
-use azure_core::{ExponentialRetryOptions, RetryOptions, StatusCode, TransportOptions};
+use azure_core::{ExponentialRetryOptions, RetryOptions, StatusCode};
 use azure_storage::StorageCredentials;
 use azure_storage_blobs::prelude::{ClientBuilder, ContainerClient};
 use futures::stream::StreamExt;
@@ -45,19 +45,8 @@ impl AzureStore {
             }
         };
 
-        let transport = match reqwest::Client::builder()
-            .timeout(config.timeout.into_inner())
-            .build()
-        {
-            Ok(client) => Arc::new(client),
-            Err(err) => {
-                return Err(format!("Failed to create HTTP client: {err:?}"));
-            }
-        };
-
         Ok(BlobStore::Azure(Arc::new(AzureStore {
             client: ClientBuilder::new(config.storage_account, credentials)
-                .transport(TransportOptions::new(transport))
                 .retry(RetryOptions::exponential(
                     ExponentialRetryOptions::default().max_retries(config.max_retries as u32 * 2),
                 ))

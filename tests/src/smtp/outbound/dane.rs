@@ -53,7 +53,7 @@ async fn dane_verify() {
         .await;
     let mut remote = TestServerBuilder::new("smtp_dane_remote")
         .await
-        .with_dummy_tls_cert()
+        .with_dummy_tls_cert(["*.foobar.org"])
         .await
         .with_http_listener(19019)
         .await

@@ -46,6 +46,7 @@ pub async fn test(imap: &mut ImapConnection, _imap_check: &mut ImapConnection, t
     }
 
     // Obtain ThreadId and MessageId of the first message
+    test.wait_for_tasks().await;
     imap.send("SELECT Manchego").await;
     imap.assert_read(Type::Tagged, ResponseType::Ok).await;
 

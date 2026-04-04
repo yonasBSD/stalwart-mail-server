@@ -31,8 +31,7 @@ pub async fn test(test: &TestServer) {
     let db = test.server.store().clone();
 
     #[cfg(feature = "foundationdb")]
-    if matches!(db, Store::FoundationDb(_)) {
-        use store::Store;
+    if matches!(db, store::Store::FoundationDb(_)) {
         use store::write::RegistryClass;
         println!("Running FoundationDB chunked iterator test...");
         let kvs = [

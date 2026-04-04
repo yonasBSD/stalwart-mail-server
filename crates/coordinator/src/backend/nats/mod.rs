@@ -44,9 +44,7 @@ impl NatsPubSub {
             opts = opts.user_and_password(user.to_string(), pass.to_string());
         } else if let Some(credentials) = config.credentials.secret().await?.map(|v| v.into_owned())
         {
-            opts = opts
-                .credentials(&credentials)
-                .map_err(|err| format!("Failed to parse Nats credentials: {}", err))?;
+            opts = opts.token(credentials);
         }
 
         async_nats::connect_with_options(config.addresses.into_inner(), opts)

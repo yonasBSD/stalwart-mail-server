@@ -15,7 +15,7 @@ use std::{collections::HashMap, fmt::Debug, sync::Arc};
 pub mod backend;
 pub mod core;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum Credentials {
     Basic {
         username: String,

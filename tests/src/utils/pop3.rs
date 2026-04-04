@@ -5,7 +5,6 @@
  */
 
 use base64::{Engine, engine::general_purpose};
-use mail_send::smtp::tls::build_tls_connector;
 use rustls_pki_types::ServerName;
 use std::time::Duration;
 use tokio::{
@@ -13,6 +12,7 @@ use tokio::{
     net::TcpStream,
 };
 use tokio_rustls::client::TlsStream;
+use utils::tls::build_tls_connector;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResponseType {
@@ -30,6 +30,7 @@ impl Pop3Connection {
     pub async fn connect() -> Self {
         let (reader, writer) = tokio::io::split(
             build_tls_connector(true)
+                .unwrap()
                 .connect(
                     ServerName::try_from("pop3.example.org").unwrap().to_owned(),
                     TcpStream::connect("127.0.0.1:4110").await.unwrap(),

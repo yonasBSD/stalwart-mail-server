@@ -84,6 +84,7 @@ pub async fn test(test: &TestServer) {
     let tmp_contact_id = response.created(3).id().to_string();
 
     // Destroy tmp contact
+    test.wait_for_tasks().await;
     assert_eq!(
         account
             .jmap_destroy(
@@ -438,6 +439,7 @@ END:VCARD"#
         }));
 
     // Deletion tests
+    test.wait_for_tasks().await;
     assert_eq!(
         account
             .jmap_destroy(

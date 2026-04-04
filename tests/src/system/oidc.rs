@@ -258,7 +258,6 @@ pub async fn test(test: &mut TestServer) {
 
     // Try POP3 OAUTHBEARER auth
     let mut pop3 = Pop3Connection::connect().await;
-    pop3.assert_read(crate::utils::pop3::ResponseType::Ok).await;
     pop3.send(&format!("AUTH OAUTHBEARER {oauth_bearer_sasl}"))
         .await;
     pop3.assert_read(crate::utils::pop3::ResponseType::Ok).await;

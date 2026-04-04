@@ -18,7 +18,7 @@ use crate::network::acme::{
 };
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use rcgen::{Certificate, CustomExtension, PKCS_ECDSA_P256_SHA256};
+use rcgen::{CustomExtension, KeyPair, PKCS_ECDSA_P256_SHA256};
 use registry::schema::structs::AcmeProvider;
 use reqwest::Method;
 use ring::rand::SystemRandom;
@@ -158,11 +158,15 @@ impl AcmeRequestBuilder {
         let challenge_token = challenge.token.as_deref().ok_or_else(|| {
             AcmeError::Invalid("Missing tls-alpn-01 challenge token in response".to_string())
         })?;
-        let mut params = rcgen::CertificateParams::new(vec![domain]);
+        let mut params = rcgen::CertificateParams::new(vec![domain]).map_err(|err| {
+            AcmeError::Crypto(format!("Failed to create certificate params: {}", err))
+        })?;
         let key_auth = key_authorization_sha256(&self.key_pair, challenge_token)?;
-        params.alg = &PKCS_ECDSA_P256_SHA256;
         params.custom_extensions = vec![CustomExtension::new_acme_identifier(key_auth.as_ref())];
-        let cert = Certificate::from_params(params).map_err(|err| {
+        let key_pair = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).map_err(|err| {
+            AcmeError::Crypto(format!("Failed to generate key pair: {}", err))
+        })?;
+        let cert = params.self_signed(&key_pair).map_err(|err| {
             AcmeError::Crypto(format!(
                 "Failed to generate TLS-ALPN-01 certificate: {}",
                 err
@@ -170,13 +174,8 @@ impl AcmeRequestBuilder {
         })?;
 
         Archiver::new(SerializedCert {
-            certificate: cert.serialize_der().map_err(|err| {
-                AcmeError::Crypto(format!(
-                    "Failed to serialize TLS-ALPN-01 certificate: {}",
-                    err
-                ))
-            })?,
-            private_key: cert.serialize_private_key_der(),
+            certificate: cert.der().to_vec(),
+            private_key: key_pair.serialize_der(),
         })
         .untrusted()
         .serialize()

@@ -22,7 +22,6 @@ use crate::{
 use ahash::{AHashMap, AHashSet};
 use arc_swap::ArcSwap;
 use mail_auth::{MX, Parameters, Txt};
-use mail_send::smtp::tls::build_tls_connector;
 use parking_lot::RwLock;
 use registry::schema::{prelude::ObjectType, structs};
 use std::{
@@ -31,8 +30,10 @@ use std::{
 };
 use store::{LookupStores, registry::bootstrap::Bootstrap};
 use utils::{
+    UnwrapFailure,
     cache::{Cache, CacheWithTtl},
     snowflake::SnowflakeIdGenerator,
+    tls::build_tls_connector,
 };
 
 impl Data {
@@ -85,7 +86,7 @@ impl Data {
             queue_status: true.into(),
             applications: Default::default(),
             logos: Default::default(),
-            smtp_connectors: TlsConnectors::default(),
+            smtp_connectors: TlsConnectors::try_new().failed("Failed to build TLS connectors"),
             asn_geo_data: Default::default(),
         }
     }
@@ -225,18 +226,18 @@ impl Default for Data {
             queue_status: true.into(),
             applications: Default::default(),
             logos: Default::default(),
-            smtp_connectors: Default::default(),
+            smtp_connectors: TlsConnectors::try_new().unwrap(),
             asn_geo_data: Default::default(),
             lookup_stores: Default::default(),
         }
     }
 }
 
-impl Default for TlsConnectors {
-    fn default() -> Self {
-        TlsConnectors {
-            pki_verify: build_tls_connector(false),
-            dummy_verify: build_tls_connector(true),
-        }
+impl TlsConnectors {
+    fn try_new() -> Result<Self, String> {
+        Ok(TlsConnectors {
+            pki_verify: build_tls_connector(false)?,
+            dummy_verify: build_tls_connector(true)?,
+        })
     }
 }

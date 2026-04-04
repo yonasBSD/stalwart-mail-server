@@ -5,12 +5,13 @@
  */
 
 use argon2::Argon2;
+use argon2::PasswordHash;
 use argon2::PasswordHasher;
+use argon2::PasswordVerifier;
+use argon2::password_hash::SaltString;
+use argon2::password_hash::rand_core::OsRng;
 use mail_builder::encoders::base64::base64_encode;
 use mail_parser::decoders::base64::base64_decode;
-use password_hash::PasswordHash;
-use password_hash::SaltString;
-use password_hash::rand_core::OsRng;
 use pbkdf2::Pbkdf2;
 use pwhash::{bcrypt, bsdi_crypt, md5_crypt, sha1_crypt, sha256_crypt, sha512_crypt, unix_crypt};
 use registry::schema::enums::PasswordHashAlgorithm;
@@ -73,44 +74,27 @@ pub async fn verify_mfa_secret_hash(
     }
 }
 
-/*pub fn verify_otp_auth(otp_auth: Option<&str>, otp_code: Option<&str>) -> trc::Result<bool> {
-    if let Some(otp_auth) = otp_auth {
-        if let Some(otp_code) = otp_code {
-            TOTP::from_url(otp_auth)
-                .map_err(|err| {
-                    trc::AuthEvent::Error
-                        .reason(err)
-                        .details(otp_auth.to_string())
-                })?
-                .check_current(otp_code)
-                .map_err(|err| {
-                    trc::AuthEvent::Error
-                        .reason(err)
-                        .details("TOTP verification failed")
-                })
-        } else {
-            Ok(false)
-        }
-    } else {
-        Ok(true)
-    }
-}*/
-
 async fn verify_hash_prefix(hashed_secret: &str, secret: &[u8]) -> trc::Result<bool> {
-    if hashed_secret.starts_with("$argon2")
-        || hashed_secret.starts_with("$pbkdf2")
-        || hashed_secret.starts_with("$scrypt")
-    {
+    let is_argon = hashed_secret.starts_with("$argon2");
+    let is_pbkdf2 = !is_argon && hashed_secret.starts_with("$pbkdf2");
+    let is_scrypt = !is_argon && !is_pbkdf2 && hashed_secret.starts_with("$scrypt");
+
+    if is_argon || is_pbkdf2 || is_scrypt {
         let (tx, rx) = oneshot::channel();
         let secret = secret.to_vec();
         let hashed_secret = hashed_secret.to_string();
 
         tokio::task::spawn_blocking(move || match PasswordHash::new(&hashed_secret) {
             Ok(hash) => {
-                tx.send(Ok(hash
-                    .verify_password(&[&Argon2::default(), &Pbkdf2, &Scrypt], &secret)
-                    .is_ok()))
-                    .ok();
+                let result = if is_argon {
+                    Argon2::default().verify_password(&secret, &hash)
+                } else if is_pbkdf2 {
+                    Pbkdf2.verify_password(&secret, &hash)
+                } else {
+                    Scrypt.verify_password(&secret, &hash)
+                };
+
+                tx.send(Ok(result.is_ok())).ok();
             }
             Err(err) => {
                 tx.send(Err(trc::AuthEvent::Error

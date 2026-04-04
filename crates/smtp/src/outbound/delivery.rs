@@ -10,6 +10,7 @@ use crate::outbound::client::{
     SmtpClient, from_error_details, from_error_status, from_mail_send_error,
 };
 use crate::outbound::dane::dnssec::TlsaLookup;
+use crate::outbound::error::ClientError;
 use crate::outbound::lookup::{DnsLookup, SourceIp};
 use crate::outbound::mta_sts::lookup::MtaStsLookup;
 use crate::outbound::mta_sts::verify::VerifyPolicy;
@@ -1164,7 +1165,7 @@ impl QueuedMessage {
                                     );
 
                                     // Report TLS failure
-                                    if let (Some(tls_report), mail_send::Error::Tls(error)) =
+                                    if let (Some(tls_report), ClientError::Tls(error)) =
                                         (&tls_report, &error)
                                     {
                                         server

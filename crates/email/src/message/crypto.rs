@@ -17,7 +17,7 @@ use openpgp::{
     types::{KeyFlags, SymmetricAlgorithm},
 };
 use rand::{RngCore, SeedableRng, rngs::StdRng};
-use rasn::types::{ObjectIdentifier, OctetString};
+use rasn::types::{ObjectIdentifier, OctetString, SetOf};
 use rasn_cms::{
     AlgorithmIdentifier, CONTENT_DATA, CONTENT_ENVELOPED_DATA, EncryptedContent,
     EncryptedContentInfo, EncryptedKey, EnvelopedData, IssuerAndSerialNumber,
@@ -27,7 +27,7 @@ use rasn_cms::{
 };
 use rsa::{Pkcs1v15Encrypt, RsaPublicKey, pkcs1::DecodeRsaPublicKey};
 use sequoia_openpgp as openpgp;
-use std::{collections::BTreeSet, io::Cursor};
+use std::io::Cursor;
 
 #[derive(Debug)]
 pub enum EncryptMessageError {
@@ -199,8 +199,7 @@ impl EncryptMessage for Message<'_> {
             })?;
 
             // Encrypt key using public keys
-            #[allow(clippy::mutable_key_type)]
-            let mut recipient_infos = BTreeSet::new();
+            let mut recipient_infos = SetOf::new();
             for cert in keys.iter() {
                 let cert = rasn::der::decode::<rasn_pkix::Certificate>(cert).map_err(|err| {
                     EncryptMessageError::Error(format!("Failed to parse certificate: {}", err))

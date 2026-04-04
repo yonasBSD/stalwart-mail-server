@@ -47,7 +47,7 @@ async fn mta_sts_verify() {
         .await
         .with_smtp_listener(9925)
         .await
-        .with_dummy_tls_cert()
+        .with_dummy_tls_cert(["*.foobar.org"])
         .await
         .disable_services()
         .capture_queue()

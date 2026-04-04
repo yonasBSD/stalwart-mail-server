@@ -399,12 +399,12 @@ async fn insert_safe_defaults(bp: &mut Bootstrap) -> trc::Result<()> {
         }
 
         let todo = "review";
-        #[cfg(not(feature = "test_mode"))]
-        if let Some(domain_id) = default_domain_id {
+        //#[cfg(not(feature = "test_mode"))]
+        /*if let Some(domain_id) = default_domain_id {
             let now = store::write::now();
             let signature_rsa = DkimSignature::Dkim1RsaSha256(Dkim1Signature {
                 domain_id,
-                enabled: true,
+                stage: DkimSignatureStage::Testing,
                 selector: format!("rsa-{now}"),
                 private_key: DkimPrivateKey::Value(SecretTextValue {
                     secret: crate::network::dkim::generate_dkim_private_key(
@@ -444,7 +444,7 @@ async fn insert_safe_defaults(bp: &mut Bootstrap) -> trc::Result<()> {
                     .write(RegistryWrite::insert(&signature.into()))
                     .await?;
             }
-        }
+        }*/
     }
 
     if bp.registry.count_object(ObjectType::SystemSettings).await? == 0 {

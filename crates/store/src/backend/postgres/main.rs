@@ -17,7 +17,7 @@ use ::registry::schema::{enums::PostgreSqlRecyclingMethod, structs};
 use deadpool::managed::Object;
 use deadpool_postgres::{Config, Manager, ManagerConfig, PoolConfig, RecyclingMethod, Runtime};
 use tokio_postgres::NoTls;
-use utils::rustls_client_config;
+use utils::tls::rustls_client_config;
 
 impl PostgresStore {
     pub async fn open(config: structs::PostgreSqlStore) -> Result<Store, String> {
@@ -54,7 +54,7 @@ impl PostgresStore {
                 conn_pool: if config.use_tls {
                     cfg.create_pool(
                         Some(Runtime::Tokio1),
-                        MakeRustlsConnect::new(rustls_client_config(config.allow_invalid_certs)),
+                        MakeRustlsConnect::new(rustls_client_config(config.allow_invalid_certs)?),
                     )
                 } else {
                     cfg.create_pool(Some(Runtime::Tokio1), NoTls)
@@ -67,7 +67,7 @@ impl PostgresStore {
             conn_pool: if config.use_tls {
                 cfg.create_pool(
                     Some(Runtime::Tokio1),
-                    MakeRustlsConnect::new(rustls_client_config(config.allow_invalid_certs)),
+                    MakeRustlsConnect::new(rustls_client_config(config.allow_invalid_certs)?),
                 )
             } else {
                 cfg.create_pool(Some(Runtime::Tokio1), NoTls)

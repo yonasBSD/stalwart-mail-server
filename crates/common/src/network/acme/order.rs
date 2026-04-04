@@ -15,7 +15,7 @@ use crate::{KV_ACME, Server};
 use chrono::{TimeZone, Utc};
 use dns_update::DnsRecord;
 use futures::future::try_join_all;
-use rcgen::{CertificateParams, DistinguishedName, PKCS_ECDSA_P256_SHA256};
+use rcgen::{CertificateParams, DistinguishedName, KeyPair, PKCS_ECDSA_P256_SHA256};
 use std::collections::BTreeSet;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::time::Duration;
@@ -82,11 +82,11 @@ impl AcmeRequestBuilder {
                 .collect()
         };
 
-        let mut params = CertificateParams::new(domains.clone());
+        let mut params = CertificateParams::new(domains.clone())
+            .map_err(|err| AcmeError::Crypto(format!("Failed to create certificate params: {}", err)))?;
         params.distinguished_name = DistinguishedName::new();
-        params.alg = &PKCS_ECDSA_P256_SHA256;
-        let cert = rcgen::Certificate::from_params(params)
-            .map_err(|err| AcmeError::Crypto(format!("Failed to generate certificate: {}", err)))?;
+        let key_pair = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256)
+            .map_err(|err| AcmeError::Crypto(format!("Failed to generate key pair: {}", err)))?;
         let response = self.new_order(domains.clone()).await?;
         let order_url = response.location;
         let mut order = response.body;
@@ -145,9 +145,10 @@ impl AcmeRequestBuilder {
                         Hostname = domains.as_slice(),
                     );
 
-                    let csr = cert.serialize_request_der().map_err(|err| {
+                    let csr = params.serialize_request(&key_pair).map_err(|err| {
                         AcmeError::Crypto(format!("Failed to serialize CSR: {}", err))
                     })?;
+                    let csr = csr.der().to_vec();
                     order = self.finalize(order.finalize, csr).await?.body;
                 }
                 OrderStatus::Valid { certificate } => {
@@ -161,7 +162,7 @@ impl AcmeRequestBuilder {
 
                     return Ok(PemCert {
                         certificate,
-                        private_key: cert.serialize_private_key_pem(),
+                        private_key: key_pair.serialize_pem(),
                     });
                 }
                 OrderStatus::Invalid => {

@@ -189,10 +189,10 @@ pub(crate) fn build_certified_key(
 pub(crate) fn build_self_signed_cert(
     domains: impl Into<Vec<String>>,
 ) -> Result<CertifiedKey, String> {
-    let cert = generate_simple_self_signed(domains)
+    let rcgen::CertifiedKey { cert, signing_key } = generate_simple_self_signed(domains)
         .map_err(|err| format!("Failed to generate self-signed certificate: {err}",))?;
     build_certified_key(
-        cert.serialize_pem().unwrap().into_bytes(),
-        cert.serialize_private_key_pem().into_bytes(),
+        cert.pem().into_bytes(),
+        signing_key.serialize_pem().into_bytes(),
     )
 }

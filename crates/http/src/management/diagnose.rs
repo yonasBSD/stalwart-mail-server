@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 use smtp::outbound::{
     client::{SmtpClient, StartTlsResult},
     dane::{dnssec::TlsaLookup, verify::TlsaVerify},
+    error::ClientError,
     lookup::{DnsLookup, ToNextHop},
     mta_sts::{lookup::MtaStsLookup, verify::VerifyPolicy},
 };
@@ -646,7 +647,7 @@ async fn delivery_diagnose(
                             if r.is_positive_completion() {
                                 Ok(r)
                             } else {
-                                Err(mail_send::Error::UnexpectedReply(r))
+                                Err(ClientError::UnexpectedReply(r))
                             }
                         }) {
                             Ok(_) => {
@@ -666,7 +667,7 @@ async fn delivery_diagnose(
                                         if r.is_positive_completion() {
                                             Ok(r)
                                         } else {
-                                            Err(mail_send::Error::UnexpectedReply(r))
+                                            Err(ClientError::UnexpectedReply(r))
                                         }
                                     }) {
                                     Ok(_) => {

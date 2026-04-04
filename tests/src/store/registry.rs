@@ -15,8 +15,8 @@ use registry::{
             Account, CertificateManagement, Credential, CredentialPermissions,
             CredentialPermissionsList, CustomRoles, DkimManagement, DnsManagement, Domain,
             EmailAlias, EncryptionAtRest, EncryptionSettings, GroupAccount, MailingList,
-            PasswordCredential, Permissions, PermissionsList, PublicKey, Roles,
-            SecondaryCredential, UserAccount, UserRoles,
+            PasswordCredential, Permissions, PermissionsList, PublicKey, SecondaryCredential,
+            UserAccount, UserRoles,
         },
     },
     types::{
@@ -222,7 +222,7 @@ pub async fn test(test: &TestServer) {
         trc::location!(),
     )
     .await;
-    account.assert_patch("roles", Roles::Default.into_value(), trc::location!());
+    account.assert_patch("roles", UserRoles::User.into_value(), trc::location!());
 
     let account_id = r
         .write(RegistryWrite::insert(&account.into()))

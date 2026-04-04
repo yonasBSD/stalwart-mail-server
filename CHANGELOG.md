@@ -7,24 +7,29 @@ All notable changes to this project will be documented in this file. This projec
 This version includes **multiple breaking changes**. If you are upgrading from v0.15.x and below, please read the [upgrading documentation](https://github.com/stalwartlabs/stalwart/blob/main/UPGRADING/v0_16.md) for more information on how to upgrade from previous versions.
 
 ## Added
-- App password enhancements:
-  - Limited access (#1609)
-  - Labels (#2255)
-  - IP address restrictions.
-  - Expiration dates.
-- API key enhancements:
-  - Limited access.
-  - Labels.
-  - IP address restrictions.
-  - Expiration dates.
-- Password enhancements:
-  - Password strength enforcement using the `zxcvbn` algorithm.
-  - Expiration and rotation policies.
-- Fail2ban:
-  - Auto-expire bans after a configurable time period (#964).
-  - Add comments to bans with details about the triggering event (#1321).
-- MTA:
-  - RCPT TO stage settings improvements (#2217 #394)
+- Security enhancements:
+  - Password strength enforcement using the `zxcvbn` algorithm
+  - Password expiration, rotation policies and IP address restrictions for user accounts
+  - App Passwords with limited access (#1609), labels (#2255), IP address restrictions and expiration dates
+  - API keys with limited access, labels, IP address restrictions and expiration dates
+  - Auto-ban comments and details about the triggering event (#1321)
+  - Auto-ban expiration after a configurable time period (#964)
+- DNS Management:
+  - Automatic DNS management of `MX`, `TXT`, `CNAME`, `SRV`, `CAA` and `TLSA` records (#463 #1017 #1419 #2438 #1370 #1406 #1371)
+  - Automatic update of `TLSA` records when ACME certificates change (#1664)
+  - RFC2136 `SIG(0)` support (#856)
+  - BunnyDNS provider support
+  - Porkbun provider support
+  - DNSimple provider support
+- DKIM:
+  - Automatic DKIM key generation, rotation and DNS management (#368 #961)
+  - Store DKIM keys in the database (#1264)
+  - Ignore insecure signatures when verifying DKIM (#1068 #467)
+- ACME/TLS:
+  - `DNS-PERSIST-01` ACME challenge support (#2837)
+  - Renew certificates on demand, view certificate details (#675 #1162 #2566)
+  - `CAA` record support (#468) with `accounturi` parameter (#1933)  
+  - `TLSA` records publishing restricted to `3 1 1` and `2 1 1` (#2193)
 - OIDC:
   - JWT token validation without requesting userinfo from the OIDC provider.
   - Audience (`aud`) claim (#2603) and scope validation support.
@@ -33,42 +38,28 @@ This version includes **multiple breaking changes**. If you are upgrading from v
   - Separate filter for groups (#1841)
   - Improve support for OpenLDAP schemas (#760)
   - Improve and simplify LDAP settings (#2194 #2174)
-- DKIM:
-  - Store DKIM keys in the database (#1264)
-  - Ignore insecure signatures when verifying DKIM (#1068 #467)
-- DNS Management:
-  - RFC2136 `SIG(0)` support (#856)
-  - Auto updating `TLSA` records when certificates change (#1664)
-  - `CAA` record support (#468)
-  - Create only `3 1 1` and `2 1 1` `TLSA` records (#2193).
-  - BunnyDNS provider support
-  - Porkbun provider support
-  - DNSimple provider support
-- ACME:
-  - `DNS-PERSIST-01` ACME challenge support (#2837)
-  - Renew certificates on demand, view certificate details (#675 #1162 #2566)
-  - `CAA` records with `accounturi` parameter support (#1933)
-- Clustering:
-  - Automatic cluster node ID generation and management.
-  - Unified cluster management (#960)
-  - Outbound role (#1692)
 - Directory:
+  - Masked email addresses for enhanced privacy (*Enterprise*)
   - Domain aliases (#583)
-  - E-mail alias descriptions and disable alias (#506)
+  - E-mail alias descriptions and option to disable aliases (#506)
+  - Account archiving and un-deletion (#2767) (*Enterprise*)
+  - Per-domain directory backends (*Enterprise*)
 - Account configuration and discovery:
   - Automatic Configuration of Email, Calendar, and Contact Server Settings ([draft-mailmaint-uaautoconf-04](https://datatracker.ietf.org/doc/html/draft-eggert-mailmaint-uaautoconf-04)) (#2201)
   - MS Autodiscover V2 support (#679)
 - Sieve: Allow deactivating scripts without deleting them (#1251).
 - Tracing: Enable events only mode (#2276)
-- Enterprise features:
-  - Masked email addresses for enhanced privacy.
-  - Account archiving and undelete features (#2767).
-  - Per-domain directory backends.
+- Clustering:
+  - Automatic cluster node ID generation and management.
+  - Unified cluster management (#960)
+  - Outbound MTA role (#1692)
 
 ## Changed
 - Replaced REST API with JMAP API (#2262 #959 #1480)
 - Removed support for Authenticated Received Chain (ARC) sealing ([learn more](https://mailarchive.ietf.org/arch/msg/dmarc/KvX3-H1SL0Gh3IDl7FuR2hoR87M/)).
 - Directory: Removed `smtp`, `imap` and `memory` directory backends.
+- Use `aws-lc` for cryptographic operations instead of `ring`.
+- Use `rustls-platform-verifier` for TLS certificate verification instead of `webpki` (#247).
 
 ## Fixed
 - Directory:
@@ -80,6 +71,7 @@ This version includes **multiple breaking changes**. If you are upgrading from v
   - New LDAP aliases are rejected (#1318). 
   - Validate account and group names (#2209)
 - MTA:
+  - RCPT TO stage settings improvements (#2217 #394)
   - Relay to IP addresses (#838)
   - Duplicate delivery inverted check
   - SASL challenge responses include invalid `Go ahead` text

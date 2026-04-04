@@ -13,8 +13,8 @@ use crate::{
     },
 };
 use ahash::AHashMap;
+use directory::Credentials;
 use mail_auth::IpLookupStrategy;
-use mail_send::Credentials;
 use registry::schema::{
     enums::{self, ExpressionConstant, ExpressionVariable, MtaRequiredOrOptional},
     prelude::ObjectType,
@@ -182,7 +182,7 @@ pub struct RelayConfig {
     pub address: HostOrIp<Box<str>, IpStr>,
     pub port: u16,
     pub protocol: ServerProtocol,
-    pub auth: Option<Credentials<String>>,
+    pub auth: Option<Credentials>,
     pub tls_implicit: bool,
     pub tls_allow_invalid_certs: bool,
 }
@@ -396,7 +396,11 @@ impl QueueConfig {
                             auth: route
                                 .auth_username
                                 .and_then(|user| secret.map(|secret| (user, secret)))
-                                .map(|(user, secret)| Credentials::new(user, secret.into_owned())),
+                                .map(|(user, secret)| Credentials::Basic {
+                                    username: user,
+                                    secret: secret.into_owned(),
+                                    mfa_token: None,
+                                }),
                             tls_implicit: route.implicit_tls,
                             tls_allow_invalid_certs: route.allow_invalid_certs,
                         }),

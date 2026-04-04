@@ -46,7 +46,7 @@ use registry::{
             Tracer, TracerStdout,
         },
     },
-    types::{EnumImpl, map::Map},
+    types::{EnumImpl, datetime::UTCDateTime, map::Map},
 };
 use services::{SpawnServices, broadcast::subscriber::spawn_broadcast_subscriber};
 use smtp::{
@@ -62,7 +62,7 @@ use std::{path::PathBuf, str::FromStr, sync::Arc};
 use store::{
     RegistryStore, Store, ValueKey,
     registry::{RegistryQuery, bootstrap::Bootstrap, write::RegistryWrite},
-    write::{AlignedBytes, Archive},
+    write::{AlignedBytes, Archive, now},
 };
 use tokio::sync::{mpsc, watch};
 use trc::EventType;
@@ -91,6 +91,7 @@ pub struct TestServerBuilder {
 
 impl TestServerBuilder {
     pub async fn new(test_name: &str) -> Self {
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
         let reset = std::env::var("NO_INSERT").is_err();
 
         Self::new_with_role(test_name, "mail.example.org".to_string(), None, reset).await
@@ -167,7 +168,7 @@ impl TestServerBuilder {
             .await
     }
 
-    pub async fn with_dummy_tls_cert(self) -> Self {
+    pub async fn with_dummy_tls_cert(self, sans: impl IntoIterator<Item = &str>) -> Self {
         let mut cert_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         cert_path.push("resources");
         let mut cert = cert_path.clone();
@@ -182,7 +183,11 @@ impl TestServerBuilder {
             certificate: PublicText::File(SecretKeyFile {
                 file_path: cert.to_string_lossy().to_string(),
             }),
-
+            issuer: "Stalwart Test CA".to_string(),
+            not_valid_after: UTCDateTime::from_timestamp((now() + 86400) as i64),
+            subject_alternative_names: Map::new(
+                sans.into_iter().map(|san| san.to_string()).collect(),
+            ),
             ..Default::default()
         })
         .await

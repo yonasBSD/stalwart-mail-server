@@ -78,6 +78,7 @@ pub async fn test() {
         column_email: "name".into(),
         column_secret: "secret".into(),
         store: SqlAuthStore::Default,
+        member_tenant_id: None,
     };
 
     // Test authentication

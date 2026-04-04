@@ -38,7 +38,7 @@ async fn manage_queue() {
         .await;
     let mut remote = TestServerBuilder::new("smtp_manage_queue_remote")
         .await
-        .with_dummy_tls_cert()
+        .with_dummy_tls_cert(["*.foobar.org"])
         .await
         .with_http_listener(19050)
         .await
