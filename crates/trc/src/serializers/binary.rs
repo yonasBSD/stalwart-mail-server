@@ -89,7 +89,7 @@ impl Event<EventDetails> {
         buf.extend_from_slice(self.inner.timestamp.to_le_bytes().as_ref());
         leb128_write(buf, self.keys.len() as u64);
         for (k, v) in &self.keys {
-            leb128_write(buf, k.code());
+            leb128_write(buf, k.to_id() as u64);
             v.serialize(buf);
         }
     }
@@ -108,7 +108,7 @@ impl Event<EventDetails> {
         let keys_len = leb128_read(iter)?;
         let mut keys = Vec::with_capacity(keys_len as usize);
         for _ in 0..keys_len {
-            let key = Key::from_code(leb128_read(iter)?)?;
+            let key = Key::from_id(leb128_read(iter)? as u16)?;
             let value = Value::deserialize(iter)?;
             keys.push((key, value));
         }
@@ -176,7 +176,7 @@ impl Value {
                 leb128_write(buf, v.0.inner.to_id() as u64);
                 leb128_write(buf, v.0.keys.len() as u64);
                 for (k, v) in &v.0.keys {
-                    leb128_write(buf, k.code());
+                    leb128_write(buf, k.to_id() as u64);
                     v.serialize(buf);
                 }
             }
@@ -253,7 +253,7 @@ impl Value {
                 let keys_len = leb128_read(iter)?;
                 let mut keys = Vec::with_capacity(keys_len as usize);
                 for _ in 0..keys_len {
-                    let key = Key::from_code(leb128_read(iter)?)?;
+                    let key = Key::from_id(leb128_read(iter)? as u16)?;
                     let value = Value::deserialize(iter)?;
                     keys.push((key, value));
                 }

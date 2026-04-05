@@ -6,7 +6,7 @@
 
 use ahash::AHashMap;
 use jsonwebtoken::{Algorithm, DecodingKey};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{fmt, sync::Arc, time::Instant};
 use tokio::sync::RwLock;
 use utils::Client;
@@ -24,14 +24,19 @@ pub struct OpenIdConfig {
     pub default_domain: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 pub struct DiscoveryDocument {
-    issuer: String,
-    jwks_uri: String,
+    pub issuer: String,
+    pub jwks_uri: String,
     pub userinfo_endpoint: String,
+    pub token_endpoint: String,
     pub authorization_endpoint: String,
-    scopes_supported: Option<Vec<String>>,
-    claims_supported: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_session_endpoint: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scopes_supported: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub claims_supported: Option<Vec<String>>,
 }
 
 struct CachedKey {

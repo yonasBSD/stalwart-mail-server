@@ -105,8 +105,10 @@ pub async fn test() {
 
     // Test authorization endpoint retrieval
     assert_eq!(
-        oidc.oidc_authorization_endpoint(),
-        Some("http://localhost:9080/realms/stalwart/protocol/openid-connect/auth".to_string())
+        oidc.oidc_discovery_document()
+            .as_ref()
+            .map(|oidc| oidc.authorization_endpoint.as_str()),
+        Some("http://localhost:9080/realms/stalwart/protocol/openid-connect/auth")
     );
 }
 

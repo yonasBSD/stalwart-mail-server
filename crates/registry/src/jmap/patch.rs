@@ -273,7 +273,7 @@ impl RegistryJsonPatch for trc::Key {
         pointer: JsonPointerPatch<'_>,
         value: super::JmapValue<'x>,
     ) -> PatchResult<'x> {
-        if let Some(new_value) = value.as_str().and_then(|v| trc::Key::try_parse(v.as_ref())) {
+        if let Some(new_value) = value.as_str().and_then(|v| trc::Key::parse(v.as_ref())) {
             *self = new_value;
             pointer.assert_eof()
         } else {

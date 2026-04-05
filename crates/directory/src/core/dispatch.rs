@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{Account, Credentials, Directory, Recipient};
+use crate::{Account, Credentials, Directory, Recipient, backend::oidc::DiscoveryDocument};
 use trc::AddContext;
 
 impl Directory {
@@ -34,11 +34,9 @@ impl Directory {
         !matches!(self, Directory::OpenId(_))
     }
 
-    pub fn oidc_authorization_endpoint(&self) -> Option<String> {
+    pub fn oidc_discovery_document(&self) -> Option<&DiscoveryDocument> {
         match &self {
-            Directory::OpenId(directory) => {
-                Some(directory.discovery.authorization_endpoint.clone())
-            }
+            Directory::OpenId(directory) => Some(&directory.discovery),
             _ => None,
         }
     }

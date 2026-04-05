@@ -6,6 +6,7 @@
 
 use crate::{
     HttpSessionManager,
+    api::{ManagementApi, ToManageHttpResponse},
     auth::{
         authenticate::{Authenticator, HttpHeaders},
         oauth::{
@@ -14,11 +15,9 @@ use crate::{
         },
     },
     form::FormHandler,
-    management::{ManagementApi, ToManageHttpResponse},
 };
 use common::{
     BuildServer, Inner, KV_ACME, Server,
-    auth::{AccessToken, oauth::GrantType},
     ipc::PushEvent,
     manager::application::Resource,
     network::{SessionData, SessionManager, SessionStream},
@@ -50,7 +49,6 @@ use std::{net::IpAddr, str::FromStr, sync::Arc};
 use store::dispatch::lookup::KeyValue;
 use trc::SecurityEvent;
 use types::{blob::BlobId, id::Id};
-use utils::url_params::UrlParams;
 
 pub trait ParseHttp: Sync + Send {
     fn parse_http_request(
@@ -273,14 +271,14 @@ impl ParseHttp for Server {
                     self.is_http_anonymous_request_allowed(session.remote_ip)
                         .await?;
 
-                    return self.handle_oauth_metadata(req, session).await;
+                    return self.handle_oauth_metadata(req, &session).await;
                 }
                 ("openid-configuration", &Method::GET) => {
                     // Limit anonymous requests
                     self.is_http_anonymous_request_allowed(session.remote_ip)
                         .await?;
 
-                    return self.handle_oidc_metadata(req, session).await;
+                    return self.handle_oidc_metadata(&req, &session).await;
                 }
                 ("acme-challenge", &Method::GET) if self.has_acme_http_providers() => {
                     if let Some(token) = path.next() {
@@ -347,21 +345,11 @@ impl ParseHttp for Server {
                 _ => (),
             },
             "auth" => match (path.next().unwrap_or_default(), req.method()) {
-                ("login", &Method::POST) => {
-                    self.is_http_anonymous_request_allowed(session.remote_ip)
-                        .await?;
-
-                    let bytes = fetch_body(&mut req, 4096, session.session_id)
-                        .await
-                        .ok_or_else(|| trc::LimitEvent::SizeRequest.into_err())?;
-
-                    return self.handle_login_request(session, bytes).await;
-                }
                 ("device", &Method::POST) => {
                     self.is_http_anonymous_request_allowed(session.remote_ip)
                         .await?;
 
-                    return self.handle_device_auth(&mut req, session).await;
+                    return self.handle_device_auth(&mut req, &session).await;
                 }
                 ("token", &Method::POST) => {
                     self.is_http_anonymous_request_allowed(session.remote_ip)
@@ -410,45 +398,7 @@ impl ParseHttp for Server {
                     return Ok(JsonProblemResponse(StatusCode::NO_CONTENT).into_http_response());
                 }
 
-                let params = UrlParams::new(req.uri().query());
-                let access_token = if let Some(token) = params.get("token") {
-                    // SPDX-SnippetBegin
-                    // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
-                    // SPDX-License-Identifier: LicenseRef-SEL
-                    #[cfg(feature = "enterprise")]
-                    if self.core.is_enterprise_edition() {
-                        let path = req.uri().path();
-                        let (grant_type, permissions) = if path.starts_with("/api/telemetry/traces")
-                        {
-                            (GrantType::LiveTracing, Permission::LiveTracing)
-                        } else if path.starts_with("/api/telemetry/metrics") {
-                            (GrantType::LiveMetrics, Permission::LiveMetrics)
-                        } else if path.starts_with("/api/diagnose") {
-                            (GrantType::Diagnose, Permission::LiveDeliveryTest)
-                        } else {
-                            return Err(trc::ResourceEvent::NotFound.into_err());
-                        };
-                        AccessToken::from_permissions(
-                            self.validate_access_token(grant_type.into(), token)
-                                .await?
-                                .account_id,
-                            [permissions],
-                        )
-                    } else {
-                        self.authenticate_headers(&req, &session).await?.1
-                    }
-                    // SPDX-SnippetEnd
-                    #[cfg(not(feature = "enterprise"))]
-                    {
-                        self.authenticate_headers(&req, &session).await?.1
-                    }
-                } else {
-                    self.authenticate_headers(&req, &session).await?.1
-                };
-
-                return self
-                    .handle_api_manage_request(&mut req, &access_token, &session)
-                    .await;
+                return self.handle_api_request(&mut req, &session).await;
             }
             "mail" => {
                 if req.method() == Method::GET
@@ -593,7 +543,7 @@ impl ParseHttp for Server {
             // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
             // SPDX-License-Identifier: LicenseRef-SEL
             #[cfg(feature = "enterprise")]
-            "logo.svg" if self.is_enterprise_edition() => {
+            "logo" if self.is_enterprise_edition() => {
                 match self
                     .logo_resource(
                         req.headers()
@@ -607,16 +557,12 @@ impl ParseHttp for Server {
                     Ok(Some(resource)) => {
                         return Ok(resource.into_http_response());
                     }
-                    Ok(None) => (),
+                    Ok(None) => {
+                        return Err(trc::ResourceEvent::NotFound.into_err());
+                    }
                     Err(err) => {
                         trc::error!(err.span_id(session.session_id));
                     }
-                }
-
-                let resource = self.inner.data.applications.get("logo.svg").await?;
-
-                if !resource.is_empty() {
-                    return Ok(resource.into_http_response());
                 }
             }
             // SPDX-SnippetEnd
@@ -641,6 +587,14 @@ impl ParseHttp for Server {
                         _ => {}
                     }
                 }
+            }
+            "login" | "device" => {
+                let page = include_str!(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/../../resources/html-templates/login.html.min"
+                ));
+
+                return Ok(HtmlResponse::new(page.to_string()).into_http_response());
             }
             _ => {
                 let path = req.uri().path();

@@ -203,7 +203,7 @@ impl OtelTracer {
         record.set_timestamp(UNIX_EPOCH + Duration::from_secs(event.inner.timestamp));
         record.set_observed_timestamp(SystemTime::now());
         for (k, v) in &event.keys {
-            record.add_attribute(k.name(), build_any_value(v));
+            record.add_attribute(k.as_str(), build_any_value(v));
         }
         record
     }
@@ -235,7 +235,7 @@ fn build_key_value(key_value: &(trc::Key, trc::Value)) -> Option<KeyValue> {
 }
 
 fn build_key(key: &trc::Key) -> Key {
-    Key::from_static_str(key.name())
+    Key::from_static_str(key.as_str())
 }
 
 fn build_any_value(value: &trc::Value) -> AnyValue {

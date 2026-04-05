@@ -57,7 +57,7 @@ impl TelemetryApi for Server {
             for (key, value) in params.into_inner() {
                 if key == "filter" {
                     filter = value.into_owned().into();
-                } else if let Some(key) = Key::try_parse(key.to_ascii_lowercase().as_str()) {
+                } else if let Some(key) = Key::parse(key.to_ascii_lowercase().as_str()) {
                     key_filters.insert(key, value.into_owned());
                 }
             }
@@ -152,8 +152,7 @@ impl TelemetryApi for Server {
                                         "event: trace\ndata: {}\n\n",
                                         serde_json::to_string(
                                             &JsonEventSerializer::new(std::mem::take(&mut events))
-                                            .with_description()
-                                            .with_explanation()).unwrap_or_default()
+                                            .with_description()).unwrap_or_default()
                                     ))));
 
                                     ping_interval

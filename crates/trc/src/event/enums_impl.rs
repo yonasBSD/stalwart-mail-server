@@ -6,7 +6,8 @@
 
 // This file is auto-generated. Do not edit directly.
 
-use crate::{event::enums::*, Level};
+use crate::{Level, event::enums::*};
+use std::borrow::Cow;
 
 impl EventType {
     pub fn parse(value: &str) -> Option<Self> {
@@ -3700,1144 +3701,14 @@ impl EventType {
         }
     }
 
-    pub fn explain(&self) -> &'static str {
-        match self {
-            EventType::Acme(AcmeEvent::AuthStart) => "ACME authentication has started",
-            EventType::Acme(AcmeEvent::AuthPending) => "ACME authentication is pending",
-            EventType::Acme(AcmeEvent::AuthValid) => "ACME authentication is valid",
-            EventType::Acme(AcmeEvent::AuthCompleted) => "ACME authentication has completed",
-            EventType::Acme(AcmeEvent::AuthError) => "An error occurred with ACME authentication",
-            EventType::Acme(AcmeEvent::AuthTooManyAttempts) => {
-                "Too many ACME authentication attempts"
-            }
-            EventType::Acme(AcmeEvent::ProcessCert) => "Processing the ACME certificate",
-            EventType::Acme(AcmeEvent::OrderStart) => "ACME order has started",
-            EventType::Acme(AcmeEvent::OrderProcessing) => "ACME order is processing",
-            EventType::Acme(AcmeEvent::OrderCompleted) => "ACME order has completed",
-            EventType::Acme(AcmeEvent::OrderReady) => "ACME order is ready",
-            EventType::Acme(AcmeEvent::OrderValid) => "ACME order is valid",
-            EventType::Acme(AcmeEvent::OrderInvalid) => "ACME order is invalid",
-            EventType::Acme(AcmeEvent::RenewBackoff) => "ACME renew backoff",
-            EventType::Acme(AcmeEvent::ClientSuppliedSni) => "ACME client supplied SNI",
-            EventType::Acme(AcmeEvent::ClientMissingSni) => "ACME client missing SNI",
-            EventType::Acme(AcmeEvent::TlsAlpnReceived) => "ACME TLS ALPN received",
-            EventType::Acme(AcmeEvent::TlsAlpnError) => "ACME TLS ALPN error",
-            EventType::Acme(AcmeEvent::TokenNotFound) => "ACME token not found",
-            EventType::Acme(AcmeEvent::Error) => "An error occurred with ACME",
-            EventType::Ai(AiEvent::LlmResponse) => "An LLM response has been received",
-            EventType::Ai(AiEvent::ApiError) => "An AI API error occurred",
-            EventType::Arc(ArcEvent::ChainTooLong) => "The ARC chain is too long",
-            EventType::Arc(ArcEvent::InvalidInstance) => "The ARC instance is invalid",
-            EventType::Arc(ArcEvent::InvalidCv) => "The ARC CV is invalid",
-            EventType::Arc(ArcEvent::HasHeaderTag) => "The ARC has a header tag",
-            EventType::Arc(ArcEvent::BrokenChain) => "The ARC chain is broken",
-            EventType::Arc(ArcEvent::SealerNotFound) => "The ARC sealer was not found",
-            EventType::Auth(AuthEvent::Success) => "Successful authentication",
-            EventType::Auth(AuthEvent::Failed) => "Failed authentication",
-            EventType::Auth(AuthEvent::TokenExpired) => "OAuth authentication token has expired",
-            EventType::Auth(AuthEvent::MfaRequired) => {
-                "MFA token is required for authentication but was not provided"
-            }
-            EventType::Auth(AuthEvent::TooManyAttempts) => {
-                "Too many authentication attempts have been made"
-            }
-            EventType::Auth(AuthEvent::ClientRegistration) => {
-                "OAuth client successfully registered"
-            }
-            EventType::Auth(AuthEvent::Error) => "An error occurred with authentication",
-            EventType::Auth(AuthEvent::Warning) => "A warning occurred with authentication",
-            EventType::Auth(AuthEvent::CredentialExpired) => "A credential has expired",
-            EventType::Calendar(CalendarEvent::RuleExpansionError) => {
-                "An error occurred while expanding calendar recurrences"
-            }
-            EventType::Calendar(CalendarEvent::AlarmSent) => {
-                "A calendar alarm has been sent to the recipient"
-            }
-            EventType::Calendar(CalendarEvent::AlarmSkipped) => "A calendar alarm was skipped",
-            EventType::Calendar(CalendarEvent::AlarmRecipientOverride) => {
-                "A calendar alarm recipient was overridden"
-            }
-            EventType::Calendar(CalendarEvent::AlarmFailed) => {
-                "A calendar alarm could not be sent to the recipient"
-            }
-            EventType::Calendar(CalendarEvent::ItipMessageSent) => {
-                "A calendar iTIP message has been sent"
-            }
-            EventType::Calendar(CalendarEvent::ItipMessageReceived) => {
-                "A calendar iTIP/iMIP message has been received"
-            }
-            EventType::Calendar(CalendarEvent::ItipMessageError) => {
-                "An error occurred while processing an iTIP/iMIP message"
-            }
-            EventType::Cluster(ClusterEvent::Startup) => {
-                "The clustering subsystem has been initialized"
-            }
-            EventType::Cluster(ClusterEvent::SubscriberStart) => {
-                "The PubSub subscriber has started"
-            }
-            EventType::Cluster(ClusterEvent::SubscriberStop) => "The PubSub subscriber has stopped",
-            EventType::Cluster(ClusterEvent::SubscriberError) => {
-                "An error occurred while subscribing to PubSub"
-            }
-            EventType::Cluster(ClusterEvent::SubscriberDisconnected) => {
-                "The PubSub subscriber has disconnected"
-            }
-            EventType::Cluster(ClusterEvent::PublisherStart) => "The PubSub publisher has started",
-            EventType::Cluster(ClusterEvent::PublisherStop) => "The PubSub publisher has stopped",
-            EventType::Cluster(ClusterEvent::PublisherError) => {
-                "An error occurred while publishing to PubSub"
-            }
-            EventType::Cluster(ClusterEvent::MessageReceived) => {
-                "A message was received from the PubSub server"
-            }
-            EventType::Cluster(ClusterEvent::MessageSkipped) => {
-                "A message originating from this node was skipped"
-            }
-            EventType::Cluster(ClusterEvent::MessageInvalid) => {
-                "An invalid message was received from the PubSub server"
-            }
-            EventType::Cluster(ClusterEvent::NodeIdRenewed) => "The node ID lease has been renewed",
-            EventType::Dane(DaneEvent::AuthenticationSuccess) => "Successful DANE authentication",
-            EventType::Dane(DaneEvent::AuthenticationFailure) => "Failed DANE authentication",
-            EventType::Dane(DaneEvent::NoCertificatesFound) => {
-                "No certificates were found for DANE"
-            }
-            EventType::Dane(DaneEvent::CertificateParseError) => {
-                "An error occurred while parsing the certificate"
-            }
-            EventType::Dane(DaneEvent::TlsaRecordMatch) => "A TLSA record match was found",
-            EventType::Dane(DaneEvent::TlsaRecordFetch) => "The TLSA record has been fetched",
-            EventType::Dane(DaneEvent::TlsaRecordFetchError) => {
-                "An error occurred while fetching the TLSA record"
-            }
-            EventType::Dane(DaneEvent::TlsaRecordNotFound) => "The TLSA record was not found",
-            EventType::Dane(DaneEvent::TlsaRecordNotDnssecSigned) => {
-                "The TLSA record is not DNSSEC signed"
-            }
-            EventType::Dane(DaneEvent::TlsaRecordInvalid) => "The TLSA record is invalid",
-            EventType::Delivery(DeliveryEvent::AttemptStart) => {
-                "A new delivery attempt for the message has started"
-            }
-            EventType::Delivery(DeliveryEvent::AttemptEnd) => "The delivery attempt has ended",
-            EventType::Delivery(DeliveryEvent::Completed) => {
-                "Delivery was completed for all recipients"
-            }
-            EventType::Delivery(DeliveryEvent::Failed) => {
-                "Message delivery failed due to a temporary error"
-            }
-            EventType::Delivery(DeliveryEvent::DomainDeliveryStart) => {
-                "A new delivery attempt for a domain has started"
-            }
-            EventType::Delivery(DeliveryEvent::MxLookup) => "Looking up MX records for the domain",
-            EventType::Delivery(DeliveryEvent::MxLookupFailed) => {
-                "Failed to look up MX records for the domain"
-            }
-            EventType::Delivery(DeliveryEvent::IpLookup) => "Looking up IP address for the domain",
-            EventType::Delivery(DeliveryEvent::IpLookupFailed) => {
-                "Failed to look up IP address for the domain"
-            }
-            EventType::Delivery(DeliveryEvent::NullMx) => {
-                "The domain has a null MX record, delivery is impossible"
-            }
-            EventType::Delivery(DeliveryEvent::Connect) => "Connecting to the remote server",
-            EventType::Delivery(DeliveryEvent::ConnectError) => {
-                "Error connecting to the remote server"
-            }
-            EventType::Delivery(DeliveryEvent::MissingOutboundHostname) => {
-                "The outbound hostname is missing in the configuration"
-            }
-            EventType::Delivery(DeliveryEvent::GreetingFailed) => {
-                "Failed to read the SMTP greeting from the remote server"
-            }
-            EventType::Delivery(DeliveryEvent::Ehlo) => {
-                "The EHLO command was sent to the remote server"
-            }
-            EventType::Delivery(DeliveryEvent::EhloRejected) => {
-                "The remote server rejected the EHLO command"
-            }
-            EventType::Delivery(DeliveryEvent::Auth) => "Authenticating with the remote server",
-            EventType::Delivery(DeliveryEvent::AuthFailed) => {
-                "Authentication with the remote server failed"
-            }
-            EventType::Delivery(DeliveryEvent::MailFrom) => {
-                "The MAIL FROM command was sent to the remote server"
-            }
-            EventType::Delivery(DeliveryEvent::MailFromRejected) => {
-                "The remote server rejected the MAIL FROM command"
-            }
-            EventType::Delivery(DeliveryEvent::Delivered) => {
-                "The message was delivered to the recipient"
-            }
-            EventType::Delivery(DeliveryEvent::RcptTo) => {
-                "The RCPT TO command was sent to the remote server"
-            }
-            EventType::Delivery(DeliveryEvent::RcptToRejected) => {
-                "The remote server rejected the RCPT TO command"
-            }
-            EventType::Delivery(DeliveryEvent::RcptToFailed) => {
-                "Failed to send the RCPT TO command to the remote server"
-            }
-            EventType::Delivery(DeliveryEvent::MessageRejected) => {
-                "The remote server rejected the message"
-            }
-            EventType::Delivery(DeliveryEvent::StartTls) => {
-                "Requesting a TLS connection with the remote server"
-            }
-            EventType::Delivery(DeliveryEvent::StartTlsUnavailable) => {
-                "The remote server does not support STARTTLS"
-            }
-            EventType::Delivery(DeliveryEvent::StartTlsError) => {
-                "It was not possible to establish a TLS connection"
-            }
-            EventType::Delivery(DeliveryEvent::StartTlsDisabled) => {
-                "STARTTLS has been disabled in the configuration for this host"
-            }
-            EventType::Delivery(DeliveryEvent::ImplicitTlsError) => "Error starting implicit TLS",
-            EventType::Delivery(DeliveryEvent::ConcurrencyLimitExceeded) => {
-                "The concurrency limit was exceeded for the remote host"
-            }
-            EventType::Delivery(DeliveryEvent::RateLimitExceeded) => {
-                "The rate limit was exceeded for the remote host"
-            }
-            EventType::Delivery(DeliveryEvent::DoubleBounce) => {
-                "The message was discarded after a double bounce"
-            }
-            EventType::Delivery(DeliveryEvent::DsnSuccess) => {
-                "A success delivery status notification was created"
-            }
-            EventType::Delivery(DeliveryEvent::DsnTempFail) => {
-                "A temporary failure delivery status notification was created"
-            }
-            EventType::Delivery(DeliveryEvent::DsnPermFail) => {
-                "A permanent failure delivery status notification was created"
-            }
-            EventType::Delivery(DeliveryEvent::RawInput) => "Raw SMTP input received",
-            EventType::Delivery(DeliveryEvent::RawOutput) => "Raw SMTP output sent",
-            EventType::Dkim(DkimEvent::Pass) => "DKIM verification has passed",
-            EventType::Dkim(DkimEvent::Neutral) => "DKIM verification is neutral",
-            EventType::Dkim(DkimEvent::Fail) => "DKIM verification has failed",
-            EventType::Dkim(DkimEvent::PermError) => "A permanent error occurred with DKIM",
-            EventType::Dkim(DkimEvent::TempError) => "A temporary error occurred with DKIM",
-            EventType::Dkim(DkimEvent::None) => "No DKIM signature was found",
-            EventType::Dkim(DkimEvent::UnsupportedVersion) => "The DKIM version is unsupported",
-            EventType::Dkim(DkimEvent::UnsupportedAlgorithm) => "The DKIM algorithm is unsupported",
-            EventType::Dkim(DkimEvent::UnsupportedCanonicalization) => {
-                "The DKIM canonicalization is unsupported"
-            }
-            EventType::Dkim(DkimEvent::UnsupportedKeyType) => "The DKIM key type is unsupported",
-            EventType::Dkim(DkimEvent::FailedBodyHashMatch) => "The DKIM body hash does not match",
-            EventType::Dkim(DkimEvent::FailedVerification) => "The DKIM verification has failed",
-            EventType::Dkim(DkimEvent::FailedAuidMatch) => "The DKIM AUID does not match",
-            EventType::Dkim(DkimEvent::RevokedPublicKey) => "The DKIM public key has been revoked",
-            EventType::Dkim(DkimEvent::IncompatibleAlgorithms) => {
-                "The DKIM algorithms are incompatible"
-            }
-            EventType::Dkim(DkimEvent::SignatureExpired) => "The DKIM signature has expired",
-            EventType::Dkim(DkimEvent::SignatureLength) => "The DKIM signature length is incorrect",
-            EventType::Dkim(DkimEvent::SignerNotFound) => "The DKIM signer was not found",
-            EventType::Dkim(DkimEvent::BuildError) => {
-                "An error occurred while building DKIM signature"
-            }
-            EventType::Dkim(DkimEvent::SignatureCreated) => "A new DKIM signature has been created",
-            EventType::Dkim(DkimEvent::SignaturePublished) => {
-                "A DKIM signature has been published to DNS"
-            }
-            EventType::Dkim(DkimEvent::SignatureRetiring) => {
-                "A DKIM signature is retiring and will be removed from DNS soon"
-            }
-            EventType::Dkim(DkimEvent::SignatureRetired) => {
-                "A DKIM signature has been retired and removed from DNS"
-            }
-            EventType::Dkim(DkimEvent::SignatureDeleted) => {
-                "A DKIM signature has been deleted from the system"
-            }
-            EventType::Dmarc(DmarcEvent::Pass) => "The DMARC check has passed",
-            EventType::Dmarc(DmarcEvent::Fail) => "The DMARC check has failed",
-            EventType::Dmarc(DmarcEvent::PermError) => "A permanent error occurred with DMARC",
-            EventType::Dmarc(DmarcEvent::TempError) => "A temporary error occurred with DMARC",
-            EventType::Dmarc(DmarcEvent::None) => "No DMARC record was found",
-            EventType::Dns(DnsEvent::RecordCreated) => "DNS record has been created",
-            EventType::Dns(DnsEvent::RecordCreationFailed) => "Failed to create DNS record",
-            EventType::Dns(DnsEvent::RecordDeletionFailed) => "Failed to delete DNS record",
-            EventType::Dns(DnsEvent::RecordNotPropagated) => "DNS record has not propagated",
-            EventType::Dns(DnsEvent::RecordLookupFailed) => "Failed to look up DNS record",
-            EventType::Dns(DnsEvent::RecordPropagated) => "DNS record has propagated",
-            EventType::Dns(DnsEvent::RecordPropagationTimeout) => "DNS record propagation timeout",
-            EventType::Dns(DnsEvent::BuildError) => "An error occurred while building DNS updater",
-            EventType::Eval(EvalEvent::Result) => "The expression evaluation has a result",
-            EventType::Eval(EvalEvent::Error) => {
-                "An error occurred while evaluating the expression"
-            }
-            EventType::Eval(EvalEvent::DirectoryNotFound) => {
-                "The directory was not found while evaluating the expression"
-            }
-            EventType::Eval(EvalEvent::StoreNotFound) => {
-                "The store was not found while evaluating the expression"
-            }
-            EventType::Http(HttpEvent::ConnectionStart) => "An HTTP connection was started",
-            EventType::Http(HttpEvent::ConnectionEnd) => "An HTTP connection was ended",
-            EventType::Http(HttpEvent::Error) => "An error occurred during an HTTP request",
-            EventType::Http(HttpEvent::RequestUrl) => "The URL of an HTTP request",
-            EventType::Http(HttpEvent::RequestBody) => "The body of an HTTP request",
-            EventType::Http(HttpEvent::ResponseBody) => "The body of an HTTP response",
-            EventType::Http(HttpEvent::XForwardedMissing) => {
-                "The X-Forwarded-For header is missing"
-            }
-            EventType::Imap(ImapEvent::ConnectionStart) => "IMAP connection started",
-            EventType::Imap(ImapEvent::ConnectionEnd) => "IMAP connection ended",
-            EventType::Imap(ImapEvent::GetAcl) => "Client requested mailbox ACL",
-            EventType::Imap(ImapEvent::SetAcl) => "Client set mailbox ACL",
-            EventType::Imap(ImapEvent::MyRights) => "Client requested mailbox rights",
-            EventType::Imap(ImapEvent::ListRights) => "Client requested mailbox rights list",
-            EventType::Imap(ImapEvent::Append) => "Client appended a message to a mailbox",
-            EventType::Imap(ImapEvent::Capabilities) => "Client requested server capabilities",
-            EventType::Imap(ImapEvent::Id) => "Client sent an ID command",
-            EventType::Imap(ImapEvent::Close) => "Client closed a mailbox",
-            EventType::Imap(ImapEvent::Copy) => "Client copied messages between mailboxes",
-            EventType::Imap(ImapEvent::Move) => "Client moved messages between mailboxes",
-            EventType::Imap(ImapEvent::CreateMailbox) => "Client created a mailbox",
-            EventType::Imap(ImapEvent::DeleteMailbox) => "Client deleted a mailbox",
-            EventType::Imap(ImapEvent::RenameMailbox) => "Client renamed a mailbox",
-            EventType::Imap(ImapEvent::Enable) => "Client enabled an extension",
-            EventType::Imap(ImapEvent::Expunge) => "Client expunged messages",
-            EventType::Imap(ImapEvent::Fetch) => "Client fetched messages",
-            EventType::Imap(ImapEvent::IdleStart) => "Client started IDLE",
-            EventType::Imap(ImapEvent::IdleStop) => "Client stopped IDLE",
-            EventType::Imap(ImapEvent::List) => "Client listed mailboxes",
-            EventType::Imap(ImapEvent::Lsub) => "Client listed subscribed mailboxes",
-            EventType::Imap(ImapEvent::Logout) => "Client logged out",
-            EventType::Imap(ImapEvent::Namespace) => "Client requested namespace",
-            EventType::Imap(ImapEvent::Noop) => "Client sent a NOOP command",
-            EventType::Imap(ImapEvent::Search) => "Client searched for messages",
-            EventType::Imap(ImapEvent::Sort) => "Client sorted messages",
-            EventType::Imap(ImapEvent::Select) => "Client selected a mailbox",
-            EventType::Imap(ImapEvent::Status) => "Client requested mailbox status",
-            EventType::Imap(ImapEvent::Store) => "Client stored flags",
-            EventType::Imap(ImapEvent::Subscribe) => "Client subscribed to a mailbox",
-            EventType::Imap(ImapEvent::Unsubscribe) => "Client unsubscribed from a mailbox",
-            EventType::Imap(ImapEvent::Thread) => "Client requested message threads",
-            EventType::Imap(ImapEvent::GetQuota) => "Client requested mailbox quota",
-            EventType::Imap(ImapEvent::Error) => "An error occurred during an IMAP command",
-            EventType::Imap(ImapEvent::RawInput) => "Raw IMAP input received",
-            EventType::Imap(ImapEvent::RawOutput) => "Raw IMAP output sent",
-            EventType::IncomingReport(IncomingReportEvent::DmarcReport) => {
-                "A DMARC report has been received"
-            }
-            EventType::IncomingReport(IncomingReportEvent::DmarcReportWithWarnings) => {
-                "A DMARC report with warnings has been received"
-            }
-            EventType::IncomingReport(IncomingReportEvent::TlsReport) => {
-                "A TLS report has been received"
-            }
-            EventType::IncomingReport(IncomingReportEvent::TlsReportWithWarnings) => {
-                "A TLS report with warnings has been received"
-            }
-            EventType::IncomingReport(IncomingReportEvent::AbuseReport) => {
-                "An abuse report has been received"
-            }
-            EventType::IncomingReport(IncomingReportEvent::AuthFailureReport) => {
-                "An authentication failure report has been received"
-            }
-            EventType::IncomingReport(IncomingReportEvent::FraudReport) => {
-                "A fraud report has been received"
-            }
-            EventType::IncomingReport(IncomingReportEvent::NotSpamReport) => {
-                "A not spam report has been received"
-            }
-            EventType::IncomingReport(IncomingReportEvent::VirusReport) => {
-                "A virus report has been received"
-            }
-            EventType::IncomingReport(IncomingReportEvent::OtherReport) => {
-                "An unknown type of report has been received"
-            }
-            EventType::IncomingReport(IncomingReportEvent::MessageParseFailed) => {
-                "Failed to parse the incoming report message"
-            }
-            EventType::IncomingReport(IncomingReportEvent::DmarcParseFailed) => {
-                "Failed to parse the DMARC report"
-            }
-            EventType::IncomingReport(IncomingReportEvent::TlsRpcParseFailed) => {
-                "Failed to parse the TLS RPC report"
-            }
-            EventType::IncomingReport(IncomingReportEvent::ArfParseFailed) => {
-                "Failed to parse the ARF report"
-            }
-            EventType::IncomingReport(IncomingReportEvent::DecompressError) => {
-                "Error decompressing the report"
-            }
-            EventType::Iprev(IprevEvent::Pass) => "The IPREV check has passed",
-            EventType::Iprev(IprevEvent::Fail) => "The IPREV check has failed",
-            EventType::Iprev(IprevEvent::PermError) => "A permanent error occurred with IPREV",
-            EventType::Iprev(IprevEvent::TempError) => "A temporary error occurred with IPREV",
-            EventType::Iprev(IprevEvent::None) => "No IPREV record was found",
-            EventType::Jmap(JmapEvent::MethodCall) => "A JMAP method call has been made",
-            EventType::Jmap(JmapEvent::InvalidArguments) => "The JMAP arguments are invalid",
-            EventType::Jmap(JmapEvent::RequestTooLarge) => "The JMAP request is too large",
-            EventType::Jmap(JmapEvent::StateMismatch) => "The JMAP state is mismatched",
-            EventType::Jmap(JmapEvent::AnchorNotFound) => "The JMAP anchor was not found",
-            EventType::Jmap(JmapEvent::UnsupportedFilter) => "The JMAP filter is unsupported",
-            EventType::Jmap(JmapEvent::UnsupportedSort) => "The JMAP sort is unsupported",
-            EventType::Jmap(JmapEvent::UnknownMethod) => "The JMAP method is unknown",
-            EventType::Jmap(JmapEvent::InvalidResultReference) => {
-                "The JMAP result reference is invalid"
-            }
-            EventType::Jmap(JmapEvent::Forbidden) => "The JMAP operation is forbidden",
-            EventType::Jmap(JmapEvent::AccountNotFound) => "The JMAP account was not found",
-            EventType::Jmap(JmapEvent::AccountNotSupportedByMethod) => {
-                "The JMAP account is not supported by the method"
-            }
-            EventType::Jmap(JmapEvent::AccountReadOnly) => "The JMAP account is read-only",
-            EventType::Jmap(JmapEvent::NotFound) => "The JMAP resource was not found",
-            EventType::Jmap(JmapEvent::CannotCalculateChanges) => "Cannot calculate JMAP changes",
-            EventType::Jmap(JmapEvent::UnknownDataType) => "The JMAP data type is unknown",
-            EventType::Jmap(JmapEvent::UnknownCapability) => "The JMAP capability is unknown",
-            EventType::Jmap(JmapEvent::NotJson) => "The JMAP request is not JSON",
-            EventType::Jmap(JmapEvent::NotRequest) => "The JMAP input is not a request",
-            EventType::Jmap(JmapEvent::WebsocketStart) => {
-                "The JMAP WebSocket connection has started"
-            }
-            EventType::Jmap(JmapEvent::WebsocketStop) => {
-                "The JMAP WebSocket connection has stopped"
-            }
-            EventType::Jmap(JmapEvent::WebsocketError) => {
-                "An error occurred with the JMAP WebSocket connection"
-            }
-            EventType::Limit(LimitEvent::SizeRequest) => "The request size limit has been reached",
-            EventType::Limit(LimitEvent::SizeUpload) => "The upload size limit has been reached",
-            EventType::Limit(LimitEvent::CallsIn) => "The incoming calls limit has been reached",
-            EventType::Limit(LimitEvent::ConcurrentRequest) => {
-                "The concurrent request limit has been reached"
-            }
-            EventType::Limit(LimitEvent::ConcurrentUpload) => {
-                "The concurrent upload limit has been reached"
-            }
-            EventType::Limit(LimitEvent::ConcurrentConnection) => {
-                "The concurrent connection limit has been reached"
-            }
-            EventType::Limit(LimitEvent::Quota) => "The quota limit has been reached",
-            EventType::Limit(LimitEvent::BlobQuota) => "The blob quota limit has been reached",
-            EventType::Limit(LimitEvent::TenantQuota) => {
-                "One of the tenant quota limits has been reached"
-            }
-            EventType::Limit(LimitEvent::TooManyRequests) => "Too many requests have been made",
-            EventType::MailAuth(MailAuthEvent::ParseError) => {
-                "An error occurred while parsing mail authentication"
-            }
-            EventType::MailAuth(MailAuthEvent::MissingParameters) => {
-                "Mail authentication parameters are missing"
-            }
-            EventType::MailAuth(MailAuthEvent::NoHeadersFound) => {
-                "No headers were found in the message"
-            }
-            EventType::MailAuth(MailAuthEvent::Crypto) => {
-                "A crypto error occurred during mail authentication"
-            }
-            EventType::MailAuth(MailAuthEvent::Io) => {
-                "An I/O error occurred during mail authentication"
-            }
-            EventType::MailAuth(MailAuthEvent::Base64) => {
-                "A base64 error occurred during mail authentication"
-            }
-            EventType::MailAuth(MailAuthEvent::DnsError) => "A DNS error occurred",
-            EventType::MailAuth(MailAuthEvent::DnsRecordNotFound) => "The DNS record was not found",
-            EventType::MailAuth(MailAuthEvent::DnsInvalidRecordType) => {
-                "The DNS record type is invalid"
-            }
-            EventType::MailAuth(MailAuthEvent::PolicyNotAligned) => "The policy is not aligned",
-            EventType::ManageSieve(ManageSieveEvent::ConnectionStart) => {
-                "ManageSieve connection started"
-            }
-            EventType::ManageSieve(ManageSieveEvent::ConnectionEnd) => {
-                "ManageSieve connection ended"
-            }
-            EventType::ManageSieve(ManageSieveEvent::CreateScript) => "Client created a script",
-            EventType::ManageSieve(ManageSieveEvent::UpdateScript) => "Client updated a script",
-            EventType::ManageSieve(ManageSieveEvent::GetScript) => "Client fetched a script",
-            EventType::ManageSieve(ManageSieveEvent::DeleteScript) => "Client deleted a script",
-            EventType::ManageSieve(ManageSieveEvent::RenameScript) => "Client renamed a script",
-            EventType::ManageSieve(ManageSieveEvent::CheckScript) => "Client checked a script",
-            EventType::ManageSieve(ManageSieveEvent::HaveSpace) => "Client checked for space",
-            EventType::ManageSieve(ManageSieveEvent::ListScripts) => "Client listed scripts",
-            EventType::ManageSieve(ManageSieveEvent::SetActive) => "Client set an active script",
-            EventType::ManageSieve(ManageSieveEvent::Capabilities) => {
-                "Client requested server capabilities"
-            }
-            EventType::ManageSieve(ManageSieveEvent::StartTls) => "Client requested TLS",
-            EventType::ManageSieve(ManageSieveEvent::Unauthenticate) => "Client unauthenticated",
-            EventType::ManageSieve(ManageSieveEvent::Logout) => "Client logged out",
-            EventType::ManageSieve(ManageSieveEvent::Noop) => "Client sent a NOOP command",
-            EventType::ManageSieve(ManageSieveEvent::Error) => {
-                "An error occurred during a ManageSieve command"
-            }
-            EventType::ManageSieve(ManageSieveEvent::RawInput) => "Raw ManageSieve input received",
-            EventType::ManageSieve(ManageSieveEvent::RawOutput) => "Raw ManageSieve output sent",
-            EventType::MessageIngest(MessageIngestEvent::Ham) => "The message has been ingested",
-            EventType::MessageIngest(MessageIngestEvent::Spam) => {
-                "A possible spam message has been ingested"
-            }
-            EventType::MessageIngest(MessageIngestEvent::ImapAppend) => {
-                "The message has been appended via IMAP"
-            }
-            EventType::MessageIngest(MessageIngestEvent::JmapAppend) => {
-                "The message has been appended via JMAP"
-            }
-            EventType::MessageIngest(MessageIngestEvent::Duplicate) => {
-                "The message is a duplicate and has been skipped"
-            }
-            EventType::MessageIngest(MessageIngestEvent::Error) => {
-                "An error occurred while ingesting the message"
-            }
-            EventType::MessageIngest(MessageIngestEvent::SearchIndex) => {
-                "The search index has been updated"
-            }
-            EventType::Milter(MilterEvent::Read) => "Reading from the Milter",
-            EventType::Milter(MilterEvent::Write) => "Writing to the Milter",
-            EventType::Milter(MilterEvent::ActionAccept) => {
-                "The Milter requested to accept the message"
-            }
-            EventType::Milter(MilterEvent::ActionDiscard) => {
-                "The Milter requested to discard the message"
-            }
-            EventType::Milter(MilterEvent::ActionReject) => {
-                "The Milter requested to reject the message"
-            }
-            EventType::Milter(MilterEvent::ActionTempFail) => {
-                "The Milter requested to temporarily fail the message"
-            }
-            EventType::Milter(MilterEvent::ActionReplyCode) => "The Milter requested a reply code",
-            EventType::Milter(MilterEvent::ActionConnectionFailure) => {
-                "The Milter requested a connection failure"
-            }
-            EventType::Milter(MilterEvent::ActionShutdown) => "The Milter requested a shutdown",
-            EventType::Milter(MilterEvent::IoError) => "An I/O error occurred with the Milter",
-            EventType::Milter(MilterEvent::FrameTooLarge) => "The Milter frame was too large",
-            EventType::Milter(MilterEvent::FrameInvalid) => "The Milter frame was invalid",
-            EventType::Milter(MilterEvent::UnexpectedResponse) => {
-                "An unexpected response was received from the Milter"
-            }
-            EventType::Milter(MilterEvent::Timeout) => "A timeout occurred with the Milter",
-            EventType::Milter(MilterEvent::TlsInvalidName) => "The Milter TLS name is invalid",
-            EventType::Milter(MilterEvent::Disconnected) => "The Milter disconnected",
-            EventType::Milter(MilterEvent::ParseError) => {
-                "An error occurred while parsing the Milter response"
-            }
-            EventType::MtaHook(MtaHookEvent::ActionAccept) => {
-                "The MTA hook requested to accept the message"
-            }
-            EventType::MtaHook(MtaHookEvent::ActionDiscard) => {
-                "The MTA hook requested to discard the message"
-            }
-            EventType::MtaHook(MtaHookEvent::ActionReject) => {
-                "The MTA hook requested to reject the message"
-            }
-            EventType::MtaHook(MtaHookEvent::ActionQuarantine) => {
-                "The MTA hook requested to quarantine the message"
-            }
-            EventType::MtaHook(MtaHookEvent::Error) => "An error occurred with the MTA hook",
-            EventType::MtaSts(MtaStsEvent::Authorized) => {
-                "The host is authorized by the MTA-STS policy"
-            }
-            EventType::MtaSts(MtaStsEvent::NotAuthorized) => {
-                "The host is not authorized by the MTA-STS policy"
-            }
-            EventType::MtaSts(MtaStsEvent::PolicyFetch) => "The MTA-STS policy has been fetched",
-            EventType::MtaSts(MtaStsEvent::PolicyNotFound) => "An MTA-STS policy was not found",
-            EventType::MtaSts(MtaStsEvent::PolicyFetchError) => {
-                "An error occurred while fetching the MTA-STS policy"
-            }
-            EventType::MtaSts(MtaStsEvent::InvalidPolicy) => "The MTA-STS policy is invalid",
-            EventType::Network(NetworkEvent::ListenStart) => "The network listener has started",
-            EventType::Network(NetworkEvent::ListenStop) => "The network listener has stopped",
-            EventType::Network(NetworkEvent::ListenError) => {
-                "An error occurred with the network listener"
-            }
-            EventType::Network(NetworkEvent::BindError) => {
-                "An error occurred while binding the network listener"
-            }
-            EventType::Network(NetworkEvent::ReadError) => {
-                "An error occurred while reading from the network"
-            }
-            EventType::Network(NetworkEvent::WriteError) => {
-                "An error occurred while writing to the network"
-            }
-            EventType::Network(NetworkEvent::FlushError) => {
-                "An error occurred while flushing the network"
-            }
-            EventType::Network(NetworkEvent::AcceptError) => {
-                "An error occurred while accepting a network connection"
-            }
-            EventType::Network(NetworkEvent::SplitError) => {
-                "An error occurred while splitting the network connection"
-            }
-            EventType::Network(NetworkEvent::Timeout) => "A network timeout occurred",
-            EventType::Network(NetworkEvent::Closed) => "The network connection was closed",
-            EventType::Network(NetworkEvent::ProxyError) => {
-                "An error occurred with the proxy protocol"
-            }
-            EventType::Network(NetworkEvent::SetOptError) => {
-                "An error occurred while setting network options"
-            }
-            EventType::OutgoingReport(OutgoingReportEvent::SpfReport) => {
-                "An SPF report has been sent"
-            }
-            EventType::OutgoingReport(OutgoingReportEvent::SpfRateLimited) => {
-                "The SPF report was rate limited"
-            }
-            EventType::OutgoingReport(OutgoingReportEvent::DkimReport) => {
-                "A DKIM report has been sent"
-            }
-            EventType::OutgoingReport(OutgoingReportEvent::DkimRateLimited) => {
-                "The DKIM report was rate limited"
-            }
-            EventType::OutgoingReport(OutgoingReportEvent::DmarcReport) => {
-                "A DMARC report has been sent"
-            }
-            EventType::OutgoingReport(OutgoingReportEvent::DmarcRateLimited) => {
-                "The DMARC report was rate limited"
-            }
-            EventType::OutgoingReport(OutgoingReportEvent::DmarcAggregateReport) => {
-                "A DMARC aggregate report will be sent"
-            }
-            EventType::OutgoingReport(OutgoingReportEvent::TlsAggregate) => {
-                "A TLS aggregate report will be sent"
-            }
-            EventType::OutgoingReport(OutgoingReportEvent::HttpSubmission) => {
-                "The report was submitted via HTTP"
-            }
-            EventType::OutgoingReport(OutgoingReportEvent::UnauthorizedReportingAddress) => {
-                "The reporting address is not authorized to send reports"
-            }
-            EventType::OutgoingReport(OutgoingReportEvent::ReportingAddressValidationError) => {
-                "Error validating the reporting address"
-            }
-            EventType::OutgoingReport(OutgoingReportEvent::NotFound) => "The report was not found",
-            EventType::OutgoingReport(OutgoingReportEvent::SubmissionError) => {
-                "Error submitting the report"
-            }
-            EventType::OutgoingReport(OutgoingReportEvent::NoRecipientsFound) => {
-                "No recipients found for the report"
-            }
-            EventType::OutgoingReport(OutgoingReportEvent::Locked) => {
-                "The report is locked by another process"
-            }
-            EventType::OutgoingReport(OutgoingReportEvent::MaxSizeExceeded) => {
-                "The report size exceeds the maximum allowed size"
-            }
-            EventType::Pop3(Pop3Event::ConnectionStart) => "POP3 connection started",
-            EventType::Pop3(Pop3Event::ConnectionEnd) => "POP3 connection ended",
-            EventType::Pop3(Pop3Event::Delete) => "Client deleted a message",
-            EventType::Pop3(Pop3Event::Reset) => "Client reset the session",
-            EventType::Pop3(Pop3Event::Quit) => "Client quit the session",
-            EventType::Pop3(Pop3Event::Fetch) => "Client fetched a message",
-            EventType::Pop3(Pop3Event::List) => "Client listed messages",
-            EventType::Pop3(Pop3Event::ListMessage) => "Client listed a specific message",
-            EventType::Pop3(Pop3Event::Uidl) => "Client requested unique identifiers",
-            EventType::Pop3(Pop3Event::UidlMessage) => {
-                "Client requested a specific unique identifier"
-            }
-            EventType::Pop3(Pop3Event::Stat) => "Client requested mailbox status",
-            EventType::Pop3(Pop3Event::Noop) => "Client sent a NOOP command",
-            EventType::Pop3(Pop3Event::Capabilities) => "Client requested server capabilities",
-            EventType::Pop3(Pop3Event::StartTls) => "Client requested TLS",
-            EventType::Pop3(Pop3Event::Utf8) => "Client requested UTF-8 support",
-            EventType::Pop3(Pop3Event::Error) => "An error occurred during a POP3 command",
-            EventType::Pop3(Pop3Event::RawInput) => "Raw POP3 input received",
-            EventType::Pop3(Pop3Event::RawOutput) => "Raw POP3 output sent",
-            EventType::PushSubscription(PushSubscriptionEvent::Success) => {
-                "The push subscription was successful"
-            }
-            EventType::PushSubscription(PushSubscriptionEvent::Error) => {
-                "An error occurred with the push subscription"
-            }
-            EventType::PushSubscription(PushSubscriptionEvent::NotFound) => {
-                "The push subscription was not found"
-            }
-            EventType::Queue(QueueEvent::Started) => "The MTA queue has started",
-            EventType::Queue(QueueEvent::MessageQueued) => "A new message was queued for delivery",
-            EventType::Queue(QueueEvent::AuthenticatedMessageQueued) => {
-                "A new message was queued for delivery from an authenticated client"
-            }
-            EventType::Queue(QueueEvent::ReportQueued) => "A new report was queued for delivery",
-            EventType::Queue(QueueEvent::DsnQueued) => {
-                "A delivery status notification was queued for delivery"
-            }
-            EventType::Queue(QueueEvent::AutogeneratedQueued) => {
-                "A system generated message was queued for delivery"
-            }
-            EventType::Queue(QueueEvent::Rescheduled) => "The message was rescheduled for delivery",
-            EventType::Queue(QueueEvent::Locked) => "The queue event is locked by another process",
-            EventType::Queue(QueueEvent::BlobNotFound) => "The message blob was not found",
-            EventType::Queue(QueueEvent::RateLimitExceeded) => "The queue rate limit was exceeded",
-            EventType::Queue(QueueEvent::ConcurrencyLimitExceeded) => {
-                "The queue concurrency limit was exceeded"
-            }
-            EventType::Queue(QueueEvent::QuotaExceeded) => "The queue quota was exceeded",
-            EventType::Queue(QueueEvent::BackPressure) => {
-                "Queue congested, processing can't keep up with incoming message rate"
-            }
-            EventType::Registry(RegistryEvent::LocalReadError) => {
-                "An error occurred while reading the local registry file"
-            }
-            EventType::Registry(RegistryEvent::LocalWriteError) => {
-                "An error occurred while writing to the local registry file"
-            }
-            EventType::Registry(RegistryEvent::LocalParseError) => {
-                "An error occurred while parsing the local registry file"
-            }
-            EventType::Registry(RegistryEvent::ReadError) => {
-                "An error occurred while reading the registry file"
-            }
-            EventType::Registry(RegistryEvent::WriteError) => {
-                "An error occurred while writing to the registry file"
-            }
-            EventType::Registry(RegistryEvent::DeserializationError) => {
-                "An error occurred while deserializing a registry entry"
-            }
-            EventType::Registry(RegistryEvent::BuildError) => {
-                "An error occurred while building the configuration from the registry"
-            }
-            EventType::Registry(RegistryEvent::BuildWarning) => {
-                "A warning occurred while building the configuration from the registry"
-            }
-            EventType::Registry(RegistryEvent::NotSupported) => {
-                "The local registry does not support this operation"
-            }
-            EventType::Registry(RegistryEvent::ValidationError) => {
-                "An error occurred while validating a registry object"
-            }
-            EventType::Resource(ResourceEvent::NotFound) => "The resource was not found",
-            EventType::Resource(ResourceEvent::BadParameters) => "The resource parameters are bad",
-            EventType::Resource(ResourceEvent::Error) => "An error occurred with the resource",
-            EventType::Resource(ResourceEvent::DownloadExternal) => {
-                "The external resource is being downloaded"
-            }
-            EventType::Security(SecurityEvent::AuthenticationBan) => {
-                "IP address was banned due to multiple authentication errors"
-            }
-            EventType::Security(SecurityEvent::AbuseBan) => {
-                "IP address was banned due to abuse, such as RCPT TO attacks"
-            }
-            EventType::Security(SecurityEvent::ScanBan) => {
-                "IP address was banned due to exploit scanning"
-            }
-            EventType::Security(SecurityEvent::LoiterBan) => {
-                "IP address was banned due to multiple loitering events"
-            }
-            EventType::Security(SecurityEvent::IpBlocked) => {
-                "Rejected connection from blocked IP address"
-            }
-            EventType::Security(SecurityEvent::IpBlockExpired) => {
-                "A previously blocked IP address block has expired"
-            }
-            EventType::Security(SecurityEvent::IpAllowExpired) => {
-                "A previously allowed IP address allow has expired"
-            }
-            EventType::Security(SecurityEvent::IpUnauthorized) => {
-                "IP address is not authorized to authenticate using this credential"
-            }
-            EventType::Security(SecurityEvent::Unauthorized) => {
-                "Account does not have permission to access resource"
-            }
-            EventType::Server(ServerEvent::Startup) => "Stalwart Server has started",
-            EventType::Server(ServerEvent::Shutdown) => "Stalwart Server is shutting down",
-            EventType::Server(ServerEvent::StartupError) => {
-                "An error occurred while starting the server"
-            }
-            EventType::Server(ServerEvent::ThreadError) => "An error occurred with a server thread",
-            EventType::Server(ServerEvent::Licensing) => "A licensing event occurred",
-            EventType::Sieve(SieveEvent::ActionAccept) => {
-                "The Sieve script requested to accept the message"
-            }
-            EventType::Sieve(SieveEvent::ActionAcceptReplace) => {
-                "The Sieve script requested to accept the message and replace its contents"
-            }
-            EventType::Sieve(SieveEvent::ActionDiscard) => {
-                "The Sieve script requested to discard the message"
-            }
-            EventType::Sieve(SieveEvent::ActionReject) => {
-                "The Sieve script requested to reject the message"
-            }
-            EventType::Sieve(SieveEvent::SendMessage) => "The Sieve script is sending a message",
-            EventType::Sieve(SieveEvent::MessageTooLarge) => "The Sieve message is too large",
-            EventType::Sieve(SieveEvent::ScriptNotFound) => "The Sieve script was not found",
-            EventType::Sieve(SieveEvent::ListNotFound) => "The Sieve list was not found",
-            EventType::Sieve(SieveEvent::RuntimeError) => {
-                "A runtime error occurred with the Sieve script"
-            }
-            EventType::Sieve(SieveEvent::UnexpectedError) => {
-                "An unexpected error occurred with the Sieve script"
-            }
-            EventType::Sieve(SieveEvent::NotSupported) => "The Sieve action is not supported",
-            EventType::Sieve(SieveEvent::QuotaExceeded) => "The Sieve quota was exceeded",
-            EventType::Smtp(SmtpEvent::ConnectionStart) => "A new SMTP connection was started",
-            EventType::Smtp(SmtpEvent::ConnectionEnd) => "The SMTP connection was ended",
-            EventType::Smtp(SmtpEvent::Error) => "An error occurred during an SMTP command",
-            EventType::Smtp(SmtpEvent::IdNotFound) => {
-                "The strategy ID was not found in the configuration"
-            }
-            EventType::Smtp(SmtpEvent::ConcurrencyLimitExceeded) => {
-                "The concurrency limit was exceeded"
-            }
-            EventType::Smtp(SmtpEvent::TransferLimitExceeded) => {
-                "The remote host transferred more data than allowed"
-            }
-            EventType::Smtp(SmtpEvent::RateLimitExceeded) => "The rate limit was exceeded",
-            EventType::Smtp(SmtpEvent::TimeLimitExceeded) => {
-                "The remote host kept the SMTP session open too long"
-            }
-            EventType::Smtp(SmtpEvent::MissingAuthDirectory) => "The auth directory was missing",
-            EventType::Smtp(SmtpEvent::MessageParseFailed) => "Failed to parse the message",
-            EventType::Smtp(SmtpEvent::MessageTooLarge) => {
-                "The message was rejected because it was too large"
-            }
-            EventType::Smtp(SmtpEvent::LoopDetected) => {
-                "A mail loop was detected, the message contains too many Received headers"
-            }
-            EventType::Smtp(SmtpEvent::DkimPass) => "Successful DKIM verification",
-            EventType::Smtp(SmtpEvent::DkimFail) => "Failed to verify DKIM signature",
-            EventType::Smtp(SmtpEvent::ArcPass) => "Successful ARC verification",
-            EventType::Smtp(SmtpEvent::ArcFail) => "Failed to verify ARC signature",
-            EventType::Smtp(SmtpEvent::SpfEhloPass) => "EHLO identity passed SPF check",
-            EventType::Smtp(SmtpEvent::SpfEhloFail) => "EHLO identity failed SPF check",
-            EventType::Smtp(SmtpEvent::SpfFromPass) => "MAIL FROM identity passed SPF check",
-            EventType::Smtp(SmtpEvent::SpfFromFail) => "MAIL FROM identity failed SPF check",
-            EventType::Smtp(SmtpEvent::DmarcPass) => "Successful DMARC verification",
-            EventType::Smtp(SmtpEvent::DmarcFail) => "Failed to verify DMARC policy",
-            EventType::Smtp(SmtpEvent::IprevPass) => "Reverse IP check passed",
-            EventType::Smtp(SmtpEvent::IprevFail) => "Reverse IP check failed",
-            EventType::Smtp(SmtpEvent::TooManyMessages) => {
-                "The remote server exceeded the number of messages allowed per session"
-            }
-            EventType::Smtp(SmtpEvent::Ehlo) => "The remote server sent an EHLO command",
-            EventType::Smtp(SmtpEvent::InvalidEhlo) => {
-                "The remote server sent an invalid EHLO command"
-            }
-            EventType::Smtp(SmtpEvent::DidNotSayEhlo) => {
-                "The remote server did not send EHLO command"
-            }
-            EventType::Smtp(SmtpEvent::EhloExpected) => {
-                "The remote server sent a LHLO command while EHLO was expected"
-            }
-            EventType::Smtp(SmtpEvent::LhloExpected) => {
-                "The remote server sent an EHLO command while LHLO was expected"
-            }
-            EventType::Smtp(SmtpEvent::MailFromUnauthenticated) => {
-                "The remote client did not authenticate before sending MAIL FROM"
-            }
-            EventType::Smtp(SmtpEvent::MailFromUnauthorized) => {
-                "The remote client is not authorized to send mail from the given address"
-            }
-            EventType::Smtp(SmtpEvent::MailFromNotAllowed) => {
-                "The remote client is not allowed to send mail from this address"
-            }
-            EventType::Smtp(SmtpEvent::MailFromRewritten) => {
-                "The envelope sender address was rewritten"
-            }
-            EventType::Smtp(SmtpEvent::MailFromMissing) => {
-                "The remote client issued an RCPT TO command before MAIL FROM"
-            }
-            EventType::Smtp(SmtpEvent::MailFrom) => "The remote client sent a MAIL FROM command",
-            EventType::Smtp(SmtpEvent::MultipleMailFrom) => {
-                "The remote client already sent a MAIL FROM command"
-            }
-            EventType::Smtp(SmtpEvent::MailboxDoesNotExist) => {
-                "The mailbox does not exist on the server"
-            }
-            EventType::Smtp(SmtpEvent::RelayNotAllowed) => "The server does not allow relaying",
-            EventType::Smtp(SmtpEvent::RcptTo) => "The remote client sent an RCPT TO command",
-            EventType::Smtp(SmtpEvent::RcptToDuplicate) => {
-                "The remote client already sent an RCPT TO command for this recipient"
-            }
-            EventType::Smtp(SmtpEvent::RcptToRewritten) => {
-                "The envelope recipient address was rewritten"
-            }
-            EventType::Smtp(SmtpEvent::RcptToMissing) => {
-                "The remote client issued a DATA command before RCPT TO"
-            }
-            EventType::Smtp(SmtpEvent::RcptToGreylisted) => "The recipient was greylisted",
-            EventType::Smtp(SmtpEvent::TooManyRecipients) => {
-                "The remote client exceeded the number of recipients allowed"
-            }
-            EventType::Smtp(SmtpEvent::TooManyInvalidRcpt) => {
-                "The remote client exceeded the number of invalid RCPT TO commands allowed"
-            }
-            EventType::Smtp(SmtpEvent::RawInput) => "Raw SMTP input received",
-            EventType::Smtp(SmtpEvent::RawOutput) => "Raw SMTP output sent",
-            EventType::Smtp(SmtpEvent::MissingLocalHostname) => {
-                "The local hostname is missing in the configuration"
-            }
-            EventType::Smtp(SmtpEvent::Vrfy) => "The remote client sent a VRFY command",
-            EventType::Smtp(SmtpEvent::VrfyNotFound) => {
-                "The remote client sent a VRFY command for an address that was not found"
-            }
-            EventType::Smtp(SmtpEvent::VrfyDisabled) => "The VRFY command is disabled",
-            EventType::Smtp(SmtpEvent::Expn) => "The remote client sent an EXPN command",
-            EventType::Smtp(SmtpEvent::ExpnNotFound) => {
-                "The remote client sent an EXPN command for an address that was not found"
-            }
-            EventType::Smtp(SmtpEvent::ExpnDisabled) => "The EXPN command is disabled",
-            EventType::Smtp(SmtpEvent::RequireTlsDisabled) => {
-                "The REQUIRETLS extension is disabled"
-            }
-            EventType::Smtp(SmtpEvent::DeliverByDisabled) => "The DELIVERBY extension is disabled",
-            EventType::Smtp(SmtpEvent::DeliverByInvalid) => "The DELIVERBY parameter is invalid",
-            EventType::Smtp(SmtpEvent::FutureReleaseDisabled) => {
-                "The FUTURE RELEASE extension is disabled"
-            }
-            EventType::Smtp(SmtpEvent::FutureReleaseInvalid) => {
-                "The FUTURE RELEASE parameter is invalid"
-            }
-            EventType::Smtp(SmtpEvent::MtPriorityDisabled) => {
-                "The MT-PRIORITY extension is disabled"
-            }
-            EventType::Smtp(SmtpEvent::MtPriorityInvalid) => "The MT-PRIORITY parameter is invalid",
-            EventType::Smtp(SmtpEvent::DsnDisabled) => "The DSN extension is disabled",
-            EventType::Smtp(SmtpEvent::AuthNotAllowed) => {
-                "Authentication is not allowed on this listener"
-            }
-            EventType::Smtp(SmtpEvent::AuthMechanismNotSupported) => {
-                "The requested authentication mechanism is not supported"
-            }
-            EventType::Smtp(SmtpEvent::AuthExchangeTooLong) => {
-                "The authentication exchange was too long"
-            }
-            EventType::Smtp(SmtpEvent::AlreadyAuthenticated) => {
-                "The client is already authenticated"
-            }
-            EventType::Smtp(SmtpEvent::Noop) => "The remote client sent a NOOP command",
-            EventType::Smtp(SmtpEvent::StartTls) => "The remote client requested a TLS connection",
-            EventType::Smtp(SmtpEvent::StartTlsUnavailable) => {
-                "The remote client requested a TLS connection but it is not available"
-            }
-            EventType::Smtp(SmtpEvent::StartTlsAlready) => "TLS is already active",
-            EventType::Smtp(SmtpEvent::Rset) => "The remote client sent a RSET command",
-            EventType::Smtp(SmtpEvent::Quit) => "The remote client sent a QUIT command",
-            EventType::Smtp(SmtpEvent::Help) => "The remote client sent a HELP command",
-            EventType::Smtp(SmtpEvent::CommandNotImplemented) => {
-                "The server does not implement the requested command"
-            }
-            EventType::Smtp(SmtpEvent::InvalidCommand) => {
-                "The remote client sent an invalid command"
-            }
-            EventType::Smtp(SmtpEvent::InvalidSenderAddress) => {
-                "The specified sender address is invalid"
-            }
-            EventType::Smtp(SmtpEvent::InvalidRecipientAddress) => {
-                "The specified recipient address is invalid"
-            }
-            EventType::Smtp(SmtpEvent::InvalidParameter) => {
-                "The command contained an invalid parameter"
-            }
-            EventType::Smtp(SmtpEvent::UnsupportedParameter) => {
-                "The command contained an unsupported parameter"
-            }
-            EventType::Smtp(SmtpEvent::SyntaxError) => "The command contained a syntax error",
-            EventType::Smtp(SmtpEvent::RequestTooLarge) => "The request was too large",
-            EventType::Spam(SpamEvent::Pyzor) => "Pyzor query successful",
-            EventType::Spam(SpamEvent::PyzorError) => "An error occurred with Pyzor",
-            EventType::Spam(SpamEvent::Dnsbl) => "The DNSBL query was successful",
-            EventType::Spam(SpamEvent::DnsblError) => "An error occurred while querying the DNSBL",
-            EventType::Spam(SpamEvent::TrainStarted) => {
-                "SGD logistic regression training has started"
-            }
-            EventType::Spam(SpamEvent::TrainCompleted) => {
-                "SGD logistic regression training has completed"
-            }
-            EventType::Spam(SpamEvent::TrainSampleAdded) => "A new training sample has been added",
-            EventType::Spam(SpamEvent::TrainSampleNotFound) => "A training sample was not found",
-            EventType::Spam(SpamEvent::Classify) => "The message is being classified for spam",
-            EventType::Spam(SpamEvent::ModelLoaded) => "The spam classifier model has been loaded",
-            EventType::Spam(SpamEvent::ModelNotReady) => {
-                "The spam classifier model has not been trained with enough data"
-            }
-            EventType::Spam(SpamEvent::ModelNotFound) => {
-                "The spam classifier model has not been trained yet"
-            }
-            EventType::Spam(SpamEvent::RulesUpdated) => "The spam filter rules have been updated",
-            EventType::Spf(SpfEvent::Pass) => "The SPF check has passed",
-            EventType::Spf(SpfEvent::Fail) => "The SPF check has failed",
-            EventType::Spf(SpfEvent::SoftFail) => "The SPF check has soft failed",
-            EventType::Spf(SpfEvent::Neutral) => "The SPF result is neutral",
-            EventType::Spf(SpfEvent::TempError) => "A temporary error occurred with SPF",
-            EventType::Spf(SpfEvent::PermError) => "A permanent error occurred with SPF",
-            EventType::Spf(SpfEvent::None) => "No SPF record was found",
-            EventType::Store(StoreEvent::AssertValueFailed) => {
-                "Another process modified the record"
-            }
-            EventType::Store(StoreEvent::FoundationdbError) => "A FoundationDB error occurred",
-            EventType::Store(StoreEvent::MysqlError) => "A MySQL error occurred",
-            EventType::Store(StoreEvent::PostgresqlError) => "A PostgreSQL error occurred",
-            EventType::Store(StoreEvent::RocksdbError) => "A RocksDB error occurred",
-            EventType::Store(StoreEvent::SqliteError) => "An SQLite error occurred",
-            EventType::Store(StoreEvent::LdapError) => "An LDAP error occurred",
-            EventType::Store(StoreEvent::ElasticsearchError) => "An ElasticSearch error occurred",
-            EventType::Store(StoreEvent::MeilisearchError) => "A Meilisearch error occurred",
-            EventType::Store(StoreEvent::RedisError) => "A Redis error occurred",
-            EventType::Store(StoreEvent::S3Error) => "An S3 error occurred",
-            EventType::Store(StoreEvent::AzureError) => "An Azure error occurred",
-            EventType::Store(StoreEvent::FilesystemError) => "A filesystem error occurred",
-            EventType::Store(StoreEvent::PoolError) => "A connection pool error occurred",
-            EventType::Store(StoreEvent::DataCorruption) => "Data corruption was detected",
-            EventType::Store(StoreEvent::DecompressError) => "A decompression error occurred",
-            EventType::Store(StoreEvent::DeserializeError) => "A deserialization error occurred",
-            EventType::Store(StoreEvent::NotFound) => "The record was not found in the database",
-            EventType::Store(StoreEvent::NotConfigured) => "The store is not configured",
-            EventType::Store(StoreEvent::NotSupported) => {
-                "The operation is not supported by the store"
-            }
-            EventType::Store(StoreEvent::UnexpectedError) => "An unexpected store error occurred",
-            EventType::Store(StoreEvent::CryptoError) => "A store crypto error occurred",
-            EventType::Store(StoreEvent::HttpStoreError) => {
-                "An error occurred while updating the HTTP store"
-            }
-            EventType::Store(StoreEvent::CacheMiss) => "No cache entry found for the account",
-            EventType::Store(StoreEvent::CacheHit) => {
-                "Cache entry found for the account, no update needed"
-            }
-            EventType::Store(StoreEvent::CacheStale) => "Cache is too old, rebuilding",
-            EventType::Store(StoreEvent::CacheUpdate) => {
-                "Cache updated with latest database changes"
-            }
-            EventType::Store(StoreEvent::BlobMissingMarker) => "The blob is missing a marker",
-            EventType::Store(StoreEvent::DataWrite) => "A write batch operation was executed",
-            EventType::Store(StoreEvent::DataIterate) => {
-                "A data store iteration operation was executed"
-            }
-            EventType::Store(StoreEvent::BlobRead) => "A blob read operation was executed",
-            EventType::Store(StoreEvent::BlobWrite) => "A blob write operation was executed",
-            EventType::Store(StoreEvent::BlobDelete) => "A blob delete operation was executed",
-            EventType::Store(StoreEvent::SqlQuery) => "An SQL query was executed",
-            EventType::Store(StoreEvent::LdapQuery) => "An LDAP query was executed",
-            EventType::Store(StoreEvent::LdapWarning) => "An LDAP authentication warning occurred",
-            EventType::Store(StoreEvent::HttpStoreFetch) => "The HTTP store was updated",
-            EventType::Store(StoreEvent::AutoExpunge) => "Auto-expunge has been executed",
-            EventType::Store(StoreEvent::BlobStorePurged) => {
-                "The blob store purge process has completed"
-            }
-            EventType::Store(StoreEvent::DataStorePurged) => {
-                "The data store purge process has completed"
-            }
-            EventType::TaskManager(TaskManagerEvent::TaskAcquired) => {
-                "A task has been acquired from the queue"
-            }
-            EventType::TaskManager(TaskManagerEvent::TaskQueued) => {
-                "A task has been queued for processing"
-            }
-            EventType::TaskManager(TaskManagerEvent::TaskScheduled) => {
-                "A task has been scheduled for future execution"
-            }
-            EventType::TaskManager(TaskManagerEvent::TaskLocked) => {
-                "The task id is locked by another process"
-            }
-            EventType::TaskManager(TaskManagerEvent::TaskIgnored) => {
-                "The task was ignored based on the current server roles"
-            }
-            EventType::TaskManager(TaskManagerEvent::TaskFailed) => {
-                "The task failed during processing"
-            }
-            EventType::TaskManager(TaskManagerEvent::TaskRetry) => {
-                "The task will be retried after a failure"
-            }
-            EventType::TaskManager(TaskManagerEvent::BlobNotFound) => {
-                "The requested blob was not found for task"
-            }
-            EventType::TaskManager(TaskManagerEvent::MetadataNotFound) => {
-                "The metadata was not found for task"
-            }
-            EventType::TaskManager(TaskManagerEvent::SchedulerStarted) => {
-                "The task scheduler has started"
-            }
-            EventType::TaskManager(TaskManagerEvent::ManagerStarted) => {
-                "The task manager has started"
-            }
-            EventType::Telemetry(TelemetryEvent::AlertEvent) => "An alert event was triggered",
-            EventType::Telemetry(TelemetryEvent::AlertMessage) => {
-                "An alert message was sent via email"
-            }
-            EventType::Telemetry(TelemetryEvent::LogError) => {
-                "An error occurred with the log collector"
-            }
-            EventType::Telemetry(TelemetryEvent::WebhookError) => {
-                "An error occurred with the webhook collector"
-            }
-            EventType::Telemetry(TelemetryEvent::OtelExporterError) => {
-                "An error occurred with the OpenTelemetry exporter"
-            }
-            EventType::Telemetry(TelemetryEvent::OtelMetricsExporterError) => {
-                "An error occurred with the OpenTelemetry metrics exporter"
-            }
-            EventType::Telemetry(TelemetryEvent::PrometheusExporterError) => {
-                "An error occurred with the Prometheus exporter"
-            }
-            EventType::Telemetry(TelemetryEvent::JournalError) => {
-                "An error occurred with the journal collector"
-            }
-            EventType::Telemetry(TelemetryEvent::MetricsCollected) => "Metrics have been collected",
-            EventType::Telemetry(TelemetryEvent::MetricsStored) => "Metrics have been stored",
-            EventType::Telemetry(TelemetryEvent::MetricsPushed) => {
-                "Metrics have been pushed to the configured exporters"
-            }
-            EventType::Tls(TlsEvent::Handshake) => "Successful TLS handshake",
-            EventType::Tls(TlsEvent::HandshakeError) => {
-                "An error occurred during the TLS handshake"
-            }
-            EventType::Tls(TlsEvent::NotConfigured) => "TLS is not configured",
-            EventType::Tls(TlsEvent::CertificateNotFound) => "The TLS certificate was not found",
-            EventType::Tls(TlsEvent::NoCertificatesAvailable) => {
-                "No TLS certificates are available"
-            }
-            EventType::Tls(TlsEvent::MultipleCertificatesAvailable) => {
-                "Multiple TLS certificates are available"
-            }
-            EventType::Tls(TlsEvent::ExpiredCertificateRemoved) => {
-                "A TLS certificate has expired and was removed from the store"
-            }
-            EventType::TlsRpt(TlsRptEvent::RecordFetch) => "The TLS-RPT record has been fetched",
-            EventType::TlsRpt(TlsRptEvent::RecordFetchError) => {
-                "An error occurred while fetching the TLS-RPT record"
-            }
-            EventType::TlsRpt(TlsRptEvent::RecordNotFound) => "No TLS-RPT records were found",
-            EventType::WebDav(WebDavEvent::Propfind) => {
-                "A PROPFIND request has been made to the server"
-            }
-            EventType::WebDav(WebDavEvent::Proppatch) => {
-                "A PROPPATCH request has been made to the server"
-            }
-            EventType::WebDav(WebDavEvent::Get) => "A GET request has been made to the server",
-            EventType::WebDav(WebDavEvent::Head) => "A HEAD request has been made to the server",
-            EventType::WebDav(WebDavEvent::Report) => {
-                "A REPORT request has been made to the server"
-            }
-            EventType::WebDav(WebDavEvent::Mkcol) => "A MKCOL request has been made to the server",
-            EventType::WebDav(WebDavEvent::Mkcalendar) => {
-                "A MKCALENDAR request has been made to the server"
-            }
-            EventType::WebDav(WebDavEvent::Delete) => {
-                "A DELETE request has been made to the server"
-            }
-            EventType::WebDav(WebDavEvent::Put) => "A PUT request has been made to the server",
-            EventType::WebDav(WebDavEvent::Post) => "A POST request has been made to the server",
-            EventType::WebDav(WebDavEvent::Patch) => "A PATCH request has been made to the server",
-            EventType::WebDav(WebDavEvent::Copy) => "A COPY request has been made to the server",
-            EventType::WebDav(WebDavEvent::Move) => "A MOVE request has been made to the server",
-            EventType::WebDav(WebDavEvent::Lock) => "A LOCK request has been made to the server",
-            EventType::WebDav(WebDavEvent::Unlock) => {
-                "An UNLOCK request has been made to the server"
-            }
-            EventType::WebDav(WebDavEvent::Acl) => "An ACL request has been made to the server",
-            EventType::WebDav(WebDavEvent::Options) => {
-                "An OPTIONS request has been made to the server"
-            }
-            EventType::WebDav(WebDavEvent::Error) => "An error occurred with the WebDAV request",
-        }
-    }
-
     pub fn message(&self) -> &'static str {
         match self {
             EventType::Auth(AuthEvent::Success) => "Authentication error",
             EventType::Auth(AuthEvent::Failed) => "Authentication failed",
             EventType::Auth(AuthEvent::TokenExpired) => "Authentication error",
-            EventType::Auth(AuthEvent::MfaRequired) => "This account requires multi-factor authentication. Alternatively, you can use an app password if your account has one.",
+            EventType::Auth(AuthEvent::MfaRequired) => {
+                "This account requires multi-factor authentication. Alternatively, you can use an app password if your account has one."
+            }
             EventType::Auth(AuthEvent::TooManyAttempts) => "Too many authentication attempts",
             EventType::Auth(AuthEvent::ClientRegistration) => "Authentication error",
             EventType::Auth(AuthEvent::Error) => "Authentication error",
@@ -4890,7 +3761,9 @@ impl EventType {
             EventType::Jmap(JmapEvent::InvalidResultReference) => "Invalid result reference",
             EventType::Jmap(JmapEvent::Forbidden) => "Forbidden",
             EventType::Jmap(JmapEvent::AccountNotFound) => "Account not found",
-            EventType::Jmap(JmapEvent::AccountNotSupportedByMethod) => "Account not supported by method",
+            EventType::Jmap(JmapEvent::AccountNotSupportedByMethod) => {
+                "Account not supported by method"
+            }
             EventType::Jmap(JmapEvent::AccountReadOnly) => "Account read-only",
             EventType::Jmap(JmapEvent::NotFound) => "Not found",
             EventType::Jmap(JmapEvent::CannotCalculateChanges) => "Cannot calculate changes",
@@ -5056,7 +3929,9 @@ impl EventType {
             EventType::Smtp(SmtpEvent::UnsupportedParameter) => "SMTP error",
             EventType::Smtp(SmtpEvent::SyntaxError) => "SMTP error",
             EventType::Smtp(SmtpEvent::RequestTooLarge) => "SMTP error",
-            EventType::Store(StoreEvent::AssertValueFailed) => "Another process has modified the value",
+            EventType::Store(StoreEvent::AssertValueFailed) => {
+                "Another process has modified the value"
+            }
             EventType::Store(StoreEvent::FoundationdbError) => "FoundationDB error",
             EventType::Store(StoreEvent::MysqlError) => "MySQL error",
             EventType::Store(StoreEvent::PostgresqlError) => "PostgreSQL error",
@@ -8457,5 +7332,249 @@ impl MetricType {
             MetricType::TlsHandshakeError,
             MetricType::UserCount,
         ]
+    }
+}
+
+impl Key {
+    pub fn parse(value: &str) -> Option<Self> {
+        hashify::map! {
+            value.as_bytes(),
+            Key,
+            b"accountName" => Key::AccountName,
+            b"accountId" => Key::AccountId,
+            b"blobId" => Key::BlobId,
+            b"causedBy" => Key::CausedBy,
+            b"changeId" => Key::ChangeId,
+            b"code" => Key::Code,
+            b"collection" => Key::Collection,
+            b"contents" => Key::Contents,
+            b"details" => Key::Details,
+            b"dkimFail" => Key::DkimFail,
+            b"dkimNone" => Key::DkimNone,
+            b"dkimPass" => Key::DkimPass,
+            b"dmarcNone" => Key::DmarcNone,
+            b"dmarcPass" => Key::DmarcPass,
+            b"dmarcQuarantine" => Key::DmarcQuarantine,
+            b"dmarcReject" => Key::DmarcReject,
+            b"documentId" => Key::DocumentId,
+            b"domain" => Key::Domain,
+            b"due" => Key::Due,
+            b"elapsed" => Key::Elapsed,
+            b"expires" => Key::Expires,
+            b"from" => Key::From,
+            b"hostname" => Key::Hostname,
+            b"id" => Key::Id,
+            b"key" => Key::Key,
+            b"limit" => Key::Limit,
+            b"listenerId" => Key::ListenerId,
+            b"localIp" => Key::LocalIp,
+            b"localPort" => Key::LocalPort,
+            b"mailboxName" => Key::MailboxName,
+            b"mailboxId" => Key::MailboxId,
+            b"messageId" => Key::MessageId,
+            b"nextDsn" => Key::NextDsn,
+            b"nextRetry" => Key::NextRetry,
+            b"path" => Key::Path,
+            b"policy" => Key::Policy,
+            b"queueId" => Key::QueueId,
+            b"rangeFrom" => Key::RangeFrom,
+            b"rangeTo" => Key::RangeTo,
+            b"reason" => Key::Reason,
+            b"remoteIp" => Key::RemoteIp,
+            b"remotePort" => Key::RemotePort,
+            b"reportId" => Key::ReportId,
+            b"result" => Key::Result,
+            b"size" => Key::Size,
+            b"source" => Key::Source,
+            b"spanId" => Key::SpanId,
+            b"spfFail" => Key::SpfFail,
+            b"spfNone" => Key::SpfNone,
+            b"spfPass" => Key::SpfPass,
+            b"strict" => Key::Strict,
+            b"tls" => Key::Tls,
+            b"to" => Key::To,
+            b"total" => Key::Total,
+            b"totalFailures" => Key::TotalFailures,
+            b"totalSuccesses" => Key::TotalSuccesses,
+            b"type" => Key::Type,
+            b"uid" => Key::Uid,
+            b"uidNext" => Key::UidNext,
+            b"uidValidity" => Key::UidValidity,
+            b"url" => Key::Url,
+            b"validFrom" => Key::ValidFrom,
+            b"validTo" => Key::ValidTo,
+            b"value" => Key::Value,
+            b"version" => Key::Version,
+            b"queueName" => Key::QueueName,
+        }
+        .copied()
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Key::AccountName => "accountName",
+            Key::AccountId => "accountId",
+            Key::BlobId => "blobId",
+            Key::CausedBy => "causedBy",
+            Key::ChangeId => "changeId",
+            Key::Code => "code",
+            Key::Collection => "collection",
+            Key::Contents => "contents",
+            Key::Details => "details",
+            Key::DkimFail => "dkimFail",
+            Key::DkimNone => "dkimNone",
+            Key::DkimPass => "dkimPass",
+            Key::DmarcNone => "dmarcNone",
+            Key::DmarcPass => "dmarcPass",
+            Key::DmarcQuarantine => "dmarcQuarantine",
+            Key::DmarcReject => "dmarcReject",
+            Key::DocumentId => "documentId",
+            Key::Domain => "domain",
+            Key::Due => "due",
+            Key::Elapsed => "elapsed",
+            Key::Expires => "expires",
+            Key::From => "from",
+            Key::Hostname => "hostname",
+            Key::Id => "id",
+            Key::Key => "key",
+            Key::Limit => "limit",
+            Key::ListenerId => "listenerId",
+            Key::LocalIp => "localIp",
+            Key::LocalPort => "localPort",
+            Key::MailboxName => "mailboxName",
+            Key::MailboxId => "mailboxId",
+            Key::MessageId => "messageId",
+            Key::NextDsn => "nextDsn",
+            Key::NextRetry => "nextRetry",
+            Key::Path => "path",
+            Key::Policy => "policy",
+            Key::QueueId => "queueId",
+            Key::RangeFrom => "rangeFrom",
+            Key::RangeTo => "rangeTo",
+            Key::Reason => "reason",
+            Key::RemoteIp => "remoteIp",
+            Key::RemotePort => "remotePort",
+            Key::ReportId => "reportId",
+            Key::Result => "result",
+            Key::Size => "size",
+            Key::Source => "source",
+            Key::SpanId => "spanId",
+            Key::SpfFail => "spfFail",
+            Key::SpfNone => "spfNone",
+            Key::SpfPass => "spfPass",
+            Key::Strict => "strict",
+            Key::Tls => "tls",
+            Key::To => "to",
+            Key::Total => "total",
+            Key::TotalFailures => "totalFailures",
+            Key::TotalSuccesses => "totalSuccesses",
+            Key::Type => "type",
+            Key::Uid => "uid",
+            Key::UidNext => "uidNext",
+            Key::UidValidity => "uidValidity",
+            Key::Url => "url",
+            Key::ValidFrom => "validFrom",
+            Key::ValidTo => "validTo",
+            Key::Value => "value",
+            Key::Version => "version",
+            Key::QueueName => "queueName",
+        }
+    }
+
+    pub fn to_id(&self) -> u16 {
+        *self as u16
+    }
+
+    pub fn from_id(id: u16) -> Option<Self> {
+        match id {
+            0 => Some(Key::AccountName),
+            1 => Some(Key::AccountId),
+            2 => Some(Key::BlobId),
+            3 => Some(Key::CausedBy),
+            4 => Some(Key::ChangeId),
+            5 => Some(Key::Code),
+            6 => Some(Key::Collection),
+            7 => Some(Key::Contents),
+            8 => Some(Key::Details),
+            9 => Some(Key::DkimFail),
+            10 => Some(Key::DkimNone),
+            11 => Some(Key::DkimPass),
+            12 => Some(Key::DmarcNone),
+            13 => Some(Key::DmarcPass),
+            14 => Some(Key::DmarcQuarantine),
+            15 => Some(Key::DmarcReject),
+            16 => Some(Key::DocumentId),
+            17 => Some(Key::Domain),
+            18 => Some(Key::Due),
+            19 => Some(Key::Elapsed),
+            20 => Some(Key::Expires),
+            21 => Some(Key::From),
+            22 => Some(Key::Hostname),
+            23 => Some(Key::Id),
+            24 => Some(Key::Key),
+            25 => Some(Key::Limit),
+            26 => Some(Key::ListenerId),
+            27 => Some(Key::LocalIp),
+            28 => Some(Key::LocalPort),
+            29 => Some(Key::MailboxName),
+            30 => Some(Key::MailboxId),
+            31 => Some(Key::MessageId),
+            32 => Some(Key::NextDsn),
+            33 => Some(Key::NextRetry),
+            34 => Some(Key::Path),
+            35 => Some(Key::Policy),
+            36 => Some(Key::QueueId),
+            37 => Some(Key::RangeFrom),
+            38 => Some(Key::RangeTo),
+            39 => Some(Key::Reason),
+            40 => Some(Key::RemoteIp),
+            41 => Some(Key::RemotePort),
+            42 => Some(Key::ReportId),
+            43 => Some(Key::Result),
+            44 => Some(Key::Size),
+            45 => Some(Key::Source),
+            46 => Some(Key::SpanId),
+            47 => Some(Key::SpfFail),
+            48 => Some(Key::SpfNone),
+            49 => Some(Key::SpfPass),
+            50 => Some(Key::Strict),
+            51 => Some(Key::Tls),
+            52 => Some(Key::To),
+            53 => Some(Key::Total),
+            54 => Some(Key::TotalFailures),
+            55 => Some(Key::TotalSuccesses),
+            56 => Some(Key::Type),
+            57 => Some(Key::Uid),
+            58 => Some(Key::UidNext),
+            59 => Some(Key::UidValidity),
+            60 => Some(Key::Url),
+            61 => Some(Key::ValidFrom),
+            62 => Some(Key::ValidTo),
+            63 => Some(Key::Value),
+            64 => Some(Key::Version),
+            65 => Some(Key::QueueName),
+            _ => None,
+        }
+    }
+
+    pub const COUNT: usize = 66;
+}
+
+impl serde::Serialize for Key {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Key {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = Cow::<str>::deserialize(deserializer)?;
+        Self::parse(&s).ok_or_else(|| serde::de::Error::unknown_variant(&s, &[]))
     }
 }

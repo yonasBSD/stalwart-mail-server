@@ -5,7 +5,7 @@
  */
 
 use super::{DeviceAuthResponse, FormData, MAX_POST_LEN, OAuthCode};
-use crate::auth::oauth::OAuthStatus;
+use crate::auth::oauth::{OAuthStatus, openid::OpenIdHandler};
 use common::{
     KV_OAUTH, Server,
     auth::{
@@ -46,22 +46,29 @@ pub struct OAuthMetadata {
 }
 
 pub trait OAuthApiHandler: Sync + Send {
+    fn handle_discover_request(
+        &self,
+        req: &HttpRequest,
+        session: &HttpSessionData,
+        account_name: &str,
+    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+
     fn handle_login_request(
         &self,
-        session: HttpSessionData,
+        session: &HttpSessionData,
         body: Vec<u8>,
     ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
 
     fn handle_device_auth(
         &self,
         req: &mut HttpRequest,
-        session: HttpSessionData,
+        session: &HttpSessionData,
     ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
 
     fn handle_oauth_metadata(
         &self,
         req: HttpRequest,
-        session: HttpSessionData,
+        session: &HttpSessionData,
     ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
 }
 
@@ -69,9 +76,6 @@ pub trait OAuthApiHandler: Sync + Send {
 #[serde(tag = "type")]
 #[serde(rename_all = "camelCase")]
 pub enum LoginRequest {
-    Discovery {
-        account_name: String,
-    },
     AuthCode {
         account_name: String,
         account_secret: String,
@@ -83,6 +87,14 @@ pub enum LoginRequest {
         redirect_uri: Option<String>,
         #[serde(default)]
         nonce: Option<String>,
+        #[serde(default)]
+        scope: Option<String>,
+        #[serde(default)]
+        code_challenge: Option<String>,
+        #[serde(default)]
+        code_challenge_method: Option<String>,
+        #[serde(default)]
+        state: Option<String>,
     },
     AuthDevice {
         account_name: String,
@@ -98,8 +110,6 @@ pub enum LoginRequest {
 #[serde(tag = "type")]
 #[serde(rename_all = "camelCase")]
 pub enum LoginResponse {
-    Local,
-    External { endpoint: String },
     Authenticated { client_code: String },
     Verified,
     MfaRequired,
@@ -107,9 +117,28 @@ pub enum LoginResponse {
 }
 
 impl OAuthApiHandler for Server {
+    async fn handle_discover_request(
+        &self,
+        req: &HttpRequest,
+        session: &HttpSessionData,
+        account_name: &str,
+    ) -> trc::Result<HttpResponse> {
+        let account_name = account_name.trim().to_lowercase();
+        if let Some(domain_name) = account_name.try_domain_part()
+            && let Some(endpoint) = self
+                .get_directory_for_domain(domain_name)
+                .await?
+                .and_then(|directory| directory.oidc_discovery_document())
+        {
+            Ok(JsonResponse::new(endpoint).no_cache().into_http_response())
+        } else {
+            self.handle_oidc_metadata(req, session).await
+        }
+    }
+
     async fn handle_login_request(
         &self,
-        session: HttpSessionData,
+        session: &HttpSessionData,
         body: Vec<u8>,
     ) -> trc::Result<HttpResponse> {
         let request = serde_json::from_slice::<LoginRequest>(&body).map_err(|err| {
@@ -117,22 +146,6 @@ impl OAuthApiHandler for Server {
         })?;
 
         let response = match request {
-            LoginRequest::Discovery { account_name } => {
-                let account_name = account_name.trim().to_lowercase();
-                if let Some(domain_name) = account_name.try_domain_part() {
-                    if let Some(endpoint) = self
-                        .get_directory_for_domain(domain_name)
-                        .await?
-                        .and_then(|directory| directory.oidc_authorization_endpoint())
-                    {
-                        LoginResponse::External { endpoint }
-                    } else {
-                        LoginResponse::Local
-                    }
-                } else {
-                    LoginResponse::Local
-                }
-            }
             LoginRequest::AuthCode {
                 account_name,
                 account_secret,
@@ -140,6 +153,7 @@ impl OAuthApiHandler for Server {
                 client_id,
                 redirect_uri,
                 nonce,
+                ..
             } => {
                 // Validate clientId
                 if client_id.len() > CLIENT_ID_MAX_LEN {
@@ -315,7 +329,7 @@ impl OAuthApiHandler for Server {
     async fn handle_device_auth(
         &self,
         req: &mut HttpRequest,
-        session: HttpSessionData,
+        session: &HttpSessionData,
     ) -> trc::Result<HttpResponse> {
         // Parse form
         let mut form_data = FormData::from_request(req, MAX_POST_LEN, session.session_id).await?;
@@ -379,10 +393,10 @@ impl OAuthApiHandler for Server {
             .await?;
 
         // Build response
-        let base_url = HttpContext::new(&session, req).resolve_response_url(self);
+        let base_url = HttpContext::new(session, req).resolve_response_url(self);
         Ok(JsonResponse::new(DeviceAuthResponse {
-            verification_uri: format!("{base_url}/authorize"),
-            verification_uri_complete: format!("{base_url}/authorize/?code={user_code}"),
+            verification_uri: format!("{base_url}/device"),
+            verification_uri_complete: format!("{base_url}/device/?code={user_code}"),
             device_code,
             user_code,
             expires_in: self.core.oauth.oauth_expiry_user_code,
@@ -395,12 +409,12 @@ impl OAuthApiHandler for Server {
     async fn handle_oauth_metadata(
         &self,
         req: HttpRequest,
-        session: HttpSessionData,
+        session: &HttpSessionData,
     ) -> trc::Result<HttpResponse> {
-        let base_url = HttpContext::new(&session, &req).resolve_response_url(self);
+        let base_url = HttpContext::new(session, &req).resolve_response_url(self);
 
         Ok(JsonResponse::new(OAuthMetadata {
-            authorization_endpoint: format!("{base_url}/authorize/code",),
+            authorization_endpoint: format!("{base_url}/login",),
             token_endpoint: format!("{base_url}/auth/token"),
             device_authorization_endpoint: format!("{base_url}/auth/device"),
             introspection_endpoint: format!("{base_url}/auth/introspect"),

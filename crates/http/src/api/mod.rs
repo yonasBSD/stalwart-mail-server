@@ -12,7 +12,13 @@ pub mod telemetry;
 // SPDX-SnippetEnd
 pub mod diagnose;
 
-use crate::management::diagnose::{DeliveryStage, spawn_delivery_diagnose};
+use crate::{
+    api::diagnose::{DeliveryStage, spawn_delivery_diagnose},
+    auth::{
+        authenticate::Authenticator, oauth::auth::OAuthApiHandler,
+        permissions::PermissionsApiHandler,
+    },
+};
 use common::{
     Server,
     auth::{AccessToken, oauth::GrantType},
@@ -31,27 +37,61 @@ use std::time::Duration;
 use utils::url_params::UrlParams;
 
 pub trait ManagementApi: Sync + Send {
-    fn handle_api_manage_request(
+    fn handle_api_request(
         &self,
         req: &mut HttpRequest,
-        access_token: &AccessToken,
         session: &HttpSessionData,
     ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+
+    fn management_access_token(
+        &self,
+        req: &HttpRequest,
+        session: &HttpSessionData,
+    ) -> impl Future<Output = trc::Result<AccessToken>> + Send;
 }
 
 impl ManagementApi for Server {
     #[allow(unused_variables)]
-    async fn handle_api_manage_request(
+    async fn handle_api_request(
         &self,
         req: &mut HttpRequest,
-        access_token: &AccessToken,
         session: &HttpSessionData,
     ) -> trc::Result<HttpResponse> {
-        let body = fetch_body(req, 1024 * 1024, session.session_id).await;
+        let is_post = req.method() == Method::POST;
+        let body = if is_post {
+            fetch_body(req, 1024 * 1024, session.session_id).await
+        } else {
+            None
+        };
         let path = req.uri().path().split('/').skip(2).collect::<Vec<_>>();
 
         match path.first().copied().unwrap_or_default() {
+            "auth" if is_post => {
+                self.is_http_anonymous_request_allowed(session.remote_ip)
+                    .await?;
+                self.handle_login_request(
+                    session,
+                    body.ok_or_else(|| trc::LimitEvent::SizeRequest.into_err())?,
+                )
+                .await
+            }
+            "discover" => {
+                if let Some(email) = path.get(2).copied() {
+                    self.is_http_anonymous_request_allowed(session.remote_ip)
+                        .await?;
+                    self.handle_discover_request(req, session, decode_path_element(email).as_ref())
+                        .await
+                } else {
+                    Err(trc::ResourceEvent::NotFound.into_err())
+                }
+            }
+            "permissions" => {
+                // Authenticate request
+                let (_in_flight, access_token) = self.authenticate_headers(req, session).await?;
+                self.handle_permissions_request(&access_token).await
+            }
             "token" => {
+                let access_token = self.management_access_token(req, session).await?;
                 let account_id = access_token.account_id();
                 match path.get(1).copied() {
                     // SPDX-SnippetBegin
@@ -98,6 +138,7 @@ impl ManagementApi for Server {
                 }
             }
             "live" => {
+                let access_token = self.management_access_token(req, session).await?;
                 let params = UrlParams::new(req.uri().query());
                 let account_id = access_token.account_id();
 
@@ -140,16 +181,16 @@ impl ManagementApi for Server {
                     // SPDX-License-Identifier: LicenseRef-SEL
                     #[cfg(feature = "enterprise")]
                     ("traces", _, &Method::GET) if self.core.is_enterprise_edition() => {
-                        use crate::management::telemetry::TelemetryApi;
+                        use crate::api::telemetry::TelemetryApi;
 
-                        self.handle_telemetry_api_request(req, true, access_token)
+                        self.handle_telemetry_api_request(req, true, &access_token)
                             .await
                     }
                     #[cfg(feature = "enterprise")]
                     ("metrics", _, &Method::GET) if self.core.is_enterprise_edition() => {
-                        use crate::management::telemetry::TelemetryApi;
+                        use crate::api::telemetry::TelemetryApi;
 
-                        self.handle_telemetry_api_request(req, false, access_token)
+                        self.handle_telemetry_api_request(req, false, &access_token)
                             .await
                     }
                     // SPDX-SnippetEnd
@@ -160,8 +201,53 @@ impl ManagementApi for Server {
                     _ => Err(trc::ResourceEvent::NotFound.into_err()),
                 }
             }
-
             _ => Err(trc::ResourceEvent::NotFound.into_err()),
+        }
+    }
+
+    async fn management_access_token(
+        &self,
+        req: &HttpRequest,
+        session: &HttpSessionData,
+    ) -> trc::Result<AccessToken> {
+        let params = UrlParams::new(req.uri().query());
+        if let Some(token) = params.get("token") {
+            // SPDX-SnippetBegin
+            // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
+            // SPDX-License-Identifier: LicenseRef-SEL
+            #[cfg(feature = "enterprise")]
+            if self.core.is_enterprise_edition() {
+                let path = req.uri().path();
+                let (grant_type, permissions) = if path.starts_with("/api/telemetry/traces") {
+                    (GrantType::LiveTracing, Permission::LiveTracing)
+                } else if path.starts_with("/api/telemetry/metrics") {
+                    (GrantType::LiveMetrics, Permission::LiveMetrics)
+                } else if path.starts_with("/api/diagnose") {
+                    (GrantType::Diagnose, Permission::LiveDeliveryTest)
+                } else {
+                    return Err(trc::ResourceEvent::NotFound.into_err());
+                };
+                self.validate_access_token(grant_type.into(), token)
+                    .await
+                    .map(|token_info| {
+                        AccessToken::from_permissions(token_info.account_id, [permissions])
+                    })
+            } else {
+                self.authenticate_headers(req, session)
+                    .await
+                    .map(|(_, token)| token)
+            }
+            // SPDX-SnippetEnd
+            #[cfg(not(feature = "enterprise"))]
+            {
+                self.authenticate_headers(req, session)
+                    .await
+                    .map(|(_, token)| token)
+            }
+        } else {
+            self.authenticate_headers(req, session)
+                .await
+                .map(|(_, token)| token)
         }
     }
 }

@@ -34,8 +34,8 @@ pub trait OpenIdHandler: Sync + Send {
 
     fn handle_oidc_metadata(
         &self,
-        req: HttpRequest,
-        session: HttpSessionData,
+        req: &HttpRequest,
+        session: &HttpSessionData,
     ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
 }
 
@@ -57,10 +57,10 @@ impl OpenIdHandler for Server {
 
     async fn handle_oidc_metadata(
         &self,
-        req: HttpRequest,
-        session: HttpSessionData,
+        req: &HttpRequest,
+        session: &HttpSessionData,
     ) -> trc::Result<HttpResponse> {
-        let base_url = HttpContext::new(&session, &req).resolve_response_url(self);
+        let base_url = HttpContext::new(session, req).resolve_response_url(self);
 
         Ok(JsonResponse::new(OpenIdMetadata {
             authorization_endpoint: format!("{base_url}/authorize/code",),

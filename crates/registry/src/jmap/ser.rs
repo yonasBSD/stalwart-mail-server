@@ -86,6 +86,6 @@ impl<K: MapKey, V: IntoValue> IntoValue for VecMap<K, V> {
 
 impl IntoValue for trc::Key {
     fn into_value(self) -> JmapValue<'static> {
-        JmapValue::Str(self.name().into())
+        JmapValue::Str(self.as_str().into())
     }
 }

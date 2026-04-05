@@ -436,6 +436,6 @@ impl FromStr for Key {
     type Err = ();
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        Key::try_parse(s).ok_or(())
+        Key::parse(s).ok_or(())
     }
 }

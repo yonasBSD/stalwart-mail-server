@@ -154,7 +154,7 @@ impl<T: AsyncWrite + Unpin> FmtWriter<T> {
                         .write_all(Color::Cyan.as_code().as_bytes())
                         .await?;
                 }
-                self.writer.write_all(key.name().as_bytes()).await?;
+                self.writer.write_all(key.as_str().as_bytes()).await?;
                 if self.ansi {
                     self.writer.write_all(Color::reset().as_bytes()).await?;
                 }
@@ -363,7 +363,7 @@ impl Display for Error {
                 if i > 0 {
                     f.write_str(", ")?;
                 }
-                key.name().fmt(f)?;
+                key.as_str().fmt(f)?;
                 f.write_str(" = ")?;
                 value.fmt(f)?;
             }

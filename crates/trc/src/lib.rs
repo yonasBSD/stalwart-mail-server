@@ -14,7 +14,6 @@ pub use crate::event::enums::*;
 pub use crate::ipc::collector::Collector;
 use compact_str::CompactString;
 pub use event_macro::event;
-use event_macro::key_names;
 use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     sync::Arc,
@@ -67,78 +66,6 @@ pub enum Value {
     Array(Vec<Value>),
     #[default]
     None,
-}
-
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
-#[key_names]
-pub enum Key {
-    AccountName,
-    AccountId,
-    BlobId,
-    #[default]
-    CausedBy,
-    ChangeId,
-    Code,
-    Collection,
-    Contents,
-    Details,
-    DkimFail,
-    DkimNone,
-    DkimPass,
-    DmarcNone,
-    DmarcPass,
-    DmarcQuarantine,
-    DmarcReject,
-    DocumentId,
-    Domain,
-    Due,
-    Elapsed,
-    Expires,
-    From,
-    Hostname,
-    Id,
-    Key,
-    Limit,
-    ListenerId,
-    LocalIp,
-    LocalPort,
-    MailboxName,
-    MailboxId,
-    MessageId,
-    NextDsn,
-    NextRetry,
-    Path,
-    Policy,
-    QueueId,
-    RangeFrom,
-    RangeTo,
-    Reason,
-    RemoteIp,
-    RemotePort,
-    ReportId,
-    Result,
-    Size,
-    Source,
-    SpanId,
-    SpfFail,
-    SpfNone,
-    SpfPass,
-    Strict,
-    Tls,
-    To,
-    Total,
-    TotalFailures,
-    TotalSuccesses,
-    Type,
-    Uid,
-    UidNext,
-    UidValidity,
-    Url,
-    ValidFrom,
-    ValidTo,
-    Value,
-    Version,
-    QueueName,
 }
 
 pub trait AddContext<T> {

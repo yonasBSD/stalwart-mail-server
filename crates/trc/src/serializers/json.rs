@@ -23,7 +23,6 @@ pub struct JsonEventSerializer<T> {
     with_id: bool,
     with_spans: bool,
     with_description: bool,
-    with_explanation: bool,
 }
 
 impl<T> JsonEventSerializer<T> {
@@ -33,7 +32,6 @@ impl<T> JsonEventSerializer<T> {
             with_id: false,
             with_spans: false,
             with_description: false,
-            with_explanation: false,
         }
     }
 
@@ -49,11 +47,6 @@ impl<T> JsonEventSerializer<T> {
 
     pub fn with_description(mut self) -> Self {
         self.with_description = true;
-        self
-    }
-
-    pub fn with_explanation(mut self) -> Self {
-        self.with_explanation = true;
         self
     }
 
@@ -74,7 +67,6 @@ impl<T: AsRef<Event<EventDetails>>> Serialize for JsonEventSerializer<Vec<T>> {
                 with_id: self.with_id,
                 with_spans: self.with_spans,
                 with_description: self.with_description,
-                with_explanation: self.with_explanation,
             })?;
         }
         seq.end()
@@ -97,9 +89,6 @@ impl<T: AsRef<Event<EventDetails>>> Serialize for JsonEventSerializer<T> {
         if self.with_description {
             map.serialize_entry("text", event.inner.typ.description())?;
         }
-        if self.with_explanation {
-            map.serialize_entry("details", event.inner.typ.explain())?;
-        }
         map.serialize_entry(
             "createdAt",
             &DateTime::from_timestamp(event.inner.timestamp as i64).to_rfc3339(),
@@ -119,7 +108,6 @@ impl<T: AsRef<Event<EventDetails>>> Serialize for JsonEventSerializer<T> {
                 },
                 with_spans: self.with_spans,
                 with_description: self.with_description,
-                with_explanation: self.with_explanation,
                 with_id: self.with_id,
             },
         )?;
@@ -141,12 +129,11 @@ impl Serialize for JsonEventSerializer<Keys<'_>> {
                 && seen_keys.insert(*key)
             {
                 keys.serialize_entry(
-                    key.name(),
+                    key.as_str(),
                     &JsonEventSerializer {
                         inner: value,
                         with_spans: self.with_spans,
                         with_description: self.with_description,
-                        with_explanation: self.with_explanation,
                         with_id: self.with_id,
                     },
                 )?;
@@ -166,9 +153,6 @@ impl Serialize for JsonEventSerializer<&Error> {
         if self.with_description {
             map.serialize_entry("text", self.inner.0.inner.description())?;
         }
-        if self.with_explanation {
-            map.serialize_entry("details", self.inner.0.inner.explain())?;
-        }
         map.serialize_entry(
             "data",
             &JsonEventSerializer {
@@ -178,7 +162,6 @@ impl Serialize for JsonEventSerializer<&Error> {
                 },
                 with_spans: self.with_spans,
                 with_description: self.with_description,
-                with_explanation: self.with_explanation,
                 with_id: self.with_id,
             },
         )?;
@@ -208,7 +191,6 @@ impl Serialize for JsonEventSerializer<&Value> {
                 inner: value,
                 with_spans: self.with_spans,
                 with_description: self.with_description,
-                with_explanation: self.with_explanation,
                 with_id: self.with_id,
             }
             .serialize(serializer),
@@ -216,7 +198,6 @@ impl Serialize for JsonEventSerializer<&Value> {
                 inner: value,
                 with_spans: self.with_spans,
                 with_description: self.with_description,
-                with_explanation: self.with_explanation,
                 with_id: self.with_id,
             }
             .serialize(serializer),
@@ -236,7 +217,6 @@ impl Serialize for JsonEventSerializer<&Vec<Value>> {
                 inner: value,
                 with_spans: self.with_spans,
                 with_description: self.with_description,
-                with_explanation: self.with_explanation,
                 with_id: self.with_id,
             })?;
         }
@@ -279,24 +259,5 @@ impl<'de> serde::Deserialize<'de> for MetricType {
     {
         let s = <&str>::deserialize(deserializer)?;
         Self::parse(s).ok_or_else(|| serde::de::Error::unknown_variant(s, &[]))
-    }
-}
-
-impl serde::Serialize for Key {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_str(self.name())
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for Key {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let s = <&str>::deserialize(deserializer)?;
-        Self::try_parse(s).ok_or_else(|| serde::de::Error::unknown_variant(s, &[]))
     }
 }

@@ -123,7 +123,7 @@ pub async fn test(test: &mut TestServer) {
     // Authenticate with the correct password
     let response = http
         .post::<LoginResponse>(
-            "/auth/login",
+            "/api/auth",
             &LoginRequest::AuthCode {
                 account_name: "user@example.org".to_string(),
                 account_secret: "this is a very strong password".to_string(),
@@ -131,6 +131,10 @@ pub async fn test(test: &mut TestServer) {
                 client_id: client_id.to_string(),
                 redirect_uri: "https://localhost".to_string().into(),
                 nonce: "abc1234".to_string().into(),
+                scope: None,
+                code_challenge: None,
+                code_challenge_method: None,
+                state: None,
             },
         )
         .await
@@ -296,7 +300,7 @@ pub async fn test(test: &mut TestServer) {
     tokio::time::sleep(Duration::from_secs(1)).await;
     assert_eq!(
         http.post::<LoginResponse>(
-            "/auth/login",
+            "/api/auth",
             &LoginRequest::AuthDevice {
                 account_name: "user@example.org".to_string(),
                 account_secret: "this is a very strong password".to_string(),
@@ -324,7 +328,7 @@ pub async fn test(test: &mut TestServer) {
     );
     assert_eq!(
         http.post::<LoginResponse>(
-            "/auth/login",
+            "/api/auth",
             &LoginRequest::AuthDevice {
                 account_name: "user@example.org".to_string(),
                 account_secret: "this is a very strong password".to_string(),
