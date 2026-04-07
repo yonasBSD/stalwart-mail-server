@@ -13,6 +13,7 @@ use registry::{schema::structs, types::map::Map};
 
 pub async fn test() {
     let config = structs::OidcDirectory {
+        description: "Test OIDC directory".to_string(),
         issuer_url: "http://localhost:9080/realms/stalwart".to_string(),
         claim_username: "preferred_username".to_string(),
         claim_name: Some("name".to_string()),

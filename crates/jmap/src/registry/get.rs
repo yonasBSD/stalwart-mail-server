@@ -147,7 +147,6 @@ impl RegistryGet for Server {
             | ObjectType::NetworkListener
             | ObjectType::ClusterRole
             | ObjectType::OidcProvider
-            | ObjectType::RegistryBundle
             | ObjectType::ReportSettings
             | ObjectType::Search
             | ObjectType::SearchStore

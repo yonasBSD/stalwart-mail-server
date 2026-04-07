@@ -103,6 +103,7 @@ pub async fn test(test: &TestServer) {
         roles: UserRoles::Custom(CustomRoles {
             role_ids: Map::new(vec![5000u64.into()]),
         }),
+        time_zone: None,
     });
     let account_picke = account.to_pickled_vec();
     assert_eq!(

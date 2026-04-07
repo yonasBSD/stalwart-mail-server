@@ -230,7 +230,6 @@ impl RegistrySet for Server {
             | ObjectType::MtaHook
             | ObjectType::NetworkListener
             | ObjectType::ClusterRole
-            | ObjectType::RegistryBundle
             | ObjectType::SieveSystemScript
             | ObjectType::SieveUserScript
             | ObjectType::SpamDnsblServer

@@ -656,6 +656,7 @@ pub(crate) async fn account_get(
                             encryption_at_rest: account.encryption_at_rest,
                             locale: account.locale,
                             description: account.description,
+                            time_zone: account.time_zone,
                         }
                         .into_value(),
                     );

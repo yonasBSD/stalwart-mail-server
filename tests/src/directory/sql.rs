@@ -57,6 +57,7 @@ pub async fn test() {
     }
 
     let config = structs::SqlDirectory {
+        description: "Test SQL directory".to_string(),
         query_login: concat!(
             "SELECT name, secret, description, type FROM accounts ",
             "WHERE name = $1 AND active = true"

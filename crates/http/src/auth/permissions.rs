@@ -12,8 +12,7 @@ use serde::Serialize;
 #[derive(Debug, Clone, Serialize)]
 pub struct Permissions {
     pub permissions: Vec<Permission>,
-    #[serde(rename = "isEnterprise")]
-    pub is_enterprise: bool,
+    pub edition: &'static str,
 }
 
 pub trait PermissionsApiHandler: Sync + Send {
@@ -29,18 +28,22 @@ impl PermissionsApiHandler for Server {
         access_token: &AccessToken,
     ) -> trc::Result<HttpResponse> {
         #[cfg(not(feature = "enterprise"))]
-        let is_enterprise = false;
+        let edition = "oss";
 
         // SPDX-SnippetBegin
         // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
         // SPDX-License-Identifier: LicenseRef-SEL
         #[cfg(feature = "enterprise")]
-        let is_enterprise = self.core.is_enterprise_edition();
+        let edition = if self.core.is_enterprise_edition() {
+            "enterprise"
+        } else {
+            "community"
+        };
         // SPDX-SnippetEnd
 
         Ok(JsonResponse::new(Permissions {
             permissions: access_token.permissions(),
-            is_enterprise,
+            edition,
         })
         .into_http_response())
     }
