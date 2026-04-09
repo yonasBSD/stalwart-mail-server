@@ -12,7 +12,7 @@ use registry::schema::{
 };
 use rustls::{
     SupportedProtocolVersion,
-    crypto::ring::sign::any_supported_type,
+    crypto::aws_lc_rs::sign::any_supported_type,
     sign::CertifiedKey,
     version::{TLS12, TLS13},
 };

@@ -13,7 +13,7 @@ use crate::{
     config::server::{Listener, Listeners, ServerProtocol, TcpListener},
 };
 use proxy_header::io::ProxiedStream;
-use rustls::crypto::ring::cipher_suite::TLS13_AES_128_GCM_SHA256;
+use rustls::crypto::aws_lc_rs::cipher_suite::TLS13_AES_128_GCM_SHA256;
 use std::{
     net::{IpAddr, SocketAddr},
     sync::Arc,

@@ -91,7 +91,7 @@ pub struct TestServerBuilder {
 
 impl TestServerBuilder {
     pub async fn new(test_name: &str) -> Self {
-        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+        //let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
         let reset = std::env::var("NO_INSERT").is_err();
 
         Self::new_with_role(test_name, "mail.example.org".to_string(), None, reset).await

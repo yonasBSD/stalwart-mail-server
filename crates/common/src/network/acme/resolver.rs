@@ -10,7 +10,7 @@ use crate::{
 };
 use rustls::{
     ServerConfig,
-    crypto::ring::sign::any_ecdsa_type,
+    crypto::aws_lc_rs::sign::any_ecdsa_type,
     server::{ClientHello, ResolvesServerCert},
     sign::CertifiedKey,
 };

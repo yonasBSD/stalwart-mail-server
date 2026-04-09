@@ -6,7 +6,7 @@
 
 use crate::{LONG_1Y_SLUMBER, config::telemetry::WebhookTracer};
 use base64::{Engine, engine::general_purpose::STANDARD};
-use ring::hmac;
+use aws_lc_rs::hmac;
 use serde::Serialize;
 use std::{
     sync::{

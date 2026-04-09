@@ -11,8 +11,8 @@ use base64::Engine;
 use base64::engine::general_purpose::{self, URL_SAFE_NO_PAD};
 use registry::schema::structs::AcmeProvider;
 use reqwest::Method;
-use ring::rand::SystemRandom;
-use ring::signature::{ECDSA_P256_SHA256_FIXED_SIGNING, EcdsaKeyPair, EcdsaSigningAlgorithm};
+use aws_lc_rs::rand::SystemRandom;
+use aws_lc_rs::signature::{ECDSA_P256_SHA256_FIXED_SIGNING, EcdsaKeyPair, EcdsaSigningAlgorithm};
 use utils::sanitize_email;
 
 static ALG: &EcdsaSigningAlgorithm = &ECDSA_P256_SHA256_FIXED_SIGNING;
@@ -51,7 +51,7 @@ pub async fn acme_create_account(
 
     let directory = Directory::discover(&provider.directory, provider.max_retries as u32).await?;
     let account_key = EcdsaKeyPair::generate_pkcs8(ALG, &SystemRandom::new()).unwrap();
-    let key_pair = EcdsaKeyPair::from_pkcs8(ALG, account_key.as_ref(), &SystemRandom::new())
+    let key_pair = EcdsaKeyPair::from_pkcs8(ALG, account_key.as_ref())
         .map_err(|err| AcmeError::Crypto(format!("Failed to create ECDSA key pair: {}", err)))?;
     let eab = if let Some(eab) = &eab {
         eab_sign(&key_pair, &eab.kid, &eab.hmac_key, &directory.new_account)?.into()

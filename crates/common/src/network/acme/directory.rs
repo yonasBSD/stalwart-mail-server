@@ -21,8 +21,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use rcgen::{CustomExtension, KeyPair, PKCS_ECDSA_P256_SHA256};
 use registry::schema::structs::AcmeProvider;
 use reqwest::Method;
-use ring::rand::SystemRandom;
-use ring::signature::{ECDSA_P256_SHA256_FIXED_SIGNING, EcdsaKeyPair, EcdsaSigningAlgorithm};
+use aws_lc_rs::signature::{ECDSA_P256_SHA256_FIXED_SIGNING, EcdsaKeyPair, EcdsaSigningAlgorithm};
 use serde::de::DeserializeOwned;
 use serde_json::json;
 use store::Serialize;
@@ -58,7 +57,6 @@ impl AcmeRequestBuilder {
                 .map_err(|err| {
                     AcmeError::Crypto(format!("Failed to decode account key: {}", err))
                 })?,
-            &SystemRandom::new(),
         )
         .map_err(|err| AcmeError::Crypto(format!("Failed to create ECDSA key pair: {}", err)))?;
 

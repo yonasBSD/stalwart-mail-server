@@ -13,6 +13,10 @@ use registry::{
     },
     types::{duration::Duration, error::Error, list::List, map::Map},
 };
+use aws_lc_rs::{
+    rand::SystemRandom,
+    signature::{ECDSA_P256_SHA256_FIXED_SIGNING, EcdsaKeyPair},
+};
 use std::str::FromStr;
 use store::{
     rand::{Rng, distr::Alphanumeric, rng},
@@ -289,7 +293,16 @@ async fn insert_safe_defaults(bp: &mut Bootstrap) -> trc::Result<()> {
     }
 
     if bp.registry.count_object(ObjectType::OidcProvider).await? == 0 {
-        let todo = "use asymmetric keys";
+        let pkcs8_doc =
+            EcdsaKeyPair::generate_pkcs8(&ECDSA_P256_SHA256_FIXED_SIGNING, &SystemRandom::new())
+                .map_err(|err| {
+                    trc::EventType::Server(trc::ServerEvent::Startup)
+                        .into_err()
+                        .reason(err)
+                        .caused_by(trc::location!())
+                })?;
+        let signature_pem = pem::encode(&pem::Pem::new("PRIVATE KEY", pkcs8_doc.as_ref()));
+
         bp.registry
             .write(RegistryWrite::insert(
                 &OidcProvider {
@@ -301,12 +314,9 @@ async fn insert_safe_defaults(bp: &mut Bootstrap) -> trc::Result<()> {
                             .collect::<String>(),
                     }),
                     signature_key: SecretText::Text(SecretTextValue {
-                        secret: rng()
-                            .sample_iter(Alphanumeric)
-                            .take(64)
-                            .map(char::from)
-                            .collect::<String>(),
+                        secret: signature_pem,
                     }),
+                    signature_algorithm: JwtSignatureAlgorithm::Es256,
                     ..Default::default()
                 }
                 .into(),

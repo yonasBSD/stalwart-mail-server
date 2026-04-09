@@ -18,7 +18,7 @@ use registry::schema::{
 };
 use rustls::{
     ALL_VERSIONS, ServerConfig, SupportedCipherSuite,
-    crypto::ring::{ALL_CIPHER_SUITES, cipher_suite::*, default_provider},
+    crypto::aws_lc_rs::{ALL_CIPHER_SUITES, cipher_suite::*, default_provider},
 };
 use std::sync::Arc;
 use store::registry::{RegistryObject, bootstrap::Bootstrap};

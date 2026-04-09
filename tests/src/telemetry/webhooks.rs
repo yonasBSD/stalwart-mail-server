@@ -21,7 +21,7 @@ use registry::{
     },
     types::map::Map,
 };
-use ring::hmac;
+use aws_lc_rs::hmac;
 use std::{
     sync::{
         Arc,

@@ -1070,6 +1070,7 @@ dependencies = [
  "aes-gcm-siv",
  "ahash",
  "arc-swap",
+ "aws-lc-rs",
  "base64 0.22.1",
  "bincode 2.0.1",
  "biscuit",
@@ -4075,6 +4076,7 @@ dependencies = [
 name = "mail-auth"
 version = "0.8.0"
 dependencies = [
+ "aws-lc-rs",
  "flate2",
  "hashify",
  "hickory-resolver",
@@ -4082,7 +4084,6 @@ dependencies = [
  "mail-parser",
  "quick-xml 0.39.2",
  "rand 0.8.5",
- "ring",
  "rkyv",
  "rsa",
  "rustls-pki-types",
@@ -7365,6 +7366,7 @@ version = "0.16.0"
 dependencies = [
  "ahash",
  "arc-swap",
+ "aws-lc-rs",
  "azure_core",
  "azure_storage",
  "azure_storage_blobs",
@@ -7394,7 +7396,6 @@ dependencies = [
  "regex",
  "registry",
  "reqwest 0.13.2",
- "ring",
  "rkyv",
  "roaring",
  "rocksdb",
@@ -7541,6 +7542,7 @@ version = "0.16.0"
 dependencies = [
  "ahash",
  "async-trait",
+ "aws-lc-rs",
  "base64 0.22.1",
  "biscuit",
  "bytes",
@@ -7584,7 +7586,6 @@ dependencies = [
  "rayon",
  "registry",
  "reqwest 0.13.2",
- "ring",
  "rkyv",
  "rustls 0.23.37",
  "rustls-pemfile",
@@ -8349,6 +8350,7 @@ version = "0.16.0"
 dependencies = [
  "ahash",
  "arcstr",
+ "aws-lc-rs",
  "base64 0.22.1",
  "blake3",
  "chrono",
@@ -8369,7 +8371,6 @@ dependencies = [
  "rcgen",
  "regex",
  "reqwest 0.13.2",
- "ring",
  "rkyv",
  "rustls 0.23.37",
  "rustls-pemfile",
