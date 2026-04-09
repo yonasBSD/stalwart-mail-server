@@ -8,15 +8,11 @@ use crate::config::storage::Storage;
 use ahash::{AHashMap, AHashSet};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use hyper::HeaderMap;
-use opentelemetry::{InstrumentationScope, KeyValue, logs::LoggerProvider};
+use opentelemetry::{InstrumentationScope, KeyValue};
 use opentelemetry_otlp::{
     LogExporter, MetricExporter, SpanExporter, WithExportConfig, WithHttpConfig,
 };
-use opentelemetry_sdk::{
-    Resource,
-    logs::{SdkLogger, SdkLoggerProvider},
-    metrics::Temporality,
-};
+use opentelemetry_sdk::{Resource, metrics::Temporality};
 use opentelemetry_semantic_conventions::resource::SERVICE_VERSION;
 use registry::schema::{
     enums::{EventPolicy, LogRotateFrequency},
@@ -57,7 +53,6 @@ pub struct OtelTracer {
     pub span_exporter: SpanExporter,
     pub span_exporter_enable: bool,
     pub log_exporter: LogExporter,
-    pub log_provider: SdkLogger,
     pub log_exporter_enable: bool,
     pub throttle: Duration,
 }
@@ -307,9 +302,6 @@ impl Tracers {
                                 throttle: tracer.throttle.into_inner(),
                                 span_exporter_enable: tracer.enable_span_exporter,
                                 log_exporter_enable: tracer.enable_log_exporter,
-                                log_provider: SdkLoggerProvider::builder()
-                                    .build()
-                                    .logger("stalwart"),
                             })
                         }
                         (Err(err), _) => {
@@ -356,9 +348,6 @@ impl Tracers {
                                 throttle: tracer.throttle.into_inner(),
                                 span_exporter_enable: tracer.enable_span_exporter,
                                 log_exporter_enable: tracer.enable_log_exporter,
-                                log_provider: SdkLoggerProvider::builder()
-                                    .build()
-                                    .logger("stalwart"),
                             })
                         }
                         (Err(err), _) => {

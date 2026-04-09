@@ -15,8 +15,7 @@ pub mod diagnose;
 use crate::{
     api::diagnose::{DeliveryStage, spawn_delivery_diagnose},
     auth::{
-        authenticate::Authenticator, oauth::auth::OAuthApiHandler,
-        permissions::PermissionsApiHandler,
+        authenticate::Authenticator, oauth::auth::OAuthApiHandler, permissions::AccountApiHandler,
     },
 };
 use common::{
@@ -85,10 +84,10 @@ impl ManagementApi for Server {
                     Err(trc::ResourceEvent::NotFound.into_err())
                 }
             }
-            "permissions" => {
+            "account" => {
                 // Authenticate request
                 let (_in_flight, access_token) = self.authenticate_headers(req, session).await?;
-                self.handle_permissions_request(&access_token).await
+                self.handle_account_request(&access_token).await
             }
             "token" => {
                 let access_token = self.management_access_token(req, session).await?;

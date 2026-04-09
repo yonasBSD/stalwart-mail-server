@@ -171,6 +171,7 @@ where
         ),
         dropped_attributes_count: 0,
         parent_span_id: 0.into(),
+        parent_span_is_remote: false,
         name: start_span.inner.typ.as_str().into(),
         start_time: UNIX_EPOCH + Duration::from_secs(start_span.inner.timestamp),
         end_time: UNIX_EPOCH + Duration::from_secs(end_span.inner.timestamp),
@@ -186,9 +187,8 @@ where
 impl OtelTracer {
     fn build_log_record(&self, event: &Event<EventDetails>) -> SdkLogRecord {
         use opentelemetry::logs::LogRecord;
-        use opentelemetry::logs::Logger;
 
-        let mut record = self.log_provider.create_log_record();
+        let mut record = SdkLogRecord::new();
         record.set_event_name(event.inner.typ.as_str());
         record.set_severity_number(match event.inner.level {
             Level::Trace => Severity::Trace,

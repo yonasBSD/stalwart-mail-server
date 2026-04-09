@@ -6,24 +6,25 @@
 
 use common::{Server, auth::AccessToken};
 use http_proto::{HttpResponse, JsonResponse, ToHttpResponse};
-use registry::schema::enums::Permission;
+use registry::schema::enums::{Locale, Permission};
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
-pub struct Permissions {
+pub struct Account {
     pub permissions: Vec<Permission>,
     pub edition: &'static str,
+    pub locale: Locale,
 }
 
-pub trait PermissionsApiHandler: Sync + Send {
-    fn handle_permissions_request(
+pub trait AccountApiHandler: Sync + Send {
+    fn handle_account_request(
         &self,
         access_token: &AccessToken,
     ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
 }
 
-impl PermissionsApiHandler for Server {
-    async fn handle_permissions_request(
+impl AccountApiHandler for Server {
+    async fn handle_account_request(
         &self,
         access_token: &AccessToken,
     ) -> trc::Result<HttpResponse> {
@@ -41,9 +42,12 @@ impl PermissionsApiHandler for Server {
         };
         // SPDX-SnippetEnd
 
-        Ok(JsonResponse::new(Permissions {
+        let account_info = self.account_info(access_token.account_id()).await?;
+
+        Ok(JsonResponse::new(Account {
             permissions: access_token.permissions(),
             edition,
+            locale: account_info.locale(),
         })
         .into_http_response())
     }
