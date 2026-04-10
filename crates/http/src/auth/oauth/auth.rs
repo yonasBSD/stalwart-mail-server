@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use super::{DeviceAuthResponse, FormData, MAX_POST_LEN, OAuthCode};
+use super::{DeviceAuthResponse, FormData, MAX_POST_LEN, OAuthCode, PkceCodeChallenge};
 use crate::auth::oauth::{OAuthStatus, openid::OpenIdHandler};
 use common::{
     KV_OAUTH, Server,
@@ -32,7 +32,7 @@ use store::{
 use trc::AddContext;
 use utils::DomainPart;
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, serde::Serialize)]
 pub struct OAuthMetadata {
     pub issuer: String,
     pub token_endpoint: String,
@@ -40,9 +40,10 @@ pub struct OAuthMetadata {
     pub device_authorization_endpoint: String,
     pub registration_endpoint: String,
     pub introspection_endpoint: String,
-    pub grant_types_supported: Vec<String>,
-    pub response_types_supported: Vec<String>,
-    pub scopes_supported: Vec<String>,
+    pub grant_types_supported: &'static [&'static str],
+    pub response_types_supported: &'static [&'static str],
+    pub scopes_supported: &'static [&'static str],
+    pub code_challenge_methods_supported: &'static [&'static str],
 }
 
 pub trait OAuthApiHandler: Sync + Send {
@@ -153,6 +154,8 @@ impl OAuthApiHandler for Server {
                 client_id,
                 redirect_uri,
                 nonce,
+                code_challenge,
+                code_challenge_method,
                 ..
             } => {
                 // Validate clientId
@@ -168,6 +171,33 @@ impl OAuthApiHandler for Server {
                         .into_err()
                         .details("Redirect URI must be HTTPS."));
                 }
+
+                // Parse and validate PKCE challenge (RFC 7636).
+                let pkce_challenge = match code_challenge {
+                    Some(challenge) => {
+                        if !(43..=128).contains(&challenge.len())
+                            && challenge.bytes().all(|b| {
+                                b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~')
+                            })
+                        {
+                            return Err(trc::AuthEvent::Error
+                                .into_err()
+                                .details("Invalid PKCE code_challenge."));
+                        }
+
+                        // Default to "plain" when the method is omitted, per RFC 7636 4.3.
+                        match code_challenge_method.as_deref().unwrap_or("plain") {
+                            "S256" => PkceCodeChallenge::S256(challenge),
+                            "plain" => PkceCodeChallenge::Plain(challenge),
+                            _ => {
+                                return Err(trc::AuthEvent::Error
+                                    .into_err()
+                                    .details("Unsupported PKCE code_challenge_method."));
+                            }
+                        }
+                    }
+                    None => PkceCodeChallenge::None,
+                };
 
                 // Authenticate
                 match self
@@ -197,6 +227,7 @@ impl OAuthApiHandler for Server {
                             client_id,
                             nonce,
                             params: redirect_uri.unwrap_or_default(),
+                            code_challenge: pkce_challenge,
                         })
                         .untrusted()
                         .serialize()
@@ -271,6 +302,7 @@ impl OAuthApiHandler for Server {
                                     client_id: oauth.client_id.to_string(),
                                     nonce: oauth.nonce.as_ref().map(|s| s.to_string()),
                                     params: Default::default(),
+                                    code_challenge: PkceCodeChallenge::None,
                                 };
 
                                 // Delete issued user code
@@ -371,6 +403,7 @@ impl OAuthApiHandler for Server {
             client_id,
             nonce,
             params: device_code.clone(),
+            code_challenge: PkceCodeChallenge::None,
         })
         .untrusted()
         .serialize()
@@ -419,25 +452,21 @@ impl OAuthApiHandler for Server {
             device_authorization_endpoint: format!("{base_url}/auth/device"),
             introspection_endpoint: format!("{base_url}/auth/introspect"),
             registration_endpoint: format!("{base_url}/auth/register"),
-            grant_types_supported: vec![
-                "authorization_code".to_string(),
-                "implicit".to_string(),
-                "urn:ietf:params:oauth:grant-type:device_code".to_string(),
+            grant_types_supported: &[
+                "authorization_code",
+                "implicit",
+                "urn:ietf:params:oauth:grant-type:device_code",
             ],
-            response_types_supported: vec![
-                "code".to_string(),
-                "id_token".to_string(),
-                "code token".to_string(),
-                "id_token token".to_string(),
+            response_types_supported: &["code", "id_token", "code token", "id_token token"],
+            scopes_supported: &[
+                "openid",
+                "offline_access",
+                "urn:ietf:params:jmap:core",
+                "urn:ietf:params:jmap:mail",
+                "urn:ietf:params:jmap:submission",
+                "urn:ietf:params:jmap:vacationresponse",
             ],
-            scopes_supported: vec![
-                "openid".to_string(),
-                "offline_access".to_string(),
-                "urn:ietf:params:jmap:core".to_string(),
-                "urn:ietf:params:jmap:mail".to_string(),
-                "urn:ietf:params:jmap:submission".to_string(),
-                "urn:ietf:params:jmap:vacationresponse".to_string(),
-            ],
+            code_challenge_methods_supported: &["S256"],
             issuer: base_url,
         })
         .into_http_response())

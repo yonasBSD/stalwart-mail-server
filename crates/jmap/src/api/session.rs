@@ -95,7 +95,7 @@ impl AccountCapabilities for AccessToken {
             .iter()
             .filter(move |capability| {
                 let permission = match capability {
-                    Capability::Mail => Permission::JmapEmailGet,
+                    Capability::Mail | Capability::MailShare => Permission::JmapEmailGet,
                     Capability::Submission => Permission::JmapEmailSubmissionCreate,
                     Capability::VacationResponse => Permission::JmapVacationResponseGet,
                     Capability::Contacts => Permission::JmapContactCardGet,
@@ -108,7 +108,8 @@ impl AccountCapabilities for AccessToken {
                     Capability::FileNode => Permission::JmapFileNodeGet,
                     Capability::WebSocket
                     | Capability::Principals
-                    | Capability::PrincipalsAvailability => return true,
+                    | Capability::PrincipalsAvailability
+                    | Capability::Stalwart => return true,
                     Capability::Core | Capability::PrincipalsOwner => return false,
                 };
                 self.has_permission(permission)

@@ -13,8 +13,8 @@ use registry::{
     schema::{
         enums::MtaInboundThrottleKey,
         structs::{
-            Expression, ExpressionMatch, MtaExtensions, MtaInboundThrottle,
-            MtaStageData, MtaStageEhlo, MtaStageMail, Rate, SenderAuth,
+            Expression, ExpressionMatch, MtaExtensions, MtaInboundThrottle, MtaStageData,
+            MtaStageEhlo, MtaStageMail, Rate, SenderAuth,
         },
     },
     types::{list::List, map::Map},
@@ -123,7 +123,7 @@ async fn mail() {
         .await;
     admin
         .registry_create_object(MtaInboundThrottle {
-            description: None,
+            description: "Test throttle".into(),
             enable: true,
             key: Map::new(vec![MtaInboundThrottleKey::Sender]),
             match_: Expression {

@@ -21,8 +21,7 @@ use common::auth::oauth::{
 };
 use http::auth::oauth::{
     DeviceAuthResponse, ErrorType, TokenResponse,
-    auth::{LoginRequest, LoginResponse, OAuthMetadata},
-    openid::OpenIdMetadata,
+    auth::{LoginRequest, LoginResponse},
 };
 use imap_proto::ResponseType;
 use jmap_client::{
@@ -37,6 +36,38 @@ use registry::schema::{
 use serde::{Serialize, de::DeserializeOwned};
 use std::time::{Duration, Instant};
 use store::ahash::AHashMap;
+
+#[derive(Debug, serde::Deserialize)]
+pub struct OAuthMetadata {
+    pub issuer: String,
+    pub token_endpoint: String,
+    pub authorization_endpoint: String,
+    pub device_authorization_endpoint: String,
+    pub registration_endpoint: String,
+    pub introspection_endpoint: String,
+    pub grant_types_supported: Vec<String>,
+    pub response_types_supported: Vec<String>,
+    pub scopes_supported: Vec<String>,
+    pub code_challenge_methods_supported: Vec<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct OpenIdMetadata {
+    pub issuer: String,
+    pub authorization_endpoint: String,
+    pub token_endpoint: String,
+    pub userinfo_endpoint: String,
+    pub jwks_uri: String,
+    pub registration_endpoint: String,
+    pub device_authorization_endpoint: String,
+    pub scopes_supported: Vec<String>,
+    pub response_types_supported: Vec<String>,
+    pub subject_types_supported: Vec<String>,
+    pub grant_types_supported: Vec<String>,
+    pub id_token_signing_alg_values_supported: Vec<String>,
+    pub claims_supported: Vec<String>,
+    pub code_challenge_methods_supported: Vec<String>,
+}
 
 pub async fn test(test: &mut TestServer) {
     println!("Running OIDC tests...");

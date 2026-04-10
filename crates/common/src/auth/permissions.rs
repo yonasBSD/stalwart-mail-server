@@ -275,7 +275,10 @@ impl Default for DefaultPermissions {
                         default.user.push(permission);
                         default.group.push(permission);
                         default.superuser.push(permission);
-                    } else if name.starts_with("sysCredential") {
+                    } else if name.starts_with("sysAccountPassword")
+                        || name.starts_with("sysApiKey")
+                        || name.starts_with("sysAppPassword")
+                    {
                         default.user.push(permission);
                         default.superuser.push(permission);
                     } else if name.starts_with("sysDomain")

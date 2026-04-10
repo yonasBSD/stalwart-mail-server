@@ -222,6 +222,7 @@ pub async fn test(test: &mut TestServer) {
     );
 
     // Delete messages and check available quota
+    test.wait_for_tasks().await;
     for message_id in message_ids {
         client.email_destroy(&message_id).await.unwrap();
     }
@@ -294,6 +295,7 @@ pub async fn test(test: &mut TestServer) {
     );
 
     // Delete messages and check available quota
+    test.wait_for_tasks().await;
     for message_id in message_ids {
         client.email_destroy(&message_id).await.unwrap();
     }
@@ -358,6 +360,7 @@ pub async fn test(test: &mut TestServer) {
     );
 
     // Delete messages and check available quota
+    test.wait_for_tasks().await;
     for message_id in message_ids {
         client.email_destroy(&message_id).await.unwrap();
     }
@@ -407,6 +410,7 @@ pub async fn test(test: &mut TestServer) {
     DISABLE_UPLOAD_QUOTA.store(true, std::sync::atomic::Ordering::Relaxed);
 
     // Remove test data
+    test.wait_for_tasks().await;
     test.destroy_all_mailboxes(&account).await;
     test.destroy_all_mailboxes(&other_account).await;
     admin.registry_destroy_all(ObjectType::QueuedMessage).await;

@@ -9,10 +9,10 @@ use common::auth::credential::{ApiKey, AppPassword};
 use jmap_proto::error::set::SetErrorType;
 use registry::{
     schema::{
-        enums::{CredentialType, StorageQuota},
+        enums::StorageQuota,
         prelude::{ObjectType, Property},
         structs::{
-            Account, Credential, Http, PasswordCredential, SecondaryCredential, UserAccount,
+            self, Account, Credential, Http, PasswordCredential, SecondaryCredential, UserAccount,
         },
     },
     types::{EnumImpl, datetime::UTCDateTime, ipmask::IpAddrOrMask, list::List, map::Map},
@@ -20,6 +20,7 @@ use registry::{
 use serde_json::json;
 use std::str::FromStr;
 use store::write::now;
+use types::id::Id;
 
 pub async fn test(test: &TestServer) {
     println!("Running Authentication tests...");
@@ -173,19 +174,10 @@ pub async fn test(test: &TestServer) {
         "forbidden"
     );
 
-    // Change password as user and reset expiration
-    let credential_id = user
-        .registry_query_ids(
-            ObjectType::Credential,
-            [(Property::Type, CredentialType::Password.as_str())],
-            Vec::<&str>::new(),
-        )
-        .await[0];
-
     // Password updates should require the old password
     user.registry_update_object_expect_err(
-        ObjectType::Credential,
-        credential_id,
+        ObjectType::AccountPassword,
+        Id::singleton(),
         json!({
             Property::Secret: "12345"
         }),
@@ -198,8 +190,8 @@ pub async fn test(test: &TestServer) {
 
     // Password policies should be enforced when changing password
     user.registry_update_object_expect_err(
-        ObjectType::Credential,
-        credential_id,
+        ObjectType::AccountPassword,
+        Id::singleton(),
         json!({
             Property::CurrentSecret: "very strong password indeed",
             Property::Secret: "12345"
@@ -211,8 +203,8 @@ pub async fn test(test: &TestServer) {
 
     // Perform a valid password update
     user.registry_update_object(
-        ObjectType::Credential,
-        credential_id,
+        ObjectType::AccountPassword,
+        Id::singleton(),
         json!({
             Property::CurrentSecret: "very strong password indeed",
             Property::Secret: "user provided strong password"
@@ -230,37 +222,6 @@ pub async fn test(test: &TestServer) {
         Vec::<&str>::new(),
     )
     .await;
-
-    // Users should not be allowed to change allowedIps or expiration
-    user.registry_update_object_expect_err(
-        ObjectType::Credential,
-        credential_id,
-        json!({
-            Property::CurrentSecret: "user provided strong password",
-            Property::ExpiresAt: "2029-01-01T00:00:00Z"
-        }),
-    )
-    .await
-    .assert_type(SetErrorType::Forbidden)
-    .assert_description_contains("Modifying allowed IPs or expiration is not allowed.");
-
-    user.registry_update_object_expect_err(
-        ObjectType::Credential,
-        credential_id,
-        json!({
-            Property::CurrentSecret: "user provided strong password",
-            Property::AllowedIps: {"192.168.1.1": true}
-        }),
-    )
-    .await
-    .assert_type(SetErrorType::Forbidden)
-    .assert_description_contains("Modifying allowed IPs or expiration is not allowed.");
-
-    // Users should not be allowed to destroy their own credentials
-    user.registry_destroy_object_expect_err(ObjectType::Credential, credential_id)
-        .await
-        .assert_type(SetErrorType::Forbidden)
-        .assert_description_contains("Users are not allowed to destroy their own credentials.");
 
     // Limit login to specific IPs and set credential quotas
     admin
@@ -302,11 +263,11 @@ pub async fn test(test: &TestServer) {
 
     // Create an IP-restricted App Password and verify it works
     let response = user
-        .registry_create([Credential::AppPassword(SecondaryCredential {
+        .registry_create([structs::AppPassword {
             allowed_ips: Map::new(vec![IpAddrOrMask::from_str("10.0.0.2").unwrap()]),
             description: "My app password".to_string(),
             ..Default::default()
-        })])
+        }])
         .await;
     let app_password = response.created(0);
     let app_password_id = app_password.object_id();
@@ -317,11 +278,11 @@ pub async fn test(test: &TestServer) {
 
     // Create an IP-restricted API key and verify it works
     let response = user
-        .registry_create([Credential::ApiKey(SecondaryCredential {
+        .registry_create([structs::ApiKey {
             allowed_ips: Map::new(vec![IpAddrOrMask::from_str("10.0.0.2").unwrap()]),
             description: "My API key".to_string(),
             ..Default::default()
-        })])
+        }])
         .await;
     let api_key = response.created(0);
     let api_key_id = api_key.object_id();
@@ -331,25 +292,28 @@ pub async fn test(test: &TestServer) {
     validate_token_with_ip(&api_key_secret, "10.0.0.3", false).await;
 
     // Creating more API keys or app passwords should fail due to quota
-    user.registry_create_object_expect_err(Credential::AppPassword(SecondaryCredential {
+    user.registry_create_object_expect_err(structs::AppPassword {
         description: "Another app password".to_string(),
         ..Default::default()
-    }))
+    })
     .await
     .assert_type(SetErrorType::OverQuota)
     .assert_description_contains("You have exceeded your quota of 1 app passwords.");
-    user.registry_create_object_expect_err(Credential::ApiKey(SecondaryCredential {
+    user.registry_create_object_expect_err(structs::ApiKey {
         description: "Another API key".to_string(),
         ..Default::default()
-    }))
+    })
     .await
     .assert_type(SetErrorType::OverQuota)
     .assert_description_contains("You have exceeded your quota of 1 API keys.");
 
     // Set a credential expiration in the past and verify it is rejected
-    for credential_id in [app_password_id, api_key_id] {
+    for (credential_id, object_type) in [
+        (app_password_id, ObjectType::AppPassword),
+        (api_key_id, ObjectType::ApiKey),
+    ] {
         user.registry_update_object(
-            ObjectType::Credential,
+            object_type,
             credential_id,
             json!({
                 Property::ExpiresAt: UTCDateTime::now()
@@ -361,13 +325,16 @@ pub async fn test(test: &TestServer) {
     validate_password_with_ip("user@example.org", &app_password_secret, "10.0.0.2", false).await;
 
     // Destroy the API key and app password, then verify they no longer work
-    let response = user
-        .registry_destroy(ObjectType::Credential, [app_password_id, api_key_id])
-        .await;
-    assert_eq!(
-        vec![app_password_id, api_key_id],
-        response.destroyed_ids().collect::<Vec<_>>()
-    );
+    for (credential_id, object_type) in [
+        (app_password_id, ObjectType::AppPassword),
+        (api_key_id, ObjectType::ApiKey),
+    ] {
+        let response = user.registry_destroy(object_type, [credential_id]).await;
+        assert_eq!(
+            vec![credential_id],
+            response.destroyed_ids().collect::<Vec<_>>()
+        );
+    }
     validate_token_with_ip(&api_key_secret, "10.0.0.2", false).await;
     validate_password_with_ip("user@example.org", &app_password_secret, "10.0.0.2", false).await;
     validate_password("user@example.org", "user provided strong password", true).await;

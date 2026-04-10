@@ -136,7 +136,7 @@ impl BootManager {
             .await
             .failed("⚠️ Startup failed");
         let mut bootstrap = Bootstrap::new(registry).await;
-        let todo = "implement recovery mode";
+        let todo = "implement recovery mode, check env_recovery_mode in RegistryStoreInner";
 
         // Start listeners
         let mut servers = Listeners::parse(&mut bootstrap).await;

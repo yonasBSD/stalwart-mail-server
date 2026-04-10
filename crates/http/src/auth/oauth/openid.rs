@@ -6,10 +6,10 @@
 
 use common::{Server, auth::oauth::oidc::Userinfo};
 use http_proto::*;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::future::Future;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize)]
 pub struct OpenIdMetadata {
     pub issuer: String,
     pub authorization_endpoint: String,
@@ -18,12 +18,13 @@ pub struct OpenIdMetadata {
     pub jwks_uri: String,
     pub registration_endpoint: String,
     pub device_authorization_endpoint: String,
-    pub scopes_supported: Vec<String>,
-    pub response_types_supported: Vec<String>,
-    pub subject_types_supported: Vec<String>,
-    pub grant_types_supported: Vec<String>,
-    pub id_token_signing_alg_values_supported: Vec<String>,
-    pub claims_supported: Vec<String>,
+    pub scopes_supported: &'static [&'static str],
+    pub response_types_supported: &'static [&'static str],
+    pub subject_types_supported: &'static [&'static str],
+    pub grant_types_supported: &'static [&'static str],
+    pub id_token_signing_alg_values_supported: &'static [&'static str],
+    pub claims_supported: &'static [&'static str],
+    pub code_challenge_methods_supported: &'static [&'static str],
 }
 
 pub trait OpenIdHandler: Sync + Send {
@@ -69,38 +70,26 @@ impl OpenIdHandler for Server {
             jwks_uri: format!("{base_url}/auth/jwks.json"),
             registration_endpoint: format!("{base_url}/auth/register"),
             device_authorization_endpoint: format!("{base_url}/auth/device"),
-            response_types_supported: vec![
-                "code".into(),
-                "id_token".into(),
-                "id_token token".into(),
+            response_types_supported: &["code", "id_token", "id_token token"],
+            grant_types_supported: &[
+                "authorization_code",
+                "implicit",
+                "urn:ietf:params:oauth:grant-type:device_code",
             ],
-            grant_types_supported: vec![
-                "authorization_code".into(),
-                "implicit".into(),
-                "urn:ietf:params:oauth:grant-type:device_code".into(),
+            scopes_supported: &["openid", "offline_access"],
+            subject_types_supported: &["public"],
+            id_token_signing_alg_values_supported: &[
+                "RS256", "RS384", "RS512", "ES256", "ES384", "PS256", "PS384", "PS512", "HS256",
+                "HS384", "HS512",
             ],
-            scopes_supported: vec!["openid".into(), "offline_access".into()],
-            subject_types_supported: vec!["public".into()],
-            id_token_signing_alg_values_supported: vec![
-                "RS256".into(),
-                "RS384".into(),
-                "RS512".into(),
-                "ES256".into(),
-                "ES384".into(),
-                "PS256".into(),
-                "PS384".into(),
-                "PS512".into(),
-                "HS256".into(),
-                "HS384".into(),
-                "HS512".into(),
+            claims_supported: &[
+                "sub",
+                "name",
+                "preferred_username",
+                "email",
+                "email_verified",
             ],
-            claims_supported: vec![
-                "sub".into(),
-                "name".into(),
-                "preferred_username".into(),
-                "email".into(),
-                "email_verified".into(),
-            ],
+            code_challenge_methods_supported: &["S256"],
             issuer: base_url,
         })
         .into_http_response())

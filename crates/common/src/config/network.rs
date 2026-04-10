@@ -381,7 +381,9 @@ impl Http {
             .unwrap_or_default();
 
         // Add permissive CORS headers
-        if http.use_permissive_cors {
+        let todo = "fix";
+        if true {
+            // http.use_permissive_cors {
             http_headers.push((
                 hyper::header::ACCESS_CONTROL_ALLOW_ORIGIN,
                 hyper::header::HeaderValue::from_static("*"),

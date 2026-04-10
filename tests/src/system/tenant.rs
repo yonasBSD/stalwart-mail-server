@@ -281,6 +281,7 @@ pub async fn test(test: &mut TestServer) {
                         ObjectType::DnsServer,
                         DnsServer::Cloudflare(DnsServerCloudflare {
                             member_tenant_id,
+                            description: "Cloudflare DNS".to_string(),
                             secret: SecretKey::Value(SecretKeyValue {
                                 secret: "abc".to_string(),
                             }),

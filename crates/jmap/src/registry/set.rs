@@ -643,9 +643,10 @@ impl RegistrySet for Server {
                 spam_sample_set(set).await.map(|set| set.into_response())
             }
 
-            ObjectType::AccountSettings | ObjectType::Credential => {
-                account_set(set).await.map(|set| set.into_response())
-            }
+            ObjectType::AccountSettings
+            | ObjectType::ApiKey
+            | ObjectType::AccountPassword
+            | ObjectType::AppPassword => account_set(set).await.map(|set| set.into_response()),
 
             ObjectType::QueuedMessage => {
                 queued_message_set(set).await.map(|set| set.into_response())

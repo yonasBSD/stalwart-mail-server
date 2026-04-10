@@ -103,7 +103,7 @@ async fn rcpt() {
         .await;
     admin
         .registry_create_object(MtaInboundThrottle {
-            description: None,
+            description: "Test throttle".into(),
             enable: true,
             key: Map::new(vec![MtaInboundThrottleKey::Sender]),
             match_: Expression {

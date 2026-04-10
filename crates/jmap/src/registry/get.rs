@@ -311,9 +311,10 @@ impl RegistryGet for Server {
                 spam_sample_get(get).await.map(|get| get.into_response())
             }
             ObjectType::Log => log_get(get).await.map(|get| get.into_response()),
-            ObjectType::AccountSettings | ObjectType::Credential => {
-                account_get(get).await.map(|get| get.into_response())
-            }
+            ObjectType::AccountSettings
+            | ObjectType::ApiKey
+            | ObjectType::AccountPassword
+            | ObjectType::AppPassword => account_get(get).await.map(|get| get.into_response()),
             ObjectType::Action => Ok(get.not_found_any().into_response()),
         }
     }

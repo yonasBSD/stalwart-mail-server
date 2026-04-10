@@ -113,7 +113,7 @@ async fn automation_tests() {
     account.reload_settings().await;
     test.insert_account(account);
 
-    //acme::test(&test).await;
-    //dkim::test(&test).await;
+    acme::test(&test).await;
+    dkim::test(&test).await;
     dns::test(&test).await;
 }

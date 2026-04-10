@@ -114,7 +114,7 @@ async fn throttle_outbound() {
                     count: rate_count,
                     period: rate_duration.into(),
                 },
-                description: None,
+                description: "Test throttle".into(),
             })
             .await;
     }

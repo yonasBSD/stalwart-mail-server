@@ -143,6 +143,7 @@ pub async fn test(test: &TestServer) {
             secret: SecretKey::Value(SecretKeyValue {
                 secret: "secret".into(),
             }),
+            description: "Pebble DNS server".to_string(),
             ..Default::default()
         }))
         .await;
@@ -152,6 +153,7 @@ pub async fn test(test: &TestServer) {
             secret: SecretKey::Value(SecretKeyValue {
                 secret: "secret".into(),
             }),
+            description: "In-memory DNS server".to_string(),
             ..Default::default()
         }))
         .await;

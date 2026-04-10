@@ -100,14 +100,16 @@ impl EmailSet for Server {
         let import_access_token = if account_id != access_token.account_id() {
             #[cfg(feature = "test_mode")]
             {
-                std::sync::Arc::new(AccessToken::from_id_maybe_invalid(account_id)).into()
+                AccessToken::from_id_maybe_invalid(account_id).into()
             }
 
             #[cfg(not(feature = "test_mode"))]
             {
+                use common::auth::BuildAccessToken;
                 self.access_token(account_id)
                     .await
                     .caused_by(trc::location!())?
+                    .build()
                     .into()
             }
         } else {
@@ -758,7 +760,7 @@ impl EmailSet for Server {
                     raw_message: &raw_message,
                     message: MessageParser::new().parse(&raw_message),
                     blob_hash: None,
-                    access_token: import_access_token.as_deref().unwrap_or(access_token),
+                    access_token: import_access_token.as_ref().unwrap_or(access_token),
                     mailbox_ids: mailboxes,
                     keywords,
                     received_at,

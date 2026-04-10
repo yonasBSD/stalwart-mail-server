@@ -28,7 +28,8 @@ impl Account {
         &self,
         items: impl IntoIterator<Item = T>,
     ) -> JmapResponse {
-        let name = T::OBJECT.as_str();
+        let typ = T::OBJECT;
+        let name = typ.as_str();
 
         self.jmap_create_account(
             self,
@@ -36,7 +37,7 @@ impl Account {
             items.into_iter().map(|item| {
                 let mut item =
                     serde_json::to_value(item).expect("Failed to serialize item to JSON");
-                remove_server_set_props(&mut item);
+                remove_server_set_props(typ, &mut item);
                 item
             }),
             Vec::<(&str, &str)>::new(),
@@ -400,12 +401,13 @@ impl UnwrapRegistryId for RegistryWriteResult {
     }
 }
 
-fn remove_server_set_props(value: &mut serde_json::Value) {
+fn remove_server_set_props(typ: ObjectType, value: &mut serde_json::Value) {
     if let Value::Object(obj) = value {
-        let is_app_pass = obj
-            .get("@type")
-            .and_then(|v| v.as_str())
-            .is_some_and(|t| ["AppPassword", "ApiKey"].contains(&t));
+        let is_app_pass = matches!(typ, ObjectType::AppPassword | ObjectType::ApiKey)
+            || obj
+                .get("@type")
+                .and_then(|v| v.as_str())
+                .is_some_and(|t| ["AppPassword", "ApiKey"].contains(&t));
         obj.retain(|k, v| {
             !([
                 "createdAt",
@@ -419,7 +421,7 @@ fn remove_server_set_props(value: &mut serde_json::Value) {
                 || (k == "memberTenantId" && v.is_null()))
         });
         for v in obj.values_mut() {
-            remove_server_set_props(v);
+            remove_server_set_props(typ, v);
         }
     }
 }

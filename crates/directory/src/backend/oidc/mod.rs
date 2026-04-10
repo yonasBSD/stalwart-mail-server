@@ -37,6 +37,8 @@ pub struct DiscoveryDocument {
     pub scopes_supported: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub claims_supported: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code_challenge_methods_supported: Option<Vec<String>>,
 }
 
 struct CachedKey {

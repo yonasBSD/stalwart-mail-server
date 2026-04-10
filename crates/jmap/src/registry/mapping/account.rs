@@ -33,10 +33,11 @@ use registry::{
         enums::{CredentialType, StorageQuota},
         prelude::{MASKED_PASSWORD, Object, ObjectInner, ObjectType, Property},
         structs::{
-            Account, AccountSettings, Credential, CredentialPermissions, SecondaryCredential,
+            Account, AccountPassword, AccountSettings, Credential, CredentialPermissions, OtpAuth,
+            SecondaryCredential,
         },
     },
-    types::{EnumImpl, datetime::UTCDateTime, id::ObjectId},
+    types::{datetime::UTCDateTime, id::ObjectId},
 };
 use std::str::FromStr;
 use store::{
@@ -106,7 +107,210 @@ pub(crate) async fn account_set(
                 set.response.updated.append(id, None);
             }
         }
-        ObjectType::Credential => {
+        ObjectType::AccountPassword => {
+            if let Some(old_credential) = account.credentials.values_mut().find_map(|credential| {
+                if let Credential::Password(pass) = credential {
+                    Some(pass)
+                } else {
+                    None
+                }
+            }) {
+                'outer: for (id, value) in set.update.drain(..) {
+                    if id != Id::singleton() {
+                        set.response.not_updated.append(id, SetError::not_found());
+                    }
+
+                    let mut account_pass = AccountPassword::default();
+
+                    for (key, value) in value.into_expanded_object() {
+                        let ptr = match key {
+                            Key::Property(prop) => {
+                                JsonPointer::new(vec![JsonPointerItem::Key(Key::Property(prop))])
+                            }
+                            Key::Borrowed(other) => JsonPointer::parse(other),
+                            Key::Owned(other) => JsonPointer::parse(&other),
+                        };
+
+                        match account_pass
+                            .patch(JsonPointerPatch::new(&ptr).with_create(false), value)
+                        {
+                            Ok(MaybeUnpatched::Patched) => {}
+                            Ok(MaybeUnpatched::Unpatched { .. })
+                            | Ok(MaybeUnpatched::UnpatchedMany { .. }) => {
+                                set.response
+                                    .not_updated
+                                    .append(id, SetError::invalid_properties());
+                                continue 'outer;
+                            }
+                            Err(err) => {
+                                set.response.not_updated.append(id, err.into());
+                                continue 'outer;
+                            }
+                        }
+                    }
+
+                    let is_empty_secret =
+                        account_pass.secret.is_empty() || account_pass.secret == MASKED_PASSWORD;
+                    let is_empty_otp = account_pass
+                        .otp_auth
+                        .otp_url
+                        .as_ref()
+                        .is_none_or(|url| url != MASKED_PASSWORD);
+                    if !is_empty_secret || !is_empty_otp {
+                        if is_empty_secret {
+                            account_pass.secret = old_credential.secret.clone();
+                        }
+                        if is_empty_otp {
+                            account_pass.otp_auth.otp_url = old_credential.otp_auth.clone();
+                        }
+
+                        // Password changes are not supported when using external directories
+                        if (account_pass.secret != old_credential.secret
+                            || account_pass.otp_auth.otp_url != old_credential.otp_auth)
+                            && set
+                                .server
+                                .domain_by_id(account.domain_id.document_id())
+                                .await?
+                                .and_then(|domain| {
+                                    set.server.get_directory_for_cached_domain(&domain)
+                                })
+                                .is_some()
+                        {
+                            set.response.not_updated.append(
+                                id,
+                                SetError::forbidden().with_description("Operation not allowed."),
+                            );
+                            continue 'outer;
+                        }
+
+                        if account_pass.secret != old_credential.secret
+                            || account_pass.otp_auth.otp_url != old_credential.otp_auth
+                        {
+                            if old_credential.secret.is_empty() {
+                                set.response.not_updated.append(
+                                        id,
+                                        SetError::forbidden().with_description(
+                                            "Cannot set a password or OTP auth on an account that doesn't have one.",
+                                        ),
+                                    );
+                                continue 'outer;
+                            }
+
+                            let current_otp_code = account_pass.otp_auth.otp_code;
+                            if let Some(current_secret) = account_pass.current_secret {
+                                match verify_mfa_secret_hash(
+                                    old_credential.otp_auth.as_deref(),
+                                    current_otp_code.as_deref(),
+                                    &old_credential.secret,
+                                    current_secret.as_ref(),
+                                )
+                                .await?
+                                {
+                                    SecretVerificationResult::Valid => {}
+                                    SecretVerificationResult::Invalid => {
+                                        let account = set.server.account(set.account_id).await?;
+                                        if set.server.has_auth_fail2ban()
+                                            && set
+                                                .server
+                                                .is_auth_fail2banned(
+                                                    set.remote_ip,
+                                                    account.name().into(),
+                                                )
+                                                .await?
+                                        {
+                                            return Err(trc::SecurityEvent::AuthenticationBan
+                                                .into_err()
+                                                .details(
+                                                    "Too many failed password change attempts.",
+                                                )
+                                                .ctx(trc::Key::RemoteIp, set.remote_ip)
+                                                .ctx(
+                                                    trc::Key::AccountName,
+                                                    account.name().to_string(),
+                                                ));
+                                        } else {
+                                            set.response.not_updated.append(
+                                                id,
+                                                SetError::forbidden().with_description(
+                                                    "Current secret is incorrect.",
+                                                ),
+                                            );
+                                            continue 'outer;
+                                        }
+                                    }
+                                    SecretVerificationResult::MissingMfaToken => {
+                                        set.response.not_updated.append(
+                                                id,
+                                                SetError::forbidden().with_description(
+                                                    "Current OTP code is required to change the password or OTP auth.",
+                                                ),
+                                            );
+                                        continue 'outer;
+                                    }
+                                }
+
+                                if account_pass.secret != old_credential.secret {
+                                    if let Err(err) =
+                                        set.server.is_secure_password(&account_pass.secret, &[])
+                                    {
+                                        set.response.not_updated.append(
+                                            id,
+                                            SetError::invalid_properties()
+                                                .with_property(Property::Secret)
+                                                .with_description(err),
+                                        );
+                                        continue 'outer;
+                                    }
+
+                                    if let Some(expires_at) =
+                                        set.server.core.network.security.password_default_expiration
+                                    {
+                                        old_credential.expires_at =
+                                            Some(UTCDateTime::from_timestamp(
+                                                (now() + expires_at) as i64,
+                                            ));
+                                    } else if old_credential
+                                        .expires_at
+                                        .is_some_and(|exp| exp.timestamp() <= now() as i64)
+                                    {
+                                        old_credential.expires_at = None;
+                                    }
+
+                                    old_credential.secret = hash_secret(
+                                        set.server.core.network.security.password_hash_algorithm,
+                                        account_pass.secret.into_bytes(),
+                                    )
+                                    .await
+                                    .caused_by(trc::location!())?;
+                                }
+
+                                if account_pass.otp_auth.otp_url != old_credential.otp_auth {
+                                    old_credential.otp_auth = account_pass.otp_auth.otp_url;
+                                }
+                            } else {
+                                set.response.not_updated.append(
+                                        id,
+                                        SetError::forbidden().with_description(
+                                            "Current secret must be provided to change the password or OTP auth.",
+                                        ),
+                                    );
+                                continue 'outer;
+                            }
+                        }
+                    }
+
+                    set.response.updated.append(id, None);
+                    break;
+                }
+            } else {
+                set.fail_all(
+                    SetError::forbidden()
+                        .with_description("Your account does not support password changes"),
+                );
+            }
+        }
+
+        ObjectType::AppPassword | ObjectType::ApiKey => {
             // Process creations
             if !set.create.is_empty() {
                 let account_cache = set.server.account(set.account_id).await?;
@@ -146,7 +350,7 @@ pub(crate) async fn account_set(
                 }
 
                 'outer: for (id, value) in set.create.drain() {
-                    let mut credential = Credential::default();
+                    let mut credential = SecondaryCredential::default();
 
                     // Patch object
                     match credential.patch(
@@ -171,8 +375,8 @@ pub(crate) async fn account_set(
                     }
 
                     // Validate credential
-                    match &mut credential {
-                        Credential::AppPassword(credential) => {
+                    match set.object_type {
+                        ObjectType::AppPassword => {
                             if app_pass_total >= app_pass_quota {
                                 set.response.not_created.append(
                                     id,
@@ -184,7 +388,7 @@ pub(crate) async fn account_set(
                                 continue 'outer;
                             }
                             if let Err(err) =
-                                validate_credential_permissions(set.access_token, credential)
+                                validate_credential_permissions(set.access_token, &credential)
                             {
                                 set.response.not_created.append(id, err);
                                 continue 'outer;
@@ -204,6 +408,11 @@ pub(crate) async fn account_set(
                             .await
                             .caused_by(trc::location!())?;
 
+                            // Add credential to account
+                            account
+                                .credentials
+                                .push(Credential::AppPassword(credential));
+
                             set.response.created.insert(
                                 id,
                                 Value::Object(Map::from(vec![
@@ -220,7 +429,7 @@ pub(crate) async fn account_set(
                                 ])),
                             );
                         }
-                        Credential::ApiKey(credential) => {
+                        ObjectType::ApiKey => {
                             if api_key_total >= api_key_quota {
                                 set.response.not_created.append(
                                     id,
@@ -232,7 +441,7 @@ pub(crate) async fn account_set(
                                 continue 'outer;
                             }
                             if let Err(err) =
-                                validate_credential_permissions(set.access_token, credential)
+                                validate_credential_permissions(set.access_token, &credential)
                             {
                                 set.response.not_created.append(id, err);
                                 continue 'outer;
@@ -252,6 +461,9 @@ pub(crate) async fn account_set(
                             .await
                             .caused_by(trc::location!())?;
 
+                            // Add credential to account
+                            account.credentials.push(Credential::ApiKey(credential));
+
                             set.response.created.insert(
                                 id,
                                 Value::Object(Map::from(vec![
@@ -268,18 +480,8 @@ pub(crate) async fn account_set(
                                 ])),
                             );
                         }
-                        Credential::Password(_) => {
-                            set.response.not_created.append(
-                                id,
-                                SetError::forbidden()
-                                    .with_description("Cannot create a password credential."),
-                            );
-                            continue 'outer;
-                        }
+                        _ => unreachable!(),
                     }
-
-                    // Add credential to account
-                    account.credentials.push(credential);
                 }
             }
 
@@ -329,183 +531,6 @@ pub(crate) async fn account_set(
                     }
 
                     match (&mut credential, &mut old_credential) {
-                        (
-                            Credential::Password(credential),
-                            Credential::Password(old_credential),
-                        ) => {
-                            // Reset the original password if the client accidentally sent the masked password
-                            if credential.secret.is_empty() || credential.secret == MASKED_PASSWORD
-                            {
-                                credential.secret = old_credential.secret.clone();
-                            }
-                            if credential
-                                .otp_auth
-                                .as_ref()
-                                .is_some_and(|otp_auth| otp_auth == MASKED_PASSWORD)
-                            {
-                                credential.otp_auth = old_credential.otp_auth.clone();
-                            }
-
-                            // Users cannot modify their allowedIps or expiration
-                            if credential.allowed_ips != old_credential.allowed_ips
-                                || credential.expires_at != old_credential.expires_at
-                            {
-                                set.response.not_updated.append(
-                                    id,
-                                    SetError::forbidden().with_description(
-                                        "Modifying allowed IPs or expiration is not allowed.",
-                                    ),
-                                );
-                                continue 'outer;
-                            }
-
-                            // Password changes are not supported when using external directories
-                            if (credential.secret != old_credential.secret
-                                || credential.otp_auth != old_credential.otp_auth)
-                                && set
-                                    .server
-                                    .domain_by_id(account.domain_id.document_id())
-                                    .await?
-                                    .and_then(|domain| {
-                                        set.server.get_directory_for_cached_domain(&domain)
-                                    })
-                                    .is_some()
-                            {
-                                set.response.not_updated.append(
-                                    id,
-                                    SetError::forbidden()
-                                        .with_description("Operation not allowed."),
-                                );
-                                continue 'outer;
-                            }
-
-                            if credential.secret != old_credential.secret
-                                || credential.otp_auth != old_credential.otp_auth
-                            {
-                                if old_credential.secret.is_empty() {
-                                    set.response.not_updated.append(
-                                        id,
-                                        SetError::forbidden().with_description(
-                                            "Cannot set a password or OTP auth on an account that doesn't have one.",
-                                        ),
-                                    );
-                                    continue 'outer;
-                                }
-
-                                let current_otp_code = unpatched_properties
-                                    .get(&Property::OtpCode)
-                                    .and_then(|v| v.as_str())
-                                    .filter(|v| !v.is_empty());
-                                if let Some(current_secret) = unpatched_properties
-                                    .get(&Property::CurrentSecret)
-                                    .and_then(|v| v.as_str())
-                                    .filter(|v| !v.is_empty())
-                                {
-                                    match verify_mfa_secret_hash(
-                                        old_credential.otp_auth.as_deref(),
-                                        current_otp_code.as_deref(),
-                                        &old_credential.secret,
-                                        current_secret.as_ref(),
-                                    )
-                                    .await?
-                                    {
-                                        SecretVerificationResult::Valid => {}
-                                        SecretVerificationResult::Invalid => {
-                                            let account =
-                                                set.server.account(set.account_id).await?;
-                                            if set.server.has_auth_fail2ban()
-                                                && set
-                                                    .server
-                                                    .is_auth_fail2banned(
-                                                        set.remote_ip,
-                                                        account.name().into(),
-                                                    )
-                                                    .await?
-                                            {
-                                                return Err(trc::SecurityEvent::AuthenticationBan
-                                                    .into_err()
-                                                    .details(
-                                                        "Too many failed password change attempts.",
-                                                    )
-                                                    .ctx(trc::Key::RemoteIp, set.remote_ip)
-                                                    .ctx(
-                                                        trc::Key::AccountName,
-                                                        account.name().to_string(),
-                                                    ));
-                                            } else {
-                                                set.response.not_updated.append(
-                                                    id,
-                                                    SetError::forbidden().with_description(
-                                                        "Current secret is incorrect.",
-                                                    ),
-                                                );
-                                                continue 'outer;
-                                            }
-                                        }
-                                        SecretVerificationResult::MissingMfaToken => {
-                                            set.response.not_updated.append(
-                                                id,
-                                                SetError::forbidden().with_description(
-                                                    "Current OTP code is required to change the password or OTP auth.",
-                                                ),
-                                            );
-                                            continue 'outer;
-                                        }
-                                    }
-
-                                    if credential.secret != old_credential.secret {
-                                        if let Err(err) =
-                                            set.server.is_secure_password(&credential.secret, &[])
-                                        {
-                                            set.response.not_updated.append(
-                                                id,
-                                                SetError::invalid_properties()
-                                                    .with_property(Property::Secret)
-                                                    .with_description(err),
-                                            );
-                                            continue 'outer;
-                                        }
-
-                                        if let Some(expires_at) = set
-                                            .server
-                                            .core
-                                            .network
-                                            .security
-                                            .password_default_expiration
-                                        {
-                                            credential.expires_at =
-                                                Some(UTCDateTime::from_timestamp(
-                                                    (now() + expires_at) as i64,
-                                                ));
-                                        } else if credential
-                                            .expires_at
-                                            .is_some_and(|exp| exp.timestamp() <= now() as i64)
-                                        {
-                                            credential.expires_at = None;
-                                        }
-
-                                        credential.secret = hash_secret(
-                                            set.server
-                                                .core
-                                                .network
-                                                .security
-                                                .password_hash_algorithm,
-                                            std::mem::take(&mut credential.secret).into_bytes(),
-                                        )
-                                        .await
-                                        .caused_by(trc::location!())?;
-                                    }
-                                } else {
-                                    set.response.not_updated.append(
-                                        id,
-                                        SetError::forbidden().with_description(
-                                            "Current secret must be provided to change the password or OTP auth.",
-                                        ),
-                                    );
-                                    continue 'outer;
-                                }
-                            }
-                        }
                         (
                             Credential::AppPassword(credential),
                             Credential::AppPassword(old_credential),
@@ -668,7 +693,48 @@ pub(crate) async fn account_get(
 
             get.response.not_found.extend(ids);
         }
-        ObjectType::Credential => {
+        ObjectType::AccountPassword => {
+            let mut ids = get
+                .ids
+                .take()
+                .unwrap_or_else(|| vec![Id::singleton()])
+                .into_iter();
+
+            for id in ids.by_ref() {
+                if id == Id::singleton()
+                    && let Some(pass) = account.credentials.iter().find_map(|pass| {
+                        if let Credential::Password(pass) = pass {
+                            Some(pass)
+                        } else {
+                            None
+                        }
+                    })
+                {
+                    get.insert(
+                        id,
+                        AccountPassword {
+                            current_secret: None,
+                            otp_auth: OtpAuth {
+                                otp_code: None,
+                                otp_url: if pass.otp_auth.is_some() {
+                                    MASKED_PASSWORD.to_string().into()
+                                } else {
+                                    None
+                                },
+                            },
+                            secret: MASKED_PASSWORD.into(),
+                        }
+                        .into_value(),
+                    );
+                    break;
+                } else {
+                    get.not_found(id);
+                }
+            }
+
+            get.response.not_found.extend(ids);
+        }
+        ObjectType::ApiKey | ObjectType::AppPassword => {
             let mut ids = if let Some(ids) = get.ids.take() {
                 ids
             } else {
@@ -679,22 +745,23 @@ pub(crate) async fn account_get(
                     .collect::<Vec<_>>()
             };
 
-            for mut credential in account.credentials {
-                let id = match &mut credential {
-                    Credential::Password(credential) => {
-                        credential.allowed_ips.clear();
-                        credential.credential_id
+            for credential in account.credentials {
+                match (credential, get.object_type) {
+                    (
+                        Credential::AppPassword(pass) | Credential::ApiKey(pass),
+                        ObjectType::AppPassword,
+                    ) if ids.contains(&pass.credential_id) => {
+                        let id = pass.credential_id;
+                        let mut credential = pass.into_value();
+                        credential
+                            .as_object_mut()
+                            .unwrap()
+                            .as_mut_vec()
+                            .retain(|(k, _)| !matches!(k, Key::Property(Property::CredentialId)));
+                        get.insert(id, credential);
+                        ids.retain(|i| i != &id);
                     }
-                    Credential::AppPassword(credential_properties) => {
-                        credential_properties.credential_id
-                    }
-                    Credential::ApiKey(credential_properties) => {
-                        credential_properties.credential_id
-                    }
-                };
-                if ids.contains(&id) {
-                    get.insert(id, credential.into_value());
-                    ids.retain(|i| i != &id);
+                    _ => {}
                 }
             }
 
@@ -722,20 +789,16 @@ pub(crate) async fn credential_query(
             .details("Account not found."));
     };
 
-    let mut credential_type = None;
+    let credential_type = match query.object_type {
+        ObjectType::AppPassword => CredentialType::AppPassword,
+        ObjectType::ApiKey => CredentialType::ApiKey,
+        _ => unreachable!(),
+    };
     let mut expires_at_filter = None;
 
     query
         .request
         .extract_filters(|property, op, value| match property {
-            Property::Type => {
-                if let Some(typ) = value.as_str().and_then(CredentialType::parse) {
-                    credential_type = Some(typ);
-                    true
-                } else {
-                    false
-                }
-            }
             Property::ExpiresAt => {
                 if let Some(value) = value
                     .as_str()
@@ -752,15 +815,13 @@ pub(crate) async fn credential_query(
 
     let mut matches = Vec::new();
     for credential in account.credentials.iter() {
-        if credential_type.is_none_or(|typ| credential.object_type() == typ) {
+        if credential.object_type() == credential_type {
             let (credential_id, expires_at) = match credential {
-                Credential::Password(credential) => {
-                    (credential.credential_id, credential.expires_at)
-                }
                 Credential::AppPassword(credential) => {
                     (credential.credential_id, credential.expires_at)
                 }
                 Credential::ApiKey(credential) => (credential.credential_id, credential.expires_at),
+                _ => unreachable!(),
             };
             if expires_at_filter.is_none_or(|(op, filter_value)| {
                 expires_at.is_some_and(|expires_at| match op {

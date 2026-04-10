@@ -30,10 +30,11 @@ This version includes **multiple breaking changes**. If you are upgrading from v
   - Renew certificates on demand, view certificate details (#675 #1162 #2566)
   - `CAA` record support (#468) with `accounturi` parameter (#1933)  
   - `TLSA` records publishing restricted to `3 1 1` and `2 1 1` (#2193)
-- OIDC:
+- OIDC and OAuth:
   - JWT token validation without requesting userinfo from the OIDC provider.
   - Audience (`aud`) claim (#2603) and scope validation support.
   - Groups support (#1448)
+  - RFC 7636 - Proof Key for Code Exchange by OAuth Public Clients
 - LDAP:
   - Separate filter for groups (#1841)
   - Improve support for OpenLDAP schemas (#760)

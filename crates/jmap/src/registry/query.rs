@@ -121,14 +121,16 @@ impl RegistryQuery for Server {
             .await
             .and_then(|response| response.build()),
 
-            ObjectType::Credential => credential_query(RegistryQueryResponse {
-                server: self,
-                access_token,
-                object_type,
-                request,
-            })
-            .await
-            .and_then(|response| response.build()),
+            ObjectType::ApiKey | ObjectType::AppPassword => {
+                credential_query(RegistryQueryResponse {
+                    server: self,
+                    access_token,
+                    object_type,
+                    request,
+                })
+                .await
+                .and_then(|response| response.build())
+            }
 
             ObjectType::Task => task_query(RegistryQueryResponse {
                 server: self,

@@ -30,7 +30,7 @@ async fn throttle_inbound() {
     admin.mta_no_auth().await;
     admin
         .registry_create_object(MtaInboundThrottle {
-            description: None,
+            description: "Test throttle".into(),
             enable: true,
             key: Map::new(vec![MtaInboundThrottleKey::RemoteIp]),
             match_: Expression {
@@ -46,6 +46,7 @@ async fn throttle_inbound() {
 
     admin
         .registry_create_object(MtaInboundThrottle {
+            description: "Test throttle".into(),
             enable: true,
             key: Map::new(vec![MtaInboundThrottleKey::Sender]),
             rate: Rate {

@@ -5,13 +5,16 @@
  */
 
 use crate::utils::{account::Account, server::TestServer};
-use registry::schema::{
-    enums::TaskStoreMaintenanceType,
-    prelude::{ObjectType, Property},
-    structs::{
-        Task, TaskManager, TaskRetryStrategy, TaskRetryStrategyFixed, TaskStatus, TaskStatusFailed,
-        TaskStatusPending, TaskStatusRetry, TaskStoreMaintenance,
+use registry::{
+    schema::{
+        enums::TaskStoreMaintenanceType,
+        prelude::{ObjectType, Property},
+        structs::{
+            Task, TaskManager, TaskRetryStrategy, TaskRetryStrategyFixed, TaskStatus,
+            TaskStatusFailed, TaskStatusPending, TaskStatusRetry, TaskStoreMaintenance,
+        },
     },
+    types::datetime::UTCDateTime,
 };
 use serde_json::json;
 use store::write::now;
@@ -56,7 +59,10 @@ pub async fn test(test: &mut TestServer) {
             task.id,
             json!({
                 Property::ShardIndex: TASK_SUCCESS,
-                Property::Status: TaskStatus::at((now() + 1) as i64),
+                Property::Status: {
+                    "@type": "Pending",
+                    "due": UTCDateTime::from_timestamp((now() + 1) as i64),
+                }
             }),
         )
         .await;

@@ -53,6 +53,25 @@ pub struct OAuthCode {
     pub client_id: String,
     pub nonce: Option<String>,
     pub params: String,
+    pub code_challenge: PkceCodeChallenge,
+}
+
+#[derive(
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    rkyv::Archive,
+    Clone,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+)]
+#[rkyv(compare(PartialEq))]
+pub enum PkceCodeChallenge {
+    None,
+    S256(String),
+    Plain(String),
 }
 
 #[derive(Debug, Serialize, Deserialize)]

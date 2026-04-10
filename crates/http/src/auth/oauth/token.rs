@@ -5,9 +5,10 @@
  */
 
 use super::{
-    ArchivedOAuthStatus, ErrorType, FormData, MAX_POST_LEN, OAuthCode, OAuthResponse, OAuthStatus,
-    TokenResponse, registration::ClientRegistrationHandler,
+    ArchivedOAuthStatus, ArchivedPkceCodeChallenge, ErrorType, FormData, MAX_POST_LEN, OAuthCode,
+    OAuthResponse, OAuthStatus, TokenResponse, registration::ClientRegistrationHandler,
 };
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use common::{
     KV_OAUTH, Server,
     auth::{
@@ -17,6 +18,7 @@ use common::{
 };
 use http_proto::*;
 use hyper::StatusCode;
+use sha2::{Digest, Sha256};
 use std::future::Future;
 use store::{
     dispatch::lookup::KeyValue,
@@ -85,6 +87,8 @@ impl TokenHandler for Server {
                             .caused_by(trc::location!())?;
                         if client_id != oauth.client_id || redirect_uri != oauth.params {
                             TokenResponse::error(ErrorType::InvalidClient)
+                        } else if !verify_pkce(&oauth.code_challenge, params.get("code_verifier")) {
+                            TokenResponse::error(ErrorType::InvalidGrant)
                         } else if oauth.status == OAuthStatus::Authorized {
                             // Validate client id
                             if let Some(error) = self
@@ -330,5 +334,41 @@ impl TokenHandler for Server {
             },
             scope: None,
         })
+    }
+}
+
+fn verify_pkce(stored: &ArchivedPkceCodeChallenge, verifier: Option<&str>) -> bool {
+    let is_valid_pkce_challenge = |challenge: &str| {
+        !(43..=128).contains(&challenge.len())
+            && challenge
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~'))
+    };
+    let constant_time_eq = |a: &[u8], b: &[u8]| {
+        if a.len() != b.len() {
+            return false;
+        }
+        let mut diff: u8 = 0;
+        for (x, y) in a.iter().zip(b.iter()) {
+            diff |= x ^ y;
+        }
+        diff == 0
+    };
+
+    match (stored, verifier) {
+        (ArchivedPkceCodeChallenge::None, None) => true,
+        (ArchivedPkceCodeChallenge::Plain(expected), Some(verifier))
+            if is_valid_pkce_challenge(verifier) =>
+        {
+            constant_time_eq(expected.as_bytes(), verifier.as_bytes())
+        }
+        (ArchivedPkceCodeChallenge::S256(expected), Some(verifier))
+            if is_valid_pkce_challenge(verifier) =>
+        {
+            let digest = Sha256::digest(verifier.as_bytes());
+            let computed = URL_SAFE_NO_PAD.encode(digest);
+            constant_time_eq(expected.as_bytes(), computed.as_bytes())
+        }
+        _ => false,
     }
 }

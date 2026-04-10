@@ -21,6 +21,7 @@ use crate::{
 use common::{
     Server,
     auth::{AccessToken, oauth::GrantType},
+    manager::application::Resource,
 };
 use http_body_util::{StreamBody, combinators::BoxBody};
 use http_proto::{
@@ -88,6 +89,15 @@ impl ManagementApi for Server {
                 // Authenticate request
                 let (_in_flight, access_token) = self.authenticate_headers(req, session).await?;
                 self.handle_account_request(&access_token).await
+            }
+            "schema" => {
+                // Authenticate request
+                let (_in_flight, access_token) = self.authenticate_headers(req, session).await?;
+                let todo = "fix";
+                let ui_schema_path = "/Users/me/code/jmap-schema/ui_schema.json";
+                let ui_schema = tokio::fs::read_to_string(ui_schema_path).await.unwrap();
+
+                Ok(Resource::new("application/json", ui_schema.into_bytes()).into_http_response())
             }
             "token" => {
                 let access_token = self.management_access_token(req, session).await?;

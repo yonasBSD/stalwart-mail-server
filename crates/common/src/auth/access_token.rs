@@ -411,10 +411,11 @@ impl AccessToken {
         if let Some(credential_id) = credential_id {
             Self::new_scoped(inner, credential_id, remote_ip)
         } else {
-            Ok(AccessToken {
+            AccessToken {
                 scope_idx: 0,
                 inner,
-            })
+            }
+            .assert_is_valid(remote_ip)
         }
     }
 
@@ -520,9 +521,8 @@ impl AccessToken {
                         for permission in [
                             Permission::Authenticate,
                             Permission::AuthenticateWithAlias,
-                            Permission::SysCredentialGet,
-                            Permission::SysCredentialQuery,
-                            Permission::SysCredentialUpdate,
+                            Permission::SysAccountPasswordGet,
+                            Permission::SysAccountPasswordUpdate,
                             Permission::EmailReceive,
                         ] {
                             if scope.permissions.get(permission as usize) {

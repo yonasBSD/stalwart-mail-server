@@ -526,6 +526,7 @@ async fn update_signature(
     }
 }
 
+#[cfg(feature = "test_mode")]
 const TEST_RSA_KEY: &str = r#"-----BEGIN RSA PRIVATE KEY-----
 MIIEowIBAAKCAQEAv9XYXG3uK95115mB4nJ37nGeNe2CrARm1agrbcnSk5oIaEfM
 ZLUR/X8gPzoiNHZcfMZEVR6bAytxUhc5EvZIZrjSuEEeny+fFd/cTvcm3cOUUbIa
@@ -555,6 +556,7 @@ byAbwh4+HiZ5JISoRZpiZqy67aJNVoXmdtb/E9mi7ozzytpxMNql
 -----END RSA PRIVATE KEY-----
 "#;
 
+#[cfg(feature = "test_mode")]
 const TEST_ED25519_KEY: &str = r#"-----BEGIN PRIVATE KEY-----
 MC4CAQAwBQYDK2VwBCIEIAO3hAf144lTAVjTkht3ZwBTK0CMCCd1bI0alggneN3B
 -----END PRIVATE KEY-----
