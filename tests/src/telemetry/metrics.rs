@@ -5,14 +5,10 @@
  */
 
 use crate::utils::server::TestServer;
-use common::telemetry::metrics::store::{MetricsStore, SharedMetricHistory};
+use common::telemetry::metrics::store::MetricsStore;
 use registry::{schema::prelude::ObjectType, types::datetime::UTCDateTime};
 use std::time::Duration;
-use store::{
-    rand::{self, Rng},
-    write::now,
-};
-use trc::*;
+use store::write::now;
 use types::id::Id;
 
 pub async fn test(test: &TestServer) {
@@ -34,7 +30,7 @@ pub async fn test(test: &TestServer) {
     );
 
     // Insert test metrics
-    insert_test_metrics(test).await;
+    test.server.insert_test_metrics().await;
 
     // Fetch all metrics
     let metric_ids = admin
@@ -94,71 +90,4 @@ pub async fn test(test: &TestServer) {
             .collect::<Vec<_>>(),
         Vec::<Id>::new()
     );
-}
-
-async fn insert_test_metrics(test: &TestServer) {
-    test.server
-        .metrics_store()
-        .purge_metrics(Duration::from_secs(0))
-        .await
-        .unwrap();
-    let mut start_time = now() - (90 * 24 * 60 * 60);
-    let timestamp = now();
-    let history = SharedMetricHistory::default();
-
-    while start_time < timestamp {
-        for event_type in [
-            EventType::Smtp(SmtpEvent::ConnectionStart),
-            EventType::Imap(ImapEvent::ConnectionStart),
-            EventType::Pop3(Pop3Event::ConnectionStart),
-            EventType::ManageSieve(ManageSieveEvent::ConnectionStart),
-            EventType::Http(HttpEvent::ConnectionStart),
-            EventType::Delivery(DeliveryEvent::AttemptStart),
-            EventType::Queue(QueueEvent::MessageQueued),
-            EventType::Queue(QueueEvent::AuthenticatedMessageQueued),
-            EventType::Queue(QueueEvent::DsnQueued),
-            EventType::Queue(QueueEvent::ReportQueued),
-            EventType::MessageIngest(MessageIngestEvent::Ham),
-            EventType::MessageIngest(MessageIngestEvent::Spam),
-            EventType::Auth(AuthEvent::Failed),
-            EventType::Security(SecurityEvent::AuthenticationBan),
-            EventType::Security(SecurityEvent::ScanBan),
-            EventType::Security(SecurityEvent::AbuseBan),
-            EventType::Security(SecurityEvent::LoiterBan),
-            EventType::Security(SecurityEvent::IpBlocked),
-            EventType::IncomingReport(IncomingReportEvent::DmarcReport),
-            EventType::IncomingReport(IncomingReportEvent::DmarcReportWithWarnings),
-            EventType::IncomingReport(IncomingReportEvent::TlsReport),
-            EventType::IncomingReport(IncomingReportEvent::TlsReportWithWarnings),
-        ] {
-            // Generate a random value between 0 and 100
-            Collector::update_event_counter(event_type, rand::rng().random_range(0..=100))
-        }
-
-        Collector::update_gauge(MetricType::QueueCount, rand::rng().random_range(0..=1000));
-        Collector::update_gauge(
-            MetricType::ServerMemory,
-            rand::rng().random_range(100 * 1024 * 1024..=300 * 1024 * 1024),
-        );
-
-        for metric_type in [
-            MetricType::MessageIngestTime,
-            MetricType::MessageIngestIndexTime,
-            MetricType::DeliveryTotalTime,
-            MetricType::DnsLookupTime,
-        ] {
-            Collector::update_histogram(metric_type, rand::rng().random_range(2..=1000))
-        }
-        Collector::update_histogram(
-            MetricType::DeliveryTotalTime,
-            rand::rng().random_range(1000..=5000),
-        );
-
-        test.server
-            .metrics_store()
-            .write_metrics(start_time.into(), history.clone())
-            .await
-            .unwrap();
-        start_time += 60 * 60 * 24;
-    }
 }

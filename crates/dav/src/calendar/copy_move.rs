@@ -70,7 +70,7 @@ impl CalendarCopyMoveRequestHandler for Server {
         let from_resource = from_resources
             .by_path(from_resource_name)
             .ok_or(DavError::Code(StatusCode::NOT_FOUND))?;
-        #[cfg(not(debug_assertions))]
+        #[cfg(not(any(feature = "dev_mode", feature = "test_mode")))]
         if is_move
             && from_resource.is_container()
             && self

@@ -520,10 +520,37 @@ impl Tracers {
         if tracers.is_empty() {
             for event_type in EventType::variants() {
                 let event_level = custom_levels
-                    .get(&event_type)
+                    .get(event_type)
                     .copied()
                     .unwrap_or(event_type.level());
                 if Level::Info.is_contained(event_level) {
+                    global_interests.set(event_type.to_id() as usize);
+                }
+            }
+
+            tracers.push(TelemetrySubscriber {
+                id: "default".to_string(),
+                interests: global_interests.clone(),
+                typ: TelemetrySubscriberType::ConsoleTracer(ConsoleTracer {
+                    ansi: true,
+                    multiline: false,
+                    buffered: true,
+                }),
+                lossy: false,
+            });
+        }
+
+        #[cfg(feature = "dev_mode")]
+        if let Ok(level) = std::env::var("LOG") {
+            use std::str::FromStr;
+
+            let level = Level::from_str(&level).expect("Invalid LOG level");
+            for event_type in EventType::variants() {
+                let event_level = custom_levels
+                    .get(event_type)
+                    .copied()
+                    .unwrap_or(event_type.level());
+                if level.is_contained(event_level) {
                     global_interests.set(event_type.to_id() as usize);
                 }
             }

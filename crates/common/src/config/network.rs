@@ -381,9 +381,13 @@ impl Http {
             .unwrap_or_default();
 
         // Add permissive CORS headers
-        let todo = "fix";
-        if true {
-            // http.use_permissive_cors {
+        #[cfg(feature = "dev_mode")]
+        let use_permissive_cors = true;
+
+        #[cfg(not(feature = "dev_mode"))]
+        let use_permissive_cors = http.use_permissive_cors;
+
+        if use_permissive_cors {
             http_headers.push((
                 hyper::header::ACCESS_CONTROL_ALLOW_ORIGIN,
                 hyper::header::HeaderValue::from_static("*"),

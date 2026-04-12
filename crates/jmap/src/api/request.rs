@@ -394,6 +394,12 @@ impl RequestHandler for Server {
 
                     self.quota_query(req, access_token).await?.into()
                 }
+                QueryRequestMethod::AddressBook(mut req) => {
+                    set_account_id_if_missing(&mut req.account_id, access_token);
+                    access_token.assert_has_access(req.account_id, Collection::AddressBook)?;
+
+                    self.address_book_query(req, access_token).await?.into()
+                }
                 QueryRequestMethod::ContactCard(mut req) => {
                     set_account_id_if_missing(&mut req.account_id, access_token);
                     access_token.assert_has_access(req.account_id, Collection::ContactCard)?;
@@ -405,6 +411,12 @@ impl RequestHandler for Server {
                     access_token.assert_has_access(req.account_id, Collection::FileNode)?;
 
                     self.file_node_query(req, access_token).await?.into()
+                }
+                QueryRequestMethod::Calendar(mut req) => {
+                    set_account_id_if_missing(&mut req.account_id, access_token);
+                    access_token.assert_has_access(req.account_id, Collection::Calendar)?;
+
+                    self.calendar_query(req, access_token).await?.into()
                 }
                 QueryRequestMethod::CalendarEvent(mut req) => {
                     set_account_id_if_missing(&mut req.account_id, access_token);

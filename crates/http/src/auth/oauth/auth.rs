@@ -77,6 +77,7 @@ pub trait OAuthApiHandler: Sync + Send {
 #[serde(tag = "type")]
 #[serde(rename_all = "camelCase")]
 pub enum LoginRequest {
+    #[serde(rename_all = "camelCase")]
     AuthCode {
         account_name: String,
         account_secret: String,
@@ -97,6 +98,7 @@ pub enum LoginRequest {
         #[serde(default)]
         state: Option<String>,
     },
+    #[serde(rename_all = "camelCase")]
     AuthDevice {
         account_name: String,
         account_secret: String,
@@ -167,6 +169,7 @@ impl OAuthApiHandler for Server {
                     .as_ref()
                     .is_some_and(|uri| uri.starts_with("http://"))
                 {
+                    #[cfg(not(feature = "dev_mode"))]
                     return Err(trc::AuthEvent::Error
                         .into_err()
                         .details("Redirect URI must be HTTPS."));
@@ -175,16 +178,6 @@ impl OAuthApiHandler for Server {
                 // Parse and validate PKCE challenge (RFC 7636).
                 let pkce_challenge = match code_challenge {
                     Some(challenge) => {
-                        if !(43..=128).contains(&challenge.len())
-                            && challenge.bytes().all(|b| {
-                                b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~')
-                            })
-                        {
-                            return Err(trc::AuthEvent::Error
-                                .into_err()
-                                .details("Invalid PKCE code_challenge."));
-                        }
-
                         // Default to "plain" when the method is omitted, per RFC 7636 4.3.
                         match code_challenge_method.as_deref().unwrap_or("plain") {
                             "S256" => PkceCodeChallenge::S256(challenge),

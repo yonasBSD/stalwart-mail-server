@@ -20,6 +20,7 @@ coordinator = { path = "../coordinator" }
 jmap = { path = "../jmap" }
 types = { path = "../types" }
 smtp = { path = "../smtp" }
+smtp-proto = { version = "0.2", features = ["rkyv", "serde"] }
 imap = { path = "../imap" }
 pop3 = { path = "../pop3" }
 spam-filter = { path = "../spam-filter" }
@@ -33,6 +34,8 @@ groupware = { path = "../groupware" }
 services = { path = "../services" }
 trc = { path = "../trc" }
 utils = { path = "../utils" }
+registry = { path = "../registry" }
+http_proto = { path = "../http-proto" }
 migration = { path = "../migration" }
 tokio = { version = "1.47", features = ["full"] }
 
@@ -68,3 +71,8 @@ enterprise = [ "jmap/enterprise",
                "trc/enterprise",
                "services/enterprise",
                "migration/enterprise" ]
+dev_mode = [ "common/dev_mode", 
+             "trc/dev_mode", 
+             "dav/dev_mode",
+             "http/dev_mode",
+             "http_proto/dev_mode" ]

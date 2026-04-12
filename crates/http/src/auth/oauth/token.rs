@@ -339,7 +339,7 @@ impl TokenHandler for Server {
 
 fn verify_pkce(stored: &ArchivedPkceCodeChallenge, verifier: Option<&str>) -> bool {
     let is_valid_pkce_challenge = |challenge: &str| {
-        !(43..=128).contains(&challenge.len())
+        (43..=128).contains(&challenge.len())
             && challenge
                 .bytes()
                 .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~'))

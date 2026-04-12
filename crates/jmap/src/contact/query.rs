@@ -9,8 +9,12 @@ use common::{Server, auth::AccessToken};
 use groupware::cache::GroupwareCache;
 use jmap_proto::{
     method::query::{Filter, QueryRequest, QueryResponse},
-    object::contact::{ContactCard, ContactCardComparator, ContactCardFilter},
+    object::{
+        addressbook::AddressBook,
+        contact::{ContactCard, ContactCardComparator, ContactCardFilter},
+    },
     request::MaybeInvalid,
+    types::state::State,
 };
 use store::{
     IterateParams, U32_LEN, U64_LEN, ValueKey,
@@ -30,6 +34,12 @@ pub trait ContactCardQuery: Sync + Send {
     fn contact_card_query(
         &self,
         request: QueryRequest<ContactCard>,
+        access_token: &AccessToken,
+    ) -> impl Future<Output = trc::Result<QueryResponse>> + Send;
+
+    fn address_book_query(
+        &self,
+        request: QueryRequest<AddressBook>,
         access_token: &AccessToken,
     ) -> impl Future<Output = trc::Result<QueryResponse>> + Send;
 }
@@ -315,6 +325,38 @@ impl ContactCardQuery for Server {
             results.len(),
             self.core.jmap.query_max_results,
             cache.get_state(false),
+            &request,
+        );
+
+        for document_id in results {
+            if !response.add(0, document_id) {
+                break;
+            }
+        }
+
+        response.build()
+    }
+
+    async fn address_book_query(
+        &self,
+        request: QueryRequest<AddressBook>,
+        access_token: &AccessToken,
+    ) -> trc::Result<QueryResponse> {
+        let account_id = request.account_id.document_id();
+        let cache = self
+            .fetch_dav_resources(
+                access_token.account_id(),
+                account_id,
+                SyncCollection::Calendar,
+            )
+            .await?;
+
+        let results = cache.document_ids(true).collect::<Vec<_>>();
+
+        let mut response = QueryResponseBuilder::new(
+            results.len() as usize,
+            self.core.jmap.query_max_results,
+            State::Initial,
             &request,
         );
 

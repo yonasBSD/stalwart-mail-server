@@ -16,20 +16,23 @@ impl Server {
     pub async fn is_http_authenticated_request_allowed(
         &self,
         access_token: &AccessToken,
+        addr: IpAddr,
     ) -> trc::Result<Option<InFlight>> {
         let is_rate_allowed = if let Some(rate) = &self.core.network.http.rate_authenticated {
-            self.core
-                .storage
-                .memory
-                .is_rate_allowed(
-                    KV_RATE_LIMIT_HTTP_AUTHENTICATED,
-                    &access_token.account_id().to_be_bytes(),
-                    rate,
-                    false,
-                )
-                .await
-                .caused_by(trc::location!())?
-                .is_none()
+            self.is_ip_allowed(addr)
+                || self
+                    .core
+                    .storage
+                    .memory
+                    .is_rate_allowed(
+                        KV_RATE_LIMIT_HTTP_AUTHENTICATED,
+                        &access_token.account_id().to_be_bytes(),
+                        rate,
+                        false,
+                    )
+                    .await
+                    .caused_by(trc::location!())?
+                    .is_none()
         } else {
             true
         };

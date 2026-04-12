@@ -64,7 +64,7 @@ impl OpenIdHandler for Server {
         let base_url = HttpContext::new(session, req).resolve_response_url(self);
 
         Ok(JsonResponse::new(OpenIdMetadata {
-            authorization_endpoint: format!("{base_url}/authorize/code",),
+            authorization_endpoint: format!("{base_url}/login",),
             token_endpoint: format!("{base_url}/auth/token"),
             userinfo_endpoint: format!("{base_url}/auth/userinfo"),
             jwks_uri: format!("{base_url}/auth/jwks.json"),

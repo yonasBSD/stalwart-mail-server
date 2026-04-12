@@ -25,7 +25,7 @@ pub(crate) async fn https(
         .timeout(Duration::from_secs(30))
         .http1_only();
 
-    #[cfg(debug_assertions)]
+    #[cfg(any(feature = "dev_mode", feature = "test_mode"))]
     {
         builder = builder.danger_accept_invalid_certs(
             url.starts_with("https://localhost") || url.starts_with("https://127.0.0.1"),

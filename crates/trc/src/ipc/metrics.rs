@@ -342,6 +342,10 @@ impl Collector {
                 CONNECTION_METRICS[CONN_SMTP_OUT].elapsed.observe(value)
             }
             MetricType::DnsLookupTime => DNS_LOOKUP_TIME.observe(value),
+            MetricType::StoreDataReadTime => STORE_DATA_READ_TIME.observe(value),
+            MetricType::StoreDataWriteTime => STORE_DATA_WRITE_TIME.observe(value),
+            MetricType::StoreBlobReadTime => STORE_BLOB_READ_TIME.observe(value),
+            MetricType::StoreBlobWriteTime => STORE_BLOB_WRITE_TIME.observe(value),
             _ => {}
         }
     }

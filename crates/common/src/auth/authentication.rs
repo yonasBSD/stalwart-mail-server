@@ -288,8 +288,8 @@ impl Server {
                         .await;
                 }
 
-                let todo = "fix";
-                if token == "TEST_MODE_BYPASS" {
+                #[cfg(feature = "dev_mode")]
+                if std::env::var("API_TOKEN_ADMIN").is_ok_and(|admin_token| &admin_token == token) {
                     return Ok(AccessToken::new_admin());
                 }
 

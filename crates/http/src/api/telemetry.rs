@@ -8,7 +8,7 @@
  *
  */
 
-use common::{Server, auth::AccessToken};
+use common::{Server, auth::AccessToken, telemetry::tracers::TraceEvents};
 use http_body_util::{StreamBody, combinators::BoxBody};
 use http_proto::*;
 use hyper::{
@@ -16,7 +16,7 @@ use hyper::{
     body::{Bytes, Frame},
 };
 use mail_parser::DateTime;
-use registry::schema::enums::Permission;
+use registry::schema::{enums::Permission, structs::Trace};
 use std::future::Future;
 use std::{
     fmt::Write,
@@ -26,7 +26,6 @@ use store::ahash::{AHashMap, AHashSet};
 use trc::{
     Collector, EventType, Key, MetricType, Value,
     ipc::{bitset::Bitset, subscriber::SubscriberBuilder},
-    serializers::json::JsonEventSerializer,
 };
 use utils::url_params::UrlParams;
 
@@ -83,6 +82,8 @@ impl TelemetryApi for Server {
                     async_stream::stream! {
                         let mut last_message = Instant::now() - throttle;
                         let mut timeout = ping_interval;
+
+                        yield Ok(Frame::data(ping_payload.clone()));
 
                         loop {
                             match tokio::time::timeout(timeout, rx.recv()).await {
@@ -148,11 +149,11 @@ impl TelemetryApi for Server {
                                 let elapsed = last_message.elapsed();
                                 if elapsed >= throttle {
                                     last_message = Instant::now();
+                                    let num_events = events.len();
                                     yield Ok(Frame::data(Bytes::from(format!(
                                         "event: trace\ndata: {}\n\n",
                                         serde_json::to_string(
-                                            &JsonEventSerializer::new(std::mem::take(&mut events))
-                                            .with_description()).unwrap_or_default()
+                                            &Trace::build_trace_events(events.iter().map(|e| e.as_ref()), num_events)).unwrap_or_default()
                                     ))));
 
                                     ping_interval
@@ -231,7 +232,7 @@ impl TelemetryApi for Server {
                                     }
                                     let _ = write!(
                                         &mut metrics,
-                                        "{{\"id\":\"{}\",\"type\":\"counter\",\"value\":{}}}",
+                                        "{{\"metric\":\"{}\",\"@type\":\"Counter\",\"count\":{}}}",
                                         counter.id().as_str(),
                                         counter.value()
                                     );
@@ -246,7 +247,7 @@ impl TelemetryApi for Server {
                                     }
                                     let _ = write!(
                                         &mut metrics,
-                                        "{{\"id\":\"{}\",\"type\":\"gauge\",\"value\":{}}}",
+                                        "{{\"metric\":\"{}\",\"@type\":\"Gauge\",\"count\":{}}}",
                                         gauge.id().as_str(),
                                         gauge.get()
                                     );
@@ -261,7 +262,7 @@ impl TelemetryApi for Server {
                                     }
                                     let _ = write!(
                                         &mut metrics,
-                                        "{{\"id\":\"{}\",\"type\":\"histogram\",\"count\":{},\"sum\":{}}}",
+                                        "{{\"metric\":\"{}\",\"@type\":\"Histogram\",\"count\":{},\"sum\":{}}}",
                                         histogram.id().as_str(),
                                         histogram.count(),
                                         histogram.sum()

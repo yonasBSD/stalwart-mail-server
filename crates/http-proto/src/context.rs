@@ -18,22 +18,31 @@ impl<'x> HttpContext<'x> {
         Self { session, req }
     }
 
+    #[allow(unused_variables)]
     pub fn resolve_response_url(&self, server: &Server) -> String {
         if self.session.is_tls {
-            #[cfg(not(feature = "test_mode"))]
+            #[cfg(not(any(feature = "dev_mode", feature = "test_mode")))]
             {
                 server.core.network.http.url_https.clone()
             }
 
-            #[cfg(feature = "test_mode")]
+            #[cfg(any(feature = "dev_mode", feature = "test_mode"))]
             {
                 format!("https://127.0.0.1:{}", self.session.local_port)
             }
         } else {
-            format!(
-                "{}:{}",
-                server.core.network.http.url_http, self.session.local_port
-            )
+            #[cfg(not(any(feature = "dev_mode", feature = "test_mode")))]
+            {
+                format!(
+                    "{}:{}",
+                    server.core.network.http.url_http, self.session.local_port
+                )
+            }
+
+            #[cfg(any(feature = "dev_mode", feature = "test_mode"))]
+            {
+                format!("http://127.0.0.1:{}", self.session.local_port)
+            }
         }
     }
 

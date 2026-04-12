@@ -25,14 +25,13 @@ use common::{
 };
 use http_body_util::{StreamBody, combinators::BoxBody};
 use http_proto::{
-    HttpRequest, HttpResponse, HttpSessionData, JsonResponse, ToHttpResponse,
+    HttpRequest, HttpResponse, HttpSessionData, ToHttpResponse,
     request::{decode_path_element, fetch_body},
 };
 use hyper::{Method, StatusCode, header};
 use jmap::api::{ToJmapHttpResponse, ToRequestError};
 use jmap_proto::error::request::RequestError;
 use registry::schema::enums::Permission;
-use serde_json::json;
 use std::time::Duration;
 use utils::url_params::UrlParams;
 
@@ -76,7 +75,7 @@ impl ManagementApi for Server {
                 .await
             }
             "discover" => {
-                if let Some(email) = path.get(2).copied() {
+                if let Some(email) = path.get(1).copied() {
                     self.is_http_anonymous_request_allowed(session.remote_ip)
                         .await?;
                     self.handle_discover_request(req, session, decode_path_element(email).as_ref())
@@ -112,10 +111,17 @@ impl ManagementApi for Server {
                         access_token.enforce_permission(Permission::LiveTracing)?;
 
                         // Issue a live telemetry token valid for 60 seconds
-                        Ok(JsonResponse::new(json!({
-                                "data": self.encode_access_token(GrantType::LiveTracing, account_id,  "web", 60).await?,
-                        }))
-                        .into_http_response())
+                        Ok(HttpResponse::new(StatusCode::OK)
+                            .with_no_cache()
+                            .with_text_body(
+                                self.encode_access_token(
+                                    GrantType::LiveTracing,
+                                    account_id,
+                                    "web",
+                                    60,
+                                )
+                                .await?,
+                            ))
                     }
                     #[cfg(feature = "enterprise")]
                     Some("metrics") if self.core.is_enterprise_edition() => {
@@ -123,10 +129,17 @@ impl ManagementApi for Server {
                         access_token.enforce_permission(Permission::LiveMetrics)?;
 
                         // Issue a live telemetry token valid for 60 seconds
-                        Ok(JsonResponse::new(json!({
-                                "data": self.encode_access_token(GrantType::LiveMetrics, account_id,  "web", 60).await?,
-                        }))
-                        .into_http_response())
+                        Ok(HttpResponse::new(StatusCode::OK)
+                            .with_no_cache()
+                            .with_text_body(
+                                self.encode_access_token(
+                                    GrantType::LiveMetrics,
+                                    account_id,
+                                    "web",
+                                    60,
+                                )
+                                .await?,
+                            ))
                     }
                     // SPDX-SnippetEnd
                     Some("delivery") => {
@@ -134,10 +147,17 @@ impl ManagementApi for Server {
                         access_token.enforce_permission(Permission::LiveDeliveryTest)?;
 
                         // Issue a live telemetry token valid for 60 seconds
-                        Ok(JsonResponse::new(json!({
-                                "data": self.encode_access_token(GrantType::Diagnose, account_id,  "web", 60).await?,
-                        }))
-                        .into_http_response())
+                        Ok(HttpResponse::new(StatusCode::OK)
+                            .with_no_cache()
+                            .with_text_body(
+                                self.encode_access_token(
+                                    GrantType::LiveDelivery,
+                                    account_id,
+                                    "web",
+                                    60,
+                                )
+                                .await?,
+                            ))
                     }
                     Some("tracing") | Some("metrics") => {
                         Err(trc::ResourceEvent::NotFound
@@ -189,7 +209,7 @@ impl ManagementApi for Server {
                     // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
                     // SPDX-License-Identifier: LicenseRef-SEL
                     #[cfg(feature = "enterprise")]
-                    ("traces", _, &Method::GET) if self.core.is_enterprise_edition() => {
+                    ("tracing", _, &Method::GET) if self.core.is_enterprise_edition() => {
                         use crate::api::telemetry::TelemetryApi;
 
                         self.handle_telemetry_api_request(req, true, &access_token)
@@ -203,7 +223,7 @@ impl ManagementApi for Server {
                             .await
                     }
                     // SPDX-SnippetEnd
-                    ("traces" | "metrics", _, &Method::GET) => {
+                    ("tracing" | "metrics", _, &Method::GET) => {
                         Err(trc::ResourceEvent::NotFound
                             .ctx(trc::Key::Details, "Enterprise feature"))
                     }
@@ -227,12 +247,12 @@ impl ManagementApi for Server {
             #[cfg(feature = "enterprise")]
             if self.core.is_enterprise_edition() {
                 let path = req.uri().path();
-                let (grant_type, permissions) = if path.starts_with("/api/telemetry/traces") {
+                let (grant_type, permissions) = if path.starts_with("/api/live/tracing") {
                     (GrantType::LiveTracing, Permission::LiveTracing)
-                } else if path.starts_with("/api/telemetry/metrics") {
+                } else if path.starts_with("/api/live/metrics") {
                     (GrantType::LiveMetrics, Permission::LiveMetrics)
-                } else if path.starts_with("/api/diagnose") {
-                    (GrantType::Diagnose, Permission::LiveDeliveryTest)
+                } else if path.starts_with("/api/live/delivery") {
+                    (GrantType::LiveDelivery, Permission::LiveDeliveryTest)
                 } else {
                     return Err(trc::ResourceEvent::NotFound.into_err());
                 };

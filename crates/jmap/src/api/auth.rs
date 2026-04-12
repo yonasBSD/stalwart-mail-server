@@ -281,8 +281,10 @@ impl JmapAuthorization for AccessToken {
                 QueryRequestMethod::Sieve(_) => Permission::JmapSieveScriptQuery,
                 QueryRequestMethod::Principal(_) => Permission::JmapPrincipalQuery,
                 QueryRequestMethod::Quota(_) => Permission::JmapQuotaQuery,
+                QueryRequestMethod::AddressBook(_) => Permission::JmapAddressBookGet,
                 QueryRequestMethod::ContactCard(_) => Permission::JmapContactCardQuery,
                 QueryRequestMethod::FileNode(_) => Permission::JmapFileNodeQuery,
+                QueryRequestMethod::Calendar(_) => Permission::JmapCalendarGet,
                 QueryRequestMethod::CalendarEvent(_) => Permission::JmapCalendarEventQuery,
                 QueryRequestMethod::CalendarEventNotification(_) => {
                     Permission::JmapCalendarEventNotificationQuery

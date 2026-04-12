@@ -41,7 +41,7 @@ impl Authenticator for Server {
                     if access_token.revision() == http_cache.revision {
                         // Enforce authenticated rate limit
                         return self
-                            .is_http_authenticated_request_allowed(&access_token)
+                            .is_http_authenticated_request_allowed(&access_token, session.remote_ip)
                             .await
                             .map(|in_flight| (in_flight, access_token));
                     }
@@ -103,7 +103,7 @@ impl Authenticator for Server {
             );
 
             // Enforce authenticated rate limit
-            self.is_http_authenticated_request_allowed(&access_token)
+            self.is_http_authenticated_request_allowed(&access_token, session.remote_ip)
                 .await
                 .map(|in_flight| (in_flight, access_token))
         } else {

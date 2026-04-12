@@ -165,7 +165,7 @@ impl Collector {
                                     {
                                         event.inner.span = Some(span.clone());
                                     } else {
-                                        #[cfg(debug_assertions)]
+                                        #[cfg(any(feature = "dev_mode", feature = "test_mode"))]
                                         {
                                             if event.span_id().unwrap() != 0 {
                                                 eprintln!("Unregistered span ID: {event:?}");
@@ -179,7 +179,10 @@ impl Collector {
                                         if let Some(span) = self.active_spans.get(&span_id) {
                                             event.inner.span = Some(span.clone());
                                         } else {
-                                            #[cfg(debug_assertions)]
+                                            #[cfg(any(
+                                                feature = "dev_mode",
+                                                feature = "test_mode"
+                                            ))]
                                             {
                                                 if span_id != 0 {
                                                     eprintln!("Unregistered span ID: {event:?}");

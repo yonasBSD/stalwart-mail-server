@@ -86,10 +86,10 @@ impl MetricsStore for Store {
                     *history = reading;
 
                     if diff > 0 {
-                        #[cfg(not(feature = "test_mode"))]
+                        #[cfg(not(any(feature = "dev_mode", feature = "test_mode")))]
                         let metric_id = history_guard.id_generator.generate();
 
-                        #[cfg(feature = "test_mode")]
+                        #[cfg(any(feature = "dev_mode", feature = "test_mode"))]
                         let metric_id = _timestamp
                             .map(|timestamp| {
                                 SnowflakeIdGenerator::global_id_from_timestamp(timestamp).unwrap()
@@ -113,10 +113,10 @@ impl MetricsStore for Store {
                 if matches!(metric, MetricType::QueueCount | MetricType::ServerMemory) {
                     let value = gauge.get();
                     if value > 0 {
-                        #[cfg(not(feature = "test_mode"))]
+                        #[cfg(not(any(feature = "dev_mode", feature = "test_mode")))]
                         let metric_id = history_guard.id_generator.generate();
 
-                        #[cfg(feature = "test_mode")]
+                        #[cfg(any(feature = "dev_mode", feature = "test_mode"))]
                         let metric_id = _timestamp
                             .map(|timestamp| {
                                 SnowflakeIdGenerator::global_id_from_timestamp(timestamp).unwrap()
@@ -144,6 +144,10 @@ impl MetricsStore for Store {
                         | MetricType::DeliveryTotalTime
                         | MetricType::DeliveryAttemptTime
                         | MetricType::DnsLookupTime
+                        | MetricType::StoreDataReadTime
+                        | MetricType::StoreDataWriteTime
+                        | MetricType::StoreBlobReadTime
+                        | MetricType::StoreBlobWriteTime
                 ) {
                     let history = history_guard.histograms.entry(metric).or_default();
                     let sum = histogram.sum();
@@ -153,10 +157,10 @@ impl MetricsStore for Store {
                     history.sum = sum;
                     history.count = count;
                     if diff_sum > 0 || diff_count > 0 {
-                        #[cfg(not(feature = "test_mode"))]
+                        #[cfg(not(any(feature = "dev_mode", feature = "test_mode")))]
                         let metric_id = history_guard.id_generator.generate();
 
-                        #[cfg(feature = "test_mode")]
+                        #[cfg(any(feature = "dev_mode", feature = "test_mode"))]
                         let metric_id = _timestamp
                             .map(|timestamp| {
                                 SnowflakeIdGenerator::global_id_from_timestamp(timestamp).unwrap()

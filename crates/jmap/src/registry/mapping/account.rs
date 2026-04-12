@@ -747,10 +747,10 @@ pub(crate) async fn account_get(
 
             for credential in account.credentials {
                 match (credential, get.object_type) {
-                    (
-                        Credential::AppPassword(pass) | Credential::ApiKey(pass),
-                        ObjectType::AppPassword,
-                    ) if ids.contains(&pass.credential_id) => {
+                    (Credential::AppPassword(pass), ObjectType::AppPassword)
+                    | (Credential::ApiKey(pass), ObjectType::ApiKey)
+                        if ids.contains(&pass.credential_id) =>
+                    {
                         let id = pass.credential_id;
                         let mut credential = pass.into_value();
                         credential

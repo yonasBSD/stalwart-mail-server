@@ -27,7 +27,8 @@ use registry::{
 };
 use std::str::FromStr;
 use store::{
-    IterateParams, ValueKey,
+    Deserialize, IterateParams, ValueKey,
+    ahash::AHashSet,
     registry::RegistryFilterOp,
     search::{
         SearchComparator, SearchField, SearchFilter, SearchOperator, SearchQuery,
@@ -35,7 +36,7 @@ use store::{
     },
     write::{SearchIndex, TelemetryClass, ValueClass, key::DeserializeBigEndian, now},
 };
-use trc::{AddContext, EventType};
+use trc::{AddContext, EventType, MetricType};
 use types::id::Id;
 use utils::snowflake::SnowflakeIdGenerator;
 
@@ -283,6 +284,7 @@ pub(crate) async fn metric_query(
 ) -> trc::Result<QueryResponseBuilder> {
     let mut ts_from = 0u64;
     let mut ts_to = u64::MAX;
+    let mut metric_type = None;
 
     req.request
         .extract_filters(|property, op, value| match property {
@@ -307,6 +309,22 @@ pub(crate) async fn metric_query(
                     false
                 }
             }
+            Property::Metric => {
+                if let Some(mt) = value
+                    .as_array()
+                    .map(|v| {
+                        v.iter()
+                            .filter_map(|s| s.as_str().and_then(MetricType::parse))
+                            .collect::<AHashSet<_>>()
+                    })
+                    .filter(|v| !v.is_empty())
+                {
+                    metric_type = Some(mt);
+                    true
+                } else {
+                    false
+                }
+            }
             _ => false,
         })?;
 
@@ -316,6 +334,12 @@ pub(crate) async fn metric_query(
 
     if ts_from != 0 {
         ts_from = SnowflakeIdGenerator::from_timestamp(ts_from).unwrap_or(0);
+    }
+    if let Some(anchor) = req.request.anchor {
+        let anchor = anchor.id();
+        if anchor > ts_from {
+            ts_from = anchor;
+        }
     }
 
     if ts_to != u64::MAX {
@@ -327,26 +351,36 @@ pub(crate) async fn metric_query(
 
     // Build response
     let mut response = QueryResponseBuilder::new(
-        req.server.core.jmap.query_max_results,
+        req.server.core.jmap.query_max_results + 1,
         req.server.core.jmap.query_max_results,
         State::Initial,
         &req.request,
     );
 
-    if response.response.total.is_some() {
-        response.response.total = Some(0);
-    }
+    let mut total = 0;
 
     req.server
         .metrics_store()
         .iterate(
             IterateParams::new(from_key, to_key)
                 .set_ascending(params.sort_ascending)
-                .no_values(),
-            |key, _| {
+                .set_values(metric_type.is_some()),
+            |key, value| {
                 let id = key.deserialize_be_u64(0)?;
-                if let Some(total) = response.response.total.as_mut() {
-                    *total += 1;
+
+                if let Some(ref types) = metric_type {
+                    let mt = match Metric::deserialize(value)? {
+                        Metric::Counter(metric_count) => metric_count.metric,
+                        Metric::Gauge(metric_count) => metric_count.metric,
+                        Metric::Histogram(metric_sum) => metric_sum.metric,
+                    };
+                    if !types.contains(&mt) {
+                        return Ok(true);
+                    }
+                }
+
+                total += 1;
+                if response.response.total.is_some() {
                     if !response.is_full() {
                         response.add_id(id.into());
                     }
@@ -359,7 +393,11 @@ pub(crate) async fn metric_query(
         .await
         .caused_by(trc::location!())?;
 
-    if let (Some(total), Some(limit)) = (response.response.total, response.response.limit)
+    if response.response.total.is_none() {
+        response.response.total = Some(total);
+    }
+
+    if let Some(limit) = response.response.limit
         && total < limit
     {
         response.response.limit = None;

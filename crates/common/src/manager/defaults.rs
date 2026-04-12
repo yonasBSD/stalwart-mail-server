@@ -5,6 +5,10 @@
  */
 
 use crate::auth::permissions::DefaultPermissions;
+use aws_lc_rs::{
+    rand::SystemRandom,
+    signature::{ECDSA_P256_SHA256_FIXED_SIGNING, EcdsaKeyPair},
+};
 use registry::{
     schema::{
         enums::*,
@@ -12,10 +16,6 @@ use registry::{
         structs::*,
     },
     types::{duration::Duration, error::Error, list::List, map::Map},
-};
-use aws_lc_rs::{
-    rand::SystemRandom,
-    signature::{ECDSA_P256_SHA256_FIXED_SIGNING, EcdsaKeyPair},
 };
 use std::str::FromStr;
 use store::{
@@ -71,7 +71,7 @@ async fn insert_safe_defaults(bp: &mut Bootstrap) -> trc::Result<()> {
     {
         for object in [
             MtaInboundThrottle {
-                description: "Sender IP throttle".to_string().into(),
+                description: "Sender IP throttle".to_string(),
                 enable: true,
                 key: Map::new(vec![MtaInboundThrottleKey::RemoteIp]),
                 rate: Rate {
@@ -81,7 +81,7 @@ async fn insert_safe_defaults(bp: &mut Bootstrap) -> trc::Result<()> {
                 ..Default::default()
             },
             MtaInboundThrottle {
-                description: "Sender address to recipient throttle".to_string().into(),
+                description: "Sender address to recipient throttle".to_string(),
                 enable: true,
                 key: Map::new(vec![
                     MtaInboundThrottleKey::SenderDomain,
@@ -503,7 +503,7 @@ async fn insert_safe_defaults(bp: &mut Bootstrap) -> trc::Result<()> {
         }
     }
 
-    #[cfg(not(feature = "test_mode"))]
+    #[cfg(not(any(feature = "dev_mode", feature = "test_mode")))]
     if bp.registry.count_object(ObjectType::Asn).await? == 0 {
         bp.registry
             .write(RegistryWrite::insert(
@@ -517,6 +517,18 @@ async fn insert_safe_defaults(bp: &mut Bootstrap) -> trc::Result<()> {
                 })
                 .into(),
             ))
+            .await?;
+    }
+
+    if bp.registry.count_object(ObjectType::TracingStore).await? == 0 {
+        bp.registry
+            .write(RegistryWrite::insert(&TracingStore::Default.into()))
+            .await?;
+    }
+
+    if bp.registry.count_object(ObjectType::MetricsStore).await? == 0 {
+        bp.registry
+            .write(RegistryWrite::insert(&MetricsStore::Default.into()))
             .await?;
     }
 

@@ -32,7 +32,8 @@ impl<'x> Request<'x> {
                 }
                 Err(err) => Err(trc::JmapEvent::NotRequest
                     .into_err()
-                    .details(err.to_string())),
+                    .reason(err.to_string())
+                    .details(String::from_utf8_lossy(json).into_owned())),
             }
         } else {
             Err(trc::LimitEvent::SizeRequest.into_err())
@@ -413,6 +414,13 @@ impl<'de> Visitor<'de> for CallVisitor {
                     return Err(de::Error::invalid_length(1, &self));
                 }
             },
+            (MethodFunction::Query, MethodObject::Calendar) => match seq.next_element() {
+                Ok(Some(value)) => RequestMethod::Query(QueryRequestMethod::Calendar(value)),
+                Err(err) => RequestMethod::invalid(err),
+                Ok(None) => {
+                    return Err(de::Error::invalid_length(1, &self));
+                }
+            },
             (MethodFunction::Query, MethodObject::CalendarEvent) => match seq.next_element() {
                 Ok(Some(value)) => RequestMethod::Query(QueryRequestMethod::CalendarEvent(value)),
                 Err(err) => RequestMethod::invalid(err),
@@ -431,6 +439,13 @@ impl<'de> Visitor<'de> for CallVisitor {
                     }
                 }
             }
+            (MethodFunction::Query, MethodObject::AddressBook) => match seq.next_element() {
+                Ok(Some(value)) => RequestMethod::Query(QueryRequestMethod::AddressBook(value)),
+                Err(err) => RequestMethod::invalid(err),
+                Ok(None) => {
+                    return Err(de::Error::invalid_length(1, &self));
+                }
+            },
             (MethodFunction::Query, MethodObject::ContactCard) => match seq.next_element() {
                 Ok(Some(value)) => RequestMethod::Query(QueryRequestMethod::ContactCard(value)),
                 Err(err) => RequestMethod::invalid(err),

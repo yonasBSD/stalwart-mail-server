@@ -21,6 +21,7 @@ hashify = "0.2.7"
 
 [features]
 test_mode = []
+dev_mode = []
 enterprise = []
 
 [dev-dependencies]

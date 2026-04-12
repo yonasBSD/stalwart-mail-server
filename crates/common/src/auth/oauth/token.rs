@@ -6,8 +6,7 @@
 
 use super::{CLIENT_ID_MAX_LEN, GrantType, RANDOM_CODE_LEN, crypto::SymmetricEncrypt};
 use crate::Server;
-use mail_builder::encoders::base64::base64_encode;
-use mail_parser::decoders::base64::base64_decode;
+use base64::{Engine, engine::general_purpose};
 use registry::schema::structs::Account;
 use std::time::SystemTime;
 use store::{
@@ -102,7 +101,7 @@ impl Server {
         token.push_leb128(expiry);
         token.extend_from_slice(client_id.as_bytes());
 
-        Ok(String::from_utf8(base64_encode(&token).unwrap_or_default()).unwrap())
+        Ok(general_purpose::URL_SAFE_NO_PAD.encode(&token))
     }
 
     pub async fn validate_access_token(
@@ -111,13 +110,15 @@ impl Server {
         token_: &str,
     ) -> trc::Result<TokenInfo> {
         // Base64 decode token
-        let token = base64_decode(token_.as_bytes()).ok_or_else(|| {
-            trc::AuthEvent::Error
-                .into_err()
-                .ctx(trc::Key::Reason, "Failed to decode token")
-                .caused_by(trc::location!())
-                .details(token_.to_string())
-        })?;
+        let token = general_purpose::URL_SAFE_NO_PAD
+            .decode(token_.as_bytes())
+            .map_err(|_| {
+                trc::AuthEvent::Error
+                    .into_err()
+                    .ctx(trc::Key::Reason, "Failed to decode token")
+                    .caused_by(trc::location!())
+                    .details(token_.to_string())
+            })?;
         let (account_id, grant_type, issued_at, expiry, client_id) = token
             .get((RANDOM_CODE_LEN + SymmetricEncrypt::ENCRYPT_TAG_LEN)..)
             .and_then(|bytes| {

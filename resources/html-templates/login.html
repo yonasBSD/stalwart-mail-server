@@ -401,8 +401,8 @@
                 if (isDevice) {
                     var req = {
                         type: 'authDevice',
-                        account_name: creds.account_name,
-                        account_secret: creds.account_secret,
+                        accountName: creds.account_name,
+                        accountSecret: creds.account_secret,
                         code: ($('device-code').value || '').trim()
                     };
                     if (otpValue) req.mfaToken = otpValue;
@@ -410,9 +410,9 @@
                 }
                 var r = {
                     type: 'authCode',
-                    account_name: creds.account_name,
-                    account_secret: creds.account_secret,
-                    client_id: oauth.client_id || ''
+                    accountName: creds.account_name,
+                    accountSecret: creds.account_secret,
+                    clientId: oauth.client_id || ''
                 };
                 if (oauth.redirect_uri) r.redirectUri = oauth.redirect_uri;
                 if (oauth.scope) r.scope = oauth.scope;

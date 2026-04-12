@@ -82,7 +82,7 @@ impl CalendarDeleteRequestHandler for Server {
         let mut batch = BatchBuilder::new();
         if delete_resource.is_container() {
             // Deleting the default calendar is not allowed
-            #[cfg(not(debug_assertions))]
+            #[cfg(not(any(feature = "dev_mode", feature = "test_mode")))]
             if self
                 .core
                 .groupware

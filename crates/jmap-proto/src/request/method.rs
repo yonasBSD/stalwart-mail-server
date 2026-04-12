@@ -144,6 +144,7 @@ impl MethodName {
             (MethodFunction::Get, MethodObject::AddressBook) => "AddressBook/get",
             (MethodFunction::Changes, MethodObject::AddressBook) => "AddressBook/changes",
             (MethodFunction::Set, MethodObject::AddressBook) => "AddressBook/set",
+            (MethodFunction::Query, MethodObject::AddressBook) => "AddressBook/query",
 
             (MethodFunction::Get, MethodObject::ContactCard) => "ContactCard/get",
             (MethodFunction::Changes, MethodObject::ContactCard) => "ContactCard/changes",
@@ -172,6 +173,7 @@ impl MethodName {
             (MethodFunction::Get, MethodObject::Calendar) => "Calendar/get",
             (MethodFunction::Changes, MethodObject::Calendar) => "Calendar/changes",
             (MethodFunction::Set, MethodObject::Calendar) => "Calendar/set",
+            (MethodFunction::Query, MethodObject::Calendar) => "Calendar/query",
 
             (MethodFunction::Get, MethodObject::CalendarEvent) => "CalendarEvent/get",
             (MethodFunction::Changes, MethodObject::CalendarEvent) => "CalendarEvent/changes",
@@ -277,6 +279,7 @@ impl MethodName {
             "AddressBook/get" => (MethodObject::AddressBook, MethodFunction::Get),
             "AddressBook/changes" => (MethodObject::AddressBook, MethodFunction::Changes),
             "AddressBook/set" => (MethodObject::AddressBook, MethodFunction::Set),
+            "AddressBook/query" => (MethodObject::AddressBook, MethodFunction::Query),
 
             "ContactCard/get" => (MethodObject::ContactCard, MethodFunction::Get),
             "ContactCard/changes" => (MethodObject::ContactCard, MethodFunction::Changes),
@@ -301,6 +304,7 @@ impl MethodName {
             "Calendar/get" => (MethodObject::Calendar, MethodFunction::Get),
             "Calendar/changes" => (MethodObject::Calendar, MethodFunction::Changes),
             "Calendar/set" => (MethodObject::Calendar, MethodFunction::Set),
+            "Calendar/query" => (MethodObject::Calendar, MethodFunction::Query),
 
             "CalendarEvent/get" => (MethodObject::CalendarEvent, MethodFunction::Get),
             "CalendarEvent/changes" => (MethodObject::CalendarEvent, MethodFunction::Changes),

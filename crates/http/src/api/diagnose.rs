@@ -87,6 +87,7 @@ pub(crate) enum DeliveryStage {
         reason: String,
     },
     IpLookupStart,
+    #[serde(rename_all = "camelCase")]
     IpLookupSuccess {
         remote_ips: Vec<IpAddr>,
         elapsed: u64,
@@ -95,6 +96,7 @@ pub(crate) enum DeliveryStage {
         reason: String,
         elapsed: u64,
     },
+    #[serde(rename_all = "camelCase")]
     ConnectionStart {
         remote_ip: IpAddr,
     },
