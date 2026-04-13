@@ -154,30 +154,36 @@ impl AccessToken {
         if requested_permissions.is_empty() {
             Ok(())
         } else {
-            Err(build_permissions_list(&requested_permissions))
+            Err(requested_permissions.build_permissions_list())
         }
     }
 }
 
-pub(crate) fn build_permissions_list(permissions_in: &Permissions) -> Vec<Permission> {
-    const USIZE_BITS: usize = std::mem::size_of::<usize>() * 8;
-    const USIZE_MASK: u32 = USIZE_BITS as u32 - 1;
-    let mut permissions = Vec::new();
+pub trait PermissionsListBuilder {
+    fn build_permissions_list(&self) -> Vec<Permission>;
+}
 
-    for (block_num, bytes) in permissions_in.inner().iter().enumerate() {
-        let mut bytes = *bytes;
+impl PermissionsListBuilder for Permissions {
+    fn build_permissions_list(&self) -> Vec<Permission> {
+        const USIZE_BITS: usize = std::mem::size_of::<usize>() * 8;
+        const USIZE_MASK: u32 = USIZE_BITS as u32 - 1;
+        let mut permissions = Vec::new();
 
-        while bytes != 0 {
-            let item = USIZE_MASK - bytes.leading_zeros();
-            bytes ^= 1 << item;
-            if let Some(permission) =
-                Permission::from_id(((block_num * USIZE_BITS) + item as usize) as u16)
-            {
-                permissions.push(permission);
+        for (block_num, bytes) in self.inner().iter().enumerate() {
+            let mut bytes = *bytes;
+
+            while bytes != 0 {
+                let item = USIZE_MASK - bytes.leading_zeros();
+                bytes ^= 1 << item;
+                if let Some(permission) =
+                    Permission::from_id(((block_num * USIZE_BITS) + item as usize) as u16)
+                {
+                    permissions.push(permission);
+                }
             }
         }
+        permissions
     }
-    permissions
 }
 
 pub struct DefaultPermissions {

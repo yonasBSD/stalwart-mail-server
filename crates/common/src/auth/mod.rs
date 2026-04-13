@@ -32,7 +32,7 @@ pub mod oauth;
 pub mod permissions;
 pub mod rate_limit;
 
-pub const FALLBACK_ADMIN_ID: u32 = u32::MAX;
+pub const RECOVERY_ADMIN_ID: u32 = u32::MAX;
 const PERMISSIONS_BITSET_SIZE: usize = Permission::COUNT.div_ceil(std::mem::size_of::<usize>());
 pub type Permissions = Bitset<PERMISSIONS_BITSET_SIZE>;
 
@@ -141,7 +141,7 @@ pub struct AccessTokenInner {
 }
 
 #[derive(Debug, Default, Hash, Clone)]
-pub(crate) struct AccessScope {
+pub struct AccessScope {
     pub permissions: Permissions,
     pub credential_id: u32,
     pub expires_at: u64,

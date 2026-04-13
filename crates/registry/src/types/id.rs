@@ -88,10 +88,7 @@ impl Pickle for BlobId {
         stream.read_bytes(BLOB_HASH_LEN).map(|bytes| {
             BlobId::new(
                 BlobHash::try_from_hash_slice(bytes).unwrap(),
-                BlobClass::Reserved {
-                    account_id: 0,
-                    expires: 0,
-                },
+                BlobClass::default(),
             )
         })
     }

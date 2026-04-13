@@ -8,8 +8,8 @@ use super::AccessToken;
 use crate::{
     Server,
     auth::{
-        AccessScope, AccessTo, AccessTokenInner, AccountTenantIds, FALLBACK_ADMIN_ID, Permissions,
-        permissions::{BuildPermissions, build_permissions_list},
+        AccessScope, AccessTo, AccessTokenInner, AccountTenantIds, RECOVERY_ADMIN_ID, Permissions,
+        permissions::{BuildPermissions, PermissionsListBuilder},
     },
     network::limiter::{ConcurrencyLimiter, LimiterResult},
 };
@@ -286,7 +286,7 @@ impl Server {
                     self.build_access_token(account, account_id, revision, revision_account)
                         .await?
                         .into()
-                } else if account_id == FALLBACK_ADMIN_ID {
+                } else if account_id == RECOVERY_ADMIN_ID {
                     AccessTokenInner::new_admin().into()
                 } else {
                     return Err(trc::SecurityEvent::Unauthorized
@@ -627,10 +627,15 @@ impl AccessToken {
 
     pub fn permissions(&self) -> Vec<Permission> {
         if let Some(scope) = self.inner.scopes.get(self.scope_idx) {
-            build_permissions_list(&scope.permissions)
+            scope.permissions.build_permissions_list()
         } else {
             vec![]
         }
+    }
+
+    #[inline(always)]
+    pub fn access_scope(&self) -> Option<&AccessScope> {
+        self.inner.scopes.get(self.scope_idx)
     }
 
     pub(crate) fn permissions_bits(&self) -> &Permissions {
@@ -773,7 +778,7 @@ impl AccessTokenInner {
 
     pub fn new_admin() -> Self {
         AccessTokenInner {
-            account_id: FALLBACK_ADMIN_ID,
+            account_id: RECOVERY_ADMIN_ID,
             tenant_id: Default::default(),
             member_of: Default::default(),
             access_to: Default::default(),

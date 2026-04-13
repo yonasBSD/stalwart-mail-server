@@ -376,6 +376,7 @@ pub(crate) async fn task_get(
     } else {
         task_ids(get.server, get.server.core.jmap.get_max_objects).await?
     };
+    let has_due_field = get.properties.is_empty() || get.properties.contains(&Property::Due);
 
     for id in ids {
         if let Some(task) = get
@@ -386,7 +387,16 @@ pub(crate) async fn task_get(
             )))
             .await?
         {
-            get.insert(id, task.into_value());
+            let due = task.due_timestamp();
+            let mut task = task.into_value();
+            if has_due_field && due != u64::MAX {
+                task.as_object_mut().unwrap().insert_unchecked(
+                    Property::Due,
+                    UTCDateTime::from_timestamp(due as i64).into_value(),
+                );
+            }
+
+            get.insert(id, task);
         } else {
             get.not_found(id);
         }
@@ -400,6 +410,7 @@ pub(crate) async fn task_query(
 ) -> trc::Result<QueryResponseBuilder> {
     let mut due_from = 100u64;
     let mut due_to = u64::MAX;
+    let mut typ = None;
 
     req.request
         .extract_filters(|property, op, value| match property {
@@ -435,8 +446,23 @@ pub(crate) async fn task_query(
                     false
                 }
             }
+            Property::Type => {
+                if let Some(typ_) = value.as_str().and_then(TaskType::parse) {
+                    typ = Some(typ_);
+                    true
+                } else {
+                    false
+                }
+            }
             _ => false,
         })?;
+
+    if let Some(anchor) = req.request.anchor {
+        let anchor = anchor.id();
+        if anchor > due_from {
+            due_from = anchor;
+        }
+    }
 
     if req
         .request
@@ -456,15 +482,13 @@ pub(crate) async fn task_query(
 
     // Build response
     let mut response = QueryResponseBuilder::new(
-        req.server.core.jmap.query_max_results,
+        req.server.core.jmap.query_max_results + 1,
         req.server.core.jmap.query_max_results,
         State::Initial,
         &req.request,
     );
 
-    if response.response.total.is_some() {
-        response.response.total = Some(0);
-    }
+    let mut total = 0;
 
     let from_key = ValueKey::from(ValueClass::TaskQueue(TaskQueueClass::Due {
         id: 0,
@@ -480,11 +504,25 @@ pub(crate) async fn task_query(
         .iterate(
             IterateParams::new(from_key, to_key)
                 .set_ascending(params.sort_ascending)
-                .no_values(),
-            |key, _| {
+                .set_values(typ.is_some()),
+            |key, value| {
+                if let Some(typ) = typ {
+                    let task_type =
+                        TaskType::from_id(value.deserialize_be_u16(0)?).ok_or_else(|| {
+                            trc::StoreEvent::DataCorruption
+                                .into_err()
+                                .ctx(trc::Key::Key, key.to_vec())
+                                .ctx(trc::Key::Value, value.to_vec())
+                                .caused_by(trc::location!())
+                        })?;
+                    if task_type != typ {
+                        return Ok(true);
+                    }
+                }
+
                 let id = key.deserialize_be_u64(U64_LEN)?;
-                if let Some(total) = response.response.total.as_mut() {
-                    *total += 1;
+                total += 1;
+                if response.response.total.is_some() {
                     if !response.is_full() {
                         response.add_id(id.into());
                     }
@@ -497,7 +535,11 @@ pub(crate) async fn task_query(
         .await
         .caused_by(trc::location!())?;
 
-    if let (Some(total), Some(limit)) = (response.response.total, response.response.limit)
+    if response.response.total.is_some() {
+        response.response.total = Some(total);
+    }
+
+    if let Some(limit) = response.response.limit
         && total < limit
     {
         response.response.limit = None;

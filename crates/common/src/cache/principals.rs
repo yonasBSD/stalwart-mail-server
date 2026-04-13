@@ -11,8 +11,8 @@ use crate::{
         ACCOUNT_FLAG_ENCRYPT_APPEND, ACCOUNT_FLAG_ENCRYPT_METHOD_PGP,
         ACCOUNT_FLAG_ENCRYPT_METHOD_SMIME, ACCOUNT_FLAG_ENCRYPT_TRAIN_SPAM_FILTER, ACCOUNT_IS_USER,
         AccountCache, AccountInfo, AccountTenantIds, DOMAIN_FLAG_RELAY, DOMAIN_FLAG_SUB_ADDRESSING,
-        DomainCache, EmailAddress, EmailAddressRef, EmailCache, FALLBACK_ADMIN_ID,
-        MailingListCache, PermissionsGroup, RoleCache, TenantCache, permissions::BuildPermissions,
+        DomainCache, EmailAddress, EmailAddressRef, EmailCache, MailingListCache, PermissionsGroup,
+        RECOVERY_ADMIN_ID, RoleCache, TenantCache, permissions::BuildPermissions,
     },
     config::smtp::auth::DkimSigner,
     expr::if_block::BootstrapExprExt,
@@ -281,7 +281,7 @@ impl Server {
     pub async fn account(&self, account_id: u32) -> trc::Result<Arc<AccountCache>> {
         if let Some(account) = self.try_account(account_id).await? {
             Ok(account)
-        } else if account_id == FALLBACK_ADMIN_ID {
+        } else if account_id == RECOVERY_ADMIN_ID {
             Ok(Arc::new(AccountCache {
                 name: self
                     .registry()
@@ -289,7 +289,7 @@ impl Server {
                     .map(|(name, _)| name.as_str())
                     .unwrap_or("recovery-admin")
                     .into(),
-                id: FALLBACK_ADMIN_ID,
+                id: RECOVERY_ADMIN_ID,
                 addresses: Default::default(),
                 id_tenant: Default::default(),
                 id_member_of: Default::default(),

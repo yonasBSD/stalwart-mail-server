@@ -6,7 +6,7 @@
 
 use crate::{RegistryStore, RegistryStoreInner, Store};
 use registry::schema::structs::DataStore;
-use std::path::PathBuf;
+use std::{net::IpAddr, path::PathBuf};
 use utils::snowflake::SnowflakeIdGenerator;
 
 impl RegistryStoreInner {
@@ -39,7 +39,15 @@ impl RegistryStoreInner {
             env_hostname: std::env::var("STALWART_HOSTNAME")
                 .ok()
                 .filter(|h| !h.is_empty())
-                .unwrap_or_else(|| gethostname::gethostname().to_string_lossy().into_owned())
+                .unwrap_or_else(|| {
+                    let host = gethostname::gethostname();
+                    let host = host.to_string_lossy();
+                    if host.parse::<IpAddr>().is_err() {
+                        host.into_owned()
+                    } else {
+                        "localhost".to_string()
+                    }
+                })
                 .to_lowercase(),
         }
     }

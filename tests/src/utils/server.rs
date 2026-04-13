@@ -18,7 +18,7 @@ use crate::{
 use ahash::AHashMap;
 use common::{
     BuildServer, Caches, Core, Data, DavResources, Inner, Server,
-    auth::FALLBACK_ADMIN_ID,
+    auth::RECOVERY_ADMIN_ID,
     config::{
         server::{Listeners, ServerProtocol},
         storage::Storage,
@@ -29,6 +29,7 @@ use common::{
         boot::{IpcReceivers, build_ipc},
         defaults::BootstrapDefaults,
     },
+    psl,
 };
 use email::message::metadata::MessageMetadata;
 use groupware::cache::GroupwareCache;
@@ -42,8 +43,8 @@ use registry::{
         enums::{DataStoreType, EventPolicy, NetworkListenerProtocol, TracingLevel},
         prelude::{Object, ObjectType, SocketAddr},
         structs::{
-            Authentication, Certificate, NetworkListener, PublicText, SecretKeyFile, SecretText,
-            Tracer, TracerStdout,
+            Authentication, Certificate, Domain, NetworkListener, PublicText, SecretKeyFile,
+            SecretText, SystemSettings, Tracer, TracerStdout,
         },
     },
     types::{EnumImpl, datetime::UTCDateTime, map::Map},
@@ -91,7 +92,6 @@ pub struct TestServerBuilder {
 
 impl TestServerBuilder {
     pub async fn new(test_name: &str) -> Self {
-        //let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
         let reset = std::env::var("NO_INSERT").is_err();
 
         Self::new_with_role(test_name, "mail.example.org".to_string(), None, reset).await
@@ -265,6 +265,21 @@ impl TestServerBuilder {
                 .map(|log| TracingLevel::parse(&log).expect("Invalid log level"))
                 .ok();
 
+            // Add default domain
+            let default_domain = psl::domain_str(self.bootstrap.registry.local_hostname()).unwrap();
+            let default_domain_id = self
+                .insert_object(Domain {
+                    name: default_domain.to_string(),
+                    ..Default::default()
+                })
+                .await;
+            self.insert_object(SystemSettings {
+                default_hostname: self.bootstrap.registry.local_hostname().to_string(),
+                default_domain_id,
+                ..Default::default()
+            })
+            .await;
+
             self.insert_object(Tracer::Stdout(TracerStdout {
                 enable: level.is_some() || self.logging_enabled,
                 level: level.unwrap_or(TracingLevel::Info),
@@ -432,7 +447,7 @@ impl TestServerBuilder {
             "popolna_zapora",
             &[],
             "Recovery Admin",
-            Id::from(FALLBACK_ADMIN_ID),
+            Id::from(RECOVERY_ADMIN_ID),
         );
         admin.http_listener_port = self.http_listener_port;
 

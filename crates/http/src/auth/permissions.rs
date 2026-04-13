@@ -4,10 +4,17 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{Server, auth::AccessToken};
+use common::{
+    Server,
+    auth::{AccessToken, RECOVERY_ADMIN_ID, permissions::PermissionsListBuilder},
+};
 use http_proto::{HttpResponse, JsonResponse, ToHttpResponse};
-use registry::schema::enums::{Locale, Permission};
+use registry::{
+    schema::enums::{Locale, Permission},
+    types::EnumImpl,
+};
 use serde::Serialize;
+use utils::DomainPart;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Account {
@@ -43,9 +50,67 @@ impl AccountApiHandler for Server {
         // SPDX-SnippetEnd
 
         let account_info = self.account_info(access_token.account_id()).await?;
+        let is_external_directory = if let Some(domain_name) = account_info.name().try_domain_part()
+            && self.get_directory_for_domain(domain_name).await?.is_some()
+        {
+            true
+        } else {
+            false
+        };
+        let is_recovery_admin = access_token.account_id() == RECOVERY_ADMIN_ID;
+        let permissions = if let Some(scope) = access_token.access_scope() {
+            let mut permissions = scope.permissions.clone();
+
+            for p in [
+                Permission::SysDmarcInternalReportUpdate,
+                Permission::SysDmarcInternalReportCreate,
+                Permission::SysDmarcExternalReportUpdate,
+                Permission::SysDmarcExternalReportCreate,
+                Permission::SysTlsInternalReportUpdate,
+                Permission::SysTlsInternalReportCreate,
+                Permission::SysTlsExternalReportUpdate,
+                Permission::SysTlsExternalReportCreate,
+                Permission::SysArfExternalReportCreate,
+                Permission::SysArfExternalReportUpdate,
+                Permission::SysQueuedMessageCreate,
+                Permission::SysLogCreate,
+                Permission::SysLogDestroy,
+                Permission::SysLogUpdate,
+            ] {
+                permissions.clear(p.to_id() as usize);
+            }
+
+            if is_external_directory || is_recovery_admin {
+                permissions.clear(Permission::SysAccountPasswordGet.to_id() as usize);
+                permissions.clear(Permission::SysAccountPasswordUpdate.to_id() as usize);
+            }
+
+            if is_recovery_admin {
+                for p in [
+                    Permission::SysAccountSettingsGet,
+                    Permission::SysAccountSettingsUpdate,
+                    Permission::SysApiKeyCreate,
+                    Permission::SysApiKeyUpdate,
+                    Permission::SysApiKeyDestroy,
+                    Permission::SysApiKeyQuery,
+                    Permission::SysApiKeyGet,
+                    Permission::SysAppPasswordCreate,
+                    Permission::SysAppPasswordUpdate,
+                    Permission::SysAppPasswordDestroy,
+                    Permission::SysAppPasswordQuery,
+                    Permission::SysAppPasswordGet,
+                ] {
+                    permissions.clear(p.to_id() as usize);
+                }
+            }
+
+            permissions.build_permissions_list()
+        } else {
+            Vec::new()
+        };
 
         Ok(JsonResponse::new(Account {
-            permissions: access_token.permissions(),
+            permissions,
             edition,
             locale: account_info.locale(),
         })

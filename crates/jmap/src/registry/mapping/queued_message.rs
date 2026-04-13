@@ -28,7 +28,7 @@ use registry::{
             QueuedRecipient, RecipientStatus, ServerResponse,
         },
     },
-    types::{datetime::UTCDateTime, ipaddr::IpAddr, list::List, map::Map},
+    types::{datetime::UTCDateTime, ipaddr::IpAddr, map::Map},
 };
 use smtp::queue::{
     self, ArchivedError, ArchivedErrorDetails, ArchivedMessage, ArchivedStatus, ErrorDetails,
@@ -41,11 +41,11 @@ use store::{
     Deserialize, IterateParams, U64_LEN, ValueKey,
     ahash::AHashSet,
     registry::{RegistryFilterOp, RegistryQuery},
-    write::{AlignedBytes, Archive, QueueClass, ValueClass, key::DeserializeBigEndian},
+    write::{AlignedBytes, Archive, QueueClass, ValueClass, key::DeserializeBigEndian, now},
 };
 use trc::AddContext;
 use types::{blob::BlobId, blob_hash::BlobHash, id::Id};
-use utils::DomainPart;
+use utils::{DomainPart, map::vec_map::VecMap};
 
 pub(crate) async fn queued_message_set(
     mut set: RegistrySetResponse<'_>,
@@ -83,6 +83,7 @@ pub(crate) async fn queued_message_set(
         // Process patches
         let prev_event = archived_message.inner.next_delivery_event(None);
         let mut message = map_message(archived_message.inner);
+        let prev_next_retry = message.next_retry;
         for (key, value) in value.into_expanded_object() {
             let ptr = match key {
                 Key::Property(prop) => {
@@ -96,6 +97,7 @@ pub(crate) async fn queued_message_set(
                 continue 'outer;
             }
         }
+        let set_next_retry = (message.next_retry != prev_next_retry).then_some(message.next_retry);
 
         // Process changes
         let mut has_changes = false;
@@ -112,7 +114,7 @@ pub(crate) async fn queued_message_set(
             if !message
                 .recipients
                 .iter()
-                .any(|r| r.address.as_str() == rcpt.address.as_ref())
+                .any(|(address, _)| address.as_str() == rcpt.address.as_ref())
             {
                 rcpt.status = Status::PermanentFailure(ErrorDetails {
                     entity: "localhost".into(),
@@ -121,11 +123,11 @@ pub(crate) async fn queued_message_set(
                 has_changes = true;
             }
         }
-        for rcpt in message.recipients.into_iter() {
+        for (address, rcpt) in message.recipients.into_iter() {
             let Some(queued_rcpt) = queued_message
                 .recipients
                 .iter_mut()
-                .find(|r| r.address.as_ref() == rcpt.address.as_str())
+                .find(|r| r.address.as_ref() == address.as_str())
             else {
                 continue;
             };
@@ -160,6 +162,13 @@ pub(crate) async fn queued_message_set(
                     *field = schedule;
                     has_changes = true;
                 }
+            }
+
+            if let Some(next_retry) = set_next_retry
+                && !matches!(queued_rcpt.status, Status::PermanentFailure(_))
+            {
+                queued_rcpt.retry.due = next_retry.timestamp() as u64;
+                has_changes = true;
             }
 
             if matches!(rcpt.status, RecipientStatus::Scheduled)
@@ -461,8 +470,12 @@ pub(crate) async fn queued_message_query(
             &req.request,
         );
 
-        if response.response.total.is_some() {
-            response.response.total = Some(0);
+        let mut total = 0;
+        if let Some(anchor) = req.request.anchor {
+            let anchor = anchor.id();
+            if anchor > due_from {
+                due_from = anchor;
+            }
         }
 
         let from_key = ValueKey::from(ValueClass::Queue(QueueClass::MessageEvent(
@@ -493,8 +506,8 @@ pub(crate) async fn queued_message_query(
                         queue_name.as_slice() == key.get(U64_LEN * 2..).unwrap_or_default()
                     }) && seen_ids.insert(id)
                     {
-                        if let Some(total) = response.response.total.as_mut() {
-                            *total += 1;
+                        total += 1;
+                        if response.response.total.is_some() {
                             if !response.is_full() {
                                 response.add_id(id.into());
                             }
@@ -510,7 +523,11 @@ pub(crate) async fn queued_message_query(
             .await
             .caused_by(trc::location!())?;
 
-        if let (Some(total), Some(limit)) = (response.response.total, response.response.limit)
+        if response.response.total.is_some() {
+            response.response.total = Some(total);
+        }
+
+        if let Some(limit) = response.response.limit
             && total < limit
         {
             response.response.limit = None;
@@ -546,9 +563,22 @@ fn map_message(message_in: &ArchivedMessage) -> QueuedMessage {
         priority: message_in.priority.to_native() as i64,
         received_from_ip: IpAddr(message_in.received_from_ip.as_ipaddr()),
         received_via_port: message_in.received_via_port.to_native() as u64,
-        recipients: List::with_capacity(message_in.recipients.len()),
-        return_path: message_in.return_path.to_string(),
+        recipients: VecMap::with_capacity(message_in.recipients.len()),
+        return_path: if !message_in.return_path.is_empty() {
+            message_in.return_path.to_string()
+        } else {
+            "<>".to_string()
+        },
         size: message_in.size.to_native(),
+        next_retry: UTCDateTime::from_timestamp(
+            message_in
+                .next_delivery_event(None)
+                .unwrap_or_else(now)
+                .cast_signed(),
+        ),
+        next_notify: message_in
+            .next_notify_event(None)
+            .map(|ts| UTCDateTime::from_timestamp(ts.cast_signed())),
     };
 
     // Parse flags
@@ -572,7 +602,6 @@ fn map_message(message_in: &ArchivedMessage) -> QueuedMessage {
     // Parse recipients
     for rcpt_in in message_in.recipients.iter() {
         let mut rcpt_out = QueuedRecipient {
-            address: rcpt_in.address.to_string(),
             expires: match &rcpt_in.expires {
                 ArchivedQueueExpiry::Ttl(ttl) => QueueExpiry::Ttl(QueueExpiryTtl {
                     expires_at: UTCDateTime::from_timestamp(
@@ -620,7 +649,9 @@ fn map_message(message_in: &ArchivedMessage) -> QueuedMessage {
             }
         }
 
-        message_out.recipients.push(rcpt_out);
+        message_out
+            .recipients
+            .append(rcpt_in.address.to_string(), rcpt_out);
     }
 
     message_out

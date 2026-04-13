@@ -17,8 +17,8 @@ pub struct QueryResponseBuilder {
     pub limit: usize,
     anchor: u64,
     anchor_offset: i32,
-    has_anchor: bool,
-    anchor_found: bool,
+    pub has_anchor: bool,
+    pub anchor_found: bool,
 
     pub response: QueryResponse,
 }

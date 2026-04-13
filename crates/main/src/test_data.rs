@@ -209,7 +209,7 @@ fn sample_queued_messages(blob_hashes: Vec<BlobHash>) -> Vec<Message> {
             size: raw_messages[1].len() as u64,
             quota_keys: Box::new([]),
         },
-        // Message 3: Report message with a permanent failure recipient
+        // Message 3: Report message with a temporary failure recipient
         Message {
             created: now,
             blob_hash: blob_hashes[2].clone(),
@@ -226,7 +226,7 @@ fn sample_queued_messages(blob_hashes: Vec<BlobHash>) -> Vec<Message> {
                 },
                 expires: QueueExpiry::Ttl(365 * 24 * 3600),
                 queue: Default::default(),
-                status: Status::PermanentFailure(ErrorDetails {
+                status: Status::TemporaryFailure(ErrorDetails {
                     entity: "mx.bigcorp.com".into(),
                     details: Error::ConnectionError("Rejected by policy".into()),
                 }),

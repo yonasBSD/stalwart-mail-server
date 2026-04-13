@@ -136,6 +136,12 @@ impl BootManager {
             .await
             .failed("⚠️ Startup failed");
         let mut bootstrap = Bootstrap::new(registry).await;
+
+        if matches!(import_export, StoreOp::None) {
+            // Add safe defaults if missing
+            bootstrap.insert_safe_defaults().await;
+        }
+
         let todo = "implement recovery mode, check env_recovery_mode in RegistryStoreInner";
 
         // Start listeners
@@ -150,9 +156,6 @@ impl BootManager {
 
         match import_export {
             StoreOp::None => {
-                // Add safe defaults if missing
-                bootstrap.insert_safe_defaults().await;
-
                 // Parse components
                 let core = Box::pin(Core::parse(&mut bootstrap, storage)).await;
                 let data = Data::parse(&mut bootstrap).await;

@@ -34,6 +34,7 @@ use spam_filter::{
 };
 use std::time::Instant;
 use store::write::now;
+use utils::map::vec_map::VecMap;
 
 pub(crate) async fn action_set(
     mut set: RegistrySetResponse<'_>,
@@ -343,10 +344,11 @@ async fn classify_spam(server: &Server, mut request: SpamClassify) -> Option<Spa
         is_tls: request.is_tls,
         env_from: &request.env_from,
         env_from_flags: match request.env_from_parameters {
-            SpamClassifyParameters::Bit7 => MAIL_BODY_7BIT,
-            SpamClassifyParameters::Bit8Mime8BitMIMEMessageContent => MAIL_BODY_BINARYMIME,
-            SpamClassifyParameters::BinaryMime => MAIL_BODY_8BITMIME,
-            SpamClassifyParameters::SmtpUtf8 => MAIL_SMTPUTF8,
+            Some(SpamClassifyParameters::Bit7) => MAIL_BODY_7BIT,
+            Some(SpamClassifyParameters::Bit8Mime8BitMIMEMessageContent) => MAIL_BODY_BINARYMIME,
+            Some(SpamClassifyParameters::BinaryMime) => MAIL_BODY_8BITMIME,
+            Some(SpamClassifyParameters::SmtpUtf8) => MAIL_SMTPUTF8,
+            None => 0,
         },
         env_rcpt_to: request.env_rcpt_to.iter().map(String::as_str).collect(),
         is_test: true,
@@ -371,20 +373,21 @@ async fn classify_spam(server: &Server, mut request: SpamClassify) -> Option<Spa
         SpamFilterAction::Reject | SpamFilterAction::Disabled => SpamClassifyResult::Reject,
     };
 
-    let mut tags = Vec::with_capacity(ctx.result.tags.len());
+    request.tags = VecMap::with_capacity(ctx.result.tags.len());
     for tag in ctx.result.tags {
         let (score, disposition) = match server.core.spam.lists.scores.get(&tag) {
             Some(SpamFilterAction::Allow(score)) => (*score, SpamClassifyTagDisposition::Score),
             Some(SpamFilterAction::Discard) => (0.0, SpamClassifyTagDisposition::Discard),
             _ => (0.0, SpamClassifyTagDisposition::Reject),
         };
-        tags.push(SpamClassifyTag {
-            disposition,
-            name: tag,
-            score: (score as f64).into(),
-        });
+        request.tags.append(
+            tag,
+            SpamClassifyTag {
+                disposition,
+                score: (score as f64).into(),
+            },
+        );
     }
-    request.tags = tags.into();
 
     Some(request)
 }

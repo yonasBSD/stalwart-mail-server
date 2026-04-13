@@ -239,8 +239,8 @@ async fn manage_queue() {
         let (sender, recipients) = envelopes.get(env_id.as_str()).unwrap();
         assert_eq!(&message.return_path, sender);
         'outer: for recipient in recipients {
-            for rcpt in message.recipients.iter() {
-                if &rcpt.address == recipient {
+            for (address, _) in message.recipients.iter() {
+                if address == recipient {
                     continue 'outer;
                 }
             }
@@ -253,7 +253,7 @@ async fn manage_queue() {
         let next_retry = created + hold_for;
         let next_notify = created + 2000 + hold_for;
         let expires = created + 3000 + hold_for;
-        for rcpt in message.recipients.iter() {
+        for (rcpt_address, rcpt) in message.recipients.iter() {
             if env_id == "c" {
                 let mut dt = rcpt.retry_due;
                 dt.add_seconds(-1);
@@ -274,7 +274,7 @@ async fn manage_queue() {
                     &message,
                 );
                 assert_eq!(&rcpt.status, &RecipientStatus::Scheduled, "{message:#?}");
-            } else if rcpt.address == "success@foobar.org" {
+            } else if rcpt_address == "success@foobar.org" {
                 assert_eq!(rcpt.retry_count, 0);
                 assert!(
                     matches!(&rcpt.status, RecipientStatus::Completed(_)),
@@ -390,16 +390,15 @@ async fn manage_queue() {
             .retry_count,
         2
     );
-    for rcpt in admin
+    for (rcpt_address, rcpt) in admin
         .registry_get::<QueuedMessage>(id_map["a"])
         .await
         .recipients
-        .values()
     {
         let next_retry = rcpt.retry_due.to_string();
         let matched =
             ["2200-01-01T00:00:00Z", "2199-12-31T23:59:59Z"].contains(&next_retry.as_str());
-        if rcpt.address.ends_with("example1.org") {
+        if rcpt_address.ends_with("example1.org") {
             assert!(matched, "{next_retry}");
         } else {
             assert!(!matched, "{next_retry}");
@@ -456,18 +455,18 @@ async fn manage_queue() {
         let message = admin.registry_get::<QueuedMessage>(id_map[id]).await;
 
         assert!(!message.recipients.is_empty());
-        for rcpt in message.recipients {
+        for (rcpt_address, rcpt) in message.recipients {
             match id {
                 "a" => {
-                    if rcpt.address.ends_with("example2.org") {
+                    if rcpt_address.ends_with("example2.org") {
                         assert!(matches!(&rcpt.status, RecipientStatus::PermanentFailure(_)));
                     } else {
                         assert!(matches!(&rcpt.status, RecipientStatus::Scheduled));
                     }
                 }
                 "c" => {
-                    if rcpt.address.ends_with("example2.com") {
-                        if rcpt.address == "rcpt6@example2.com" {
+                    if rcpt_address.ends_with("example2.com") {
+                        if rcpt_address == "rcpt6@example2.com" {
                             assert!(matches!(&rcpt.status, RecipientStatus::PermanentFailure(_)));
                         } else {
                             assert!(matches!(&rcpt.status, RecipientStatus::Scheduled));

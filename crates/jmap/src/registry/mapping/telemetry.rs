@@ -18,10 +18,10 @@ use crate::{
 use common::Server;
 use jmap_proto::types::state::State;
 use registry::{
-    jmap::IntoValue,
+    jmap::{IntoValue, JmapValue},
     schema::{
         prelude::Property,
-        structs::{Metric, Trace},
+        structs::{Metric, Trace, TraceEvent, TraceValue},
     },
     types::datetime::UTCDateTime,
 };
@@ -36,7 +36,7 @@ use store::{
     },
     write::{SearchIndex, TelemetryClass, ValueClass, key::DeserializeBigEndian, now},
 };
-use trc::{AddContext, EventType, MetricType};
+use trc::{AddContext, EventType, Key, MetricType};
 use types::id::Id;
 use utils::snowflake::SnowflakeIdGenerator;
 
@@ -65,6 +65,11 @@ pub(crate) async fn trace_get(
             .map(Id::from)
             .collect()
     };
+    let has_timestamp_field =
+        get.properties.is_empty() || get.properties.contains(&Property::Timestamp);
+    let has_from_field = get.properties.is_empty() || get.properties.contains(&Property::From);
+    let has_to_field = get.properties.is_empty() || get.properties.contains(&Property::To);
+    let has_size_field = get.properties.is_empty() || get.properties.contains(&Property::Size);
 
     for id in ids {
         let item_id = id.id();
@@ -76,13 +81,84 @@ pub(crate) async fn trace_get(
             ))))
             .await?
         {
-            get.insert(id, trace.into_value());
+            let mut values = Vec::with_capacity(4);
+
+            let mut got_timestamp = !has_timestamp_field;
+            let mut got_from = !has_from_field;
+            let mut got_to = !has_to_field;
+            let mut got_size = !has_size_field;
+
+            for event in trace.events.iter() {
+                if !got_timestamp {
+                    values.push((Property::Timestamp, event.timestamp.into_value()));
+                    got_timestamp = true;
+                }
+                if !got_from
+                    && let Some(value) = find_key_value(event, Key::From).map(value_as_string)
+                {
+                    values.push((Property::From, value));
+                    got_from = true;
+                }
+                if !got_to && let Some(value) = find_key_value(event, Key::To).map(value_as_string)
+                {
+                    values.push((Property::To, value));
+                    got_to = true;
+                }
+                if !got_size
+                    && let Some(value) = find_key_value(event, Key::Size).map(value_as_number)
+                {
+                    values.push((Property::Size, value));
+                    got_size = true;
+                }
+            }
+
+            let mut trace = trace.into_value();
+            let obj = trace.as_object_mut().unwrap();
+            for (key, value) in values {
+                obj.insert_unchecked(key, value);
+            }
+
+            get.insert(id, trace);
         } else {
             get.not_found(id);
         }
     }
 
     Ok(get)
+}
+
+fn find_key_value(span: &TraceEvent, key: Key) -> Option<&TraceValue> {
+    span.key_values
+        .iter()
+        .find_map(|kv| if kv.key == key { Some(&kv.value) } else { None })
+}
+
+fn value_as_string(value: &TraceValue) -> JmapValue<'static> {
+    match value {
+        TraceValue::String(s) => JmapValue::Str(s.value.clone().into()),
+        TraceValue::List(values) => {
+            let mut result = String::new();
+            for value in values.value.iter() {
+                if let TraceValue::String(s) = value {
+                    if !result.is_empty() {
+                        result.push_str("; ");
+                    }
+                    result.push_str(&s.value);
+                }
+            }
+            JmapValue::Str(result.into())
+        }
+        _ => JmapValue::Null,
+    }
+}
+
+fn value_as_number(value: &TraceValue) -> JmapValue<'static> {
+    match value {
+        TraceValue::Integer(i) => JmapValue::Number(i.value.into()),
+        TraceValue::UnsignedInt(u) => JmapValue::Number(u.value.into()),
+        TraceValue::Float(f) => JmapValue::Number(f.value.into_inner().into()),
+        _ => JmapValue::Null,
+    }
 }
 
 pub(crate) async fn metric_get(
@@ -393,7 +469,7 @@ pub(crate) async fn metric_query(
         .await
         .caused_by(trc::location!())?;
 
-    if response.response.total.is_none() {
+    if response.response.total.is_some() {
         response.response.total = Some(total);
     }
 

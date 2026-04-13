@@ -92,6 +92,12 @@ pub(crate) async fn log_query(
             _ => false,
         })?;
 
+    let anchor = req.request.anchor.map(|id| id.id()).unwrap_or(0);
+    let limit = std::cmp::min(
+        req.request.limit.unwrap_or(usize::MAX),
+        req.server.core.jmap.query_max_results,
+    );
+
     let params = req
         .request
         .extract_parameters(req.server.core.jmap.query_max_results, Property::Id.into())?;
@@ -102,23 +108,14 @@ pub(crate) async fn log_query(
             .details("Only sorting by 'id' is supported for logs"));
     }
 
-    if req.request.calculate_total.unwrap_or(false) {
-        return Err(trc::JmapEvent::CannotCalculateChanges
-            .into_err()
-            .details("Calculating total is not supported for logs"));
-    }
-
-    if req.request.anchor_offset.unwrap_or(0) != 0 || req.request.position.unwrap_or(0) != 0 {
+    if req.request.position.unwrap_or(0) != 0 {
         return Err(trc::JmapEvent::InvalidArguments
             .into_err()
             .details("Pagination is only possible using anchors for logs"));
     }
 
     let (tx, rx) = oneshot::channel();
-    let anchor = params.anchor.unwrap_or(0);
-    let limit = params
-        .limit
-        .unwrap_or(req.server.core.jmap.query_max_results);
+
     tokio::task::spawn_blocking(move || {
         let _ = tx.send(read_log_offsets(path, filter.as_deref(), anchor, limit));
     });
@@ -144,6 +141,7 @@ pub(crate) async fn log_query(
                 .details("Failed to read log files")
                 .caused_by(trc::location!())
         })?;
+    response.anchor_found = true;
 
     Ok(response)
 }
@@ -159,7 +157,7 @@ fn read_log_offsets(
 
     let mut entries = Vec::with_capacity(limit);
     let mut file_number = 0u64;
-    let mut found_anchor = false;
+    let mut found_anchor = anchor == 0;
     let file_anchor = anchor >> 48;
 
     'outer: for log in logs.into_iter() {
@@ -172,10 +170,12 @@ fn read_log_offsets(
             continue;
         }
 
-        let mut rev_lines = RevLines::new(File::open(log.path())?);
+        let file = File::open(log.path())?;
+        let file_size = file.metadata()?.len();
+        let mut rev_lines = RevLines::new(file);
         rev_lines.0.init_reader()?;
 
-        let mut offset = rev_lines.0.reader_cursor;
+        let mut offset = file_size;
 
         for line in rev_lines {
             let line = line?;

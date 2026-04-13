@@ -89,8 +89,9 @@ impl EmailConfig {
         let auth = bp.setting_infallible::<Authentication>().await;
 
         // Obtain default domain name
-        let default_domain_name = if let Some(default_domain) =
-            bp.get_infallible::<Domain>(system.default_domain_id).await
+        let default_domain_name = if system.default_domain_id.is_valid()
+            && let Some(default_domain) =
+                bp.get_infallible::<Domain>(system.default_domain_id).await
         {
             default_domain.name
         } else {

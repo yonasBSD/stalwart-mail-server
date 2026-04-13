@@ -24,6 +24,7 @@ use store::{
         bootstrap::Bootstrap,
         write::{RegistryWrite, RegistryWriteResult},
     },
+    write::BatchBuilder,
 };
 use types::id::Id;
 
@@ -381,88 +382,12 @@ async fn insert_safe_defaults(bp: &mut Bootstrap) -> trc::Result<()> {
         }
     }
 
-    let mut default_domain_id = None;
-    if bp.registry.count_object(ObjectType::Domain).await? == 0 {
-        match bp
-            .registry
-            .write(RegistryWrite::insert(
-                &Domain {
-                    name: psl::domain_str(bp.registry.local_hostname())
-                        .unwrap_or("localhost.localdomain")
-                        .to_string(),
-                    is_enabled: true,
-                    ..Default::default()
-                }
-                .into(),
-            ))
-            .await?
-        {
-            RegistryWriteResult::Success(id) => {
-                default_domain_id = Some(id);
-            }
-            err => {
-                bp.build_error(
-                    ObjectType::Domain.singleton(),
-                    format!("Failed to insert default domain: {err}"),
-                );
-            }
-        }
-
-        let todo = "review";
-        //#[cfg(not(feature = "test_mode"))]
-        /*if let Some(domain_id) = default_domain_id {
-            let now = store::write::now();
-            let signature_rsa = DkimSignature::Dkim1RsaSha256(Dkim1Signature {
-                domain_id,
-                stage: DkimSignatureStage::Testing,
-                selector: format!("rsa-{now}"),
-                private_key: DkimPrivateKey::Value(SecretTextValue {
-                    secret: crate::network::dkim::generate_dkim_private_key(
-                        DkimSignatureType::Dkim1RsaSha256,
-                    )
-                    .await?
-                    .map_err(|err| {
-                        trc::EventType::Dkim(trc::DkimEvent::BuildError)
-                            .into_err()
-                            .reason(err)
-                            .caused_by(trc::location!())
-                    })?,
-                }),
-                ..Default::default()
-            });
-            let signature_ed = DkimSignature::Dkim1Ed25519Sha256(Dkim1Signature {
-                domain_id,
-                enabled: true,
-                selector: format!("ed-{now}"),
-                private_key: DkimPrivateKey::Value(SecretTextValue {
-                    secret: crate::network::dkim::generate_dkim_private_key(
-                        DkimSignatureType::Dkim1Ed25519Sha256,
-                    )
-                    .await?
-                    .map_err(|err| {
-                        trc::EventType::Dkim(trc::DkimEvent::BuildError)
-                            .into_err()
-                            .reason(err)
-                            .caused_by(trc::location!())
-                    })?,
-                }),
-                ..Default::default()
-            });
-
-            for signature in [signature_rsa, signature_ed] {
-                bp.registry
-                    .write(RegistryWrite::insert(&signature.into()))
-                    .await?;
-            }
-        }*/
-    }
-
+    #[cfg(not(any(feature = "dev_mode", feature = "test_mode")))]
     if bp.registry.count_object(ObjectType::SystemSettings).await? == 0 {
         bp.registry
             .write(RegistryWrite::insert(
                 &SystemSettings {
                     default_hostname: bp.registry.local_hostname().to_string(),
-                    default_domain_id: default_domain_id.unwrap_or(Id::new(0)),
                     ..Default::default()
                 }
                 .into(),
@@ -546,6 +471,21 @@ async fn insert_safe_defaults(bp: &mut Bootstrap) -> trc::Result<()> {
                 .into(),
             ))
             .await?;
+    }
+
+    if bp.registry.count_object(ObjectType::SpamRule).await? == 0
+        && bp
+            .registry
+            .object::<SpamSettings>(Id::singleton())
+            .await?
+            .is_none_or(|spam| spam.spam_filter_rules_url.is_some())
+    {
+        let mut batch = BatchBuilder::new();
+        batch.schedule_task(Task::SpamFilterMaintenance(TaskSpamFilterMaintenance {
+            maintenance_type: TaskSpamFilterMaintenanceType::UpdateRules,
+            status: TaskStatus::now(),
+        }));
+        bp.data_store.write(batch.build_all()).await?;
     }
 
     Ok(())

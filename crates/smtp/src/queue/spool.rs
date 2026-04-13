@@ -803,4 +803,26 @@ impl ArchivedMessage {
 
         next_delivery
     }
+
+    pub fn next_notify_event(&self, queue: Option<QueueName>) -> Option<u64> {
+        let mut next_notify = None;
+
+        for rcpt in self.recipients.iter().filter(|d| {
+            matches!(
+                d.status,
+                ArchivedStatus::Scheduled | ArchivedStatus::TemporaryFailure(_)
+            ) && queue.is_none_or(|q| d.queue == q)
+        }) {
+            let notify_due = rcpt.notify.due.to_native();
+            if let Some(next_notify) = &mut next_notify {
+                if notify_due < *next_notify {
+                    *next_notify = notify_due;
+                }
+            } else {
+                next_notify = Some(notify_due);
+            }
+        }
+
+        next_notify
+    }
 }
