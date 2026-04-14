@@ -289,6 +289,7 @@ impl Default for DefaultPermissions {
                         default.superuser.push(permission);
                     } else if name.starts_with("sysDomain")
                         || name.starts_with("sysDkimSignature")
+                        || name.starts_with("sysAcmeProvider")
                         || name.starts_with("sysAccount")
                         || name.starts_with("sysRole")
                         || name.starts_with("sysOAuthClient")

@@ -24,13 +24,12 @@ use mail_parser::{
     parsers::fields::thread::thread_name,
 };
 use registry::{
-    pickle::Pickle,
     schema::{
         enums::IndexDocumentType,
         prelude::{ObjectType, Permission, Property},
         structs::{SpamTrainingSample, Task, TaskIndexDocument, TaskMergeThreads, TaskStatus},
     },
-    types::{EnumImpl, datetime::UTCDateTime, id::ObjectId, map::Map},
+    types::{EnumImpl, ObjectImpl, datetime::UTCDateTime, id::ObjectId, map::Map},
 };
 use std::future::Future;
 use std::{borrow::Cow, cmp::Ordering, fmt::Write, time::Instant};

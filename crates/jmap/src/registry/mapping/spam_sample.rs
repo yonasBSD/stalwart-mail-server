@@ -17,13 +17,12 @@ use jmap_tools::JsonPointer;
 use mail_parser::{MessageParser, parsers::fields::thread::thread_name};
 use registry::{
     jmap::{IntoValue, JsonPointerPatch, RegistryJsonPatch},
-    pickle::Pickle,
     schema::{
         enums::Permission,
         prelude::{ObjectType, Property},
         structs::SpamTrainingSample,
     },
-    types::{EnumImpl, datetime::UTCDateTime, id::ObjectId},
+    types::{EnumImpl, ObjectImpl, datetime::UTCDateTime, id::ObjectId},
 };
 use std::str::FromStr;
 use store::{

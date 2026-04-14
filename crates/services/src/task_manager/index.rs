@@ -578,9 +578,8 @@ async fn delete_email_metadata(
                 {
                     use email::message::metadata::MESSAGE_RECEIVED_MASK;
                     use registry::{
-                        pickle::Pickle,
                         schema::structs::{ArchivedEmail, ArchivedItem},
-                        types::{datetime::UTCDateTime, id::ObjectId},
+                        types::{ObjectImpl, datetime::UTCDateTime, id::ObjectId},
                     };
                     use store::{
                         SerializeInfallible,

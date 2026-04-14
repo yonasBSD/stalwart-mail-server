@@ -22,9 +22,8 @@ use common::{
     storage::index::ObjectIndexBuilder,
 };
 use registry::{
-    pickle::Pickle,
     schema::structs::{Task, TaskCalendarAlarmEmail, TaskCalendarAlarmNotification, TaskStatus},
-    types::{EnumImpl, datetime::UTCDateTime},
+    types::{EnumImpl, ObjectImpl, datetime::UTCDateTime},
 };
 use store::{
     IterateParams, SerializeInfallible, U32_LEN, ValueKey,

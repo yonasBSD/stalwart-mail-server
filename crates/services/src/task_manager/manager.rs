@@ -26,13 +26,12 @@ use common::config::server::ServerProtocol;
 use common::network::limiter::ConcurrencyLimiter;
 use common::network::{ServerInstance, TcpAcceptor};
 use common::{Inner, Server};
-use registry::pickle::Pickle;
 use registry::schema::enums::TaskType;
 use registry::schema::structs::{
     Task, TaskManager, TaskRetryStrategy, TaskStatus, TaskStatusFailed, TaskStatusRetry,
 };
-use registry::types::EnumImpl;
 use registry::types::datetime::UTCDateTime;
+use registry::types::{EnumImpl, ObjectImpl};
 use std::collections::hash_map::Entry;
 use std::future::Future;
 use std::time::Duration;

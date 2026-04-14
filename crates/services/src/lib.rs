@@ -6,7 +6,7 @@
 
 use broadcast::publisher::spawn_broadcast_publisher;
 use common::{
-    Inner,
+    BuildServer, Inner,
     manager::boot::{BootManager, IpcReceivers},
 };
 use state_manager::manager::spawn_push_router;
@@ -29,19 +29,11 @@ pub trait SpawnServices {
 impl StartServices for BootManager {
     async fn start_services(&mut self) {
         // Unpack webadmin
-        if let Err(err) = self
-            .inner
+        self.inner
             .data
             .applications
-            .unpack(&self.inner.shared_core.load().storage.blob)
-            .await
-        {
-            trc::event!(
-                Resource(trc::ResourceEvent::Error),
-                Reason = err,
-                Details = "Failed to unpack application bundle"
-            );
-        }
+            .unpack_all(&self.inner.build_server(), false)
+            .await;
 
         self.ipc_rxs.spawn_services(self.inner.clone());
     }

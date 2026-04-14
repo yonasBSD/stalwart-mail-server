@@ -88,7 +88,7 @@ impl Deserialize for Object {
     fn deserialize_with_key(key: &[u8], bytes: &[u8]) -> trc::Result<Self> {
         let revision = xxhash_rust::xxh3::xxh3_64(bytes);
         ObjectType::from_id(key.deserialize_be_u16(0)?)
-            .and_then(|object_id| ObjectInner::unpickle(object_id, &mut PickledStream::new(bytes)))
+            .and_then(|object_id| ObjectInner::unpickle(object_id, &mut PickledStream::new(bytes)?))
             .map(|inner| Object { revision, inner })
             .ok_or_else(|| {
                 trc::EventType::Registry(trc::RegistryEvent::DeserializationError)
@@ -105,61 +105,66 @@ impl Deserialize for Object {
 
 impl Deserialize for Task {
     fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
-        let mut stream = PickledStream::new(bytes);
-        Task::unpickle(&mut stream).ok_or_else(|| {
-            trc::EventType::Registry(trc::RegistryEvent::DeserializationError)
-                .into_err()
-                .caused_by(trc::location!())
-                .ctx(trc::Key::Value, bytes)
-        })
+        PickledStream::new(bytes)
+            .and_then(|mut stream| Self::unpickle(&mut stream))
+            .ok_or_else(|| {
+                trc::EventType::Registry(trc::RegistryEvent::DeserializationError)
+                    .into_err()
+                    .caused_by(trc::location!())
+                    .ctx(trc::Key::Value, bytes)
+            })
     }
 }
 
 impl Deserialize for SpamTrainingSample {
     fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
-        let mut stream = PickledStream::new(bytes);
-        SpamTrainingSample::unpickle(&mut stream).ok_or_else(|| {
-            trc::EventType::Registry(trc::RegistryEvent::DeserializationError)
-                .into_err()
-                .caused_by(trc::location!())
-                .ctx(trc::Key::Value, bytes)
-        })
+        PickledStream::new(bytes)
+            .and_then(|mut stream| Self::unpickle(&mut stream))
+            .ok_or_else(|| {
+                trc::EventType::Registry(trc::RegistryEvent::DeserializationError)
+                    .into_err()
+                    .caused_by(trc::location!())
+                    .ctx(trc::Key::Value, bytes)
+            })
     }
 }
 
 impl Deserialize for ArchivedItem {
     fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
-        let mut stream = PickledStream::new(bytes);
-        ArchivedItem::unpickle(&mut stream).ok_or_else(|| {
-            trc::EventType::Registry(trc::RegistryEvent::DeserializationError)
-                .into_err()
-                .caused_by(trc::location!())
-                .ctx(trc::Key::Value, bytes)
-        })
+        PickledStream::new(bytes)
+            .and_then(|mut stream| Self::unpickle(&mut stream))
+            .ok_or_else(|| {
+                trc::EventType::Registry(trc::RegistryEvent::DeserializationError)
+                    .into_err()
+                    .caused_by(trc::location!())
+                    .ctx(trc::Key::Value, bytes)
+            })
     }
 }
 
 impl Deserialize for TlsInternalReport {
     fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
-        let mut stream = PickledStream::new(bytes);
-        TlsInternalReport::unpickle(&mut stream).ok_or_else(|| {
-            trc::EventType::Registry(trc::RegistryEvent::DeserializationError)
-                .into_err()
-                .caused_by(trc::location!())
-                .ctx(trc::Key::Value, bytes)
-        })
+        PickledStream::new(bytes)
+            .and_then(|mut stream| Self::unpickle(&mut stream))
+            .ok_or_else(|| {
+                trc::EventType::Registry(trc::RegistryEvent::DeserializationError)
+                    .into_err()
+                    .caused_by(trc::location!())
+                    .ctx(trc::Key::Value, bytes)
+            })
     }
 }
 
 impl Deserialize for DmarcInternalReport {
     fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
-        let mut stream = PickledStream::new(bytes);
-        DmarcInternalReport::unpickle(&mut stream).ok_or_else(|| {
-            trc::EventType::Registry(trc::RegistryEvent::DeserializationError)
-                .into_err()
-                .caused_by(trc::location!())
-                .ctx(trc::Key::Value, bytes)
-        })
+        PickledStream::new(bytes)
+            .and_then(|mut stream| Self::unpickle(&mut stream))
+            .ok_or_else(|| {
+                trc::EventType::Registry(trc::RegistryEvent::DeserializationError)
+                    .into_err()
+                    .caused_by(trc::location!())
+                    .ctx(trc::Key::Value, bytes)
+            })
     }
 }
 
@@ -208,24 +213,26 @@ impl Deserialize for ObjectIdVersioned {
 
 impl Deserialize for Trace {
     fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
-        let mut stream = PickledStream::new(bytes);
-        Trace::unpickle(&mut stream).ok_or_else(|| {
-            trc::EventType::Registry(trc::RegistryEvent::DeserializationError)
-                .into_err()
-                .caused_by(trc::location!())
-                .ctx(trc::Key::Value, bytes)
-        })
+        PickledStream::new(bytes)
+            .and_then(|mut stream| Self::unpickle(&mut stream))
+            .ok_or_else(|| {
+                trc::EventType::Registry(trc::RegistryEvent::DeserializationError)
+                    .into_err()
+                    .caused_by(trc::location!())
+                    .ctx(trc::Key::Value, bytes)
+            })
     }
 }
 
 impl Deserialize for Metric {
     fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
-        let mut stream = PickledStream::new(bytes);
-        Metric::unpickle(&mut stream).ok_or_else(|| {
-            trc::EventType::Registry(trc::RegistryEvent::DeserializationError)
-                .into_err()
-                .caused_by(trc::location!())
-                .ctx(trc::Key::Value, bytes)
-        })
+        PickledStream::new(bytes)
+            .and_then(|mut stream| Self::unpickle(&mut stream))
+            .ok_or_else(|| {
+                trc::EventType::Registry(trc::RegistryEvent::DeserializationError)
+                    .into_err()
+                    .caused_by(trc::location!())
+                    .ctx(trc::Key::Value, bytes)
+            })
     }
 }

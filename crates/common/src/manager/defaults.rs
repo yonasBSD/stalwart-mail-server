@@ -24,9 +24,7 @@ use store::{
         bootstrap::Bootstrap,
         write::{RegistryWrite, RegistryWriteResult},
     },
-    write::BatchBuilder,
 };
-use types::id::Id;
 
 pub const ASN_IPV4: &str = "https://cdn.jsdelivr.net/npm/@ip-location-db/asn/asn-ipv4.csv";
 pub const ASN_IPV6: &str = "https://cdn.jsdelivr.net/npm/@ip-location-db/asn/asn-ipv6.csv";
@@ -473,19 +471,47 @@ async fn insert_safe_defaults(bp: &mut Bootstrap) -> trc::Result<()> {
             .await?;
     }
 
-    if bp.registry.count_object(ObjectType::SpamRule).await? == 0
-        && bp
-            .registry
-            .object::<SpamSettings>(Id::singleton())
-            .await?
-            .is_none_or(|spam| spam.spam_filter_rules_url.is_some())
+    #[cfg(not(feature = "test_mode"))]
+    if bp.registry.count_object(ObjectType::Application).await? == 0 {
+        bp.registry
+            .write(RegistryWrite::insert(
+                &Application {
+                    auto_update_frequency: Duration::from_millis(30 * 24 * 60 * 60 * 1000),
+                    description: "Stalwart Web Interface".to_string(),
+                    enabled: true,
+                    #[cfg(not(feature = "dev_mode"))]
+                    resource_url:
+                        "https://github.com/stalwartlabs/webui/releases/latest/download/webui.zip"
+                            .into(),
+                    #[cfg(feature = "dev_mode")]
+                    resource_url: "file:///Users/me/code/webui/.ignore/webui.zip".into(),
+                    unpack_directory: None,
+                    url_prefix: Map::new(vec!["/admin".into(), "/account".into()]),
+                }
+                .into(),
+            ))
+            .await?;
+    }
+
+    #[cfg(not(feature = "test_mode"))]
     {
-        let mut batch = BatchBuilder::new();
-        batch.schedule_task(Task::SpamFilterMaintenance(TaskSpamFilterMaintenance {
-            maintenance_type: TaskSpamFilterMaintenanceType::UpdateRules,
-            status: TaskStatus::now(),
-        }));
-        bp.data_store.write(batch.build_all()).await?;
+        use store::write::BatchBuilder;
+        use types::id::Id;
+
+        if bp.registry.count_object(ObjectType::SpamRule).await? == 0
+            && bp
+                .registry
+                .object::<SpamSettings>(Id::singleton())
+                .await?
+                .is_none_or(|spam| spam.spam_filter_rules_url.is_some())
+        {
+            let mut batch = BatchBuilder::new();
+            batch.schedule_task(Task::SpamFilterMaintenance(TaskSpamFilterMaintenance {
+                maintenance_type: TaskSpamFilterMaintenanceType::UpdateRules,
+                status: TaskStatus::now(),
+            }));
+            bp.data_store.write(batch.build_all()).await?;
+        }
     }
 
     Ok(())

@@ -323,7 +323,13 @@ impl RegistrySet for Server {
                     let is_create = matches!(modification, Modification::Create { .. });
                     let mut unpatched_properties = VecMap::new();
 
-                    if is_create {
+                    if is_create
+                        || (is_singleton
+                            && value
+                                .as_object()
+                                .unwrap()
+                                .contains_key(&Key::Property(Property::Type)))
+                    {
                         // Patch object
 
                         match new_object.patch(
@@ -656,7 +662,7 @@ impl RegistrySet for Server {
 
             ObjectType::Action => action_set(set).await.map(|set| set.into_response()),
 
-            ObjectType::Log | ObjectType::Metric | ObjectType::Trace => {
+            ObjectType::Log | ObjectType::Metric | ObjectType::Trace | ObjectType::ClusterNode => {
                 set.fail_all_create("Telemetry objects cannot be created");
                 set.fail_all_update("Telemetry objects cannot be modified");
                 set.fail_all_destroy("Telemetry objects cannot be deleted");

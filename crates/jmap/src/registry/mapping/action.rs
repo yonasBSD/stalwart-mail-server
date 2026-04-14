@@ -33,7 +33,7 @@ use spam_filter::{
     analysis::{init::SpamFilterInit, score::SpamFilterAnalyzeScore},
 };
 use std::time::Instant;
-use store::write::now;
+use store::{registry::bootstrap::Bootstrap, write::now};
 use utils::map::vec_map::VecMap;
 
 pub(crate) async fn action_set(
@@ -205,6 +205,28 @@ pub(crate) async fn action_set(
                                 "Failed to parse the message for spam classification".to_string(),
                             ),
                     );
+                }
+            }
+            Action::UpdateApps => {
+                let mut bp = Bootstrap::new_uninitialized(set.server.registry().clone());
+                set.server.inner.data.applications.reload(&mut bp).await;
+                if bp.errors.is_empty() {
+                    set.server
+                        .inner
+                        .data
+                        .applications
+                        .unpack_all(set.server, true)
+                        .await;
+                    set.server
+                        .cluster_broadcast(BroadcastEvent::RegistryChange(RegistryChange::Reload(
+                            ObjectType::Application,
+                        )))
+                        .await;
+                    set.response.created(id, now());
+                } else {
+                    set.response
+                        .not_created
+                        .append(id, map_bootstrap_error(bp.errors));
                 }
             }
         }

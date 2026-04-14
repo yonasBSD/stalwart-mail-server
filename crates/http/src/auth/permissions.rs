@@ -76,6 +76,9 @@ impl AccountApiHandler for Server {
                 Permission::SysLogCreate,
                 Permission::SysLogDestroy,
                 Permission::SysLogUpdate,
+                Permission::SysClusterNodeCreate,
+                Permission::SysClusterNodeUpdate,
+                Permission::SysClusterNodeDestroy,
             ] {
                 permissions.clear(p.to_id() as usize);
             }

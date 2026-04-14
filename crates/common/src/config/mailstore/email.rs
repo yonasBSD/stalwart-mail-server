@@ -14,8 +14,8 @@ use registry::{
         },
         prelude::ObjectType,
         structs::{
-            AddressBook, Authentication, Calendar, DataRetention, Domain, Email, Jmap, Search,
-            SieveUserInterpreter, SystemSettings,
+            AddressBook, Authentication, Calendar, DataRetention, Domain, Email, FileStorage, Jmap,
+            Search, SieveUserInterpreter, SystemSettings,
         },
     },
     types::EnumImpl,
@@ -83,6 +83,7 @@ impl EmailConfig {
         let sieve = bp.setting_infallible::<SieveUserInterpreter>().await;
         let search = bp.setting_infallible::<Search>().await;
         let jmap = bp.setting_infallible::<Jmap>().await;
+        let file = bp.setting_infallible::<FileStorage>().await;
         let calendar = bp.setting_infallible::<Calendar>().await;
         let address_book = bp.setting_infallible::<AddressBook>().await;
         let system = bp.setting_infallible::<SystemSettings>().await;
@@ -108,23 +109,35 @@ impl EmailConfig {
         };
 
         // Parse default object quotas
-        let todo = "make sure all are configurable";
         let mut max_objects = ObjectQuota::default();
         for (item, max) in [
+            (StorageQuota::MaxEmails, email.max_messages),
             (StorageQuota::MaxMailboxes, email.max_mailboxes),
             (StorageQuota::MaxSieveScripts, sieve.max_scripts),
             (StorageQuota::MaxEmailIdentities, email.max_identities),
             (StorageQuota::MaxEmailSubmissions, email.max_submissions),
             (StorageQuota::MaxMaskedAddresses, email.max_masked_addresses),
             (StorageQuota::MaxAppPasswords, auth.max_app_passwords),
+            (StorageQuota::MaxApiKeys, auth.max_api_keys),
+            (StorageQuota::MaxPublicKeys, email.max_public_keys),
             (StorageQuota::MaxPushSubscriptions, jmap.max_subscriptions),
             (StorageQuota::MaxCalendars, calendar.max_calendars),
             (StorageQuota::MaxCalendarEvents, calendar.max_events),
+            (
+                StorageQuota::MaxParticipantIdentities,
+                calendar.max_participant_identities,
+            ),
+            (
+                StorageQuota::MaxCalendarEventNotifications,
+                calendar.max_event_notifications,
+            ),
             (
                 StorageQuota::MaxAddressBooks,
                 address_book.max_address_books,
             ),
             (StorageQuota::MaxContactCards, address_book.max_contacts),
+            (StorageQuota::MaxFiles, file.max_files),
+            (StorageQuota::MaxFolders, file.max_folders),
         ] {
             if let Some(max) = max {
                 max_objects.set(item, max as u32);

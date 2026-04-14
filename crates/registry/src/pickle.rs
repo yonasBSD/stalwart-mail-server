@@ -4,32 +4,70 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::types::EnumImpl;
+use std::{borrow::Cow, collections::HashMap};
 use utils::{
     codec::leb128::{Leb128_, Leb128Reader, Leb128Writer},
     map::vec_map::VecMap,
 };
 
-use crate::types::EnumImpl;
-use std::collections::HashMap;
+const COMPRESS_MARKER: u8 = 1 << 7;
+const COMPRESS_WATERMARK: usize = 8192;
 
 pub trait Pickle: Sized {
     fn pickle(&self, out: &mut Vec<u8>);
     fn unpickle(stream: &mut PickledStream<'_>) -> Option<Self>;
-    fn to_pickled_vec(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(256);
-        self.pickle(&mut out);
-        out
-    }
 }
 
 pub struct PickledStream<'x> {
-    data: &'x [u8],
+    data: Cow<'x, [u8]>,
     pos: usize,
 }
 
+pub(crate) fn maybe_compress_pickle(input: Vec<u8>) -> Vec<u8> {
+    let input_len = input.len() - 1; // Exclude the version byte
+    if input_len > COMPRESS_WATERMARK {
+        let (version, input) = input.split_first().unwrap();
+        let mut bytes: Vec<u8> = vec![
+            version | COMPRESS_MARKER;
+            lz4_flex::block::get_maximum_output_size(input_len)
+                + 1
+                + std::mem::size_of::<u32>()
+        ];
+
+        // Compress the data
+        let compressed_len =
+            lz4_flex::compress_into(input, &mut bytes[std::mem::size_of::<u32>() + 1..]).unwrap();
+        if compressed_len < input_len {
+            // Prepend the length of the uncompressed data
+            bytes[1..(std::mem::size_of::<u32>() + 1)]
+                .copy_from_slice(&(input_len as u32).to_le_bytes());
+
+            // Truncate to the actual size
+            bytes.truncate(compressed_len + std::mem::size_of::<u32>() + 1);
+            return bytes;
+        }
+    }
+    input
+}
+
 impl<'x> PickledStream<'x> {
-    pub fn new(data: &'x [u8]) -> Self {
-        PickledStream { data, pos: 0 }
+    pub fn new(data: &'x [u8]) -> Option<Self> {
+        let (marker, data) = data.split_first()?;
+        if marker & COMPRESS_MARKER != 0 {
+            lz4_flex::block::decompress_size_prepended(data)
+                .ok()
+                .map(|data| PickledStream {
+                    data: Cow::Owned(data),
+                    pos: 0,
+                })
+        } else {
+            PickledStream {
+                data: Cow::Borrowed(data),
+                pos: 0,
+            }
+            .into()
+        }
     }
 
     pub fn read(&mut self) -> Option<u8> {
@@ -46,7 +84,7 @@ impl<'x> PickledStream<'x> {
             })
     }
 
-    pub fn read_bytes(&mut self, len: usize) -> Option<&'x [u8]> {
+    pub fn read_bytes(&mut self, len: usize) -> Option<&'_ [u8]> {
         self.data.get(self.pos..self.pos + len).inspect(|_| {
             self.pos += len;
         })
@@ -56,8 +94,8 @@ impl<'x> PickledStream<'x> {
         self.pos >= self.data.len()
     }
 
-    pub fn bytes(&self) -> &'x [u8] {
-        self.data
+    pub fn bytes(&self) -> &'_ [u8] {
+        self.data.as_ref()
     }
 
     pub fn assert_version(&mut self, expected: u8) -> Option<u8> {

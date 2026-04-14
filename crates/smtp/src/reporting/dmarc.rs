@@ -25,13 +25,12 @@ use mail_auth::{
     report::{AuthFailureType, IdentityAlignment, PolicyPublished, Record, SPFDomainScope},
 };
 use registry::{
-    pickle::Pickle,
     schema::{
         enums::FailureReportingOption,
         prelude::{ObjectType, Property},
         structs::{DmarcInternalReport, DmarcReport, DmarcReportRecord, Rate},
     },
-    types::{EnumImpl, datetime::UTCDateTime, map::Map},
+    types::{EnumImpl, ObjectImpl, datetime::UTCDateTime, map::Map},
 };
 use std::future::Future;
 use store::{

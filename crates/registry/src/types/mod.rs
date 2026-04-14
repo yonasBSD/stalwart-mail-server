@@ -5,7 +5,7 @@
  */
 
 use crate::{
-    pickle::Pickle,
+    pickle::{Pickle, maybe_compress_pickle},
     schema::prelude::ObjectType,
     types::{error::ValidationError, index::IndexBuilder},
 };
@@ -39,7 +39,14 @@ pub trait ObjectImpl:
 {
     const FLAGS: u64;
     const OBJECT: ObjectType;
+    const VERSION: u8;
 
     fn validate(&self, errors: &mut Vec<ValidationError>) -> bool;
     fn index<'x>(&'x self, builder: &mut IndexBuilder<'x>);
+    fn to_pickled_vec(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(256);
+        out.push(Self::VERSION);
+        self.pickle(&mut out);
+        maybe_compress_pickle(out)
+    }
 }

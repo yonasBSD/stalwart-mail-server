@@ -9,7 +9,6 @@ use common::{
     config::smtp::queue::{QueueExpiry, QueueName},
 };
 use registry::{
-    pickle::Pickle,
     schema::{
         enums::{
             ArfAuthFailureType, ArfDeliveryResult, ArfFeedbackType, ArfIdentityAlignment,
@@ -23,7 +22,10 @@ use registry::{
             TlsFailureDetails, TlsInternalReport, TlsReport, TlsReportPolicy,
         },
     },
-    types::{EnumImpl, datetime::UTCDateTime, float::Float, ipaddr::IpAddr, list::List, map::Map},
+    types::{
+        EnumImpl, ObjectImpl, datetime::UTCDateTime, float::Float, ipaddr::IpAddr, list::List,
+        map::Map,
+    },
 };
 use smtp::{
     queue::{

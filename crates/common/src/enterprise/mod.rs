@@ -15,8 +15,8 @@ pub mod llm;
 pub mod masked;
 
 use crate::{
-    Core, LogoCache, Server, config::groupware::CalendarTemplateVariable, expr::Expression,
-    manager::application::Resource,
+    Core, LogoCache, Server, USER_AGENT, config::groupware::CalendarTemplateVariable,
+    expr::Expression, manager::application::Resource,
 };
 use ahash::{AHashMap, AHashSet};
 use license::LicenseKey;
@@ -161,42 +161,61 @@ impl Server {
             return Ok(None);
         }
 
-        let domain = psl::domain_str(domain).unwrap_or(domain);
-        let logo = { self.inner.data.logos.lock().get(domain).cloned() };
-        if let Some(logo) = logo {
+        let mut domain = psl::domain_str(domain).unwrap_or(domain);
+        let logo_cache = { self.inner.data.logos.lock().get(domain).cloned() };
+        if let Some(logo) = logo_cache {
             return Ok(logo.data);
         }
 
-        let Some((domain_id, tenant_id)) = self.domain(domain).await?.map(|d| (d.id, d.id_tenant))
-        else {
-            return Ok(None);
-        };
-
-        let Some(domain_record) = self.registry().object::<Domain>(domain_id.into()).await? else {
-            return Ok(None);
-        };
-        let mut logo = domain_record.logo;
-
-        if logo.is_none()
-            && let Some(tenant_id) = tenant_id
+        let mut logo_url = None;
+        let mut domain_id = u32::MAX;
+        let mut tenant_id = None;
+        if let Some((d_id, t_id)) = self.domain(domain).await?.map(|d| (d.id, d.id_tenant))
+            && let Some(domain_record) = self.registry().object::<Domain>(domain_id.into()).await?
         {
-            logo = self
-                .registry()
-                .object::<Tenant>(tenant_id.into())
-                .await?
-                .and_then(|t| t.logo);
+            logo_url = domain_record.logo;
+            domain_id = d_id;
+            tenant_id = t_id;
+
+            if logo_url.is_none()
+                && let Some(tenant_id) = tenant_id
+            {
+                logo_url = self
+                    .registry()
+                    .object::<Tenant>(tenant_id.into())
+                    .await?
+                    .and_then(|t| t.logo);
+            }
+        } else {
+            domain = "*";
         }
 
-        let logo_url = logo.or_else(|| self.default_logo_url());
+        // Try fetching the default logo
+        if logo_url.is_none()
+            && let Some(default_logo_url) = self.default_logo_url()
+        {
+            let logo = { self.inner.data.logos.lock().get("*").cloned() };
+            if let Some(logo) = logo {
+                return Ok(logo.data);
+            }
+            logo_url = Some(default_logo_url);
+        }
 
         let mut logo = None;
         if let Some(logo_url) = logo_url {
-            let response = reqwest::get(logo_url.as_str()).await.map_err(|err| {
-                trc::ResourceEvent::DownloadExternal
-                    .into_err()
-                    .details("Failed to download logo")
-                    .reason(err)
-            })?;
+            let response = reqwest::Client::builder()
+                .user_agent(USER_AGENT)
+                .build()
+                .unwrap()
+                .get(logo_url.as_str())
+                .send()
+                .await
+                .map_err(|err| {
+                    trc::ResourceEvent::DownloadExternal
+                        .into_err()
+                        .details("Failed to download logo")
+                        .reason(err)
+                })?;
 
             let content_type = response
                 .headers()

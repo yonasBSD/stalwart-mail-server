@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::utils::{registry::UnwrapRegistryId, server::TestServer};
 use jmap_tools::JsonPointer;
 use registry::{
     jmap::{IntoValue, JmapValue, JsonPointerPatch, MaybeUnpatched, RegistryJsonPatch},
@@ -16,11 +17,12 @@ use registry::{
             CredentialPermissionsList, CustomRoles, DkimManagement, DnsManagement, Domain,
             EmailAlias, EncryptionAtRest, EncryptionSettings, GroupAccount, MailingList,
             PasswordCredential, Permissions, PermissionsList, PublicKey, SecondaryCredential,
-            UserAccount, UserRoles,
+            SieveUserScript, UserAccount, UserRoles,
         },
     },
     types::{
-        EnumImpl, datetime::UTCDateTime, id::ObjectId, ipmask::IpAddrOrMask, list::List, map::Map,
+        EnumImpl, ObjectImpl, datetime::UTCDateTime, id::ObjectId, ipmask::IpAddrOrMask,
+        list::List, map::Map,
     },
 };
 use std::str::FromStr;
@@ -33,8 +35,6 @@ use store::{
 };
 use types::id::Id;
 use utils::map::vec_map::VecMap;
-
-use crate::utils::{registry::UnwrapRegistryId, server::TestServer};
 
 pub async fn test(test: &TestServer) {
     let r = test.server.registry();
@@ -105,10 +105,28 @@ pub async fn test(test: &TestServer) {
         }),
         time_zone: None,
     });
-    let account_picke = account.to_pickled_vec();
+    let account_pickle = account.to_pickled_vec();
     assert_eq!(
         account,
-        Account::unpickle(&mut PickledStream::new(&account_picke)).unwrap()
+        Account::unpickle(&mut PickledStream::new(&account_pickle).unwrap()).unwrap()
+    );
+
+    // Pickle compression test
+    let script = SieveUserScript {
+        contents: "A".repeat(100_000),
+        description: "B".repeat(100_000).into(),
+        is_active: true,
+        name: "C".repeat(100_000),
+    };
+    let script_pickle = script.to_pickled_vec();
+    assert!(
+        script_pickle.len() < 8_192,
+        "Pickle was not compressed: {} bytes",
+        script_pickle.len()
+    );
+    assert_eq!(
+        script,
+        SieveUserScript::unpickle(&mut PickledStream::new(&script_pickle).unwrap()).unwrap()
     );
 
     // Create a domain and a group

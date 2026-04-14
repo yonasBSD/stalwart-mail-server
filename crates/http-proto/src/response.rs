@@ -27,6 +27,15 @@ impl HttpResponse {
         }
     }
 
+    pub fn redirect(location: String) -> Self {
+        let mut response = HttpResponse::new(StatusCode::FOUND);
+        response.builder = response
+            .builder
+            .status(StatusCode::FOUND)
+            .header(header::LOCATION, location);
+        response
+    }
+
     pub fn with_content_type<V>(mut self, content_type: V) -> Self
     where
         V: TryInto<HeaderValue>,
@@ -151,6 +160,13 @@ impl HttpResponse {
 
     pub fn with_no_cache(mut self) -> Self {
         self.builder = self.builder.header(header::CACHE_CONTROL, "no-cache");
+        self
+    }
+
+    pub fn with_immutable_cache(mut self) -> Self {
+        self.builder = self
+            .builder
+            .header(header::CACHE_CONTROL, "public, max-age=31536000, immutable");
         self
     }
 

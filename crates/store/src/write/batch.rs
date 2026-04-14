@@ -14,7 +14,10 @@ use crate::{
         LogCollection, MergeFnc, MergeOperation, Params, SetFnc, SetOperation, TaskQueueClass,
     },
 };
-use registry::{pickle::Pickle, schema::structs::Task, types::EnumImpl};
+use registry::{
+    schema::structs::Task,
+    types::{EnumImpl, ObjectImpl},
+};
 use types::{
     collection::{Collection, SyncCollection, VanishedCollection},
     field::FieldType,

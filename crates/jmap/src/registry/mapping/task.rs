@@ -20,7 +20,6 @@ use jmap_proto::{
 use jmap_tools::{JsonPointer, JsonPointerItem, Key};
 use registry::{
     jmap::{IntoValue, JsonPointerPatch, RegistryJsonPatch},
-    pickle::Pickle,
     schema::{
         enums::{TaskStatusType, TaskType},
         prelude::Property,

@@ -397,6 +397,8 @@ impl EventType {
             b"resource.bad-parameters" => EventType::Resource(ResourceEvent::BadParameters),
             b"resource.error" => EventType::Resource(ResourceEvent::Error),
             b"resource.download-external" => EventType::Resource(ResourceEvent::DownloadExternal),
+            b"resource.application-updated" => EventType::Resource(ResourceEvent::ApplicationUpdated),
+            b"resource.application-unpacked" => EventType::Resource(ResourceEvent::ApplicationUnpacked),
             b"security.authentication-ban" => EventType::Security(SecurityEvent::AuthenticationBan),
             b"security.abuse-ban" => EventType::Security(SecurityEvent::AbuseBan),
             b"security.scan-ban" => EventType::Security(SecurityEvent::ScanBan),
@@ -1112,6 +1114,12 @@ impl EventType {
             EventType::Resource(ResourceEvent::BadParameters) => "resource.bad-parameters",
             EventType::Resource(ResourceEvent::Error) => "resource.error",
             EventType::Resource(ResourceEvent::DownloadExternal) => "resource.download-external",
+            EventType::Resource(ResourceEvent::ApplicationUpdated) => {
+                "resource.application-updated"
+            }
+            EventType::Resource(ResourceEvent::ApplicationUnpacked) => {
+                "resource.application-unpacked"
+            }
             EventType::Security(SecurityEvent::AuthenticationBan) => "security.authentication-ban",
             EventType::Security(SecurityEvent::AbuseBan) => "security.abuse-ban",
             EventType::Security(SecurityEvent::ScanBan) => "security.scan-ban",
@@ -1740,6 +1748,8 @@ impl EventType {
             EventType::Resource(ResourceEvent::BadParameters) => 386,
             EventType::Resource(ResourceEvent::Error) => 388,
             EventType::Resource(ResourceEvent::DownloadExternal) => 387,
+            EventType::Resource(ResourceEvent::ApplicationUpdated) => 601,
+            EventType::Resource(ResourceEvent::ApplicationUnpacked) => 602,
             EventType::Security(SecurityEvent::AuthenticationBan) => 33,
             EventType::Security(SecurityEvent::AbuseBan) => 549,
             EventType::Security(SecurityEvent::ScanBan) => 558,
@@ -2384,6 +2394,8 @@ impl EventType {
             386 => Some(EventType::Resource(ResourceEvent::BadParameters)),
             388 => Some(EventType::Resource(ResourceEvent::Error)),
             387 => Some(EventType::Resource(ResourceEvent::DownloadExternal)),
+            601 => Some(EventType::Resource(ResourceEvent::ApplicationUpdated)),
+            602 => Some(EventType::Resource(ResourceEvent::ApplicationUnpacked)),
             33 => Some(EventType::Security(SecurityEvent::AuthenticationBan)),
             549 => Some(EventType::Security(SecurityEvent::AbuseBan)),
             558 => Some(EventType::Security(SecurityEvent::ScanBan)),
@@ -2793,6 +2805,7 @@ impl EventType {
             EventType::Queue(QueueEvent::ConcurrencyLimitExceeded) => Level::Info,
             EventType::Queue(QueueEvent::QuotaExceeded) => Level::Info,
             EventType::Resource(ResourceEvent::DownloadExternal) => Level::Info,
+            EventType::Resource(ResourceEvent::ApplicationUpdated) => Level::Info,
             EventType::Security(SecurityEvent::AuthenticationBan) => Level::Info,
             EventType::Security(SecurityEvent::AbuseBan) => Level::Info,
             EventType::Security(SecurityEvent::ScanBan) => Level::Info,
@@ -3454,6 +3467,12 @@ impl EventType {
             EventType::Resource(ResourceEvent::BadParameters) => "Bad resource parameters",
             EventType::Resource(ResourceEvent::Error) => "Resource error",
             EventType::Resource(ResourceEvent::DownloadExternal) => "Downloading external resource",
+            EventType::Resource(ResourceEvent::ApplicationUpdated) => {
+                "Application resource updated"
+            }
+            EventType::Resource(ResourceEvent::ApplicationUnpacked) => {
+                "Application resource unpacked"
+            }
             EventType::Security(SecurityEvent::AuthenticationBan) => {
                 "Banned due to authentication errors"
             }
@@ -4351,6 +4370,8 @@ impl EventType {
             EventType::Resource(ResourceEvent::BadParameters),
             EventType::Resource(ResourceEvent::Error),
             EventType::Resource(ResourceEvent::DownloadExternal),
+            EventType::Resource(ResourceEvent::ApplicationUpdated),
+            EventType::Resource(ResourceEvent::ApplicationUnpacked),
             EventType::Security(SecurityEvent::AuthenticationBan),
             EventType::Security(SecurityEvent::AbuseBan),
             EventType::Security(SecurityEvent::ScanBan),

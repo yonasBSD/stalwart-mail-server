@@ -6,7 +6,7 @@
 
 // This file is auto-generated. Do not edit directly.
 
-pub const TOTAL_EVENT_COUNT: usize = 601;
+pub const TOTAL_EVENT_COUNT: usize = 603;
 pub const TOTAL_METRIC_COUNT: usize = 339;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -592,6 +592,8 @@ pub enum ResourceEvent {
     BadParameters = 386,
     Error = 388,
     DownloadExternal = 387,
+    ApplicationUpdated = 601,
+    ApplicationUnpacked = 602,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

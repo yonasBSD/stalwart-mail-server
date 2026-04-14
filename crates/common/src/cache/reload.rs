@@ -89,6 +89,12 @@ impl Server {
                     *self.inner.data.blocked_ips.write() = blocked_ips;
                 }
             }
+            ObjectType::Application => {
+                self.inner.data.applications.reload(&mut bootstrap).await;
+                if bootstrap.errors.is_empty() {
+                    self.inner.data.applications.unpack_all(self, false).await;
+                }
+            }
             _ => {
                 // Load stores
                 let directory = Directories::build(&mut bootstrap).await;

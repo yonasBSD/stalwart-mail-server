@@ -17,6 +17,7 @@ use crate::{
             resolver::{Policy, Tlsa},
         },
     },
+    manager::application::WebApplications,
     network::security::BlockedIps,
 };
 use ahash::{AHashMap, AHashSet};
@@ -54,7 +55,9 @@ impl Data {
             panic!("Invalid system time, panicking to avoid data corruption");
         }
 
-        let todo = "TODO: WebApplicationManager initialization";
+        // Initialize apps
+        let applications = WebApplications::new();
+        applications.reload(bp).await;
 
         let blocked_ips = BlockedIps::parse(bp).await;
         let lookup_stores = LookupStores::build(bp).await;
@@ -84,7 +87,7 @@ impl Data {
             registry_id_gen: id_generator.clone(),
             span_id_gen: id_generator,
             queue_status: true.into(),
-            applications: Default::default(),
+            applications,
             logos: Default::default(),
             smtp_connectors: TlsConnectors::try_new().failed("Failed to build TLS connectors"),
             asn_geo_data: Default::default(),
@@ -224,7 +227,7 @@ impl Default for Data {
             span_id_gen: Default::default(),
             registry_id_gen: Default::default(),
             queue_status: true.into(),
-            applications: Default::default(),
+            applications: WebApplications::new(),
             logos: Default::default(),
             smtp_connectors: TlsConnectors::try_new().unwrap(),
             asn_geo_data: Default::default(),

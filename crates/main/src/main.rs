@@ -65,7 +65,7 @@ async fn main() -> std::io::Result<()> {
     #[cfg(feature = "dev_mode")]
     if std::env::var("INSERT_TEST_DATA").is_ok() {
         let server = init.inner.build_server();
-        //test_data::insert_test_data(&server).await;
+        test_data::insert_test_data(&server).await;
         server.insert_test_metrics().await;
     }
 

@@ -11,8 +11,8 @@
 use ahash::AHashMap;
 use parking_lot::Mutex;
 use registry::{
-    pickle::Pickle,
     schema::structs::{Metric, MetricCount, MetricSum},
+    types::ObjectImpl,
 };
 use std::{future::Future, sync::Arc, time::Duration};
 use store::{

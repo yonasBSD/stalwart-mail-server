@@ -306,8 +306,7 @@ impl RegistryStore {
         }
 
         // It's pickle time!
-        let mut out = Vec::with_capacity(256);
-        object.inner.pickle(&mut out);
+        let out = object.inner.to_pickled_vec();
 
         // Build batch
         if write_id {

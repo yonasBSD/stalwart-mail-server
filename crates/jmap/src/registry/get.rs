@@ -7,7 +7,7 @@
 use crate::registry::{
     EnterpriseRegistry,
     mapping::{
-        RegistryGetResponse, account::account_get, log::log_get,
+        RegistryGetResponse, account::account_get, cluster::cluster_node_get, log::log_get,
         queued_message::queued_message_get, report::report_get, spam_sample::spam_sample_get,
         task::task_get,
     },
@@ -282,7 +282,7 @@ impl RegistryGet for Server {
                 queued_message_get(get).await.map(|get| get.into_response())
             }
             ObjectType::Task => task_get(get).await.map(|get| get.into_response()),
-
+            ObjectType::ClusterNode => cluster_node_get(get).await.map(|get| get.into_response()),
             ObjectType::ArfExternalReport
             | ObjectType::DmarcExternalReport
             | ObjectType::TlsExternalReport

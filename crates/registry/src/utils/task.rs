@@ -106,6 +106,7 @@ impl Action {
             Action::InvalidateNegativeCaches => Permission::ActionInvalidateNegativeCaches,
             Action::PauseMtaQueue => Permission::ActionPauseMtaQueue,
             Action::ResumeMtaQueue => Permission::ActionResumeMtaQueue,
+            Action::UpdateApps => Permission::ActionUpdateApps,
         }
     }
 }

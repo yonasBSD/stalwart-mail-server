@@ -19,13 +19,12 @@ use jmap_proto::{error::set::SetError, types::state::State};
 use jmap_tools::{Key, Value};
 use registry::{
     jmap::IntoValue,
-    pickle::Pickle,
     schema::{
         enums::{ArchivedItemStatus, Permission},
         prelude::{Object, ObjectType, Property},
         structs::{ArchivedItem, Task, TaskRestoreArchivedItem, TaskStatus},
     },
-    types::{EnumImpl, datetime::UTCDateTime, id::ObjectId},
+    types::{EnumImpl, ObjectImpl, datetime::UTCDateTime, id::ObjectId},
 };
 use std::str::FromStr;
 use store::{

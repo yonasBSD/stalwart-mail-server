@@ -7,6 +7,7 @@
 #![warn(clippy::large_futures)]
 
 use crate::auth::{AccessTokenInner, EmailAddress};
+use crate::manager::application::WebApplications;
 use crate::network::asn::AsnGeoLookupData;
 use crate::{
     auth::{AccountCache, DomainCache, EmailCache, MailingListCache, RoleCache, TenantCache},
@@ -39,7 +40,7 @@ use config::{
 };
 use ipc::{BroadcastEvent, PushEvent, QueueEvent, ReportingEvent};
 use mail_auth::{MX, Txt};
-use manager::application::{Resource, WebApplicationManager};
+use manager::application::Resource;
 use parking_lot::{Mutex, RwLock};
 use rustls::sign::CertifiedKey;
 use std::sync::atomic::AtomicU64;
@@ -157,7 +158,7 @@ pub struct Data {
     pub registry_id_gen: SnowflakeIdGenerator,
     pub queue_status: AtomicBool,
 
-    pub applications: WebApplicationManager,
+    pub applications: WebApplications,
     pub logos: Mutex<AHashMap<Box<str>, LogoCache>>,
 
     pub smtp_connectors: TlsConnectors,

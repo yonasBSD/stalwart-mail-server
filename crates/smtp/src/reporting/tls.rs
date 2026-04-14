@@ -23,13 +23,12 @@ use mail_auth::{
     report::tlsrpt::{FailureDetails, PolicyDetails},
 };
 use registry::{
-    pickle::Pickle,
     schema::{
         enums::TlsPolicyType,
         prelude::{ObjectType, Property},
         structs::{TlsFailureDetails, TlsInternalReport, TlsReport, TlsReportPolicy},
     },
-    types::{EnumImpl, datetime::UTCDateTime},
+    types::{EnumImpl, ObjectImpl, datetime::UTCDateTime},
 };
 use reqwest::header::CONTENT_TYPE;
 use std::fmt::Write;

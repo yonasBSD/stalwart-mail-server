@@ -596,17 +596,28 @@ impl ParseHttp for Server {
 
                 return Ok(HtmlResponse::new(page.to_string()).into_http_response());
             }
-            _ => {
-                let path = req.uri().path();
-                let resource = self
+            external => {
+                if path.next().is_none() {
+                    return Ok(HttpResponse::redirect(format!("/{external}/")));
+                } else if let Some(resource) = self
                     .inner
                     .data
                     .applications
-                    .get(path.strip_prefix('/').unwrap_or(path))
-                    .await?;
-
-                if !resource.is_empty() {
-                    return Ok(resource.into_http_response());
+                    .serve(
+                        external,
+                        req.uri()
+                            .path()
+                            .get(external.len() + 2..)
+                            .unwrap_or_default(),
+                    )
+                    .await?
+                {
+                    let response = resource.resource.into_http_response();
+                    return Ok(if !resource.no_cache {
+                        response.with_immutable_cache()
+                    } else {
+                        response.with_no_cache()
+                    });
                 }
             }
         }

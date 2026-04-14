@@ -26,6 +26,7 @@ pub mod structs;
 #[allow(clippy::len_zero)]
 #[allow(clippy::collapsible_if)]
 #[allow(clippy::derivable_impls)]
+#[allow(clippy::field_reassign_with_default)]
 pub mod structs_impl;
 
 impl Display for Property {

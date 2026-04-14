@@ -11,11 +11,11 @@
 use crate::{config::telemetry::StoreTracer, telemetry::tracers::TraceEvents};
 use ahash::AHashMap;
 use registry::{
-    pickle::Pickle,
     schema::structs::{
         Task, TaskIndexTrace, TaskStatus, Trace, TraceKeyValue, TraceValue, TraceValueIpAddr,
         TraceValueList, TraceValueString, TraceValueUnsignedInt,
     },
+    types::ObjectImpl,
 };
 use std::{collections::HashSet, future::Future, time::Duration};
 use store::{

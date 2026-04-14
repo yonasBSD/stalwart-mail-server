@@ -13,6 +13,10 @@ use crate::{
         now,
     },
 };
+use registry::{
+    schema::{enums::ClusterNodeStatus, structs::ClusterNode},
+    types::datetime::UTCDateTime,
+};
 use std::{path::PathBuf, time::Duration};
 use trc::AddContext;
 
@@ -146,6 +150,49 @@ impl RegistryStore {
 
     pub fn refresh_node_id_interval(&self) -> Duration {
         Duration::from_secs(STALE_NODE_TIMEOUT / 2)
+    }
+
+    pub async fn cluster_node_list(&self) -> trc::Result<Vec<ClusterNode>> {
+        let mut results = Vec::new();
+        let now = now();
+
+        self.0
+            .store
+            .iterate(
+                IterateParams::new(
+                    ValueKey::from(ValueClass::NodeId(0)),
+                    ValueKey::from(ValueClass::NodeId(u16::MAX)),
+                )
+                .ascending(),
+                |key, value| {
+                    if key.len() == U16_LEN * 3 {
+                        let node_id = key.deserialize_be_u16(U32_LEN)?;
+                        let last_renewal = value.deserialize_be_u64(0)?;
+                        let last_renewal_since_now = now.saturating_sub(last_renewal);
+                        let hostname = value
+                            .get(U64_LEN..)
+                            .and_then(|bytes| std::str::from_utf8(bytes).ok())
+                            .filter(|text| !text.is_empty())
+                            .ok_or_else(|| trc::StoreEvent::DataCorruption.into_err())?;
+
+                        results.push(ClusterNode {
+                            hostname: hostname.to_string(),
+                            last_renewal: UTCDateTime::from_timestamp(last_renewal.cast_signed()),
+                            node_id: node_id as u64,
+                            status: if last_renewal_since_now > DEAD_NODE_TIMEOUT {
+                                ClusterNodeStatus::Inactive
+                            } else if last_renewal_since_now > STALE_NODE_TIMEOUT {
+                                ClusterNodeStatus::Stale
+                            } else {
+                                ClusterNodeStatus::Active
+                            },
+                        });
+                    }
+                    Ok(true)
+                },
+            )
+            .await
+            .map(|_| results)
     }
 
     pub async fn refresh_node_id_lease(&self) -> trc::Result<()> {

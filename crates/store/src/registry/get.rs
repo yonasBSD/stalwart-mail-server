@@ -79,15 +79,16 @@ impl RegistryStore {
                 ),
                 |key, value| {
                     let id = key.deserialize_be_u64(U16_LEN)?;
-                    let mut stream = PickledStream::new(value);
-                    let object = T::unpickle(&mut stream).ok_or_else(|| {
-                        trc::EventType::Registry(trc::RegistryEvent::DeserializationError)
-                            .into_err()
-                            .caused_by(trc::location!())
-                            .id(id)
-                            .details(object_type.as_str())
-                            .ctx(trc::Key::Value, value)
-                    })?;
+                    let object = PickledStream::new(value)
+                        .and_then(|mut stream| T::unpickle(&mut stream))
+                        .ok_or_else(|| {
+                            trc::EventType::Registry(trc::RegistryEvent::DeserializationError)
+                                .into_err()
+                                .caused_by(trc::location!())
+                                .id(id)
+                                .details(object_type.as_str())
+                                .ctx(trc::Key::Value, value)
+                        })?;
 
                     results.push(RegistryObject {
                         id: ObjectId::new(object_type, Id::new(id)),
