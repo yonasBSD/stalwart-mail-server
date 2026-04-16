@@ -79,7 +79,10 @@ This version includes **multiple breaking changes**. If you are upgrading from v
 - JMAP: 
   - Fix `inMailboxOtherThan` query logic.
   - Fix `hasAttachment` search field (#2778)
-- IMAP: Increment argument max length to `8000` bytes
+- IMAP: 
+  - Increment argument max length to `8000` bytes
+  - ACL: Add `RIGHTS` capability (#2762)
+  - ACL: Fix `ACL SET` permission override.
 - WebDAV: Return `304` `NOT_MODIFIED` on `If-None-Match`
 - Configuration: Prefix parsing issues (#2495)
 - OIDC: JWKS Exposes Symmetric Signing Key

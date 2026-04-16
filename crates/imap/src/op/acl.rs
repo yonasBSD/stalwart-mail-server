@@ -265,7 +265,7 @@ impl<T: SessionStream> Session<T> {
         spawn_op!(data, {
             // Validate mailbox
             let (mailbox_id, current_mailbox, _) = data
-                .get_acl_mailbox(&arguments, false)
+                .get_acl_mailbox(&arguments, true)
                 .await
                 .imap_ctx(&arguments.tag, trc::location!())?;
             let current_mailbox = current_mailbox
