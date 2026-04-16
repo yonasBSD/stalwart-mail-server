@@ -140,7 +140,7 @@ impl EmailSubmissionSet for Server {
             let mut undo_status = None;
 
             for (property, mut value) in object.into_expanded_object() {
-                if let Err(err) = response.resolve_self_references(&mut value) {
+                if let Err(err) = response.resolve_self_references(&mut value, 0, false) {
                     response.not_updated.append(id, err);
                     continue 'update;
                 };
@@ -334,7 +334,7 @@ impl EmailSubmissionSet for Server {
         let mut rcpt_to: Vec<RcptTo<Cow<'_, str>>> = Vec::new();
 
         for (property, mut value) in object.into_expanded_object() {
-            if let Err(err) = response.resolve_self_references(&mut value) {
+            if let Err(err) = response.resolve_self_references(&mut value, 0, false) {
                 return Ok(Err(err));
             };
 

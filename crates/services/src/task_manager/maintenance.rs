@@ -28,9 +28,11 @@ use groupware::{
 };
 use registry::{
     schema::{
-        enums::{TaskAccountMaintenanceType, TaskStoreMaintenanceType},
+        enums::{TaskAccountMaintenanceType, TaskStoreMaintenanceType, TaskTenantMaintenanceType},
         prelude::{Object, ObjectInner, ObjectType, Property},
-        structs::{Task, TaskAccountMaintenance, TaskStatus, TaskStoreMaintenance},
+        structs::{
+            Task, TaskAccountMaintenance, TaskStatus, TaskStoreMaintenance, TaskTenantMaintenance,
+        },
     },
     types::EnumImpl,
 };
@@ -57,6 +59,10 @@ pub(crate) trait MaintenanceTask: Sync + Send {
     fn account_maintenance(
         &self,
         task: &TaskAccountMaintenance,
+    ) -> impl Future<Output = TaskResult> + Send;
+    fn tenant_maintenance(
+        &self,
+        task: &TaskTenantMaintenance,
     ) -> impl Future<Output = TaskResult> + Send;
 }
 
@@ -85,6 +91,17 @@ impl MaintenanceTask for Server {
             }
         }
     }
+
+    async fn tenant_maintenance(&self, task: &TaskTenantMaintenance) -> TaskResult {
+        match tenant_maintenance(self, task).await {
+            Ok(result) => result,
+            Err(err) => {
+                let result = TaskResult::temporary(err.to_string());
+                trc::error!(err.details("Failed to perform tenant maintenance task"));
+                result
+            }
+        }
+    }
 }
 
 async fn store_maintenance(
@@ -92,15 +109,19 @@ async fn store_maintenance(
     task: &TaskStoreMaintenance,
 ) -> trc::Result<TaskResult> {
     match task.maintenance_type {
-        TaskStoreMaintenanceType::ReindexAccounts | TaskStoreMaintenanceType::PurgeAccounts => {
+        TaskStoreMaintenanceType::ReindexAccounts
+        | TaskStoreMaintenanceType::PurgeAccounts
+        | TaskStoreMaintenanceType::ResetUserQuotas => {
             let mut batch = BatchBuilder::new();
             let now = now() as i64;
-            let maintenance_type =
-                if task.maintenance_type == TaskStoreMaintenanceType::ReindexAccounts {
-                    TaskAccountMaintenanceType::Reindex
-                } else {
-                    TaskAccountMaintenanceType::Purge
-                };
+            let maintenance_type = match task.maintenance_type {
+                TaskStoreMaintenanceType::ReindexAccounts => TaskAccountMaintenanceType::Reindex,
+                TaskStoreMaintenanceType::PurgeAccounts => TaskAccountMaintenanceType::Purge,
+                TaskStoreMaintenanceType::ResetUserQuotas => {
+                    TaskAccountMaintenanceType::RecalculateQuota
+                }
+                _ => unreachable!(),
+            };
             for account_id in server
                 .registry()
                 .query::<RoaringBitmap>(RegistryQuery::new(ObjectType::Account))
@@ -337,6 +358,40 @@ async fn store_maintenance(
                     .await?;
             }
         }
+        TaskStoreMaintenanceType::ResetTenantQuotas => {
+            let mut batch = BatchBuilder::new();
+            let now = now() as i64;
+
+            for tenant_id in server
+                .registry()
+                .query::<RoaringBitmap>(RegistryQuery::new(ObjectType::Tenant))
+                .await?
+            {
+                #[cfg(feature = "test_mode")]
+                let status = TaskStatus::at(now);
+
+                #[cfg(not(feature = "test_mode"))]
+                let status =
+                    TaskStatus::at(now + rand::Rng::random_range(&mut rand::rng(), 0..=300));
+
+                batch.schedule_task(Task::TenantMaintenance(TaskTenantMaintenance {
+                    tenant_id: tenant_id.into(),
+                    maintenance_type: TaskTenantMaintenanceType::RecalculateQuota,
+                    status,
+                }));
+
+                if batch.is_large_batch() {
+                    server.core.storage.data.write(batch.build_all()).await?;
+                    server.notify_task_queue();
+                    batch = BatchBuilder::new();
+                }
+            }
+
+            if !batch.is_empty() {
+                server.core.storage.data.write(batch.build_all()).await?;
+                server.notify_task_queue();
+            }
+        }
     }
 
     Ok(TaskResult::Success(vec![]))
@@ -358,6 +413,19 @@ async fn account_maintenance(
         }
         TaskAccountMaintenanceType::RecalculateQuota => {
             recalculate_quota(server, task.account_id.document_id()).await?;
+        }
+    }
+
+    Ok(TaskResult::Success(vec![]))
+}
+
+async fn tenant_maintenance(
+    server: &Server,
+    task: &TaskTenantMaintenance,
+) -> trc::Result<TaskResult> {
+    match task.maintenance_type {
+        TaskTenantMaintenanceType::RecalculateQuota => {
+            recalculate_tenant_quota(server, task.tenant_id.document_id()).await?;
         }
     }
 
@@ -413,6 +481,33 @@ async fn recalculate_quota(server: &Server, account_id: u32) -> trc::Result<()> 
         .with_account_id(account_id)
         .clear(ValueClass::Quota)
         .add(ValueClass::Quota, quota);
+    server
+        .store()
+        .write(batch.build_all())
+        .await
+        .caused_by(trc::location!())
+        .map(|_| ())
+}
+
+async fn recalculate_tenant_quota(server: &Server, tenant_id: u32) -> trc::Result<()> {
+    let mut quota = 0;
+    for account_id in server
+        .registry()
+        .query::<RoaringBitmap>(
+            RegistryQuery::new(ObjectType::Account).with_tenant(tenant_id.into()),
+        )
+        .await?
+    {
+        quota += server
+            .get_used_quota_account(account_id)
+            .await
+            .caused_by(trc::location!())?;
+    }
+
+    let mut batch = BatchBuilder::new();
+    batch
+        .clear(ValueClass::TenantQuota(tenant_id))
+        .add(ValueClass::TenantQuota(tenant_id), quota);
     server
         .store()
         .write(batch.build_all())

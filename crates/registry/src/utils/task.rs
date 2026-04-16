@@ -29,6 +29,7 @@ impl Task {
             Task::AcmeRenewal(task) => task.status = status,
             Task::DkimManagement(task) => task.status = status,
             Task::DnsManagement(task) => task.status = status,
+            Task::TenantMaintenance(task) => task.status = status,
         }
     }
 
@@ -51,6 +52,7 @@ impl Task {
             Task::AcmeRenewal(task) => &task.status,
             Task::DkimManagement(task) => &task.status,
             Task::DnsManagement(task) => &task.status,
+            Task::TenantMaintenance(task) => &task.status,
         }
     }
 
@@ -89,6 +91,7 @@ impl Task {
             Task::AcmeRenewal(_) => Permission::TaskAcmeRenewal,
             Task::DkimManagement(_) => Permission::TaskDkimManagement,
             Task::DnsManagement(_) => Permission::TaskDnsManagement,
+            Task::TenantMaintenance(_) => Permission::TaskTenantMaintenance,
         }
     }
 }

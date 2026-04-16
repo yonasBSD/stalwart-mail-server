@@ -402,7 +402,7 @@ impl SieveScriptSet for Server {
             .unwrap_or_default();
         let mut blob_id = None;
         for (property, mut value) in changes_.into_expanded_object() {
-            if let Err(err) = ctx.response.resolve_self_references(&mut value) {
+            if let Err(err) = ctx.response.resolve_self_references(&mut value, 0, false) {
                 return Ok(Err(err));
             };
             match (&property, value) {

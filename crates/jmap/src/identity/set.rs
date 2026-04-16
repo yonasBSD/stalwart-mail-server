@@ -58,7 +58,7 @@ impl IdentitySet for Server {
 
             for (property, mut value) in object.into_expanded_object() {
                 if let Err(err) = response
-                    .resolve_self_references(&mut value)
+                    .resolve_self_references(&mut value, 0, false)
                     .and_then(|_| validate_identity_value(&property, value, &mut identity, true))
                 {
                     response.not_created.append(id, err);
@@ -159,9 +159,12 @@ impl IdentitySet for Server {
                 .caused_by(trc::location!())?;
 
             for (property, mut value) in object.into_expanded_object() {
-                if let Err(err) = response.resolve_self_references(&mut value).and_then(|_| {
-                    validate_identity_value(&property, value, &mut new_identity, false)
-                }) {
+                if let Err(err) = response
+                    .resolve_self_references(&mut value, 0, false)
+                    .and_then(|_| {
+                        validate_identity_value(&property, value, &mut new_identity, false)
+                    })
+                {
                     response.not_updated.append(id, err);
                     continue 'update;
                 }

@@ -14,7 +14,8 @@ use crate::registry::{
         domain::{validate_dns_server, validate_domain},
         map_bootstrap_error,
         principal::{
-            schedule_account_destruction, validate_account, validate_role, validate_tenant_quota,
+            AccountUpdate, schedule_account_destruction, validate_account, validate_role,
+            validate_tenant_quota,
         },
         public_key::validate_public_key,
         queued_message::queued_message_set,
@@ -33,6 +34,7 @@ use jmap_proto::{
     error::set::{SetError, SetErrorType},
     method::set::{SetRequest, SetResponse},
     object::registry::Registry,
+    references::resolve::ResolveCreatedReference,
     request::IntoValid,
 };
 use jmap_tools::{JsonPointer, JsonPointerItem, Key};
@@ -44,7 +46,7 @@ use registry::{
             OBJ_FILTER_ACCOUNT, OBJ_FILTER_TENANT, OBJ_SINGLETON, Object, ObjectInner, ObjectType,
             Property,
         },
-        structs::{Account, Certificate, DkimSignature, DnsServer, Domain, PublicKey, Role, Task},
+        structs::{Certificate, DkimSignature, DnsServer, Domain, PublicKey, Role, Task},
     },
     types::id::ObjectId,
 };
@@ -318,10 +320,15 @@ impl RegistrySet for Server {
 
                 // Process modifications
                 let mut cache_invalidator = CacheInvalidationBuilder::default();
-                'outer: for (modification, value, mut new_object) in modifications {
+                'outer: for (modification, mut value, mut new_object) in modifications {
                     // Initial validations
                     let is_create = matches!(modification, Modification::Create { .. });
                     let mut unpatched_properties = VecMap::new();
+
+                    if let Err(err) = set.response.resolve_self_references(&mut value, 0, true) {
+                        set.failed(modification, err);
+                        continue 'outer;
+                    };
 
                     if is_create
                         || (is_singleton
@@ -331,7 +338,6 @@ impl RegistrySet for Server {
                                 .contains_key(&Key::Property(Property::Type)))
                     {
                         // Patch object
-
                         match new_object.patch(
                             JsonPointerPatch::new(&JsonPointer::new(vec![]))
                                 .with_create(true)
@@ -728,12 +734,12 @@ impl RegistrySetResponse<'_> {
 }
 
 impl Modification {
-    fn as_account(&self) -> Option<&Account> {
+    fn as_account(&self) -> AccountUpdate<'_> {
         match self {
-            Modification::Create { .. } => None,
+            Modification::Create { client_id, .. } => AccountUpdate::Create(client_id),
             Modification::Update { object, .. } => match &object.inner {
-                ObjectInner::Account(account) => Some(account),
-                _ => None,
+                ObjectInner::Account(account) => AccountUpdate::Update(account),
+                _ => unreachable!(),
             },
         }
     }

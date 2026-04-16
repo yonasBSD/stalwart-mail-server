@@ -92,6 +92,7 @@ pub fn spawn_task_manager(inner: Arc<Inner>) {
             }
             TaskType::DestroyAccount
             | TaskType::AccountMaintenance
+            | TaskType::TenantMaintenance
             | TaskType::StoreMaintenance => 1,
             TaskType::SpamFilterMaintenance => 2,
             TaskType::CalendarAlarmEmail
@@ -233,6 +234,9 @@ pub fn spawn_task_manager(inner: Arc<Inner>) {
                                 Task::AccountMaintenance(task) => {
                                     server.account_maintenance(task).await
                                 }
+                                Task::TenantMaintenance(task) => {
+                                    server.tenant_maintenance(task).await
+                                }
                                 Task::StoreMaintenance(task) => {
                                     server.store_maintenance(task).await
                                 }
@@ -354,9 +358,9 @@ impl TaskQueueManager for Server {
                                 TaskType::IndexDocument
                                 | TaskType::UnindexDocument
                                 | TaskType::IndexTrace => roles.search_indexing,
-                                TaskType::AccountMaintenance | TaskType::DestroyAccount => {
-                                    roles.account_maintenance
-                                }
+                                TaskType::AccountMaintenance
+                                | TaskType::TenantMaintenance
+                                | TaskType::DestroyAccount => roles.account_maintenance,
                                 TaskType::StoreMaintenance => roles.store_maintenance,
                                 TaskType::SpamFilterMaintenance => roles.spam_training,
                                 TaskType::CalendarAlarmEmail

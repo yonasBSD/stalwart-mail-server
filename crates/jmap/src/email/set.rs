@@ -156,7 +156,7 @@ impl EmailSet for Server {
 
             // Parse properties
             for (property, mut value) in object.into_vec() {
-                if let Err(err) = response.resolve_self_references(&mut value) {
+                if let Err(err) = response.resolve_self_references(&mut value, 0, false) {
                     response.not_created.append(id, err);
                     continue 'create;
                 };
@@ -822,7 +822,7 @@ impl EmailSet for Server {
             let mut new_data = data.inner.to_builder();
 
             for (property, mut value) in object.into_expanded_object() {
-                if let Err(err) = response.resolve_self_references(&mut value) {
+                if let Err(err) = response.resolve_self_references(&mut value, 0, false) {
                     response.not_updated.append(id, err);
                     continue 'update;
                 };

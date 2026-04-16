@@ -28,7 +28,10 @@ use http_proto::{
     HttpRequest, HttpResponse, HttpSessionData, ToHttpResponse,
     request::{decode_path_element, fetch_body},
 };
-use hyper::{Method, StatusCode, header};
+use hyper::{
+    Method, StatusCode,
+    header::{self, CONTENT_ENCODING},
+};
 use jmap::api::{ToJmapHttpResponse, ToRequestError};
 use jmap_proto::error::request::RequestError;
 use registry::schema::enums::Permission;
@@ -92,11 +95,19 @@ impl ManagementApi for Server {
             "schema" => {
                 // Authenticate request
                 let (_in_flight, access_token) = self.authenticate_headers(req, session).await?;
-                let todo = "fix";
-                let ui_schema_path = "/Users/me/code/jmap-schema/ui_schema.json";
-                let ui_schema = tokio::fs::read_to_string(ui_schema_path).await.unwrap();
+                static SCHEMA_JSON: &[u8] =
+                    include_bytes!("../../../../resources/schema/schema.json.gz");
+                const SCHEMA_HASH: &str =
+                    include_str!("../../../../resources/schema/schema.json.sha256");
 
-                Ok(Resource::new("application/json", ui_schema.into_bytes()).into_http_response())
+                if path.get(1).is_some_and(|hash| hash == &SCHEMA_HASH) {
+                    Ok(Resource::new("application/json", SCHEMA_JSON.to_vec())
+                        .into_http_response()
+                        .with_immutable_cache()
+                        .with_header(CONTENT_ENCODING, "gzip"))
+                } else {
+                    Ok(HttpResponse::redirect(format!("/api/schema/{SCHEMA_HASH}")))
+                }
             }
             "token" => {
                 let access_token = self.management_access_token(req, session).await?;

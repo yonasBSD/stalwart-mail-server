@@ -99,10 +99,11 @@ Schema history:
 3 - v0.13.0
 4 - v0.14.0
 5 - v0.15.0
+6 - v0.16.0
 
 */
 
-pub const DATABASE_SCHEMA_VERSION: u32 = 5;
+pub const DATABASE_SCHEMA_VERSION: u32 = 6;
 
 pub const LONG_1D_SLUMBER: Duration = Duration::from_secs(60 * 60 * 24);
 pub const LONG_1Y_SLUMBER: Duration = Duration::from_secs(60 * 60 * 24 * 365);

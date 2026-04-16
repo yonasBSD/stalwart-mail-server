@@ -431,7 +431,7 @@ fn update_file_node(
                 .with_description("Invalid property."));
         };
 
-        response.resolve_self_references(&mut value)?;
+        response.resolve_self_references(&mut value, 0, false)?;
 
         match (property, value) {
             (FileNodeProperty::Name, Value::Str(value))

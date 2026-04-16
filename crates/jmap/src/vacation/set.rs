@@ -170,7 +170,7 @@ impl VacationResponseSet for Server {
             let vacation = sieve.vacation_response.as_mut().unwrap();
 
             for (property, mut value) in changes.into_expanded_object() {
-                if let Err(err) = response.resolve_self_references(&mut value) {
+                if let Err(err) = response.resolve_self_references(&mut value, 0, false) {
                     return Ok(set_error(response, create_id, err));
                 };
 

@@ -178,6 +178,8 @@ pub(crate) trait EvalObjectReferences {
         response: &Response<'_>,
         graph: &mut Graph<'_>,
         depth: usize,
+        max_depth: usize,
+        eval_strings: bool,
     ) -> trc::Result<()>;
 }
 
@@ -191,6 +193,8 @@ where
         response: &Response<'_>,
         graph: &mut Graph<'_>,
         depth: usize,
+        max_depth: usize,
+        eval_strings: bool,
     ) -> trc::Result<()> {
         let Value::Object(obj) = self else {
             return Ok(());
@@ -213,6 +217,16 @@ where
                         .into_err()
                         .details(format_compact!("Id reference {id_ref:?} not found.")));
                 }
+            } else if eval_strings
+                && let Some(id) = key
+                    .as_string_key()
+                    .and_then(|k| k.strip_prefix('#'))
+                    .and_then(|id_ref| response.created_ids.get(id_ref))
+            {
+                *key = Key::Owned(match id {
+                    AnyId::Id(id) => id.to_string(),
+                    AnyId::BlobId(id) => id.to_string(),
+                });
             }
 
             match value {
@@ -236,15 +250,22 @@ where
                         }
                     }
                 }
-                Value::Array(items) if depth == 0 => {
+                Value::Array(items) if depth < max_depth => {
                     // Resolve references in arrays (e.g. emailIds: [#idRef1, #idRef2])
                     for item in items {
-                        item.eval_object_references(response, graph, depth + 1)?;
+                        item.eval_object_references(
+                            response,
+                            graph,
+                            depth + 1,
+                            max_depth,
+                            eval_strings,
+                        )?;
                     }
                 }
-                Value::Object(items) if depth == 0 => {
+                Value::Object(items) if depth < max_depth => {
                     // Resolve references in JMAP sets (e.g. mailboxIds: { "#idRef1": true, "#idRef2": true })
-                    for (key, _) in items.as_mut_vec() {
+                    let visit_children = depth + 1 < max_depth;
+                    for (key, value) in items.as_mut_vec() {
                         if let Key::Property(property) = key
                             && let Some(id_ref) = property.as_id_ref()
                         {
@@ -261,6 +282,26 @@ where
                                         "Id reference {id_ref:?} not found."
                                     )));
                             }
+                        } else if eval_strings
+                            && let Some(id) = key
+                                .as_string_key()
+                                .and_then(|k| k.strip_prefix('#'))
+                                .and_then(|id_ref| response.created_ids.get(id_ref))
+                        {
+                            *key = Key::Owned(match id {
+                                AnyId::Id(id) => id.to_string(),
+                                AnyId::BlobId(id) => id.to_string(),
+                            });
+                        }
+
+                        if visit_children && matches!(value, Value::Object(_)) {
+                            value.eval_object_references(
+                                response,
+                                graph,
+                                depth + 1,
+                                max_depth,
+                                eval_strings,
+                            )?;
                         }
                     }
                 }

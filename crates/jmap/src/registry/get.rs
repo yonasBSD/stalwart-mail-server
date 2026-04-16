@@ -26,6 +26,7 @@ use registry::{
             OBJ_FILTER_ACCOUNT, OBJ_FILTER_TENANT, OBJ_SINGLETON, Object, ObjectInner, ObjectType,
             Property,
         },
+        structs::Account,
     },
     types::id::ObjectId,
 };
@@ -236,13 +237,45 @@ impl RegistryGet for Server {
                                     .append(Property::PublicKey, JmapValue::Str(public_key.into()));
                             }
                         }
-                        ObjectInner::Account(obj)
+                        ObjectInner::Account(obj) => {
                             if get.properties.is_empty()
-                                || get.properties.contains(&Property::UsedDiskQuota) =>
+                                || get.properties.contains(&Property::UsedDiskQuota)
+                            {
+                                let quota = self.get_used_quota_account(id.document_id()).await?;
+                                extra_properties.append(
+                                    Property::UsedDiskQuota,
+                                    JmapValue::Number(quota.into()),
+                                );
+                            }
+                            if get.properties.is_empty()
+                                || get.properties.contains(&Property::EmailAddress)
+                            {
+                                let (name, domain_id) = match &obj {
+                                    Account::User(obj) => (obj.name.as_str(), obj.domain_id),
+                                    Account::Group(obj) => (obj.name.as_str(), obj.domain_id),
+                                };
+                                let domain = self.domain_by_id(domain_id.document_id()).await?;
+                                let email = format!(
+                                    "{}@{}",
+                                    name,
+                                    domain.as_ref().map(|d| d.name()).unwrap_or_default()
+                                );
+                                extra_properties
+                                    .append(Property::EmailAddress, JmapValue::Str(email.into()));
+                            }
+                        }
+                        ObjectInner::MailingList(obj)
+                            if get.properties.is_empty()
+                                || get.properties.contains(&Property::EmailAddress) =>
                         {
-                            let quota = self.get_used_quota_account(id.document_id()).await?;
+                            let domain = self.domain_by_id(obj.domain_id.document_id()).await?;
+                            let email = format!(
+                                "{}@{}",
+                                obj.name,
+                                domain.as_ref().map(|d| d.name()).unwrap_or_default()
+                            );
                             extra_properties
-                                .append(Property::UsedDiskQuota, JmapValue::Number(quota.into()));
+                                .append(Property::EmailAddress, JmapValue::Str(email.into()));
                         }
                         ObjectInner::Tenant(obj)
                             if get.properties.is_empty()

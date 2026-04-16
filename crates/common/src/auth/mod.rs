@@ -292,3 +292,9 @@ impl<'x> EmailAddressRef<'x> {
         }
     }
 }
+
+impl DomainCache {
+    pub fn name(&self) -> &str {
+        self.names.first().map(|s| s.as_ref()).unwrap_or_default()
+    }
+}

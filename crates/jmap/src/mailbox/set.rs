@@ -340,7 +340,7 @@ impl MailboxSet for Server {
             .unwrap_or_else(|| Mailbox::new(String::new()));
         let mut has_acl_changes = false;
         for (property, mut value) in changes_.into_vec() {
-            if let Err(err) = ctx.response.resolve_self_references(&mut value) {
+            if let Err(err) = ctx.response.resolve_self_references(&mut value, 0, false) {
                 return Ok(Err(err));
             };
             match (&property, value) {

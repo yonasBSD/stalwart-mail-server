@@ -87,6 +87,7 @@ pub(crate) async fn task_set(
             | TaskType::UnindexDocument
             | TaskType::IndexTrace
             | TaskType::AccountMaintenance
+            | TaskType::TenantMaintenance
             | TaskType::StoreMaintenance
             | TaskType::SpamFilterMaintenance
             | TaskType::AcmeRenewal

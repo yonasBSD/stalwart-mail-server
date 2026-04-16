@@ -95,7 +95,7 @@ impl PushSubscriptionSet for Server {
 
             for (property, mut value) in object.into_expanded_object() {
                 if let Err(err) = response
-                    .resolve_self_references(&mut value)
+                    .resolve_self_references(&mut value, 0, false)
                     .and_then(|_| validate_push_value(&property, value, &mut push, true))
                 {
                     response.not_created.append(id, err);
@@ -174,7 +174,7 @@ impl PushSubscriptionSet for Server {
 
             for (property, mut value) in object.into_expanded_object() {
                 if let Err(err) = response
-                    .resolve_self_references(&mut value)
+                    .resolve_self_references(&mut value, 0, false)
                     .and_then(|_| validate_push_value(&property, value, push, false))
                 {
                     response.not_updated.append(id, err);

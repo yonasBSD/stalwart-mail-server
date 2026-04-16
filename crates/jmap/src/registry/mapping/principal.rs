@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::str::FromStr;
+
 use crate::registry::mapping::{ObjectResponse, RegistrySetResponse, ValidationResult};
 use common::{
     Server,
@@ -22,22 +24,28 @@ use registry::{
 };
 use store::{
     registry::{RegistryObjectCounter, RegistryQuery},
-    write::{BatchBuilder, now},
+    write::{BatchBuilder, RegistryClass, ValueClass, now},
 };
 use trc::AddContext;
 use types::id::Id;
 
+#[derive(Clone, Copy)]
+pub enum AccountUpdate<'x> {
+    Update(&'x Account),
+    Create(&'x str),
+}
+
 pub(crate) async fn validate_account(
     set: &RegistrySetResponse<'_>,
     mut account: &mut Account,
-    old_account: Option<&Account>,
+    old_account: AccountUpdate<'_>,
 ) -> ValidationResult {
     // SPDX-SnippetBegin
     // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
     // SPDX-License-Identifier: LicenseRef-SEL
     #[cfg(feature = "enterprise")]
     if set.server.core.is_enterprise_edition()
-        && old_account.is_none()
+        && matches!(old_account, AccountUpdate::Create(_))
         && !set.server.can_create_account().await?
     {
         return Ok(Err(SetError::forbidden().with_description(format!(
@@ -58,7 +66,7 @@ pub(crate) async fn validate_account(
     };
 
     let validate_permissions = match (&mut account, old_account) {
-        (Account::User(account), Some(Account::User(old_account))) => {
+        (Account::User(account), AccountUpdate::Update(Account::User(old_account))) => {
             // Validate credentials
             let has_password = account.credentials.values().any(|credential| {
                 matches!(credential, Credential::Password(credential) if credential.credential_id.is_valid())
@@ -185,10 +193,10 @@ pub(crate) async fn validate_account(
 
             account.permissions != old_account.permissions || account.roles != old_account.roles
         }
-        (Account::Group(account), Some(Account::Group(old_account))) => {
+        (Account::Group(account), AccountUpdate::Update(Account::Group(old_account))) => {
             account.permissions != old_account.permissions || account.roles != old_account.roles
         }
-        (Account::User(account), None) => {
+        (Account::User(account), AccountUpdate::Create(_)) => {
             // Validate tenant quotas
             if let Err(err) = validate_tenant_quota(set, TenantStorageQuota::MaxAccounts).await? {
                 return Ok(Err(err));
@@ -211,7 +219,7 @@ pub(crate) async fn validate_account(
 
             true
         }
-        (Account::Group(_), None) => {
+        (Account::Group(_), AccountUpdate::Create(_)) => {
             // Validate tenant quotas
             if let Err(err) = validate_tenant_quota(set, TenantStorageQuota::MaxGroups).await? {
                 return Ok(Err(err));
@@ -222,7 +230,7 @@ pub(crate) async fn validate_account(
         _ => unreachable!(),
     };
 
-    if validate_permissions {
+    let mut result = if validate_permissions {
         Ok(set
             .server
             .can_set_permissions(set.access_token, account)
@@ -231,7 +239,20 @@ pub(crate) async fn validate_account(
             .map_err(build_set_error))
     } else {
         Ok(Ok(ObjectResponse::default()))
+    };
+
+    if set.server.registry().is_recovery_mode()
+        && let Ok(Ok(result)) = &mut result
+        && let AccountUpdate::Create(client_id) = old_account
+        && let Some(account_id) = client_id
+            .strip_prefix("restore-")
+            .and_then(|id| id.parse::<u32>().ok())
+    {
+        restore_account_id(set.server, account_id).await?;
+        result.id = Some(account_id.into());
     }
+
+    result
 }
 
 async fn validate_credential_creation(
@@ -451,4 +472,37 @@ pub(crate) fn build_set_error(permissions: Vec<Permission>) -> SetError<Property
         "You are not authorized to grant permissions: {}",
         missing_permissions
     ))
+}
+
+async fn restore_account_id(server: &Server, id: u32) -> trc::Result<()> {
+    // Obtain current counter value
+    let object_id = ObjectType::Account.to_id();
+    let last_id = server
+        .store()
+        .get_counter(ValueClass::Registry(RegistryClass::IdCounter { object_id }))
+        .await
+        .caused_by(trc::location!())?
+        .cast_unsigned() as u32;
+
+    if last_id < id {
+        let mut id_batch = BatchBuilder::new();
+        id_batch.add_and_get(
+            ValueClass::Registry(RegistryClass::IdCounter { object_id }),
+            (id - last_id) as i64,
+        );
+        if server
+            .store()
+            .write(id_batch.build_all())
+            .await
+            .and_then(|v| v.last_counter_id())?
+            < id as i64
+        {
+            return Err(trc::StoreEvent::UnexpectedError
+                .into_err()
+                .details("Failed to update id counter")
+                .caused_by(trc::location!()));
+        }
+    }
+
+    Ok(())
 }

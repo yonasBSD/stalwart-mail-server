@@ -104,6 +104,7 @@ impl TaskInfo for Task {
             Task::AcmeRenewal(_) => "AcmeRenewal",
             Task::DkimManagement(_) => "DkimManagement",
             Task::DnsManagement(_) => "DnsManagement",
+            Task::TenantMaintenance(_) => "TenantMaintenance",
         }
     }
 }
