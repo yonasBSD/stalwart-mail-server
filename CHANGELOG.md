@@ -95,6 +95,7 @@ This version includes **multiple breaking changes**. If you are upgrading from v
 - ACME: Fix wrong origin for subdomain updates (#2360)
 - Spam filter: Skip invalid messages during training.
 - Calendar: Include minutes in localized invite templates (#2828)
+- HTTP: Fix `204` CORS preflight responses
 
 ## [0.15.5] - 2026-02-14
 
