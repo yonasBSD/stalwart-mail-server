@@ -404,6 +404,11 @@ impl Server {
 impl BlockedIps {
     pub async fn parse(bp: &mut Bootstrap) -> Self {
         let mut ips = Self::default();
+
+        if bp.registry.is_recovery_mode() {
+            return ips;
+        }
+
         let mut expired_blocks = Vec::new();
         let now = now() as i64;
 

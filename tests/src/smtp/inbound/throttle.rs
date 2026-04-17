@@ -68,6 +68,7 @@ async fn throttle_inbound() {
                 count: 2,
                 period: 1000u64.into(),
             },
+            description: "Test throttle".into(),
             ..Default::default()
         })
         .await;

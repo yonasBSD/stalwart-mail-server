@@ -95,10 +95,10 @@ impl<T: RegistryJsonPatch + Default + Debug> RegistryJsonPatch for List<T> {
         value: JmapValue<'x>,
     ) -> PatchResult<'x> {
         match (pointer.next(), value) {
-            (Some(JsonPointerItem::Number(key)), Value::Null) => {
-                if self.0.remove(&(*key as u32)).is_some() {
-                    return Ok(MaybeUnpatched::Patched);
-                }
+            (Some(JsonPointerItem::Number(key)), Value::Null)
+                if self.0.remove(&(*key as u32)).is_some() =>
+            {
+                return Ok(MaybeUnpatched::Patched);
             }
             (Some(JsonPointerItem::Key(key)), Value::Null) => {
                 if let Ok(key) = key.to_string().parse::<u32>()

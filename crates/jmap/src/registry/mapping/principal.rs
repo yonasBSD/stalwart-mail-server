@@ -4,8 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::str::FromStr;
-
 use crate::registry::mapping::{ObjectResponse, RegistrySetResponse, ValidationResult};
 use common::{
     Server,
@@ -63,6 +61,16 @@ pub(crate) async fn validate_account(
             .is_some()
     } else {
         false
+    };
+    let recover_account_id = if set.server.registry().is_recovery_mode()
+        && let AccountUpdate::Create(client_id) = old_account
+        && let Some(account_id) = client_id
+            .strip_prefix("restore-")
+            .and_then(|id| id.parse::<u32>().ok())
+    {
+        Some(account_id)
+    } else {
+        None
     };
 
     let validate_permissions = match (&mut account, old_account) {
@@ -173,6 +181,7 @@ pub(crate) async fn validate_account(
                     credential,
                     is_external_directory,
                     has_password,
+                    false,
                 )
                 .await?
                 {
@@ -209,6 +218,7 @@ pub(crate) async fn validate_account(
                     credential,
                     is_external_directory,
                     index > 0,
+                    recover_account_id.is_some(),
                 )
                 .await?
                 {
@@ -241,12 +251,8 @@ pub(crate) async fn validate_account(
         Ok(Ok(ObjectResponse::default()))
     };
 
-    if set.server.registry().is_recovery_mode()
+    if let Some(account_id) = recover_account_id
         && let Ok(Ok(result)) = &mut result
-        && let AccountUpdate::Create(client_id) = old_account
-        && let Some(account_id) = client_id
-            .strip_prefix("restore-")
-            .and_then(|id| id.parse::<u32>().ok())
     {
         restore_account_id(set.server, account_id).await?;
         result.id = Some(account_id.into());
@@ -260,6 +266,7 @@ async fn validate_credential_creation(
     credential: &mut Credential,
     is_external_directory: bool,
     has_password: bool,
+    is_recovery_mode: bool,
 ) -> trc::Result<Result<(), SetError<Property>>> {
     match credential {
         Credential::Password(credential) => {
@@ -271,6 +278,10 @@ async fn validate_credential_creation(
                 return Ok(Err(SetError::invalid_properties()
                     .with_property(Property::Credentials)
                     .with_description("Only one password credential is allowed.")));
+            }
+
+            if is_recovery_mode && credential.secret.starts_with('$') {
+                return Ok(Ok(()));
             }
 
             if let Err(err) = server.is_secure_password(&credential.secret, &[]) {
@@ -490,13 +501,13 @@ async fn restore_account_id(server: &Server, id: u32) -> trc::Result<()> {
             ValueClass::Registry(RegistryClass::IdCounter { object_id }),
             (id - last_id) as i64,
         );
-        if server
+        let last_id = server
             .store()
             .write(id_batch.build_all())
             .await
-            .and_then(|v| v.last_counter_id())?
-            < id as i64
-        {
+            .and_then(|v| v.last_counter_id())?;
+
+        if last_id < id as i64 {
             return Err(trc::StoreEvent::UnexpectedError
                 .into_err()
                 .details("Failed to update id counter")

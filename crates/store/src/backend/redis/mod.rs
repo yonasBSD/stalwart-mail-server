@@ -60,7 +60,7 @@ impl RedisStore {
     }
 
     pub async fn open_cluster(config: structs::RedisClusterStore) -> Result<InMemoryStore, String> {
-        let mut builder = ClusterClientBuilder::new(config.urls.into_iter());
+        let mut builder = ClusterClientBuilder::new(config.urls);
         if let Some(value) = config.auth_username {
             builder = builder.username(value);
         }

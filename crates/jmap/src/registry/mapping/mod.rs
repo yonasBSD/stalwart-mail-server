@@ -23,6 +23,7 @@ use utils::map::vec_map::VecMap;
 
 pub mod account;
 pub mod action;
+pub mod bootstrap;
 pub mod cluster;
 pub mod dkim;
 pub mod domain;

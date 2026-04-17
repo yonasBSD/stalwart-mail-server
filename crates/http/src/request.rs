@@ -325,19 +325,18 @@ impl ParseHttp for Server {
                         .await
                         .map(|resource| resource.into_http_response());
                 }
-                ("autoconfig", &Method::GET) => {
+                ("autoconfig", &Method::GET)
                     if path.next().unwrap_or_default() == "mail"
-                        && path.next().unwrap_or_default() == "config-v1.1.xml"
-                    {
-                        // Limit anonymous requests
-                        self.is_http_anonymous_request_allowed(session.remote_ip)
-                            .await?;
+                        && path.next().unwrap_or_default() == "config-v1.1.xml" =>
+                {
+                    // Limit anonymous requests
+                    self.is_http_anonymous_request_allowed(session.remote_ip)
+                        .await?;
 
-                        return self
-                            .handle_autoconfig_request(req.uri().query())
-                            .await
-                            .map(|resource| resource.into_http_response());
-                    }
+                    return self
+                        .handle_autoconfig_request(req.uri().query())
+                        .await
+                        .map(|resource| resource.into_http_response());
                 }
                 (_, &Method::OPTIONS) => {
                     return Ok(JsonProblemResponse(StatusCode::NO_CONTENT).into_http_response());

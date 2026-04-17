@@ -12,18 +12,23 @@ use crate::{
     Inner,
     network::{TcpAcceptor, tls::CertificateResolver},
 };
-use registry::schema::{
-    enums::{NetworkListenerProtocol, TlsCipherSuite, TlsVersion},
-    structs::{ClusterListenerGroup, NetworkListener, SystemSettings},
+use registry::{
+    schema::{
+        enums::{NetworkListenerProtocol, TlsCipherSuite, TlsVersion},
+        prelude::{ObjectType, SocketAddr},
+        structs::{ClusterListenerGroup, NetworkListener, SystemSettings},
+    },
+    types::{id::ObjectId, map::Map},
 };
 use rustls::{
     ALL_VERSIONS, ServerConfig, SupportedCipherSuite,
     crypto::aws_lc_rs::{ALL_CIPHER_SUITES, cipher_suite::*, default_provider},
 };
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 use store::registry::{RegistryObject, bootstrap::Bootstrap};
 use tokio::net::TcpSocket;
 use tokio_rustls::TlsAcceptor;
+use types::id::Id;
 use utils::snowflake::SnowflakeIdGenerator;
 
 impl Listeners {
@@ -35,21 +40,47 @@ impl Listeners {
         };
 
         // Parse servers
-        let system = bp.setting_infallible::<SystemSettings>().await;
-
-        for listener in bp.list_infallible::<NetworkListener>().await {
-            if bp.role.as_ref().is_none_or(|r| match &r.listeners {
-                ClusterListenerGroup::EnableAll => true,
-                ClusterListenerGroup::DisableAll => false,
-                ClusterListenerGroup::EnableSome(group) => {
-                    group.listener_ids.iter().any(|id| *id == listener.id.id())
+        if !bp.registry.is_recovery_mode() {
+            let system = bp.setting_infallible::<SystemSettings>().await;
+            for listener in bp.list_infallible::<NetworkListener>().await {
+                if bp.role.as_ref().is_none_or(|r| match &r.listeners {
+                    ClusterListenerGroup::EnableAll => true,
+                    ClusterListenerGroup::DisableAll => false,
+                    ClusterListenerGroup::EnableSome(group) => {
+                        group.listener_ids.iter().any(|id| *id == listener.id.id())
+                    }
+                    ClusterListenerGroup::DisableSome(group) => {
+                        !group.listener_ids.iter().any(|id| *id == listener.id.id())
+                    }
+                }) {
+                    servers.parse_server(bp, listener, &system);
                 }
-                ClusterListenerGroup::DisableSome(group) => {
-                    !group.listener_ids.iter().any(|id| *id == listener.id.id())
-                }
-            }) {
-                servers.parse_server(bp, listener, &system);
             }
+        } else {
+            servers.parse_server(
+                bp,
+                RegistryObject {
+                    id: ObjectId::new(ObjectType::NetworkListener, Id::singleton()),
+                    object: NetworkListener {
+                        bind: Map::new(vec![
+                            SocketAddr::from_str(&format!(
+                                "[::]:{}",
+                                std::env::var("STALWART_RECOVERY_MODE_PORT")
+                                    .ok()
+                                    .and_then(|p| p.parse::<u16>().ok())
+                                    .unwrap_or(8080)
+                            ))
+                            .unwrap(),
+                        ]),
+                        name: "http-recovery".to_string(),
+                        protocol: NetworkListenerProtocol::Http,
+                        tls_implicit: false,
+                        ..Default::default()
+                    },
+                    revision: 0,
+                },
+                &SystemSettings::default(),
+            );
         }
         servers
     }

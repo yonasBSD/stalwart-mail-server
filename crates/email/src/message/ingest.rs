@@ -785,12 +785,11 @@ impl EmailIngest for Server {
                             let document_id = key.deserialize_be_u32(document_id_pos)?;
                             let thread_id = value.deserialize_be_u32(0)?;
 
-                            if message_ids.len() == 1
-                                || (message_ids.len() == references.len() / CheekyHash::HASH_SIZE
-                                    && references
-                                        .chunks_exact(CheekyHash::HASH_SIZE)
-                                        .zip(message_ids.iter())
-                                        .all(|(a, b)| a == b.as_raw_bytes()))
+                            if message_ids.len() == references.len() / CheekyHash::HASH_SIZE
+                                && references
+                                    .chunks_exact(CheekyHash::HASH_SIZE)
+                                    .zip(message_ids.iter())
+                                    .all(|(a, b)| a == b.as_raw_bytes())
                             {
                                 result.duplicate_ids.push(document_id);
                             }

@@ -7,6 +7,7 @@
 #[cfg(feature = "azure")]
 pub mod azure;
 pub mod elastic;
+pub mod ephemeral;
 #[cfg(feature = "foundation")]
 pub mod foundationdb;
 pub mod fs;

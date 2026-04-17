@@ -9,6 +9,12 @@ use registry::schema::structs::DataStore;
 use std::{net::IpAddr, path::PathBuf};
 use utils::snowflake::SnowflakeIdGenerator;
 
+pub(crate) enum RegistryInit {
+    Ok(DataStore),
+    Err(String),
+    Bootstrap,
+}
+
 impl RegistryStoreInner {
     pub(crate) fn new(local_path: PathBuf) -> Self {
         Self {
@@ -52,25 +58,23 @@ impl RegistryStoreInner {
         }
     }
 
-    pub(crate) async fn read_data_store(&self) -> Result<DataStore, String> {
-        tokio::fs::read_to_string(&self.local_path)
-            .await
-            .map_err(|err| {
-                format!(
-                    "Failed to read data store settings at {}: {}",
+    pub(crate) async fn read_data_store(&self) -> RegistryInit {
+        match tokio::fs::read_to_string(&self.local_path).await {
+            Ok(contents) => match serde_json::from_str::<DataStore>(&contents) {
+                Ok(data_store) => RegistryInit::Ok(data_store),
+                Err(err) => RegistryInit::Err(format!(
+                    "Failed to parse data store settings at {}: {}",
                     self.local_path.display(),
                     err
-                )
-            })
-            .and_then(|contents| {
-                serde_json::from_str::<DataStore>(&contents).map_err(|err| {
-                    format!(
-                        "Failed to parse data store settings at {}: {}",
-                        self.local_path.display(),
-                        err
-                    )
-                })
-            })
+                )),
+            },
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => RegistryInit::Bootstrap,
+            Err(err) => RegistryInit::Err(format!(
+                "Failed to read data store settings at {}: {}",
+                self.local_path.display(),
+                err
+            )),
+        }
     }
 }
 

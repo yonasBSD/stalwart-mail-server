@@ -7,6 +7,3 @@ run.sh
 .ignore
 .data
 .DS_Store
-crates/registry/src/schema/*s.rs
-crates/registry/src/schema/*impl.rs
-resources/schema

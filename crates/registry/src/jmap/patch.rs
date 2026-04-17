@@ -379,7 +379,7 @@ impl<T: RegistryJsonPropertyPatch> RegistryJsonPatch for T {
                                 unpatched.append(property, value);
                             }
                             Ok(MaybeUnpatched::UnpatchedMany { properties }) => {
-                                unpatched.extend(properties.into_iter());
+                                unpatched.extend(properties);
                             }
                             Err(mut e) => {
                                 if !e.path.is_empty() {

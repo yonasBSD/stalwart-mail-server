@@ -535,17 +535,17 @@ pub(crate) async fn account_set(
                             Credential::AppPassword(credential),
                             Credential::AppPassword(old_credential),
                         )
-                        | (Credential::ApiKey(credential), Credential::ApiKey(old_credential)) => {
+                        | (Credential::ApiKey(credential), Credential::ApiKey(old_credential))
+                            if credential.secret != old_credential.secret =>
+                        {
                             // Paranoid check, this is verified in the patch implementation
-                            if credential.secret != old_credential.secret {
-                                set.response.not_updated.append(
-                                    id,
-                                    SetError::forbidden().with_description(
-                                        "Cannot change the value of an app password or API key.",
-                                    ),
-                                );
-                                continue 'outer;
-                            }
+                            set.response.not_updated.append(
+                                id,
+                                SetError::forbidden().with_description(
+                                    "Cannot change the value of an app password or API key.",
+                                ),
+                            );
+                            continue 'outer;
                         }
                         _ => {}
                     }
@@ -852,9 +852,9 @@ pub(crate) async fn credential_query(
         }
         Property::Id => {
             if params.sort_ascending {
-                matches.sort_by(|a, b| a.0.cmp(&b.0));
+                matches.sort_by_key(|a| a.0);
             } else {
-                matches.sort_by(|a, b| b.0.cmp(&a.0));
+                matches.sort_by_key(|b| std::cmp::Reverse(b.0));
             }
         }
         property => {

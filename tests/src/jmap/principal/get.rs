@@ -197,7 +197,9 @@ pub async fn test(test: &TestServer) {
               "maxSizeFileNodeName": 255,
               "fileNodeQuerySortOptions": [],
               "mayCreateTopLevelFileNode": true
-            }
+            },
+            "urn:ietf:params:jmap:mail:share": {},
+            "urn:stalwart:jmap": {}
           }
         }
       },
@@ -215,7 +217,9 @@ pub async fn test(test: &TestServer) {
         "urn:ietf:params:jmap:quota": john_id,
         "urn:ietf:params:jmap:principals": john_id,
         "urn:ietf:params:jmap:principals:availability": john_id,
-        "urn:ietf:params:jmap:filenode": john_id
+        "urn:ietf:params:jmap:filenode": john_id,
+        "urn:ietf:params:jmap:mail:share": john_id,
+        "urn:stalwart:jmap": john_id
       },
       "username": "jdoe@example.com",
       "apiUrl": "https://127.0.0.1:8899/jmap/",

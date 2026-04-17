@@ -28,32 +28,37 @@ pub trait SpawnServices {
 
 impl StartServices for BootManager {
     async fn start_services(&mut self) {
+        let server = self.inner.build_server();
         // Unpack webadmin
         self.inner
             .data
             .applications
-            .unpack_all(&self.inner.build_server(), false)
+            .unpack_all(&server, false)
             .await;
 
-        self.ipc_rxs.spawn_services(self.inner.clone());
+        if !server.registry().is_recovery_mode() {
+            self.ipc_rxs.spawn_services(self.inner.clone());
+        }
     }
 }
 
 impl SpawnServices for IpcReceivers {
     fn spawn_services(&mut self, inner: Arc<Inner>) {
-        // Spawn push manager
-        spawn_push_router(inner.clone(), self.push_rx.take().unwrap());
+        if !inner.shared_core.load().storage.registry.is_recovery_mode() {
+            // Spawn push manager
+            spawn_push_router(inner.clone(), self.push_rx.take().unwrap());
 
-        // Spawn broadcast publisher
-        if let Some(event_rx) = self.broadcast_rx.take() {
             // Spawn broadcast publisher
-            spawn_broadcast_publisher(inner.clone(), event_rx);
+            if let Some(event_rx) = self.broadcast_rx.take() {
+                // Spawn broadcast publisher
+                spawn_broadcast_publisher(inner.clone(), event_rx);
+            }
+
+            // Spawn task manager
+            spawn_task_manager(inner.clone());
+
+            // Spawn task scheduler
+            spawn_task_scheduler(inner);
         }
-
-        // Spawn task manager
-        spawn_task_manager(inner.clone());
-
-        // Spawn task scheduler
-        spawn_task_scheduler(inner);
     }
 }

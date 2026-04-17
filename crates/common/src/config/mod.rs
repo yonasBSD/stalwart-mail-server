@@ -38,7 +38,7 @@ impl Core {
         #[cfg(feature = "enterprise")]
         let enterprise = {
             let enterprise = crate::enterprise::Enterprise::parse(bp).await;
-            if enterprise.is_none() {
+            if enterprise.is_none() && !bp.registry.is_recovery_mode() {
                 use registry::schema::prelude::ObjectType;
                 use store::Store;
 
@@ -64,7 +64,7 @@ impl Core {
                     storage.memory = storage.memory.downgrade_store();
                 }
                 storage.metrics = Store::None;
-                storage.metrics = Store::None;
+                storage.tracing = Store::None;
                 storage.directories.clear();
             }
             enterprise

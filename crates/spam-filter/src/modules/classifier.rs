@@ -881,7 +881,7 @@ async fn delete_samples(
 ) -> trc::Result<()> {
     let object_id = ObjectType::SpamTrainingSample.to_id();
     let mut batch = BatchBuilder::new();
-    for sample in samples.into_iter().chain(duplicate_samples.into_iter()) {
+    for sample in samples.into_iter().chain(duplicate_samples) {
         if let Some(until) = sample.remove {
             batch
                 .with_account_id(sample.sample.account_id)

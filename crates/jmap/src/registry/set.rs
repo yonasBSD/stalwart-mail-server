@@ -10,6 +10,7 @@ use crate::registry::{
         ObjectResponse, RegistrySetResponse,
         account::account_set,
         action::action_set,
+        bootstrap::bootstrap_set,
         dkim::validate_dkim_signature,
         domain::{validate_dns_server, validate_domain},
         map_bootstrap_error,
@@ -92,6 +93,13 @@ impl RegistrySet for Server {
         access_token: &AccessToken,
         session: &HttpSessionData,
     ) -> trc::Result<SetResponse<Registry>> {
+        // Initial assertions
+        if self.registry().is_bootstrap_mode() && !matches!(object_type, ObjectType::Bootstrap) {
+            return Err(trc::JmapEvent::Forbidden.into_err().details(concat!(
+                "The server is in bootstrap mode. Only the 'Bootstrap' object type ",
+                "can be modified until the bootstrap process is complete.",
+            )));
+        }
         self.assert_enterprise_object(object_type)?;
 
         let object_flags = object_type.flags();
@@ -667,6 +675,10 @@ impl RegistrySet for Server {
             ObjectType::Task => task_set(set).await.map(|set| set.into_response()),
 
             ObjectType::Action => action_set(set).await.map(|set| set.into_response()),
+
+            ObjectType::Bootstrap => Box::pin(bootstrap_set(set))
+                .await
+                .map(|set| set.into_response()),
 
             ObjectType::Log | ObjectType::Metric | ObjectType::Trace | ObjectType::ClusterNode => {
                 set.fail_all_create("Telemetry objects cannot be created");

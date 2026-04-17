@@ -126,12 +126,10 @@ impl GlobPattern {
                         continue;
                     }
                 }
-                Some(PatternChar::WildcardSingle { .. }) => {
-                    if nx < value.len() {
-                        px += 1;
-                        nx += 1;
-                        continue;
-                    }
+                Some(PatternChar::WildcardSingle { .. }) if nx < value.len() => {
+                    px += 1;
+                    nx += 1;
+                    continue;
                 }
                 Some(PatternChar::WildcardMany { .. }) => {
                     next_px = px;

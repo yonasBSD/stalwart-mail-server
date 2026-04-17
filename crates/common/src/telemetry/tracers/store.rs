@@ -62,7 +62,7 @@ pub(crate) fn spawn_store_tracer(builder: SubscriberBuilder, settings: StoreTrac
                                     [span.as_ref()]
                                         .into_iter()
                                         .chain(events.iter().map(|event| event.as_ref()))
-                                        .chain([event.as_ref()].into_iter()),
+                                        .chain([event.as_ref()]),
                                     events.len() + 2,
                                 )
                                 .to_pickled_vec(),

@@ -6,7 +6,7 @@
 
 // This file is auto-generated. Do not edit directly.
 
-pub const TOTAL_EVENT_COUNT: usize = 603;
+pub const TOTAL_EVENT_COUNT: usize = 605;
 pub const TOTAL_METRIC_COUNT: usize = 339;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -618,6 +618,8 @@ pub enum ServerEvent {
     StartupError = 394,
     ThreadError = 395,
     Licensing = 391,
+    RecoveryMode = 603,
+    BootstrapMode = 604,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

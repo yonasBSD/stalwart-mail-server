@@ -86,8 +86,7 @@ impl DummyWebDavClient {
     }
 
     pub async fn request(&self, method: &str, query: &str, body: impl Into<String>) -> DavResponse {
-        self.request_with_headers(method, query, [].into_iter(), body)
-            .await
+        self.request_with_headers(method, query, [], body).await
     }
 
     pub async fn request_with_headers(

@@ -19,7 +19,7 @@ use registry::schema::{
     prelude::ObjectType,
     structs::{self, EventTracingLevel, MetricsPrometheus, Tracer, WebHook},
 };
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
 use store::registry::bootstrap::Bootstrap;
 use trc::{EventType, Level, MetricType, TelemetryEvent, ipc::subscriber::Interests};
 
@@ -156,70 +156,48 @@ impl Telemetry {
 
 impl Tracers {
     pub async fn parse(bp: &mut Bootstrap, storage: &Storage) -> Self {
-        // Parse custom logging levels
         let mut custom_levels = AHashMap::new();
-        for level in bp.list_infallible::<EventTracingLevel>().await {
-            custom_levels.insert(level.object.event, level.object.level.into());
-        }
-
-        // Parse tracers
         let mut tracers: Vec<TelemetrySubscriber> = Vec::new();
         let mut global_interests = Interests::default();
 
-        for tracer in bp.list_infallible::<Tracer>().await {
-            let id = tracer.id;
-            let tracer = tracer.object;
-            let level;
-            let lossy;
-            let events;
-            let events_policy;
-            let enable;
+        if !bp.registry.is_recovery_mode() {
+            // Parse custom logging levels
+            for level in bp.list_infallible::<EventTracingLevel>().await {
+                custom_levels.insert(level.object.event, level.object.level.into());
+            }
 
-            let typ = match tracer {
-                Tracer::Log(tracer) if tracer.enable => {
-                    level = Level::from(tracer.level);
-                    lossy = tracer.lossy;
-                    events = tracer.events;
-                    events_policy = tracer.events_policy;
-                    enable = tracer.enable;
+            // Parse tracers
+            for tracer in bp.list_infallible::<Tracer>().await {
+                let id = tracer.id;
+                let tracer = tracer.object;
+                let level;
+                let lossy;
+                let events;
+                let events_policy;
+                let enable;
 
-                    TelemetrySubscriberType::LogTracer(LogTracer {
-                        path: tracer.path,
-                        prefix: tracer.prefix,
-                        rotate: match tracer.rotate {
-                            LogRotateFrequency::Daily => RotationStrategy::Daily,
-                            LogRotateFrequency::Hourly => RotationStrategy::Hourly,
-                            LogRotateFrequency::Minutely => RotationStrategy::Minutely,
-                            LogRotateFrequency::Never => RotationStrategy::Never,
-                        },
-                        ansi: tracer.ansi,
-                        multiline: tracer.multiline,
-                    })
-                }
-                Tracer::Stdout(tracer) if tracer.enable => {
-                    level = Level::from(tracer.level);
-                    lossy = tracer.lossy;
-                    events = tracer.events;
-                    events_policy = tracer.events_policy;
-                    enable = tracer.enable;
+                let typ = match tracer {
+                    Tracer::Log(tracer) if tracer.enable => {
+                        level = Level::from(tracer.level);
+                        lossy = tracer.lossy;
+                        events = tracer.events;
+                        events_policy = tracer.events_policy;
+                        enable = tracer.enable;
 
-                    if !tracers
-                        .iter()
-                        .any(|t| matches!(t.typ, TelemetrySubscriberType::ConsoleTracer(_)))
-                    {
-                        TelemetrySubscriberType::ConsoleTracer(ConsoleTracer {
+                        TelemetrySubscriberType::LogTracer(LogTracer {
+                            path: tracer.path,
+                            prefix: tracer.prefix,
+                            rotate: match tracer.rotate {
+                                LogRotateFrequency::Daily => RotationStrategy::Daily,
+                                LogRotateFrequency::Hourly => RotationStrategy::Hourly,
+                                LogRotateFrequency::Minutely => RotationStrategy::Minutely,
+                                LogRotateFrequency::Never => RotationStrategy::Never,
+                            },
                             ansi: tracer.ansi,
                             multiline: tracer.multiline,
-                            buffered: tracer.buffered,
                         })
-                    } else {
-                        bp.build_error(id, "Only one console tracer is allowed");
-                        continue;
                     }
-                }
-                Tracer::Journal(tracer) if tracer.enable => {
-                    #[cfg(unix)]
-                    {
+                    Tracer::Stdout(tracer) if tracer.enable => {
                         level = Level::from(tracer.level);
                         lossy = tracer.lossy;
                         events = tracer.events;
@@ -228,323 +206,348 @@ impl Tracers {
 
                         if !tracers
                             .iter()
-                            .any(|t| matches!(t.typ, TelemetrySubscriberType::JournalTracer(_)))
+                            .any(|t| matches!(t.typ, TelemetrySubscriberType::ConsoleTracer(_)))
                         {
-                            match crate::telemetry::tracers::journald::Subscriber::new() {
-                                Ok(subscriber) => {
-                                    TelemetrySubscriberType::JournalTracer(subscriber)
-                                }
-                                Err(e) => {
-                                    bp.build_error(
-                                        id,
-                                        format!("Failed to create journald subscriber: {e}"),
-                                    );
-                                    continue;
-                                }
-                            }
+                            TelemetrySubscriberType::ConsoleTracer(ConsoleTracer {
+                                ansi: tracer.ansi,
+                                multiline: tracer.multiline,
+                                buffered: tracer.buffered,
+                            })
                         } else {
-                            bp.build_error(id, "Only one journal tracer is allowed");
+                            bp.build_error(id, "Only one console tracer is allowed");
                             continue;
                         }
                     }
+                    Tracer::Journal(tracer) if tracer.enable => {
+                        #[cfg(unix)]
+                        {
+                            level = Level::from(tracer.level);
+                            lossy = tracer.lossy;
+                            events = tracer.events;
+                            events_policy = tracer.events_policy;
+                            enable = tracer.enable;
 
-                    #[cfg(not(unix))]
-                    {
-                        bp.build_error(id, "Journald is only available on Unix systems.");
-                        continue;
-                    }
-                }
-                Tracer::OtelHttp(tracer) if tracer.enable => {
-                    level = Level::from(tracer.level);
-                    lossy = tracer.lossy;
-                    events = tracer.events;
-                    events_policy = tracer.events_policy;
-                    enable = tracer.enable;
-
-                    let headers = match tracer
-                        .http_auth
-                        .build_headers(tracer.http_headers, None)
-                        .await
-                    {
-                        Ok(headers) => headers
-                            .into_iter()
-                            .filter_map(|(k, v)| {
-                                k.and_then(|k| Some((k.to_string(), v.to_str().ok()?.to_string())))
-                            })
-                            .collect::<HashMap<String, String>>(),
-                        Err(err) => {
-                            bp.build_error(
-                                id,
-                                format!("Failed to build OpenTelemetry HTTP headers: {err}"),
-                            );
-                            continue;
+                            if !tracers
+                                .iter()
+                                .any(|t| matches!(t.typ, TelemetrySubscriberType::JournalTracer(_)))
+                            {
+                                match crate::telemetry::tracers::journald::Subscriber::new() {
+                                    Ok(subscriber) => {
+                                        TelemetrySubscriberType::JournalTracer(subscriber)
+                                    }
+                                    Err(e) => {
+                                        bp.build_error(
+                                            id,
+                                            format!("Failed to create journald subscriber: {e}"),
+                                        );
+                                        continue;
+                                    }
+                                }
+                            } else {
+                                bp.build_error(id, "Only one journal tracer is allowed");
+                                continue;
+                            }
                         }
-                    };
 
-                    let mut span_exporter = SpanExporter::builder()
-                        .with_http()
-                        .with_endpoint(tracer.endpoint.clone())
-                        .with_timeout(tracer.timeout.into_inner());
-                    let mut log_exporter = LogExporter::builder()
-                        .with_http()
-                        .with_endpoint(tracer.endpoint)
-                        .with_timeout(tracer.timeout.into_inner());
-                    if !headers.is_empty() {
-                        span_exporter = span_exporter.with_headers(headers.clone());
-                        log_exporter = log_exporter.with_headers(headers);
-                    }
-
-                    match (span_exporter.build(), log_exporter.build()) {
-                        (Ok(span_exporter), Ok(log_exporter)) => {
-                            TelemetrySubscriberType::OtelTracer(OtelTracer {
-                                span_exporter,
-                                log_exporter,
-                                throttle: tracer.throttle.into_inner(),
-                                span_exporter_enable: tracer.enable_span_exporter,
-                                log_exporter_enable: tracer.enable_log_exporter,
-                            })
-                        }
-                        (Err(err), _) => {
-                            bp.build_error(
-                                id,
-                                format!("Failed to build OpenTelemetry span exporter: {err}"),
-                            );
-                            continue;
-                        }
-                        (_, Err(err)) => {
-                            bp.build_error(
-                                id,
-                                format!("Failed to build OpenTelemetry log exporter: {err}"),
-                            );
+                        #[cfg(not(unix))]
+                        {
+                            bp.build_error(id, "Journald is only available on Unix systems.");
                             continue;
                         }
                     }
-                }
-                Tracer::OtelGrpc(tracer) if tracer.enable => {
-                    level = Level::from(tracer.level);
-                    lossy = tracer.lossy;
-                    events = tracer.events;
-                    events_policy = tracer.events_policy;
-                    enable = tracer.enable;
+                    Tracer::OtelHttp(tracer) if tracer.enable => {
+                        level = Level::from(tracer.level);
+                        lossy = tracer.lossy;
+                        events = tracer.events;
+                        events_policy = tracer.events_policy;
+                        enable = tracer.enable;
 
-                    let mut span_exporter = SpanExporter::builder()
-                        .with_tonic()
-                        .with_protocol(opentelemetry_otlp::Protocol::Grpc)
-                        .with_timeout(tracer.timeout.into_inner());
-                    let mut log_exporter = LogExporter::builder()
-                        .with_tonic()
-                        .with_protocol(opentelemetry_otlp::Protocol::Grpc)
-                        .with_timeout(tracer.timeout.into_inner());
-                    if let Some(endpoint) = tracer.endpoint {
-                        span_exporter = span_exporter.with_endpoint(endpoint.clone());
-                        log_exporter = log_exporter.with_endpoint(endpoint);
-                    }
+                        let headers = match tracer
+                            .http_auth
+                            .build_headers(tracer.http_headers, None)
+                            .await
+                        {
+                            Ok(headers) => headers
+                                .into_iter()
+                                .filter_map(|(k, v)| {
+                                    k.and_then(|k| {
+                                        Some((k.to_string(), v.to_str().ok()?.to_string()))
+                                    })
+                                })
+                                .collect::<HashMap<String, String>>(),
+                            Err(err) => {
+                                bp.build_error(
+                                    id,
+                                    format!("Failed to build OpenTelemetry HTTP headers: {err}"),
+                                );
+                                continue;
+                            }
+                        };
 
-                    match (span_exporter.build(), log_exporter.build()) {
-                        (Ok(span_exporter), Ok(log_exporter)) => {
-                            TelemetrySubscriberType::OtelTracer(OtelTracer {
-                                span_exporter,
-                                log_exporter,
-                                throttle: tracer.throttle.into_inner(),
-                                span_exporter_enable: tracer.enable_span_exporter,
-                                log_exporter_enable: tracer.enable_log_exporter,
-                            })
+                        let mut span_exporter = SpanExporter::builder()
+                            .with_http()
+                            .with_endpoint(tracer.endpoint.clone())
+                            .with_timeout(tracer.timeout.into_inner());
+                        let mut log_exporter = LogExporter::builder()
+                            .with_http()
+                            .with_endpoint(tracer.endpoint)
+                            .with_timeout(tracer.timeout.into_inner());
+                        if !headers.is_empty() {
+                            span_exporter = span_exporter.with_headers(headers.clone());
+                            log_exporter = log_exporter.with_headers(headers);
                         }
-                        (Err(err), _) => {
-                            bp.build_error(
-                                id,
-                                format!("Failed to build OpenTelemetry span exporter: {err}"),
-                            );
-                            continue;
-                        }
-                        (_, Err(err)) => {
-                            bp.build_error(
-                                id,
-                                format!("Failed to build OpenTelemetry log exporter: {err}"),
-                            );
-                            continue;
+
+                        match (span_exporter.build(), log_exporter.build()) {
+                            (Ok(span_exporter), Ok(log_exporter)) => {
+                                TelemetrySubscriberType::OtelTracer(OtelTracer {
+                                    span_exporter,
+                                    log_exporter,
+                                    throttle: tracer.throttle.into_inner(),
+                                    span_exporter_enable: tracer.enable_span_exporter,
+                                    log_exporter_enable: tracer.enable_log_exporter,
+                                })
+                            }
+                            (Err(err), _) => {
+                                bp.build_error(
+                                    id,
+                                    format!("Failed to build OpenTelemetry span exporter: {err}"),
+                                );
+                                continue;
+                            }
+                            (_, Err(err)) => {
+                                bp.build_error(
+                                    id,
+                                    format!("Failed to build OpenTelemetry log exporter: {err}"),
+                                );
+                                continue;
+                            }
                         }
                     }
-                }
-                _ => continue,
-            };
+                    Tracer::OtelGrpc(tracer) if tracer.enable => {
+                        level = Level::from(tracer.level);
+                        lossy = tracer.lossy;
+                        events = tracer.events;
+                        events_policy = tracer.events_policy;
+                        enable = tracer.enable;
 
-            if !enable {
-                continue;
-            }
+                        let mut span_exporter = SpanExporter::builder()
+                            .with_tonic()
+                            .with_protocol(opentelemetry_otlp::Protocol::Grpc)
+                            .with_timeout(tracer.timeout.into_inner());
+                        let mut log_exporter = LogExporter::builder()
+                            .with_tonic()
+                            .with_protocol(opentelemetry_otlp::Protocol::Grpc)
+                            .with_timeout(tracer.timeout.into_inner());
+                        if let Some(endpoint) = tracer.endpoint {
+                            span_exporter = span_exporter.with_endpoint(endpoint.clone());
+                            log_exporter = log_exporter.with_endpoint(endpoint);
+                        }
 
-            // Create tracer
-            let mut tracer = TelemetrySubscriber {
-                id: format!("t_{}", id.id()),
-                interests: Default::default(),
-                lossy,
-                typ,
-            };
-
-            // Parse disabled events
-            let exclude_event = match &tracer.typ {
-                TelemetrySubscriberType::ConsoleTracer(_) => None,
-                TelemetrySubscriberType::LogTracer(_) => {
-                    EventType::Telemetry(TelemetryEvent::LogError).into()
-                }
-                TelemetrySubscriberType::OtelTracer(_) => {
-                    EventType::Telemetry(TelemetryEvent::OtelExporterError).into()
-                }
-                TelemetrySubscriberType::Webhook(_) => {
-                    EventType::Telemetry(TelemetryEvent::WebhookError).into()
-                }
-                #[cfg(unix)]
-                TelemetrySubscriberType::JournalTracer(_) => {
-                    EventType::Telemetry(TelemetryEvent::JournalError).into()
-                }
-                // SPDX-SnippetBegin
-                // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
-                // SPDX-License-Identifier: LicenseRef-SEL
-                #[cfg(feature = "enterprise")]
-                TelemetrySubscriberType::StoreTracer(_) => None,
-                // SPDX-SnippetEnd
-            };
-
-            // Parse disabled events
-            apply_events(events, events_policy, |event_type| {
-                if exclude_event != Some(event_type) {
-                    let event_level = custom_levels
-                        .get(&event_type)
-                        .copied()
-                        .unwrap_or(event_type.level());
-                    if level.is_contained(event_level) {
-                        tracer.interests.set(event_type);
-                        global_interests.set(event_type);
+                        match (span_exporter.build(), log_exporter.build()) {
+                            (Ok(span_exporter), Ok(log_exporter)) => {
+                                TelemetrySubscriberType::OtelTracer(OtelTracer {
+                                    span_exporter,
+                                    log_exporter,
+                                    throttle: tracer.throttle.into_inner(),
+                                    span_exporter_enable: tracer.enable_span_exporter,
+                                    log_exporter_enable: tracer.enable_log_exporter,
+                                })
+                            }
+                            (Err(err), _) => {
+                                bp.build_error(
+                                    id,
+                                    format!("Failed to build OpenTelemetry span exporter: {err}"),
+                                );
+                                continue;
+                            }
+                            (_, Err(err)) => {
+                                bp.build_error(
+                                    id,
+                                    format!("Failed to build OpenTelemetry log exporter: {err}"),
+                                );
+                                continue;
+                            }
+                        }
                     }
-                }
-            });
+                    _ => continue,
+                };
 
-            if !tracer.interests.is_empty() {
-                tracers.push(tracer);
-            } else {
-                bp.build_warning(id, "No events enabled for tracer");
-            }
-        }
-
-        // SPDX-SnippetBegin
-        // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
-        // SPDX-License-Identifier: LicenseRef-SEL
-
-        // Parse tracing history
-        #[cfg(feature = "enterprise")]
-        if storage.tracing.is_active() {
-            let mut tracer = TelemetrySubscriber {
-                id: "history".to_string(),
-                interests: Default::default(),
-                lossy: false,
-                typ: TelemetrySubscriberType::StoreTracer(StoreTracer {
-                    store: storage.tracing.clone(),
-                }),
-            };
-
-            for event_type in StoreTracer::default_events() {
-                tracer.interests.set(event_type);
-                global_interests.set(event_type);
-            }
-
-            tracers.push(tracer);
-        }
-        // SPDX-SnippetEnd
-
-        // Parse webhooks
-        for hook in bp.list_infallible::<WebHook>().await {
-            let id = hook.id;
-            let hook = hook.object;
-
-            if !hook.enable {
-                continue;
-            }
-
-            let headers = match hook
-                .http_auth
-                .build_headers(hook.http_headers, "application/json".into())
-                .await
-            {
-                Ok(headers) => headers,
-                Err(err) => {
-                    bp.build_error(id, format!("Unable to build HTTP headers: {}", err));
+                if !enable {
                     continue;
                 }
-            };
 
-            // Build tracer
-            let mut tracer = TelemetrySubscriber {
-                id: format!("w_{}", id.id()),
-                interests: Default::default(),
-                lossy: hook.lossy,
-                typ: TelemetrySubscriberType::Webhook(WebhookTracer {
-                    url: hook.url,
-                    timeout: hook.timeout.into_inner(),
-                    tls_allow_invalid_certs: hook.allow_invalid_certs,
-                    headers,
-                    key: hook
-                        .signature_key
-                        .secret()
-                        .await
-                        .map_err(|err| {
-                            bp.build_error(
-                                id,
-                                format!("Unable to retrieve signature key: {}", err),
-                            );
-                        })
-                        .unwrap_or_default()
-                        .unwrap_or_default()
-                        .into_owned(),
-                    throttle: hook.throttle.into_inner(),
-                    discard_after: hook.discard_after.into_inner(),
-                }),
-            };
+                // Create tracer
+                let mut tracer = TelemetrySubscriber {
+                    id: format!("t_{}", id.id()),
+                    interests: Default::default(),
+                    lossy,
+                    typ,
+                };
 
-            // Parse webhook events
-            apply_events(hook.events, hook.events_policy, |event_type| {
-                if event_type != EventType::Telemetry(TelemetryEvent::WebhookError) {
+                // Parse disabled events
+                let exclude_event = match &tracer.typ {
+                    TelemetrySubscriberType::ConsoleTracer(_) => None,
+                    TelemetrySubscriberType::LogTracer(_) => {
+                        EventType::Telemetry(TelemetryEvent::LogError).into()
+                    }
+                    TelemetrySubscriberType::OtelTracer(_) => {
+                        EventType::Telemetry(TelemetryEvent::OtelExporterError).into()
+                    }
+                    TelemetrySubscriberType::Webhook(_) => {
+                        EventType::Telemetry(TelemetryEvent::WebhookError).into()
+                    }
+                    #[cfg(unix)]
+                    TelemetrySubscriberType::JournalTracer(_) => {
+                        EventType::Telemetry(TelemetryEvent::JournalError).into()
+                    }
+                    // SPDX-SnippetBegin
+                    // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
+                    // SPDX-License-Identifier: LicenseRef-SEL
+                    #[cfg(feature = "enterprise")]
+                    TelemetrySubscriberType::StoreTracer(_) => None,
+                    // SPDX-SnippetEnd
+                };
+
+                // Parse disabled events
+                apply_events(events, events_policy, |event_type| {
+                    if exclude_event != Some(event_type) {
+                        let event_level = custom_levels
+                            .get(&event_type)
+                            .copied()
+                            .unwrap_or(event_type.level());
+                        if level.is_contained(event_level) {
+                            tracer.interests.set(event_type);
+                            global_interests.set(event_type);
+                        }
+                    }
+                });
+
+                if !tracer.interests.is_empty() {
+                    tracers.push(tracer);
+                } else {
+                    bp.build_warning(id, "No events enabled for tracer");
+                }
+            }
+
+            // SPDX-SnippetBegin
+            // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
+            // SPDX-License-Identifier: LicenseRef-SEL
+
+            // Parse tracing history
+            #[cfg(feature = "enterprise")]
+            if storage.tracing.is_active() {
+                let mut tracer = TelemetrySubscriber {
+                    id: "history".to_string(),
+                    interests: Default::default(),
+                    lossy: false,
+                    typ: TelemetrySubscriberType::StoreTracer(StoreTracer {
+                        store: storage.tracing.clone(),
+                    }),
+                };
+
+                for event_type in StoreTracer::default_events() {
                     tracer.interests.set(event_type);
                     global_interests.set(event_type);
                 }
-            });
 
-            if !tracer.interests.is_empty() {
                 tracers.push(tracer);
-            } else {
-                bp.build_error(id, "No events enabled for webhook");
             }
-        }
+            // SPDX-SnippetEnd
 
-        // Add default tracer if none were found
-        #[cfg(not(feature = "test_mode"))]
-        if tracers.is_empty() {
-            for event_type in EventType::variants() {
-                let event_level = custom_levels
-                    .get(event_type)
-                    .copied()
-                    .unwrap_or(event_type.level());
-                if Level::Info.is_contained(event_level) {
-                    global_interests.set(event_type.to_id() as usize);
+            // Parse webhooks
+            for hook in bp.list_infallible::<WebHook>().await {
+                let id = hook.id;
+                let hook = hook.object;
+
+                if !hook.enable {
+                    continue;
+                }
+
+                let headers = match hook
+                    .http_auth
+                    .build_headers(hook.http_headers, "application/json".into())
+                    .await
+                {
+                    Ok(headers) => headers,
+                    Err(err) => {
+                        bp.build_error(id, format!("Unable to build HTTP headers: {}", err));
+                        continue;
+                    }
+                };
+
+                // Build tracer
+                let mut tracer = TelemetrySubscriber {
+                    id: format!("w_{}", id.id()),
+                    interests: Default::default(),
+                    lossy: hook.lossy,
+                    typ: TelemetrySubscriberType::Webhook(WebhookTracer {
+                        url: hook.url,
+                        timeout: hook.timeout.into_inner(),
+                        tls_allow_invalid_certs: hook.allow_invalid_certs,
+                        headers,
+                        key: hook
+                            .signature_key
+                            .secret()
+                            .await
+                            .map_err(|err| {
+                                bp.build_error(
+                                    id,
+                                    format!("Unable to retrieve signature key: {}", err),
+                                );
+                            })
+                            .unwrap_or_default()
+                            .unwrap_or_default()
+                            .into_owned(),
+                        throttle: hook.throttle.into_inner(),
+                        discard_after: hook.discard_after.into_inner(),
+                    }),
+                };
+
+                // Parse webhook events
+                apply_events(hook.events, hook.events_policy, |event_type| {
+                    if event_type != EventType::Telemetry(TelemetryEvent::WebhookError) {
+                        tracer.interests.set(event_type);
+                        global_interests.set(event_type);
+                    }
+                });
+
+                if !tracer.interests.is_empty() {
+                    tracers.push(tracer);
+                } else {
+                    bp.build_error(id, "No events enabled for webhook");
                 }
             }
 
-            tracers.push(TelemetrySubscriber {
-                id: "default".to_string(),
-                interests: global_interests.clone(),
-                typ: TelemetrySubscriberType::ConsoleTracer(ConsoleTracer {
-                    ansi: true,
-                    multiline: false,
-                    buffered: true,
-                }),
-                lossy: false,
-            });
-        }
+            #[cfg(feature = "dev_mode")]
+            if let Ok(level) = std::env::var("LOG") {
+                let level = Level::from_str(&level).expect("Invalid LOG level");
+                for event_type in EventType::variants() {
+                    let event_level = custom_levels
+                        .get(event_type)
+                        .copied()
+                        .unwrap_or(event_type.level());
+                    if level.is_contained(event_level) {
+                        global_interests.set(event_type.to_id() as usize);
+                    }
+                }
 
-        #[cfg(feature = "dev_mode")]
-        if let Ok(level) = std::env::var("LOG") {
-            use std::str::FromStr;
-
-            let level = Level::from_str(&level).expect("Invalid LOG level");
+                tracers.push(TelemetrySubscriber {
+                    id: "default".to_string(),
+                    interests: global_interests.clone(),
+                    typ: TelemetrySubscriberType::ConsoleTracer(ConsoleTracer {
+                        ansi: true,
+                        multiline: false,
+                        buffered: true,
+                    }),
+                    lossy: false,
+                });
+            }
+        } else {
+            // Add default tracer if none were found
+            let level = std::env::var("STALWART_RECOVERY_MODE_LOG_LEVEL")
+                .ok()
+                .and_then(|level| Level::from_str(&level).ok())
+                .unwrap_or(Level::Info);
             for event_type in EventType::variants() {
                 let event_level = custom_levels
                     .get(event_type)
@@ -556,7 +559,7 @@ impl Tracers {
             }
 
             tracers.push(TelemetrySubscriber {
-                id: "default".to_string(),
+                id: "recover-log".to_string(),
                 interests: global_interests.clone(),
                 typ: TelemetrySubscriberType::ConsoleTracer(ConsoleTracer {
                     ansi: true,

@@ -428,8 +428,7 @@ impl CalendarQueryHandler {
             Vec::with_capacity(4);
 
         if data.expand.is_some() {
-            self.expanded_times
-                .sort_unstable_by(|a, b| a.start.cmp(&b.start));
+            self.expanded_times.sort_unstable_by_key(|a| a.start);
         }
 
         loop {

@@ -52,6 +52,13 @@ impl RegistryQuery for Server {
         mut request: QueryRequest<Registry>,
         access_token: &AccessToken,
     ) -> trc::Result<QueryResponse> {
+        // Initial assertions
+        if self.registry().is_bootstrap_mode() {
+            return Err(trc::JmapEvent::Forbidden.into_err().details(concat!(
+                "The server is in bootstrap mode. Only the 'Bootstrap' object type ",
+                "can be accessed until the bootstrap process is complete.",
+            )));
+        }
         self.assert_enterprise_object(object_type)?;
 
         match object_type {

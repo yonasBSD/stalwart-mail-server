@@ -252,6 +252,66 @@ impl DnsUpdater {
                 )
                 .map_err(|err| format!("Failed to build DNS updater: {}", err))?,
             }),
+            DnsServer::Spaceship(server) => Ok(DnsUpdater {
+                polling_interval: server.polling_interval.into_inner(),
+                propagation_timeout: server.propagation_timeout.into_inner(),
+                propagation_delay: server.propagation_delay.map(|d| d.into_inner()),
+                ttl: server.ttl.into_inner(),
+                core,
+                updater: dns_update::DnsUpdater::new_spaceship(
+                    server.api_key.as_str(),
+                    server.secret.secret().await?,
+                    server.timeout.into_inner().into(),
+                )
+                .map_err(|err| format!("Failed to build DNS updater: {}", err))?,
+            }),
+            DnsServer::Route53(server) => {
+                let secret_access_key =
+                    server.secret_access_key.secret().await?.into_owned();
+                let session_token = server
+                    .session_token
+                    .secret()
+                    .await?
+                    .map(|c| c.into_owned());
+                let config = dns_update::providers::route53::Route53Config {
+                    access_key_id: server.access_key_id,
+                    secret_access_key,
+                    session_token,
+                    region: Some(server.region),
+                    hosted_zone_id: server.hosted_zone_id,
+                    private_zone_only: Some(server.private_zone_only),
+                };
+                Ok(DnsUpdater {
+                    polling_interval: server.polling_interval.into_inner(),
+                    propagation_timeout: server.propagation_timeout.into_inner(),
+                    propagation_delay: server.propagation_delay.map(|d| d.into_inner()),
+                    ttl: server.ttl.into_inner(),
+                    core,
+                    updater: dns_update::DnsUpdater::new_route53(config)
+                        .map_err(|err| format!("Failed to build DNS updater: {}", err))?,
+                })
+            }
+            DnsServer::GoogleCloudDns(server) => {
+                let service_account_json =
+                    server.service_account_json.secret().await?.into_owned();
+                let config = dns_update::providers::google_cloud_dns::GoogleCloudDnsConfig {
+                    service_account_json,
+                    project_id: server.project_id,
+                    managed_zone: server.managed_zone,
+                    private_zone: server.private_zone,
+                    impersonate_service_account: server.impersonate_service_account,
+                    request_timeout: Some(server.timeout.into_inner()),
+                };
+                Ok(DnsUpdater {
+                    polling_interval: server.polling_interval.into_inner(),
+                    propagation_timeout: server.propagation_timeout.into_inner(),
+                    propagation_delay: server.propagation_delay.map(|d| d.into_inner()),
+                    ttl: server.ttl.into_inner(),
+                    core,
+                    updater: dns_update::DnsUpdater::new_google_cloud_dns(config)
+                        .map_err(|err| format!("Failed to build DNS updater: {}", err))?,
+                })
+            }
         }
     }
 

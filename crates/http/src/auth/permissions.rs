@@ -58,7 +58,9 @@ impl AccountApiHandler for Server {
             false
         };
         let is_recovery_admin = access_token.account_id() == RECOVERY_ADMIN_ID;
-        let permissions = if let Some(scope) = access_token.access_scope() {
+        let permissions = if !self.registry().is_bootstrap_mode()
+            && let Some(scope) = access_token.access_scope()
+        {
             let mut permissions = scope.permissions.clone();
 
             for p in [
@@ -79,6 +81,8 @@ impl AccountApiHandler for Server {
                 Permission::SysClusterNodeCreate,
                 Permission::SysClusterNodeUpdate,
                 Permission::SysClusterNodeDestroy,
+                Permission::SysBootstrapGet,
+                Permission::SysBootstrapUpdate,
             ] {
                 permissions.clear(p.to_id() as usize);
             }
@@ -108,6 +112,8 @@ impl AccountApiHandler for Server {
             }
 
             permissions.build_permissions_list()
+        } else if self.registry().is_bootstrap_mode() {
+            vec![Permission::SysBootstrapGet, Permission::SysBootstrapUpdate]
         } else {
             Vec::new()
         };

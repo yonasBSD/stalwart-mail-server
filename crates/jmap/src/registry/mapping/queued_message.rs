@@ -83,7 +83,7 @@ pub(crate) async fn queued_message_set(
         // Process patches
         let prev_event = archived_message.inner.next_delivery_event(None);
         let mut message = map_message(archived_message.inner);
-        let prev_next_retry = message.next_retry;
+        message.next_retry = None;
         for (key, value) in value.into_expanded_object() {
             let ptr = match key {
                 Key::Property(prop) => {
@@ -97,7 +97,7 @@ pub(crate) async fn queued_message_set(
                 continue 'outer;
             }
         }
-        let set_next_retry = (message.next_retry != prev_next_retry).then_some(message.next_retry);
+        let set_next_retry = message.next_retry;
 
         // Process changes
         let mut has_changes = false;
@@ -575,7 +575,8 @@ fn map_message(message_in: &ArchivedMessage) -> QueuedMessage {
                 .next_delivery_event(None)
                 .unwrap_or_else(now)
                 .cast_signed(),
-        ),
+        )
+        .into(),
         next_notify: message_in
             .next_notify_event(None)
             .map(|ts| UTCDateTime::from_timestamp(ts.cast_signed())),

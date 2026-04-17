@@ -1880,9 +1880,15 @@ dependencies = [
 [[package]]
 name = "dns-update"
 version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ccef4d864bf07191beab1ddaced3e108208058ba0350ce535407e2704aafcc18"
 dependencies = [
  "aws-lc-rs",
+ "base64 0.22.1",
+ "chrono",
+ "hex",
  "hickory-client",
+ "quick-xml 0.39.2",
  "reqwest 0.13.2",
  "rustls 0.23.37",
  "serde",
@@ -5509,6 +5515,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "958f21e8e7ceb5a1aa7fa87fab28e7c75976e0bfe7e23ff069e0a260f894067d"
 dependencies = [
  "memchr",
+ "serde",
 ]
 
 [[package]]
@@ -6088,6 +6095,7 @@ dependencies = [
  "rustls-pki-types",
  "rustls-platform-verifier 0.6.2",
  "serde",
+ "serde_json",
  "serde_urlencoded",
  "sync_wrapper",
  "tokio",

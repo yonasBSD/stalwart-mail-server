@@ -36,15 +36,14 @@ async fn main() -> std::io::Result<()> {
     let mut init = Box::pin(BootManager::init()).await;
 
     // Migrate database
-    let todo = "fix";
-    /*if let Err(err) = migration::try_migrate(&init.inner.build_server()).await {
+    if let Err(err) = migration::try_migrate(&init.inner.build_server()).await {
         trc::event!(
             Server(trc::ServerEvent::StartupError),
             Details = "Failed to migrate database, aborting startup.",
             Reason = err,
         );
         return Ok(());
-    }*/
+    }
 
     // Init services
     init.start_services().await;

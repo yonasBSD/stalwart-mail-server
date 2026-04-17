@@ -168,6 +168,7 @@ impl Queue {
 
                 match status {
                     QueueEventStatus::Completed => {
+                        self.core.ipc.task_tx.notify_one();
                         self.locked.remove(&(queue_id, queue_name));
                         !self.locked.is_empty() || !queue_stats.has_capacity()
                     }

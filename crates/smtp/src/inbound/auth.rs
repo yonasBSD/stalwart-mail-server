@@ -59,11 +59,9 @@ impl<T: SessionStream> Session<T> {
                     Credentials::Basic {
                         username, secret, ..
                     },
-                ) => {
-                    if username.is_empty() && secret.is_empty() {
-                        self.write(b"334 VXNlcm5hbWU6\r\n").await?;
-                        return Ok(true);
-                    }
+                ) if username.is_empty() && secret.is_empty() => {
+                    self.write(b"334 VXNlcm5hbWU6\r\n").await?;
+                    return Ok(true);
                 }
                 _ => (),
             }
@@ -71,7 +69,7 @@ impl<T: SessionStream> Session<T> {
             match (token.mechanism, &mut token.credentials) {
                 (AUTH_PLAIN, _) => {
                     if let Some(credentials) = Credentials::decode_sasl_challenge_plain(&response) {
-                        return self.authenticate(credentials).await;
+                        return Box::pin(self.authenticate(credentials)).await;
                     }
                 }
                 (
@@ -86,20 +84,20 @@ impl<T: SessionStream> Session<T> {
                         Ok(true)
                     } else {
                         *secret = response.into_string();
-                        self.authenticate(std::mem::replace(
+                        Box::pin(self.authenticate(std::mem::replace(
                             &mut token.credentials,
                             Credentials::Basic {
                                 username: String::new(),
                                 secret: String::new(),
                                 mfa_token: None,
                             },
-                        ))
+                        )))
                         .await
                     };
                 }
                 (AUTH_OAUTHBEARER | AUTH_XOAUTH2, _) => {
                     if let Some(credentials) = Credentials::decode_sasl_challenge_oauth(&response) {
-                        return self.authenticate(credentials).await;
+                        return Box::pin(self.authenticate(credentials)).await;
                     }
                 }
                 _ => (),

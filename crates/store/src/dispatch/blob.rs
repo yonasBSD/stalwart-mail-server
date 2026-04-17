@@ -28,6 +28,7 @@ impl BlobStore {
                 Store::MySQL(store) => store.get_blob(key, 0..usize::MAX).await,
                 #[cfg(feature = "rocks")]
                 Store::RocksDb(store) => store.get_blob(key, 0..usize::MAX).await,
+                Store::Ephemeral(store) => store.get_blob(key, 0..usize::MAX).await,
                 // SPDX-SnippetBegin
                 // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
                 // SPDX-License-Identifier: LicenseRef-SEL
@@ -149,6 +150,7 @@ impl BlobStore {
                 Store::MySQL(store) => store.put_blob(key, &data).await,
                 #[cfg(feature = "rocks")]
                 Store::RocksDb(store) => store.put_blob(key, &data).await,
+                Store::Ephemeral(store) => store.put_blob(key, &data).await,
                 // SPDX-SnippetBegin
                 // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
                 // SPDX-License-Identifier: LicenseRef-SEL
@@ -195,6 +197,7 @@ impl BlobStore {
                 Store::MySQL(store) => store.delete_blob(key).await,
                 #[cfg(feature = "rocks")]
                 Store::RocksDb(store) => store.delete_blob(key).await,
+                Store::Ephemeral(store) => store.delete_blob(key).await,
                 // SPDX-SnippetBegin
                 // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
                 // SPDX-License-Identifier: LicenseRef-SEL

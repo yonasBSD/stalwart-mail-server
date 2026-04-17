@@ -491,7 +491,7 @@ async fn update_tasks(
 ) {
     let mut batch = BatchBuilder::new();
 
-    for (task, result) in tasks.iter_mut().zip(results.into_iter()) {
+    for (task, result) in tasks.iter_mut().zip(results) {
         let id = task.info.id;
         batch.clear(ValueClass::TaskQueue(TaskQueueClass::Due {
             id,

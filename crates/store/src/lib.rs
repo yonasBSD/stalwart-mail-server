@@ -24,7 +24,7 @@ pub use xxhash_rust;
 
 use crate::backend::{elastic::ElasticSearchStore, meili::MeiliSearchStore};
 use ahash::AHashMap;
-use backend::{fs::FsStore, http::HttpStore, memory::StaticMemoryStore};
+use backend::{ephemeral::EphemeralStore, fs::FsStore, http::HttpStore, memory::StaticMemoryStore};
 use std::{borrow::Cow, path::PathBuf, sync::Arc};
 use write::ValueClass;
 
@@ -153,6 +153,7 @@ pub enum Store {
     MySQL(Arc<backend::mysql::MysqlStore>),
     #[cfg(feature = "rocks")]
     RocksDb(Arc<backend::rocksdb::RocksDbStore>),
+    Ephemeral(Arc<EphemeralStore>),
     // SPDX-SnippetBegin
     // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
     // SPDX-License-Identifier: LicenseRef-SEL
@@ -204,6 +205,7 @@ pub enum InMemoryStore {
 #[derive(Clone)]
 pub struct RegistryStore(pub(crate) Arc<RegistryStoreInner>);
 
+#[derive(Clone)]
 pub struct RegistryStoreInner {
     pub(crate) local_path: PathBuf,
     pub(crate) store: Store,
@@ -248,6 +250,12 @@ impl From<backend::mysql::MysqlStore> for Store {
 impl From<backend::rocksdb::RocksDbStore> for Store {
     fn from(store: backend::rocksdb::RocksDbStore) -> Self {
         Self::RocksDb(Arc::new(store))
+    }
+}
+
+impl From<EphemeralStore> for Store {
+    fn from(store: EphemeralStore) -> Self {
+        Self::Ephemeral(Arc::new(store))
     }
 }
 
@@ -680,6 +688,11 @@ impl Store {
         }
     }
 
+    #[inline(always)]
+    pub fn is_ephemeral(&self) -> bool {
+        matches!(self, Self::Ephemeral(_))
+    }
+
     // SPDX-SnippetBegin
     // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
     // SPDX-License-Identifier: LicenseRef-SEL
@@ -716,6 +729,7 @@ impl std::fmt::Debug for Store {
             Self::MySQL(_) => f.debug_tuple("MySQL").finish(),
             #[cfg(feature = "rocks")]
             Self::RocksDb(_) => f.debug_tuple("RocksDb").finish(),
+            Self::Ephemeral(_) => f.debug_tuple("Ephemeral").finish(),
 
             // SPDX-SnippetBegin
             // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>

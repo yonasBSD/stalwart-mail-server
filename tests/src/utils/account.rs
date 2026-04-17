@@ -139,16 +139,10 @@ impl Account {
         aliases: &'static [&'static str],
         extra_permissions: Vec<Permission>,
     ) -> Account {
-        let mut domains = AHashMap::from_iter(
-            aliases
-                .iter()
-                .copied()
-                .chain([name].into_iter())
-                .map(|email| {
-                    let domain = email.split('@').nth(1).expect("Invalid email address");
-                    (domain, Id::singleton())
-                }),
-        );
+        let mut domains = AHashMap::from_iter(aliases.iter().copied().chain([name]).map(|email| {
+            let domain = email.split('@').nth(1).expect("Invalid email address");
+            (domain, Id::singleton())
+        }));
         for (name, id) in &mut domains {
             *id = self.find_or_create_domain(name).await;
         }
@@ -198,16 +192,10 @@ impl Account {
         description: &'static str,
         aliases: &'static [&'static str],
     ) -> Account {
-        let mut domains = AHashMap::from_iter(
-            aliases
-                .iter()
-                .copied()
-                .chain([name].into_iter())
-                .map(|email| {
-                    let domain = email.split('@').nth(1).expect("Invalid email address");
-                    (domain, Id::singleton())
-                }),
-        );
+        let mut domains = AHashMap::from_iter(aliases.iter().copied().chain([name]).map(|email| {
+            let domain = email.split('@').nth(1).expect("Invalid email address");
+            (domain, Id::singleton())
+        }));
         for (name, id) in &mut domains {
             *id = self.find_or_create_domain(name).await;
         }

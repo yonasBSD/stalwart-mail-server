@@ -47,6 +47,49 @@ impl BootstrapDefaults for Bootstrap {
 }
 
 async fn insert_safe_defaults(bp: &mut Bootstrap) -> trc::Result<()> {
+    if bp.registry.is_recovery_mode() {
+        return Ok(());
+    }
+
+    #[cfg(not(feature = "test_mode"))]
+    if bp.registry.count_object(ObjectType::Application).await? == 0 {
+        bp.registry
+            .write(RegistryWrite::insert(
+                &Application {
+                    auto_update_frequency: Duration::from_millis(30 * 24 * 60 * 60 * 1000),
+                    description: "Stalwart Web Interface".to_string(),
+                    enabled: true,
+                    #[cfg(not(feature = "dev_mode"))]
+                    resource_url:
+                        "https://github.com/stalwartlabs/webui/releases/latest/download/webui.zip"
+                            .into(),
+                    #[cfg(feature = "dev_mode")]
+                    resource_url: "file:///Users/me/code/webui/.ignore/webui.zip".into(),
+                    unpack_directory: None,
+                    url_prefix: Map::new(vec!["/admin".into(), "/account".into()]),
+                }
+                .into(),
+            ))
+            .await?;
+    }
+
+    if bp.registry.is_bootstrap_mode() {
+        #[cfg(not(any(feature = "dev_mode", feature = "test_mode")))]
+        if bp.registry.count_object(ObjectType::SystemSettings).await? == 0 {
+            bp.registry
+                .write(RegistryWrite::insert(
+                    &SystemSettings {
+                        default_hostname: bp.registry.local_hostname().to_string(),
+                        ..Default::default()
+                    }
+                    .into(),
+                ))
+                .await?;
+        }
+
+        return Ok(());
+    }
+
     if bp.registry.count_object(ObjectType::MtaQueueQuota).await? == 0 {
         bp.registry
             .write(RegistryWrite::insert(
@@ -380,19 +423,6 @@ async fn insert_safe_defaults(bp: &mut Bootstrap) -> trc::Result<()> {
         }
     }
 
-    #[cfg(not(any(feature = "dev_mode", feature = "test_mode")))]
-    if bp.registry.count_object(ObjectType::SystemSettings).await? == 0 {
-        bp.registry
-            .write(RegistryWrite::insert(
-                &SystemSettings {
-                    default_hostname: bp.registry.local_hostname().to_string(),
-                    ..Default::default()
-                }
-                .into(),
-            ))
-            .await?;
-    }
-
     if bp
         .registry
         .count_object(ObjectType::NetworkListener)
@@ -443,12 +473,14 @@ async fn insert_safe_defaults(bp: &mut Bootstrap) -> trc::Result<()> {
             .await?;
     }
 
+    #[cfg(not(feature = "test_mode"))]
     if bp.registry.count_object(ObjectType::TracingStore).await? == 0 {
         bp.registry
             .write(RegistryWrite::insert(&TracingStore::Default.into()))
             .await?;
     }
 
+    #[cfg(not(feature = "test_mode"))]
     if bp.registry.count_object(ObjectType::MetricsStore).await? == 0 {
         bp.registry
             .write(RegistryWrite::insert(&MetricsStore::Default.into()))
@@ -466,28 +498,6 @@ async fn insert_safe_defaults(bp: &mut Bootstrap) -> trc::Result<()> {
                     path: "/var/log/stalwart".into(),
                     ..Default::default()
                 })
-                .into(),
-            ))
-            .await?;
-    }
-
-    #[cfg(not(feature = "test_mode"))]
-    if bp.registry.count_object(ObjectType::Application).await? == 0 {
-        bp.registry
-            .write(RegistryWrite::insert(
-                &Application {
-                    auto_update_frequency: Duration::from_millis(30 * 24 * 60 * 60 * 1000),
-                    description: "Stalwart Web Interface".to_string(),
-                    enabled: true,
-                    #[cfg(not(feature = "dev_mode"))]
-                    resource_url:
-                        "https://github.com/stalwartlabs/webui/releases/latest/download/webui.zip"
-                            .into(),
-                    #[cfg(feature = "dev_mode")]
-                    resource_url: "file:///Users/me/code/webui/.ignore/webui.zip".into(),
-                    unpack_directory: None,
-                    url_prefix: Map::new(vec!["/admin".into(), "/account".into()]),
-                }
                 .into(),
             ))
             .await?;

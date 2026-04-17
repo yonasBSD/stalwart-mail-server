@@ -39,7 +39,7 @@ pub async fn migrate_v0_16(server: &Server) -> trc::Result<()> {
         .search_store()
         .unindex(
             SearchQuery::new(SearchIndex::Tracing)
-                .with_filter(SearchFilter::ge(SearchField::Id, 0u64)),
+                .with_filter(SearchFilter::lt(SearchField::Id, u64::MAX)),
         )
         .await
         .caused_by(trc::location!())?;
@@ -74,10 +74,10 @@ pub async fn migrate_v0_16(server: &Server) -> trc::Result<()> {
         SUBSPACE_TELEMETRY_SPAN,
         SUBSPACE_TASK_QUEUE,
     ] {
-        destroy_subspace(server.store(), namespace).await?;
+        destroy_subspace(server.store(), namespace)
+            .await
+            .caused_by(trc::location!())?;
     }
-    destroy_subspace(server.metrics_store(), SUBSPACE_TELEMETRY_METRIC).await?;
-    destroy_subspace(server.tracing_store(), SUBSPACE_TELEMETRY_SPAN).await?;
 
     // Migrate blob links
     migrate_blob_links(server).await?;
@@ -172,25 +172,26 @@ async fn migrate_blob_links(server: &Server) -> trc::Result<()> {
                 const UNDELETE_LINK: u8 = 1;
                 const SPAM_SAMPLE_LINK: u8 = 2;
 
-                let until = key.deserialize_be_u64(BLOB_HASH_LEN + U32_LEN)?;
+                if key.len() == TEMP_LINK && value.len() == 1 {
+                    let until = key.deserialize_be_u64(BLOB_HASH_LEN + U32_LEN)?;
+                    if until > now {
+                        let account_id = key.deserialize_be_u32(BLOB_HASH_LEN)?;
+                        let hash = types::blob_hash::BlobHash::try_from_hash_slice(
+                            key.get(0..BLOB_HASH_LEN).ok_or_else(|| {
+                                trc::Error::corrupted_key(key, None, trc::location!())
+                            })?,
+                        )
+                        .unwrap();
 
-                if key.len() == TEMP_LINK && value.len() == 1 && until > now {
-                    let account_id = key.deserialize_be_u32(BLOB_HASH_LEN)?;
-                    let hash = types::blob_hash::BlobHash::try_from_hash_slice(
-                        key.get(0..BLOB_HASH_LEN).ok_or_else(|| {
-                            trc::Error::corrupted_key(key, None, trc::location!())
-                        })?,
-                    )
-                    .unwrap();
-
-                    match value.first().copied() {
-                        Some(UNDELETE_LINK) => {
-                            archived_items.push((key.to_vec(), account_id, hash, until));
+                        match value.first().copied() {
+                            Some(UNDELETE_LINK) => {
+                                archived_items.push((key.to_vec(), account_id, hash, until));
+                            }
+                            Some(SPAM_SAMPLE_LINK | QUOTA_LINK) => {
+                                delete_keys.push(key.to_vec());
+                            }
+                            _ => {}
                         }
-                        Some(SPAM_SAMPLE_LINK | QUOTA_LINK) => {
-                            delete_keys.push(key.to_vec());
-                        }
-                        _ => {}
                     }
                 }
 

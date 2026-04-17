@@ -33,14 +33,14 @@ pub async fn try_migrate(server: &Server) -> trc::Result<()> {
         }
         Some(0..=4) => {
             abort(concat!(
-                "You must first upgrade to 0.15, please read ",
+                "You must first upgrade to version 0.15, please read ",
                 "https://github.com/stalwartlabs/stalwart/blob/main/UPGRADING/v0_16.md"
             ));
         }
         Some(5) => {
-            if !std::env::var("MIGRATE").is_ok_and(|v| v == "1") {
+            if !server.registry().is_recovery_mode() {
                 abort(concat!(
-                    "Upgrading to 0.16 is a multi-step process, please read ",
+                    "Upgrading to version 0.16 is a multi-step process, please read ",
                     "https://github.com/stalwartlabs/stalwart/blob/main/UPGRADING/v0_16.md"
                 ));
             }
@@ -57,7 +57,7 @@ pub async fn try_migrate(server: &Server) -> trc::Result<()> {
                 return Ok(());
             } else {
                 abort(concat!(
-                    "You must first upgrade to 0.15, please read ",
+                    "You must first upgrade to version 0.15, please read ",
                     "https://github.com/stalwartlabs/stalwart/blob/main/UPGRADING/v0_16.md"
                 ));
             }

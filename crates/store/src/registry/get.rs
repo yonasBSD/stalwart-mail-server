@@ -6,7 +6,7 @@
 
 use crate::{
     IterateParams, RegistryStore, SUBSPACE_REGISTRY, U16_LEN, U64_LEN, ValueKey,
-    registry::RegistryObject,
+    registry::{RegistryObject, local::RegistryInit},
     write::{
         AnyClass, RegistryClass, ValueClass,
         key::{DeserializeBigEndian, KeySerializer},
@@ -31,21 +31,19 @@ impl RegistryStore {
                 })))
                 .await
         } else {
-            self.0
-                .read_data_store()
-                .await
-                .map(|data_store| {
-                    Some(Object {
-                        inner: data_store.into(),
-                        revision: 0,
-                    })
-                })
-                .map_err(|err| {
-                    trc::EventType::Registry(trc::RegistryEvent::LocalReadError)
+            match self.0.read_data_store().await {
+                RegistryInit::Ok(data_store) => Ok(Some(Object {
+                    inner: data_store.into(),
+                    revision: 0,
+                })),
+                RegistryInit::Err(err) => {
+                    Err(trc::EventType::Registry(trc::RegistryEvent::LocalReadError)
                         .into_err()
                         .caused_by(trc::location!())
-                        .reason(err)
-                })
+                        .reason(err))
+                }
+                RegistryInit::Bootstrap => Ok(None),
+            }
         }
     }
 

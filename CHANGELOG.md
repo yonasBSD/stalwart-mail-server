@@ -18,9 +18,12 @@ This version includes **multiple breaking changes**. If you are upgrading from v
   - Automatic DNS management of `MX`, `TXT`, `CNAME`, `SRV`, `CAA` and `TLSA` records (#463 #1017 #1419 #2438 #1370 #1406 #1371)
   - Automatic update of `TLSA` records when ACME certificates change (#1664)
   - RFC2136 `SIG(0)` support (#856)
-  - BunnyDNS provider support
-  - Porkbun provider support
-  - DNSimple provider support
+  - Route53 provider support (contributed by @jimmystewpot)
+  - Google Cloud DNS provider support (contributed by @jimmystewpot)
+  - Bunny provider support (contributed by @angeloanan)
+  - Porkbun provider support (contributed by @jeffesquivels)
+  - DNSimple provider support (contributed by @NelsonVides)
+  - Spaceship provider support (contributed by @matserix)
 - DKIM:
   - Automatic DKIM key generation, rotation and DNS management (#368 #961)
   - Store DKIM keys in the database (#1264)

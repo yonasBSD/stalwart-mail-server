@@ -7,9 +7,9 @@
 use crate::registry::{
     EnterpriseRegistry,
     mapping::{
-        RegistryGetResponse, account::account_get, cluster::cluster_node_get, log::log_get,
-        queued_message::queued_message_get, report::report_get, spam_sample::spam_sample_get,
-        task::task_get,
+        RegistryGetResponse, account::account_get, bootstrap::bootstrap_get,
+        cluster::cluster_node_get, log::log_get, queued_message::queued_message_get,
+        report::report_get, spam_sample::spam_sample_get, task::task_get,
     },
 };
 use common::{Server, auth::AccessToken, network::dkim::generate_dkim_public_key};
@@ -51,6 +51,13 @@ impl RegistryGet for Server {
         mut request: GetRequest<Registry>,
         access_token: &AccessToken,
     ) -> trc::Result<GetResponse<Registry>> {
+        // Initial assertions
+        if self.registry().is_bootstrap_mode() && !matches!(object_type, ObjectType::Bootstrap) {
+            return Err(trc::JmapEvent::Forbidden.into_err().details(concat!(
+                "The server is in bootstrap mode. Only the 'Bootstrap' object type ",
+                "can be accessed until the bootstrap process is complete.",
+            )));
+        }
         self.assert_enterprise_object(object_type)?;
 
         let object_flags = object_type.flags();
@@ -344,6 +351,7 @@ impl RegistryGet for Server {
                 spam_sample_get(get).await.map(|get| get.into_response())
             }
             ObjectType::Log => log_get(get).await.map(|get| get.into_response()),
+            ObjectType::Bootstrap => bootstrap_get(get).await.map(|get| get.into_response()),
             ObjectType::AccountSettings
             | ObjectType::ApiKey
             | ObjectType::AccountPassword

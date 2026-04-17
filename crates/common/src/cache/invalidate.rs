@@ -142,24 +142,22 @@ impl CacheInvalidationBuilder {
                 }
             }
 
-            (ObjectInner::Role(current), ObjectInner::Role(new)) => {
+            (ObjectInner::Role(current), ObjectInner::Role(new))
                 if (current.enabled_permissions != new.enabled_permissions)
                     || (current.disabled_permissions != new.disabled_permissions)
                     || (current.member_tenant_id != new.member_tenant_id)
-                    || (current.role_ids != new.role_ids)
-                {
-                    self.invalidate(CacheInvalidation::Role(id));
-                }
+                    || (current.role_ids != new.role_ids) =>
+            {
+                self.invalidate(CacheInvalidation::Role(id));
             }
 
-            (ObjectInner::MailingList(current), ObjectInner::MailingList(new)) => {
+            (ObjectInner::MailingList(current), ObjectInner::MailingList(new))
                 if (current.aliases != new.aliases)
                     || (current.name != new.name)
                     || (current.recipients != new.recipients)
-                    || (current.domain_id != new.domain_id)
-                {
-                    self.invalidate(CacheInvalidation::List(id));
-                }
+                    || (current.domain_id != new.domain_id) =>
+            {
+                self.invalidate(CacheInvalidation::List(id));
             }
             _ => {}
         }

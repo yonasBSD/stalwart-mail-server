@@ -34,6 +34,7 @@ impl Store {
             Self::MySQL(store) => store.get_value(key).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.get_value(key).await,
+            Self::Ephemeral(store) => store.get_value(key).await,
             // SPDX-SnippetBegin
             // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
             // SPDX-License-Identifier: LicenseRef-SEL
@@ -57,6 +58,7 @@ impl Store {
             Self::MySQL(store) => store.key_exists(key).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.key_exists(key).await,
+            Self::Ephemeral(store) => store.key_exists(key).await,
             // SPDX-SnippetBegin
             // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
             // SPDX-License-Identifier: LicenseRef-SEL
@@ -85,6 +87,7 @@ impl Store {
             Self::MySQL(store) => store.iterate(params, cb).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.iterate(params, cb).await,
+            Self::Ephemeral(store) => store.iterate(params, cb).await,
             // SPDX-SnippetBegin
             // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
             // SPDX-License-Identifier: LicenseRef-SEL
@@ -118,6 +121,7 @@ impl Store {
             Self::MySQL(store) => store.get_counter(key).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.get_counter(key).await,
+            Self::Ephemeral(store) => store.get_counter(key).await,
             // SPDX-SnippetBegin
             // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
             // SPDX-License-Identifier: LicenseRef-SEL
@@ -171,6 +175,7 @@ impl Store {
             Self::MySQL(store) => store.write(batch).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.write(batch).await,
+            Self::Ephemeral(store) => store.write(batch).await,
             // SPDX-SnippetBegin
             // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
             // SPDX-License-Identifier: LicenseRef-SEL
@@ -221,6 +226,7 @@ impl Store {
             Self::MySQL(store) => store.purge_store().await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.purge_store().await,
+            Self::Ephemeral(store) => store.purge_store().await,
             // SPDX-SnippetBegin
             // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
             // SPDX-License-Identifier: LicenseRef-SEL
@@ -244,6 +250,7 @@ impl Store {
             Self::MySQL(store) => store.delete_range(from, to).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.delete_range(from, to).await,
+            Self::Ephemeral(store) => store.delete_range(from, to).await,
             // SPDX-SnippetBegin
             // SPDX-FileCopyrightText: 2020 Stalwart Labs LLC <hello@stalw.art>
             // SPDX-License-Identifier: LicenseRef-SEL

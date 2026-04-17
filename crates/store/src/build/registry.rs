@@ -6,6 +6,8 @@
 
 use crate::{
     IterateParams, RegistryStore, RegistryStoreInner, Store, U16_LEN, U32_LEN, U64_LEN, ValueKey,
+    backend::ephemeral::EphemeralStore,
+    registry::local::RegistryInit,
     write::{
         BatchBuilder, ValueClass,
         assert::AssertValue,
@@ -29,9 +31,20 @@ impl RegistryStore {
         let mut inner = RegistryStoreInner::new(local);
 
         // Build store
-        inner.store = Store::build(inner.read_data_store().await?).await?;
+        inner.store = match inner.read_data_store().await {
+            RegistryInit::Ok(data_store) => Store::build(data_store).await?,
+            RegistryInit::Err(err) => return Err(err),
+            RegistryInit::Bootstrap => {
+                inner.env_recovery_mode = true;
+                EphemeralStore::open()
+            }
+        };
 
         Self::from_inner(inner).await
+    }
+
+    pub fn from_inner_bootstrapped(inner: RegistryStoreInner) -> Self {
+        Self(inner.into())
     }
 
     pub async fn from_inner(mut inner: RegistryStoreInner) -> Result<Self, String> {
@@ -240,6 +253,11 @@ impl RegistryStore {
     }
 
     #[inline(always)]
+    pub fn is_bootstrap_mode(&self) -> bool {
+        self.0.store.is_ephemeral()
+    }
+
+    #[inline(always)]
     pub fn path(&self) -> &PathBuf {
         &self.0.local_path
     }
@@ -247,6 +265,12 @@ impl RegistryStore {
     #[inline(always)]
     pub fn store(&self) -> &Store {
         &self.0.store
+    }
+
+    pub fn initialize_inner(&self, store: Store) -> RegistryStoreInner {
+        let mut inner = self.0.as_ref().clone();
+        inner.store = store;
+        inner
     }
 
     #[cfg(feature = "test_mode")]

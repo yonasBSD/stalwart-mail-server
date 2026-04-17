@@ -17,7 +17,7 @@ use trc::{ClusterEvent, ServerEvent};
 pub fn spawn_broadcast_subscriber(inner: Arc<Inner>, mut shutdown_rx: watch::Receiver<bool>) {
     let this_node_id = {
         let _core = inner.shared_core.load();
-        if _core.storage.coordinator.is_none() {
+        if _core.storage.coordinator.is_none() || _core.storage.registry.is_recovery_mode() {
             return;
         }
         _core.network.node_id as u16

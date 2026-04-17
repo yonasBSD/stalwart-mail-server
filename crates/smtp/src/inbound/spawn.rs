@@ -153,7 +153,7 @@ impl<T: SessionStream> Session<T> {
                                 if bytes_read > 0 {
                                     if Instant::now() < self.data.valid_until && bytes_read <= self.data.bytes_left  {
                                         self.data.bytes_left -= bytes_read;
-                                        match self.ingest(&buf[..bytes_read]).await {
+                                        match Box::pin(self.ingest(&buf[..bytes_read])).await {
                                             Ok(true) => (),
                                             Ok(false) => {
                                                 return true;

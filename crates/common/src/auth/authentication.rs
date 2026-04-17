@@ -80,7 +80,7 @@ impl Server {
                 secret,
                 mfa_token,
             } => {
-                let username = UsernameParts::new(username);
+                let mut username = UsernameParts::new(username);
 
                 // Try to authenticate as fallback admin if configured
                 if let Some((fallback_user, fallback_hash)) = &self.registry().recovery_admin()
@@ -127,14 +127,18 @@ impl Server {
                     };
                 }
 
+                // Add domain if missing, use the default domain
+                self.add_missing_domain(&mut username.account);
+                if let Some(master_user) = &mut username.master_user {
+                    self.add_missing_domain(master_user);
+                }
+
                 // Obtain domain
                 let auth_as = username.auth_as();
                 let auth_as_address = auth_as.address();
                 let auth_as_local = auth_as.local();
-                let auth_as_domain = auth_as.domain();
-                let domain = self
-                    .domain_or_default(auth_as_address, auth_as_domain)
-                    .await?;
+                let auth_as_domain = auth_as.domain().unwrap();
+                let domain = self.resolve_domain(auth_as_domain).await?;
 
                 // Authenticate app passwords
                 if let Some(app_pass) = AppPassword::parse(secret) {
@@ -420,34 +424,26 @@ impl Server {
         }
     }
 
-    async fn domain_or_default(
-        &self,
-        address: &str,
-        domain_name: Option<&str>,
-    ) -> trc::Result<Arc<DomainCache>> {
-        if let Some(domain_name) = domain_name {
-            if let Some(domain) = self.domain(domain_name).await? {
-                Ok(domain)
-            } else {
-                Err(trc::AuthEvent::Failed
-                    .into_err()
-                    .ctx(trc::Key::AccountName, address.to_string())
-                    .reason("Domain not found"))
-            }
+    async fn resolve_domain(&self, domain_name: &str) -> trc::Result<Arc<DomainCache>> {
+        if let Some(domain) = self.domain(domain_name).await? {
+            Ok(domain)
         } else {
+            Err(trc::AuthEvent::Failed
+                .into_err()
+                .ctx(trc::Key::Details, domain_name.to_string())
+                .reason("Domain not found"))
+        }
+    }
+
+    fn add_missing_domain(&self, address: &mut Username) {
+        if address.domain().is_none() {
             trc::event!(
                 Auth(trc::AuthEvent::Warning),
-                AccountName = address.to_string(),
+                AccountName = address.address().to_string(),
                 Reason = "No domain in username",
             );
-            self.domain_by_id(self.core.email.default_domain_id)
-                .await?
-                .ok_or_else(|| {
-                    trc::AuthEvent::Error
-                        .into_err()
-                        .details("Default domain does not exist or has been disabled")
-                        .ctx(trc::Key::Id, self.core.email.default_domain_id)
-                })
+            address.domain_start = address.name.len() + 1;
+            address.name = format!("{}@{}", address.name, self.core.email.default_domain_name);
         }
     }
 

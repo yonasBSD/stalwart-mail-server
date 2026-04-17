@@ -137,12 +137,8 @@ impl BootManager {
             .failed("⚠️ Startup failed");
         let mut bootstrap = Bootstrap::new(registry).await;
 
-        if matches!(import_export, StoreOp::None) {
-            // Add safe defaults if missing
-            bootstrap.insert_safe_defaults().await;
-        }
-
-        let todo = "implement recovery mode, check env_recovery_mode in RegistryStoreInner";
+        // Add safe defaults if missing
+        bootstrap.insert_safe_defaults().await;
 
         // Start listeners
         let mut servers = Listeners::parse(&mut bootstrap).await;
@@ -173,11 +169,27 @@ impl BootManager {
                 #[cfg(not(feature = "enterprise"))]
                 telemetry.enable(false);
 
-                trc::event!(
-                    Server(trc::ServerEvent::Startup),
-                    Hostname = bootstrap.registry.local_hostname().to_string(),
-                    Version = env!("CARGO_PKG_VERSION"),
-                );
+                if bootstrap.registry.is_bootstrap_mode() {
+                    trc::event!(
+                        Server(trc::ServerEvent::BootstrapMode),
+                        Details =
+                            "No configuration file was found. Port 8080 is open for initial setup.",
+                        Version = env!("CARGO_PKG_VERSION"),
+                    );
+                } else if bootstrap.registry.is_recovery_mode() {
+                    trc::event!(
+                        Server(trc::ServerEvent::RecoveryMode),
+                        Details = "Port 8080 is open for troubleshooting and recovery.",
+                        Hostname = bootstrap.registry.local_hostname().to_string(),
+                        Version = env!("CARGO_PKG_VERSION"),
+                    );
+                } else {
+                    trc::event!(
+                        Server(trc::ServerEvent::Startup),
+                        Hostname = bootstrap.registry.local_hostname().to_string(),
+                        Version = env!("CARGO_PKG_VERSION"),
+                    );
+                }
 
                 if core.storage.coordinator.is_enabled() {
                     trc::event!(
@@ -205,20 +217,22 @@ impl BootManager {
                     cache,
                 });
 
-                // Load spam model
-                if let Err(err) = inner.build_server().spam_model_reload().await {
-                    trc::error!(
-                        err.details("Failed to load spam filter model")
-                            .caused_by(trc::location!())
-                    );
-                }
+                if !bootstrap.registry.is_recovery_mode() {
+                    // Load spam model
+                    if let Err(err) = inner.build_server().spam_model_reload().await {
+                        trc::error!(
+                            err.details("Failed to load spam filter model")
+                                .caused_by(trc::location!())
+                        );
+                    }
 
-                // Fetch ASN database
-                if has_remote_asn {
-                    inner
-                        .build_server()
-                        .lookup_asn_country(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)))
-                        .await;
+                    // Fetch ASN database
+                    if has_remote_asn {
+                        inner
+                            .build_server()
+                            .lookup_asn_country(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)))
+                            .await;
+                    }
                 }
 
                 // Parse TCP acceptors

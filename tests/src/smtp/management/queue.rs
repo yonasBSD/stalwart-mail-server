@@ -237,7 +237,10 @@ async fn manage_queue() {
 
         // Validate return path and recipients
         let (sender, recipients) = envelopes.get(env_id.as_str()).unwrap();
-        assert_eq!(&message.return_path, sender);
+        assert_eq!(
+            &message.return_path,
+            if !sender.is_empty() { sender } else { "<>" }
+        );
         'outer: for recipient in recipients {
             for (address, _) in message.recipients.iter() {
                 if address == recipient {
@@ -333,29 +336,36 @@ async fn manage_queue() {
     }
 
     // Retry delivery
-    for id in [id_map["e"], id_map["f"]] {
-        admin
-            .registry_update_object(
-                ObjectType::QueuedMessage,
-                id,
-                json!({
-                    "recipients/0/retryDue": UTCDateTime::now()
-                }),
-            )
-            .await;
-    }
+    admin
+        .registry_update_object(
+            ObjectType::QueuedMessage,
+            id_map["e"],
+            json!({
+                "recipients/john@foobar.org/retryDue": UTCDateTime::now()
+            }),
+        )
+        .await;
+    admin
+        .registry_update_object(
+            ObjectType::QueuedMessage,
+            id_map["f"],
+            json!({
+                "recipients/delay@foobar.org/retryDue": UTCDateTime::now()
+            }),
+        )
+        .await;
     admin
         .registry_update_object(
             ObjectType::QueuedMessage,
             id_map["a"],
             json!({
-                "recipients/0/retryDue": "2200-01-01T00:00:00Z",
+                "recipients/rcpt1@example1.org/retryDue": "2200-01-01T00:00:00Z",
             }),
         )
         .await;
 
     // Expect delivery to john@foobar.org
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
     assert_eq!(
         remote
             .consume_message()
@@ -406,7 +416,11 @@ async fn manage_queue() {
     }
 
     // Cancel deliveries
-    for (id, filter) in [("a", &[1, 2][..]), ("b", &[0, 1][..]), ("c", &[1][..])] {
+    for (id, filter) in [
+        ("a", &["rcpt1@example2.org", "rcpt2@example2.org"][..]),
+        ("b", &["rcpt3@example1.net", "rcpt4@example1.net"][..]),
+        ("c", &["rcpt6@example2.com"][..]),
+    ] {
         let mut map = serde_json::Map::new();
         for i in filter {
             map.insert(format!("recipients/{i}"), serde_json::Value::Null);

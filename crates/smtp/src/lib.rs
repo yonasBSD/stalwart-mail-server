@@ -7,7 +7,7 @@
 #![warn(clippy::large_futures)]
 
 use common::{
-    BuildServer, Inner,
+    Inner,
     manager::boot::{BootManager, IpcReceivers},
 };
 use queue::manager::SpawnQueue;
@@ -37,7 +37,8 @@ impl StartQueueManager for BootManager {
 
 impl SpawnQueueManager for IpcReceivers {
     fn spawn_queue_manager(&mut self, inner: Arc<Inner>) {
-        if inner.build_server().core.network.roles.outbound_mta {
+        let core = inner.shared_core.load();
+        if !core.storage.registry.is_recovery_mode() && core.network.roles.outbound_mta {
             // Spawn queue manager
             self.queue_rx.take().unwrap().spawn(inner.clone());
 

@@ -18,6 +18,7 @@ use trc::TOTAL_EVENT_COUNT;
 pub mod enums;
 pub mod enums_impl;
 pub mod prelude;
+#[allow(clippy::large_enum_variant)]
 pub mod properties;
 pub mod properties_impl;
 #[allow(clippy::large_enum_variant)]
