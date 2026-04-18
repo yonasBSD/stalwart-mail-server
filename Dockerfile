@@ -25,7 +25,6 @@ COPY --from=planner /recipe.json /recipe.json
 RUN RUSTFLAGS="$(cat /flags.txt)" cargo chef cook --target "$(cat /target.txt)" --release --no-default-features --features "sqlite postgres mysql rocks s3 redis azure nats enterprise" --recipe-path /recipe.json
 COPY . .
 RUN RUSTFLAGS="$(cat /flags.txt)" cargo build --target "$(cat /target.txt)" --release -p stalwart --no-default-features --features "sqlite postgres mysql rocks s3 redis azure nats enterprise"
-RUN RUSTFLAGS="$(cat /flags.txt)" cargo build --target "$(cat /target.txt)" --release -p stalwart-cli
 RUN mv "/build/target/$(cat /target.txt)/release" "/output"
 
 FROM docker.io/debian:trixie-slim
@@ -34,7 +33,6 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -yq --no-install-recommends ca-certificates
 COPY --from=builder /output/stalwart /usr/local/bin
-COPY --from=builder /output/stalwart-cli /usr/local/bin
 COPY ./resources/docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod -R 755 /usr/local/bin
 CMD ["/usr/local/bin/stalwart"]
