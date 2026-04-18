@@ -37939,7 +37939,7 @@ impl Default for TracerLog {
             path: Default::default(),
             prefix: "stalwart".to_string(),
             rotate: LogRotateFrequency::Daily,
-            ansi: false,
+            ansi: true,
             multiline: false,
             enable: true,
             level: TracingLevel::Info,
