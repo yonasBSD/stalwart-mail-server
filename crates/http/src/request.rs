@@ -595,7 +595,9 @@ impl ParseHttp for Server {
             }
             external => {
                 if path.next().is_none() {
-                    return Ok(HttpResponse::redirect(format!("/{external}/")));
+                    if !external.is_empty() {
+                        return Ok(HttpResponse::redirect(format!("/{external}/")));
+                    }
                 } else if let Some(resource) = self
                     .inner
                     .data
