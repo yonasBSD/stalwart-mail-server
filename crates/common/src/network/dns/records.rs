@@ -19,6 +19,7 @@ use registry::schema::{
 use reqwest::Url;
 use sha2::{Digest, Sha256};
 use store::registry::RegistryQuery;
+use trc::AddContext;
 use types::id::Id;
 use x509_parser::parse_x509_certificate;
 
@@ -132,7 +133,7 @@ impl Server {
                     }
                 }
                 DnsRecordType::AutoConfig => {
-                    let pacc_digest = Sha256::digest(&network.info.pacc);
+                    let pacc_digest = Sha256::digest(&self.get_pacc_for_fomain(domain_name).await?);
                     let pacc_digest_encoded = general_purpose::STANDARD.encode(pacc_digest);
 
                     records.push(NamedDnsRecord {
@@ -376,6 +377,21 @@ impl Server {
         )
         .await
         .map(|records| BindSerializer::serialize(&records))
+    }
+
+    pub async fn get_pacc_for_fomain(&self, domain_name: &str) -> trc::Result<String> {
+        self.get_directory_for_domain(domain_name)
+            .await
+            .caused_by(trc::location!())
+            .map(|directory| {
+                directory
+                    .and_then(|directory| {
+                        directory
+                            .oidc_discovery_document()
+                            .map(|doc| doc.url.to_string())
+                    })
+                    .unwrap_or_else(|| self.core.network.http.url_https.clone())
+            })
     }
 }
 

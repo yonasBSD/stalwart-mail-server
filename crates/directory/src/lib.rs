@@ -28,6 +28,7 @@ pub enum Credentials {
     },
 }
 
+#[allow(clippy::large_enum_variant)]
 pub enum Directory {
     Ldap(LdapDirectory),
     Sql(SqlDirectory),
