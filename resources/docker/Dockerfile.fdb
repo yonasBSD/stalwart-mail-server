@@ -49,4 +49,4 @@ RUN useradd stalwart -s /sbin/nologin -M
 RUN mkdir -p /opt/stalwart
 RUN chown stalwart:stalwart /opt/stalwart
 
-ENTRYPOINT ["/usr/local/bin/stalwart", "--config", "/opt/stalwart/etc/config.toml"]
+ENTRYPOINT ["/usr/local/bin/stalwart", "--config", "/opt/stalwart/etc/config.json"]
