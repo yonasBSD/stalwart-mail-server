@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{Server, network::dkim::generate_dkim_dns_record};
+use crate::{Server, config::network::Pacc, network::dkim::generate_dkim_dns_record};
 use ahash::{AHashMap, AHashSet};
 use base64::{Engine, engine::general_purpose};
 use dns_update::{
@@ -388,10 +388,27 @@ impl Server {
                     .and_then(|directory| {
                         directory
                             .oidc_discovery_document()
-                            .map(|doc| doc.url.to_string())
+                            .map(|doc| self.core.network.info.pacc.build(&doc.url))
                     })
-                    .unwrap_or_else(|| self.core.network.http.url_https.clone())
+                    .unwrap_or_else(|| {
+                        self.core
+                            .network
+                            .info
+                            .pacc
+                            .build(&self.core.network.http.url_https)
+                    })
             })
+    }
+}
+
+impl Pacc {
+    pub fn build(&self, endpoint: &str) -> String {
+        let mut response =
+            String::with_capacity(self.prefix.len() + self.suffix.len() + endpoint.len());
+        response.push_str(&self.prefix);
+        response.push_str(endpoint);
+        response.push_str(&self.suffix);
+        response
     }
 }
 

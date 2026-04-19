@@ -208,10 +208,6 @@ impl Network {
                     if hostname != http_host {
                         http_host = hostname.to_string();
                     }
-                    pacc.authentication.as_mut().unwrap().oauth_public = OAuthPublic {
-                        issuer: format!("https://{hostname}/",),
-                    }
-                    .into();
                     pacc.protocols.jmap = HttpServer {
                         url: format!("https://{hostname}/jmap/session",),
                     }

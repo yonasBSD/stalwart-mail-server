@@ -41,12 +41,26 @@ RUN cargo build -p stalwart --no-default-features --features "foundationdb s3 re
 
 FROM debian:trixie-slim AS runtime
 
-COPY --from=builder /app/target/release/stalwart /usr/local/bin/stalwart
-RUN apt-get update -y && apt-get install -yq --no-install-recommends ca-certificates curl adduser
-RUN curl -LO https://github.com/apple/foundationdb/releases/download/7.3.69/foundationdb-clients_7.3.69-1_amd64.deb && \
-    dpkg -i foundationdb-clients_7.3.69-1_amd64.deb
-RUN useradd stalwart -s /sbin/nologin -M
-RUN mkdir -p /opt/stalwart
-RUN chown stalwart:stalwart /opt/stalwart
+COPY --from=builder --chmod=0755 /app/target/release/stalwart /usr/local/bin/stalwart
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -yq --no-install-recommends ca-certificates curl libcap2-bin && \
+    curl -LO https://github.com/apple/foundationdb/releases/download/7.3.69/foundationdb-clients_7.3.69-1_amd64.deb && \
+    dpkg -i foundationdb-clients_7.3.69-1_amd64.deb && \
+    rm -f foundationdb-clients_7.3.69-1_amd64.deb && \
+    rm -rf /var/lib/apt/lists/* && \
+    groupadd -r -g 2000 stalwart && \
+    useradd -r -u 2000 -g 2000 -s /usr/sbin/nologin -M stalwart && \
+    mkdir -p /etc/stalwart /var/lib/stalwart && \
+    chown stalwart:stalwart /etc/stalwart /var/lib/stalwart && \
+    setcap 'cap_net_bind_service=+ep' /usr/local/bin/stalwart
 
-ENTRYPOINT ["/usr/local/bin/stalwart", "--config", "/opt/stalwart/etc/config.json"]
+USER stalwart
+WORKDIR /var/lib/stalwart
+VOLUME ["/etc/stalwart", "/var/lib/stalwart"]
+EXPOSE	443 25 110 587 465 143 993 995 4190 8080
+ENV STALWART_HEALTHCHECK_URL=https://127.0.0.1:443/healthz/live
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl -fsSk "$STALWART_HEALTHCHECK_URL" || curl -fsS http://127.0.0.1:8080/healthz/live || exit 1
+ENTRYPOINT ["/usr/local/bin/stalwart"]
+CMD ["--config", "/etc/stalwart/config.json"]

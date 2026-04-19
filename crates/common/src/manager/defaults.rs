@@ -51,9 +51,10 @@ async fn insert_safe_defaults(bp: &mut Bootstrap) -> trc::Result<()> {
     let is_bootstrap_mode = bp.registry.is_bootstrap_mode();
 
     #[cfg(not(feature = "test_mode"))]
-    if !is_recovery_mode || is_bootstrap_mode {
-        if bp.registry.count_object(ObjectType::Application).await? == 0 {
-            bp.registry
+    if (!is_recovery_mode || is_bootstrap_mode)
+        && bp.registry.count_object(ObjectType::Application).await? == 0
+    {
+        bp.registry
             .write(RegistryWrite::insert(
                 &Application {
                     auto_update_frequency: Duration::from_millis(30 * 24 * 60 * 60 * 1000),
@@ -71,7 +72,6 @@ async fn insert_safe_defaults(bp: &mut Bootstrap) -> trc::Result<()> {
                 .into(),
             ))
             .await?;
-        }
     }
 
     if is_bootstrap_mode {

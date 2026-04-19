@@ -150,28 +150,44 @@ COPY --from=builder /app/artifact /
 # Runtime image for GNU targets
 # *****************
 FROM --platform=$TARGETPLATFORM docker.io/library/debian:trixie-slim AS gnu
-WORKDIR /opt/stalwart
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
-    apt-get install -yq --no-install-recommends ca-certificates tzdata
-COPY --from=builder /app/artifact/stalwart /usr/local/bin
-COPY ./resources/docker/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod -R 755 /usr/local/bin
-CMD ["/usr/local/bin/stalwart"]
-VOLUME [ "/opt/stalwart" ]
+    apt-get install -yq --no-install-recommends ca-certificates curl tzdata libcap2-bin && \
+    rm -rf /var/lib/apt/lists/* && \
+    groupadd -r -g 2000 stalwart && \
+    useradd -r -u 2000 -g 2000 -s /usr/sbin/nologin -M stalwart && \
+    mkdir -p /etc/stalwart /var/lib/stalwart && \
+    chown stalwart:stalwart /etc/stalwart /var/lib/stalwart
+COPY --from=builder --chmod=0755 /app/artifact/stalwart /usr/local/bin/stalwart
+RUN setcap 'cap_net_bind_service=+ep' /usr/local/bin/stalwart
+USER stalwart
+WORKDIR /var/lib/stalwart
+VOLUME ["/etc/stalwart", "/var/lib/stalwart"]
 EXPOSE	443 25 110 587 465 143 993 995 4190 8080
-ENTRYPOINT ["/bin/sh", "/usr/local/bin/entrypoint.sh"]
+ENV STALWART_HEALTHCHECK_URL=https://127.0.0.1:443/healthz/live
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl -fsSk "$STALWART_HEALTHCHECK_URL" || curl -fsS http://127.0.0.1:8080/healthz/live || exit 1
+ENTRYPOINT ["/usr/local/bin/stalwart"]
+CMD ["--config", "/etc/stalwart/config.json"]
 
 # *****************
 # Runtime image for musl targets
 # *****************
 FROM --platform=$TARGETPLATFORM alpine AS musl
-WORKDIR /opt/stalwart
-RUN apk add --update --no-cache ca-certificates tzdata && rm -rf /var/cache/apk/*
-COPY --from=builder /app/artifact/stalwart /usr/local/bin
-COPY ./resources/docker/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod -R 755 /usr/local/bin
-CMD ["/usr/local/bin/stalwart"]
-VOLUME [ "/opt/stalwart" ]
+RUN apk add --update --no-cache ca-certificates curl tzdata libcap && \
+    rm -rf /var/cache/apk/* && \
+    addgroup -S -g 2000 stalwart && \
+    adduser -S -D -H -u 2000 -G stalwart -s /sbin/nologin stalwart && \
+    mkdir -p /etc/stalwart /var/lib/stalwart && \
+    chown stalwart:stalwart /etc/stalwart /var/lib/stalwart
+COPY --from=builder --chmod=0755 /app/artifact/stalwart /usr/local/bin/stalwart
+RUN setcap 'cap_net_bind_service=+ep' /usr/local/bin/stalwart
+USER stalwart
+WORKDIR /var/lib/stalwart
+VOLUME ["/etc/stalwart", "/var/lib/stalwart"]
 EXPOSE	443 25 110 587 465 143 993 995 4190 8080
-ENTRYPOINT ["/bin/sh", "/usr/local/bin/entrypoint.sh"]
+ENV STALWART_HEALTHCHECK_URL=https://127.0.0.1:443/healthz/live
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl -fsSk "$STALWART_HEALTHCHECK_URL" || curl -fsS http://127.0.0.1:8080/healthz/live || exit 1
+ENTRYPOINT ["/usr/local/bin/stalwart"]
+CMD ["--config", "/etc/stalwart/config.json"]
