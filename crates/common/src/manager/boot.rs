@@ -153,7 +153,8 @@ impl BootManager {
         match import_export {
             StoreOp::None => {
                 // Parse components
-                let core = Box::pin(Core::parse(&mut bootstrap, storage)).await;
+                let core: Box<Core> =
+                    Box::new(Box::pin(Core::parse(&mut bootstrap, storage)).await);
                 let data = Data::parse(&mut bootstrap).await;
                 let cache = Caches::parse(&mut bootstrap).await;
 
@@ -211,7 +212,7 @@ impl BootManager {
                 );
                 let (ipc, ipc_rxs) = build_ipc(!core.storage.coordinator.is_none());
                 let inner = Arc::new(Inner {
-                    shared_core: ArcSwap::from_pointee(core),
+                    shared_core: ArcSwap::new(Arc::from(core)),
                     data,
                     ipc,
                     cache,
