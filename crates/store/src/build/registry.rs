@@ -46,7 +46,7 @@ impl RegistryStore {
                         .collect::<String>();
                     eprintln!();
                     eprintln!("════════════════════════════════════════════════════════════");
-                    eprintln!("🔑 Stalwart bootstrap mode — temporary administrator account");
+                    eprintln!("🔑 Stalwart bootstrap mode - temporary administrator account");
                     eprintln!();
                     eprintln!("   username: admin");
                     eprintln!("   password: {password}");
