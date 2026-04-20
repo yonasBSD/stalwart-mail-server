@@ -18,7 +18,7 @@ pub enum Account {
 #[serde(default)]
 pub struct AccountPassword {
     #[serde(rename = "secret")]
-    pub secret: String,
+    pub secret: Option<String>,
     #[serde(rename = "currentSecret")]
     pub current_secret: Option<String>,
     #[serde(rename = "otpAuth")]

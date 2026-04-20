@@ -119,9 +119,10 @@ impl ObjectImpl for AccountPassword {
 
     fn validate(&self, errors: &mut Vec<ValidationError>) -> bool {
         let neb = errors.len();
-        let value = &self.secret;
-        if value.is_empty() {
-            errors.push(ValidationError::required(Property::Secret));
+        if let Some(value) = &self.secret {
+            if value.is_empty() {
+                errors.push(ValidationError::required(Property::Secret));
+            }
         }
         if let Some(value) = &self.current_secret {
             if value.is_empty() {
@@ -165,7 +166,9 @@ impl Default for AccountPassword {
 impl IntoValue for AccountPassword {
     fn into_value(self) -> JmapValue<'static> {
         let mut map = jmap_tools::Map::with_capacity(5);
-        map.insert_unchecked(Property::Secret, JmapValue::Str(MASKED_PASSWORD.into()));
+        if self.secret.is_some() {
+            map.insert_unchecked(Property::Secret, JmapValue::Str(MASKED_PASSWORD.into()));
+        }
         if self.current_secret.is_some() {
             map.insert_unchecked(
                 Property::CurrentSecret,
