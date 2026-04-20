@@ -93,6 +93,7 @@ This version includes **multiple breaking changes**. If you are upgrading from v
   - Use RFC 2616 instead of RFC 1123 for date formatting
   - Fix ACL container/item mismatch in reports.
   - CalDAV: Allow organized properties to be present in `PUT` requests if they are equal to the existing ones.
+  - CalDAV: Enforce cumulative iCalendar instances cap in CalDAV free-busy REPORT handler
 - Configuration: Prefix parsing issues (#2495)
 - OIDC: JWKS Exposes Symmetric Signing Key
 - SQLite: Fix thread pool exhaustion.
