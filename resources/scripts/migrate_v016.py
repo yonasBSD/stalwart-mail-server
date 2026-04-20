@@ -239,10 +239,18 @@ def cmd_dump(args: argparse.Namespace) -> int:
           file=sys.stderr)
 
     print("Listing principals...", file=sys.stderr)
-    names = client.list_principal_names()
-    print(f"  found {len(names)} principals across all types", file=sys.stderr)
-
+    names: list[tuple[str, str]] = []
     principals: list[dict[str, Any]] = []
+    try:
+        names = client.list_principal_names()
+    except ApiError as exc:
+        print(f"  WARN could not list principals: {exc}", file=sys.stderr)
+        print("  skipping principal dump (continuing without principals)",
+              file=sys.stderr)
+    else:
+        print(f"  found {len(names)} principals across all types",
+              file=sys.stderr)
+
     for i, (typ, name) in enumerate(names, 1):
         try:
             full = client.get_principal(name)
