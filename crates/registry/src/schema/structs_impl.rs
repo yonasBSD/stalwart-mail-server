@@ -25923,7 +25923,7 @@ impl Pickle for Search {
     fn pickle(&self, out: &mut Vec<u8>) {
         self.index_batch_size.pickle(out);
         self.default_language.pickle(out);
-        self.disable_languages.pickle(out);
+        self.supported_languages.pickle(out);
         self.index_calendar.pickle(out);
         self.index_calendar_fields.pickle(out);
         self.index_contacts.pickle(out);
@@ -25938,7 +25938,7 @@ impl Pickle for Search {
         let mut this = Self::default();
         this.index_batch_size = Pickle::unpickle(stream)?;
         this.default_language = Pickle::unpickle(stream)?;
-        this.disable_languages = Pickle::unpickle(stream)?;
+        this.supported_languages = Pickle::unpickle(stream)?;
         this.index_calendar = Pickle::unpickle(stream)?;
         this.index_calendar_fields = Pickle::unpickle(stream)?;
         this.index_contacts = Pickle::unpickle(stream)?;
@@ -25956,7 +25956,7 @@ impl Default for Search {
         Self {
             index_batch_size: 100u64,
             default_language: Locale::EnUS,
-            disable_languages: Default::default(),
+            supported_languages: Map::new(vec![Locale::EnUS]),
             index_calendar: true,
             index_calendar_fields: Map::new(vec![
                 SearchCalendarField::Title,
@@ -26014,8 +26014,8 @@ impl IntoValue for Search {
             self.default_language.into_value(),
         );
         map.insert_unchecked(
-            Property::DisableLanguages,
-            self.disable_languages.into_value(),
+            Property::SupportedLanguages,
+            self.supported_languages.into_value(),
         );
         map.insert_unchecked(Property::IndexCalendar, self.index_calendar.into_value());
         map.insert_unchecked(
@@ -26050,7 +26050,7 @@ impl RegistryJsonPropertyPatch for Search {
         match pointer.next_property() {
             Some(Property::IndexBatchSize) => self.index_batch_size.patch(pointer, value),
             Some(Property::DefaultLanguage) => self.default_language.patch(pointer, value),
-            Some(Property::DisableLanguages) => self.disable_languages.patch(pointer, value),
+            Some(Property::SupportedLanguages) => self.supported_languages.patch(pointer, value),
             Some(Property::IndexCalendar) => self.index_calendar.patch(pointer, value),
             Some(Property::IndexCalendarFields) => self.index_calendar_fields.patch(pointer, value),
             Some(Property::IndexContacts) => self.index_contacts.patch(pointer, value),

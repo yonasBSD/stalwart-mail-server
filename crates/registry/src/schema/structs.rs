@@ -3436,8 +3436,8 @@ pub struct Search {
     pub index_batch_size: u64,
     #[serde(rename = "defaultLanguage")]
     pub default_language: Locale,
-    #[serde(rename = "disableLanguages")]
-    pub disable_languages: Map<Locale>,
+    #[serde(rename = "supportedLanguages")]
+    pub supported_languages: Map<Locale>,
     #[serde(rename = "indexCalendar")]
     pub index_calendar: bool,
     #[serde(rename = "indexCalendarFields")]
