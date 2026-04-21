@@ -12,6 +12,8 @@ This version includes **multiple breaking changes**. If you are upgrading from v
 ## Changed
 
 ## Fixed
+- OSS builds.
+
 
 ## [0.16.0] - 2026-04-20
 
