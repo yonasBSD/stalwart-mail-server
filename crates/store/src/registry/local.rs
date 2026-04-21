@@ -52,10 +52,6 @@ impl RegistryStoreInner {
                         "localhost".to_string()
                     }
                 }),
-            env_http_port: std::env::var("STALWART_HTTP_PORT")
-                .ok()
-                .and_then(|v| v.trim().parse::<u16>().ok())
-                .filter(|&u| u != 0),
         }
     }
 

@@ -276,11 +276,6 @@ impl RegistryStore {
     }
 
     #[inline(always)]
-    pub fn http_port(&self) -> Option<u16> {
-        self.0.env_http_port
-    }
-
-    #[inline(always)]
     pub fn is_recovery_mode(&self) -> bool {
         self.0.env_recovery_mode
     }
@@ -323,7 +318,6 @@ impl RegistryStore {
             env_cluster_role: cluster_role,
             env_push_shard_id: push_shard_id,
             env_hostname: hostname,
-            env_http_port: None,
             id_generator: utils::snowflake::SnowflakeIdGenerator::new(),
         })
         .await
