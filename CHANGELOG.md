@@ -13,6 +13,7 @@ This version includes **multiple breaking changes**. If you are upgrading from v
 
 ## Fixed
 - OSS builds.
+- Cloudflare `CAA` record updates.
 
 
 ## [0.16.0] - 2026-04-20
