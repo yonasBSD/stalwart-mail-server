@@ -428,12 +428,12 @@ impl Http {
 
         Http {
             url_https: if !bp.registry.is_bootstrap_mode() {
-                format!("https://{server_name}")
+                format!("https://{}", bp.registry.base_url().unwrap_or(server_name))
             } else {
                 String::new()
             },
             url_http: if !bp.registry.is_bootstrap_mode() {
-                format!("http://{server_name}")
+                format!("http://{}", bp.registry.base_url().unwrap_or(server_name))
             } else {
                 String::new()
             },

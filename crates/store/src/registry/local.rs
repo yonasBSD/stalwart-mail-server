@@ -47,12 +47,14 @@ impl RegistryStoreInner {
                     let host = gethostname::gethostname();
                     let host = host.to_string_lossy();
                     if host.parse::<IpAddr>().is_err() {
-                        host.into_owned()
+                        host.to_lowercase()
                     } else {
                         "localhost".to_string()
                     }
-                })
-                .to_lowercase(),
+                }),
+            env_base_url: std::env::var("STALWART_BASE_URL")
+                .ok()
+                .filter(|u| !u.is_empty()),
         }
     }
 

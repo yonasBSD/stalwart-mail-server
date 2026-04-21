@@ -207,6 +207,9 @@ write_env_file() {
 # Override the hostname used in HTTP responses
 #STALWART_HOSTNAME=mail.example.com
 
+# Override the base URL used in HTTP responses, including port if necessary.
+#STALWART_BASE_URL=mail.example.com:8080
+
 # Enable bootstrap / recovery mode on startup. Accepted: 1, true. Default: false.
 #STALWART_RECOVERY_MODE=true
 
