@@ -428,12 +428,20 @@ impl Http {
 
         Http {
             url_https: if !bp.registry.is_bootstrap_mode() {
-                format!("https://{}", bp.registry.base_url().unwrap_or(server_name))
+                if let Some(port) = bp.registry.http_port() {
+                    format!("https://{}:{}", server_name, port)
+                } else {
+                    format!("https://{}", server_name)
+                }
             } else {
                 String::new()
             },
             url_http: if !bp.registry.is_bootstrap_mode() {
-                format!("http://{}", bp.registry.base_url().unwrap_or(server_name))
+                if let Some(port) = bp.registry.http_port() {
+                    format!("http://{}:{}", server_name, port)
+                } else {
+                    format!("http://{}", server_name)
+                }
             } else {
                 String::new()
             },

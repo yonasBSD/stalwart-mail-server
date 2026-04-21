@@ -276,8 +276,8 @@ impl RegistryStore {
     }
 
     #[inline(always)]
-    pub fn base_url(&self) -> Option<&str> {
-        self.0.env_base_url.as_deref()
+    pub fn http_port(&self) -> Option<u16> {
+        self.0.env_http_port
     }
 
     #[inline(always)]
@@ -323,7 +323,7 @@ impl RegistryStore {
             env_cluster_role: cluster_role,
             env_push_shard_id: push_shard_id,
             env_hostname: hostname,
-            env_base_url: None,
+            env_http_port: None,
             id_generator: utils::snowflake::SnowflakeIdGenerator::new(),
         })
         .await

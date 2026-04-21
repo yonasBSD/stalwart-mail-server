@@ -7,7 +7,7 @@ All notable changes to this project will be documented in this file. This projec
 This version includes **multiple breaking changes**. If you are upgrading from v0.15.x and below, please read the [upgrading documentation](https://github.com/stalwartlabs/stalwart/blob/main/UPGRADING/v0_16.md) for more information on how to upgrade from previous versions.
 
 ## Added
-- New `STALWART_BASE_URL` to override the base URL used in HTTP responses, including port if necessary.
+- New `STALWART_HTTP_PORT` to override the HTTP port used in URLs advertised via JMAP and OAuth.
 
 ## Changed
 

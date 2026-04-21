@@ -52,9 +52,10 @@ impl RegistryStoreInner {
                         "localhost".to_string()
                     }
                 }),
-            env_base_url: std::env::var("STALWART_BASE_URL")
+            env_http_port: std::env::var("STALWART_HTTP_PORT")
                 .ok()
-                .filter(|u| !u.is_empty()),
+                .and_then(|v| v.trim().parse::<u16>().ok())
+                .filter(|&u| u != 0),
         }
     }
 
