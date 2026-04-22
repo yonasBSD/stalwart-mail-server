@@ -13,7 +13,9 @@ This version includes **multiple breaking changes**. If you are upgrading from v
 ## Fixed
 - Do not include port number when constructing HTTP base URLs.
 - OSS builds.
-- Cloudflare `CAA` record updates.
+- Cloudflare DNS updater: 
+  - Fix `CAA` record updates.
+  - Check zone subdomains when finding zones
 
 
 ## [0.16.0] - 2026-04-20
