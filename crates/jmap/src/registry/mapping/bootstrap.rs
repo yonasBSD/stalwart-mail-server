@@ -121,7 +121,7 @@ pub(crate) async fn bootstrap_set(
         // Validate domain name and hostname
         let server_hostname = bootstrap.server_hostname.trim().to_lowercase();
         let domain_name = bootstrap.default_domain.trim().to_lowercase();
-        if psl::domain_str(&server_hostname).is_none() {
+        if psl::domain_str(&server_hostname).is_none() && !server_hostname.ends_with(".test") {
             set.response.not_updated.append(
                 id,
                 SetError::invalid_properties()
@@ -130,7 +130,7 @@ pub(crate) async fn bootstrap_set(
             );
             break;
         }
-        if psl::domain_str(&domain_name).is_none() {
+        if psl::domain_str(&domain_name).is_none() && !domain_name.ends_with(".test") {
             set.response.not_updated.append(
                 id,
                 SetError::invalid_properties()
