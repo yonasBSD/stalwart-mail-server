@@ -15,6 +15,7 @@ This version includes **multiple breaking changes**. If you are upgrading from v
 - OSS builds.
 - DNS Updater:
   - RFC2136: TSIG secret not base64 decoded.
+  - Google DNS: Chunk TXT records when they exceed 255 characters.
   - Cloudflare: 
     - Fix `CAA` record updates.
     - Check zone subdomains when finding zones
