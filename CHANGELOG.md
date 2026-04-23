@@ -14,6 +14,7 @@ This version includes **multiple breaking changes**. If you are upgrading from v
 - JMAP:
   - Invalid `receivedAt` headers after importing (#2939).
   - Sorting order issues when emails lack `receivedAt` headers.
+- ACME: Allow requesting apex domain certificates.
 - Reverse proxy issues.
 - OSS builds.
 - DNS Updater:
