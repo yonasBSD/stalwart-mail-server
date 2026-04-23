@@ -11,6 +11,8 @@ This version includes **multiple breaking changes**. If you are upgrading from v
 ## Changed
 
 ## Fixed
+- JMAP:
+  - Invalid `receivedAt` headers after importing (#2939).
 - Reverse proxy issues.
 - OSS builds.
 - DNS Updater:
