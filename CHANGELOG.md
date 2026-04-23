@@ -13,6 +13,7 @@ This version includes **multiple breaking changes**. If you are upgrading from v
 ## Fixed
 - JMAP:
   - Invalid `receivedAt` headers after importing (#2939).
+  - Sorting order issues when emails lack `receivedAt` headers.
 - Reverse proxy issues.
 - OSS builds.
 - DNS Updater:
