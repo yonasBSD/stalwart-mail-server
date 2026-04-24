@@ -38,8 +38,7 @@ pub struct Username {
 
 impl Server {
     pub async fn authenticate(&self, req: &AuthRequest) -> trc::Result<AccessToken> {
-        match self
-            .route_auth_request(req)
+        match Box::pin(self.route_auth_request(req))
             .await
             .and_then(|token| token.assert_has_permission(Permission::Authenticate))
         {
