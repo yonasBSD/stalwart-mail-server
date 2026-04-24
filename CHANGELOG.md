@@ -17,6 +17,7 @@ This version includes **multiple breaking changes**. If you are upgrading from v
   - Invalid `receivedAt` headers after importing (#2939).
   - Sorting order issues when emails lack `receivedAt` headers.
 - IMAP: Fix `BINARY` fetch responses (#2940).
+- WebDAV: Fix ACL validation for target folders.
 - ACME: Allow requesting apex domain certificates.
 - Hostname issues: 
   - Accept RFC 6761 reserved TLDs during bootstrap.
