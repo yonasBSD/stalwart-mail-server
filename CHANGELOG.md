@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file. This projec
 This version includes **multiple breaking changes**. If you are upgrading from v0.15.x and below, please read the [upgrading documentation](https://github.com/stalwartlabs/stalwart/blob/main/UPGRADING/v0_16.md) for more information on how to upgrade from previous versions.
 
 ## Added
+- `system('node_hostname')` and `system('node_role')` expression variables to retrieve the local node hostname and cluster role respectively.
 
 ## Changed
 
