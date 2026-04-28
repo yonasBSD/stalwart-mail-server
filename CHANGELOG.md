@@ -14,6 +14,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 - Allow HTTP to be used for configuring the server.
 
 ## Fixed
+- LDAP: Generate valid `credentialId` when there are password changes.
 - TLS: Disable cipher suited option disables wrong ciphers.
 - DNS Updater:
   - BunnyDNS: Use subdomain as name of record instead of FQDN.
