@@ -13,6 +13,9 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 
 ## Fixed
 - TLS: Disable cipher suited option disables wrong ciphers.
+- DNS Updater:
+  - BunnyDNS: Use subdomain as name of record instead of FQDN.
+  - RFC2136: Chunk TXT records.
 
 ## [0.16.1] - 2026-04-25
 
