@@ -12,6 +12,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 - Allow HTTP to be used for configuring the server.
 
 ## Fixed
+- TLS: Disable cipher suited option disables wrong ciphers.
 
 ## [0.16.1] - 2026-04-25
 
