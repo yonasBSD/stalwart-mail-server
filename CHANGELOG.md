@@ -9,10 +9,12 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 ## Added
 
 ## Changed
+- Replaced `STALWART_HTTPS_PORT` with `STALWART_PUBLIC_URL`.
 
 ## Fixed
 - Directory: Invalidate caches when group memberships change on an external directory.
 - Log viewer: All events show as `INFO`.
+- Registry: Allow changing object variants.
 - Node id renewal.
 
 ## [0.16.2] - 2026-04-28
