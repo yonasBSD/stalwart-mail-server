@@ -259,15 +259,6 @@ pub(crate) async fn task_set(
             continue;
         }
 
-        if !set.server.try_lock_task(task_id).await {
-            set.response.not_destroyed.append(
-                id,
-                SetError::forbidden().with_description(
-                    "Task is currently being processed and cannot be destroyed".to_string(),
-                ),
-            );
-            continue;
-        }
         locked_tasks.push(task_id);
 
         let due = task.due_timestamp();
