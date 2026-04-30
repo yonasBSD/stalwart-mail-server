@@ -142,6 +142,13 @@ impl Server {
 
                 // Authenticate app passwords
                 if let Some(app_pass) = AppPassword::parse(secret) {
+                    if username.is_master() {
+                        return Err(trc::AuthEvent::Failed
+                            .into_err()
+                            .ctx(trc::Key::AccountName, auth_as_address.to_string())
+                            .ctx(trc::Key::SpanId, req.session_id)
+                            .reason("App passwords cannot be used for impersonation"));
+                    }
                     return if let Some(account_id) =
                         self.account_id_from_parts(auth_as_local, domain.id).await?
                     {
@@ -164,7 +171,17 @@ impl Server {
                 // Obtain external directory, if any
                 let mut is_alias_login = false;
                 let token = if let Some(directory) = self.get_directory_for_cached_domain(&domain) {
-                    let directory_account = directory.authenticate(&req.credentials).await?;
+                    let directory_account = if username.is_master() {
+                        directory
+                            .authenticate(&Credentials::Basic {
+                                username: auth_as_address.to_string(),
+                                secret: secret.clone(),
+                                mfa_token: mfa_token.clone(),
+                            })
+                            .await?
+                    } else {
+                        directory.authenticate(&req.credentials).await?
+                    };
 
                     is_alias_login = directory_account.email != auth_as_address;
                     self.build_directory_token(directory_account, req.remote_ip)
