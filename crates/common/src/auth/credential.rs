@@ -60,8 +60,8 @@ impl AppPassword {
     }
 
     pub fn parse(token: &str) -> Option<Self> {
-        let token = token.strip_prefix("app_")?;
-        let mut reader = Base32Reader::new(token.as_bytes());
+        let token = token.strip_prefix("app")?;
+        let mut reader = Base32Reader::new(token.as_bytes().get(1..)?);
         let mut credential_id = [0u8; 4];
         let mut secret = [0u8; 18];
 
