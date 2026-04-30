@@ -342,11 +342,7 @@ impl Server {
                             return self.build_directory_token(result, req.remote_ip).await;
                         }
                         Err(err) => {
-                            if !err.matches(trc::EventType::Auth(trc::AuthEvent::Failed)) {
-                                return Err(err);
-                            } else {
-                                external_error = Some(err);
-                            }
+                            external_error = Some(err);
                         }
                     }
                 }
