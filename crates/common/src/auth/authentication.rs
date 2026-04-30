@@ -331,6 +331,9 @@ impl Server {
                 } else {
                     self.get_default_directory()
                 };
+
+                // Try external directory authentication first if supported, then fallback to internal OAuth.
+                let mut external_error = None;
                 if let Some(directory) = directory
                     && directory.has_bearer_token_support()
                 {
@@ -341,18 +344,30 @@ impl Server {
                         Err(err) => {
                             if !err.matches(trc::EventType::Auth(trc::AuthEvent::Failed)) {
                                 return Err(err);
+                            } else {
+                                external_error = Some(err);
                             }
                         }
                     }
                 }
 
                 // Internal OAuth
-                let token_info = self
+                match self
                     .validate_access_token(GrantType::AccessToken.into(), token)
-                    .await?;
-                self.access_token(token_info.account_id)
                     .await
-                    .and_then(|token| AccessToken::new(token, req.remote_ip))
+                {
+                    Ok(token_info) => self
+                        .access_token(token_info.account_id)
+                        .await
+                        .and_then(|token| AccessToken::new(token, req.remote_ip)),
+                    Err(err) => {
+                        if let Some(external_error) = external_error {
+                            Err(external_error)
+                        } else {
+                            Err(err)
+                        }
+                    }
+                }
             }
         }
     }

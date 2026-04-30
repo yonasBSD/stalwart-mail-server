@@ -14,6 +14,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 ## Fixed
 - Directory: 
   - Invalidate caches when group memberships change on an external directory.
+  - Return OIDC errors instead of "failed to decode token".
   - User impersonation.
 - Log viewer: All events show as `INFO`.
 - Registry: Allow changing object variants.
