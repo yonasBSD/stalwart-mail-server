@@ -10,6 +10,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 
 ## Changed
 - Replaced `STALWART_HTTPS_PORT` with `STALWART_PUBLIC_URL`.
+- App Passwords now begin with `app_` instead of `app ` to avoid issues with some clients that do not support spaces in passwords.
 
 ## Fixed
 - Directory: 
