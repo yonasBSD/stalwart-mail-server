@@ -77,6 +77,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 - JMAP: `Thread/get` did not filter by per-mailbox ACLs on shared accounts.
 - RFC2136 TSIG: regression related to multiplexer.
 - IMAP: `UID FETCH N:*` could miss messages moved into a SELECTed mailbox by another connection.
+- DNS records: Skip `v=spf1 a -all` records for apex domains.
 
 ## [0.16.5] - 2026-05-11
 
