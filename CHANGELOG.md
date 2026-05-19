@@ -67,6 +67,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
    - Websupport
    - Yandex Cloud DNS
 - DNS updater: Log DNS record types and values.
+- Sieve: Allow User Sieve scripts to access `orcpt`.
 
 ## Changed
 - Bump JMAP File Storage to [draft-ietf-jmap-filenode-14](https://datatracker.ietf.org/doc/html/draft-ietf-jmap-filenode-14).
