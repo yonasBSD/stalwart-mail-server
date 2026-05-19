@@ -84,6 +84,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 - ACME: Update `defaultCertificateId` when renewing a certificate that is currently set as default.
 - Allow internal TLDs in e-mail addresses.
 - Websocket: Perform case insensitive matching during upgrade.
+- LDAP: Synchronize accounts when expanding mailing list recipients.
 
 ## [0.16.5] - 2026-05-11
 
