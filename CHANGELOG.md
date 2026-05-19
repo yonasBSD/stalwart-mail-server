@@ -75,10 +75,13 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 ## Fixed
 - DAV: `acl-principal-prop-set` REPORT enforced the wrong privilege.
 - JMAP: `Thread/get` did not filter by per-mailbox ACLs on shared accounts.
-- RFC2136 TSIG: regression related to multiplexer.
 - IMAP: `UID FETCH N:*` could miss messages moved into a SELECTed mailbox by another connection.
-- DNS records: Skip `v=spf1 a -all` records for apex domains.
+- DNS updater:
+  - Skip `v=spf1 a -all` records for apex domains.
+  - RFC2136 TSIG: regression related to multiplexer.
+  - Rout53: Chunk `TXT` records when they exceed 255 characters.
 - ACME: Update `defaultCertificateId` when renewing a certificate that is currently set as default.
+- Allow internal TLDs in e-mail addresses.
 
 ## [0.16.5] - 2026-05-11
 
