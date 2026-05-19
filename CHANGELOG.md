@@ -82,6 +82,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
   - Rout53: Chunk `TXT` records when they exceed 255 characters.
 - ACME: Update `defaultCertificateId` when renewing a certificate that is currently set as default.
 - Allow internal TLDs in e-mail addresses.
+- Websocket: Perform case insensitive matching during upgrade.
 
 ## [0.16.5] - 2026-05-11
 
