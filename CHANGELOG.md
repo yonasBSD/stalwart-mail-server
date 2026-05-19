@@ -23,7 +23,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 - DNS updater:
   - Skip `v=spf1 a -all` records for apex domains.
   - RFC2136 TSIG: regression related to multiplexer.
-  - Rout53: Chunk `TXT` records when they exceed 255 characters.
+  - Route53: Chunk `TXT` records when they exceed 255 characters.
 - ACME: 
   - Update `defaultCertificateId` when renewing a certificate that is currently set as default.
   - Perform `DNS-01` authorizations sequentially to avoid race conditions in some DNS providers.
@@ -31,6 +31,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 - Websocket: Perform case insensitive matching during upgrade.
 - LDAP: Synchronize accounts when expanding mailing list recipients.
 - Sieve: `replace` action adds an extra `From` header.
+- ACL: Orphaned ACL entries for deleted accounts cause JMAP session errors.
 
 ## [0.16.5] - 2026-05-11
 
