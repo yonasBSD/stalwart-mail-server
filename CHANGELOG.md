@@ -78,6 +78,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 - RFC2136 TSIG: regression related to multiplexer.
 - IMAP: `UID FETCH N:*` could miss messages moved into a SELECTed mailbox by another connection.
 - DNS records: Skip `v=spf1 a -all` records for apex domains.
+- ACME: Update `defaultCertificateId` when renewing a certificate that is currently set as default.
 
 ## [0.16.5] - 2026-05-11
 
