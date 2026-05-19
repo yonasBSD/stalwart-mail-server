@@ -68,6 +68,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
    - Yandex Cloud DNS
 - DNS updater: Log DNS record types and values.
 - Sieve: Allow User Sieve scripts to access `orcpt`.
+- MTA: Log when messages are rejected or discarded by the spam classifier.
 
 ## Changed
 - Bump JMAP File Storage to [draft-ietf-jmap-filenode-14](https://datatracker.ietf.org/doc/html/draft-ietf-jmap-filenode-14).
@@ -85,6 +86,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 - Allow internal TLDs in e-mail addresses.
 - Websocket: Perform case insensitive matching during upgrade.
 - LDAP: Synchronize accounts when expanding mailing list recipients.
+- Sieve: `replace` action adds an extra `From` header.
 
 ## [0.16.5] - 2026-05-11
 
