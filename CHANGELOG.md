@@ -7,65 +7,7 @@ All notable changes to this project will be documented in this file. This projec
 If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If you are upgrading from v0.15.x and below, please read the [upgrading documentation](https://github.com/stalwartlabs/stalwart/blob/main/UPGRADING/v0_16.md) for more information on how to upgrade from previous versions.
 
 ## Added
-- Added 58 new DNS provider integrations:
-   - Akamai Edge DNS
-   - Alibaba Cloud DNS
-   - ArvanCloud
-   - AutoDNS
-   - AWS Lightsail
-   - Azure DNS
-   - Baidu Cloud DNS
-   - BlueCat Address Manager
-   - ClouDNS
-   - Constellix
-   - cPanel
-   - DDNSS.de
-   - DNS Made Easy
-   - Domeneshop
-   - DreamHost
-   - DuckDNS
-   - Dynu
-   - EasyDNS
-   - Exoscale
-   - FreeMyIP
-   - Gandi v5
-   - Gcore
-   - GleSYS
-   - GoDaddy
-   - Hetzner DNS
-   - hosting.de
-   - Hostinger
-   - Huawei Cloud DNS
-   - Hurricane Electric
-   - IBM Cloud (SoftLayer)
-   - Infoblox NIOS
-   - Infomaniak
-   - INWX
-   - IONOS
-   - IPv64
-   - Joker
-   - Linode
-   - LuaDNS
-   - Mythic Beasts
-   - Name.com
-   - Namecheap
-   - NameSilo
-   - netcup
-   - Netlify
-   - Nifcloud
-   - NS1
-   - Oracle Cloud DNS
-   - Plesk
-   - SafeDNS
-   - Scaleway
-   - Tencent Cloud DNSPod
-   - TransIP
-   - UltraDNS
-   - Vercel
-   - Volcano Engine
-   - Vultr
-   - Websupport
-   - Yandex Cloud DNS
+- Added 58 new DNS provider integrations (see [dns-update](https://github.com/stalwartlabs/dns-update/blob/main/CHANGELOG.md#dns-update-040) crate for details).
 - DNS updater: Log DNS record types and values.
 - Sieve: Allow User Sieve scripts to access `orcpt`.
 - MTA: Log when messages are rejected or discarded by the spam classifier.
@@ -82,7 +24,9 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
   - Skip `v=spf1 a -all` records for apex domains.
   - RFC2136 TSIG: regression related to multiplexer.
   - Rout53: Chunk `TXT` records when they exceed 255 characters.
-- ACME: Update `defaultCertificateId` when renewing a certificate that is currently set as default.
+- ACME: 
+  - Update `defaultCertificateId` when renewing a certificate that is currently set as default.
+  - Perform `DNS-01` authorizations sequentially to avoid race conditions in some DNS providers.
 - Allow internal TLDs in e-mail addresses.
 - Websocket: Perform case insensitive matching during upgrade.
 - LDAP: Synchronize accounts when expanding mailing list recipients.
