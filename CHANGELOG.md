@@ -27,7 +27,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 - ACME: 
   - Update `defaultCertificateId` when renewing a certificate that is currently set as default.
   - Perform `DNS-01` authorizations sequentially to avoid race conditions in some DNS providers.
-- Allow internal TLDs in e-mail addresses.
+- Allow internal TLDs and special characters in e-mail addresses.
 - Websocket: Perform case insensitive matching during upgrade.
 - LDAP: Synchronize accounts when expanding mailing list recipients.
 - Sieve: `replace` action adds an extra `From` header.
