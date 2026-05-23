@@ -267,17 +267,22 @@ impl AcmeRequestBuilder {
                             .or_else(|| psl::domain_str(domain))
                             .unwrap_or(domain);
 
+                        let proof = self.dns_proof(challenge)?;
+                        let challenge_name = format!("_acme-challenge.{}", domain);
                         dns_parameters
                             .updater
-                            .create(
+                            .set_rrset(
                                 zone,
-                                &format!("_acme-challenge.{}", domain),
-                                DnsRecord::TXT(self.dns_proof(challenge)?),
-                                true,
-                                true,
+                                &challenge_name,
+                                dns_update::DnsRecordType::TXT,
+                                vec![DnsRecord::TXT(proof.clone())],
                             )
                             .await
                             .map_err(AcmeError::Dns)?;
+                        dns_parameters
+                            .updater
+                            .wait_for_txt_propagation(&challenge_name, zone, &proof)
+                            .await;
                     }
                     ChallengeType::DnsPersist01 => {}
                     ChallengeType::Unknown => unreachable!(),

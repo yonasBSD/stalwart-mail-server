@@ -1280,7 +1280,7 @@ checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
 
 [[package]]
 name = "coordinator"
-version = "0.15.4"
+version = "0.16.7"
 dependencies = [
  "async-nats",
  "futures",
@@ -1937,9 +1937,7 @@ dependencies = [
 
 [[package]]
 name = "dns-update"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8414d37d45aad309d6644add18d9023c591622e565f0f1946753feebed762bfe"
+version = "0.5.0"
 dependencies = [
  "aws-lc-rs",
  "base64 0.22.1",
@@ -6035,7 +6033,7 @@ checksum = "dc897dd8d9e8bd1ed8cdad82b5966c3e0ecae09fb1907d58efaa013543185d0a"
 
 [[package]]
 name = "registry"
-version = "0.15.4"
+version = "0.16.7"
 dependencies = [
  "ahash",
  "hashify",
