@@ -43,8 +43,7 @@ impl AcmeRequestBuilder {
             } else {
                 let server_name = server.core.network.server_name.as_str();
                 let domain_suffix = format!(".{domain}");
-                let matches_zone =
-                    |name: &str| name == domain || name.ends_with(&domain_suffix);
+                let matches_zone = |name: &str| name == domain || name.ends_with(&domain_suffix);
 
                 // Add technical domains
                 let mut domains = HOSTNAMES
@@ -106,8 +105,7 @@ impl AcmeRequestBuilder {
                 OrderStatus::Pending => {
                     if matches!(self.challenge, ChallengeType::Dns01) {
                         for url in &order.authorizations {
-                            self.authorize(server, url, dns_parameters.as_ref())
-                                .await?;
+                            self.authorize(server, url, dns_parameters.as_ref()).await?;
                         }
                     } else {
                         let auth_futures = order
