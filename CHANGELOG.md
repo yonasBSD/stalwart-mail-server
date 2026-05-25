@@ -14,6 +14,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 ## Fixed
 - Log rejected messages to tracing store.
 - MTA: Always update next DSN notify times.
+- Sharing: Includes resource that themselves carry a direct ACL grant and are leaves.
 
 ## [0.16.6] - 2026-05-20
 
