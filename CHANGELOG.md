@@ -8,6 +8,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 
 ## Added
 - RateLimit header fields for HTTP ([draft-ietf-httpapi-ratelimit-headers-10](https://datatracker.ietf.org/doc/html/draft-ietf-httpapi-ratelimit-headers-10))
+- MTA: Implement `spamtest` in trusted Sieve scripts.
 
 ## Changed
 
