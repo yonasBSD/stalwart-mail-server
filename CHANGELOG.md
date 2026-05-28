@@ -21,6 +21,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 - Tasks cannot be deleted in OSS builds.
 - Directory: Per-domain external directory resolution fails.
 - DNS updater: Keep external `TXT` records when updating RRSet.
+- HTTP: Reject requests from blocked IPs when `Keep-Alive` is enabled.
 
 ## [0.16.6] - 2026-05-20
 
