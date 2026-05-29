@@ -150,6 +150,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6.0.2
 
+      - name: Add swap (heavy ARM targets)
+        if: contains(matrix.target, 'arm')
+        run: |
+          sudo fallocate -l 16G /mnt/swapfile
+          sudo chmod 600 /mnt/swapfile
+          sudo mkswap /mnt/swapfile
+          sudo swapon /mnt/swapfile
+          sudo sysctl vm.swappiness=80
+          free -h
+          swapon --show
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
         with:
