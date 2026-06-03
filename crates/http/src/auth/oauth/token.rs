@@ -215,7 +215,7 @@ impl TokenHandler for Server {
                     Ok(token_info) => self
                         .issue_token(
                             token_info.account_id,
-                            &token_info.client_id,
+                            "",
                             issuer,
                             None,
                             token_info.expires_in
@@ -285,13 +285,23 @@ impl TokenHandler for Server {
         with_refresh_token: bool,
         with_id_token: bool,
     ) -> trc::Result<OAuthResponse> {
+        let credential_version = self
+            .access_token(account_id)
+            .await
+            .caused_by(trc::location!())?
+            .credential_version();
+        let account = self.account(account_id).await.caused_by(trc::location!())?;
+        let account_name = account.name();
+
         Ok(OAuthResponse {
             access_token: self
                 .encode_access_token(
                     GrantType::AccessToken,
                     account_id,
-                    client_id,
+                    account_name,
                     self.core.oauth.oauth_expiry_token,
+                    None,
+                    credential_version.into(),
                 )
                 .await?,
             token_type: "bearer".to_string(),
@@ -300,8 +310,10 @@ impl TokenHandler for Server {
                 self.encode_access_token(
                     GrantType::RefreshToken,
                     account_id,
-                    client_id,
+                    account_name,
                     self.core.oauth.oauth_expiry_refresh_token,
+                    None,
+                    credential_version.into(),
                 )
                 .await?
                 .into()
@@ -309,9 +321,6 @@ impl TokenHandler for Server {
                 None
             },
             id_token: if with_id_token {
-                // Obtain account
-                let account = self.account(account_id).await.caused_by(trc::location!())?;
-
                 match self.issue_id_token(
                     account_id.to_string(),
                     issuer,

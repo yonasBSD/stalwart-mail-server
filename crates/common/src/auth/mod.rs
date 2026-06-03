@@ -137,6 +137,7 @@ pub struct AccessTokenInner {
     pub(crate) concurrent_uploads: Option<ConcurrencyLimiter>,
     pub(crate) revision_account: u64,
     pub(crate) revision: u64,
+    pub(crate) credential_version: u64,
     pub(crate) obj_size: u64,
 }
 

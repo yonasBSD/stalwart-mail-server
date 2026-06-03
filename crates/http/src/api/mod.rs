@@ -128,8 +128,10 @@ impl ManagementApi for Server {
                                 self.encode_access_token(
                                     GrantType::LiveTracing,
                                     account_id,
-                                    "web",
+                                    self.account(account_id).await?.name(),
                                     60,
+                                    None,
+                                    None,
                                 )
                                 .await?,
                             ))
@@ -146,8 +148,10 @@ impl ManagementApi for Server {
                                 self.encode_access_token(
                                     GrantType::LiveMetrics,
                                     account_id,
-                                    "web",
+                                    self.account(account_id).await?.name(),
                                     60,
+                                    None,
+                                    None,
                                 )
                                 .await?,
                             ))
@@ -164,8 +168,10 @@ impl ManagementApi for Server {
                                 self.encode_access_token(
                                     GrantType::LiveDelivery,
                                     account_id,
-                                    "web",
+                                    self.account(account_id).await?.name(),
                                     60,
+                                    None,
+                                    None,
                                 )
                                 .await?,
                             ))

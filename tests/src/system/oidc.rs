@@ -251,7 +251,7 @@ pub async fn test(test: &mut TestServer) {
     .await;
     assert_eq!(access_introspect.username.unwrap(), "user@example.org");
     assert_eq!(access_introspect.token_type.unwrap(), "bearer");
-    assert_eq!(access_introspect.client_id.unwrap(), client_id);
+    assert!(access_introspect.client_id.is_none());
     assert!(access_introspect.active);
     let refresh_introspect = post_with_auth::<OAuthIntrospect>(
         &metadata.introspection_endpoint,
@@ -260,7 +260,7 @@ pub async fn test(test: &mut TestServer) {
     )
     .await;
     assert_eq!(refresh_introspect.username.unwrap(), "user@example.org");
-    assert_eq!(refresh_introspect.client_id.unwrap(), client_id);
+    assert!(refresh_introspect.client_id.is_none());
     assert!(refresh_introspect.active);
     assert_eq!(
         refresh_introspect.iat.unwrap(),

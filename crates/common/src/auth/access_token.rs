@@ -31,6 +31,7 @@ use tinyvec::TinyVec;
 use trc::{AddContext, StoreEvent};
 use types::{acl::Acl, collection::Collection};
 use utils::map::bitmap::{Bitmap, BitmapItem};
+use xxhash_rust::xxh3;
 
 impl Server {
     async fn build_access_token(
@@ -124,6 +125,7 @@ impl Server {
                 }
 
                 let now = now();
+                let mut credential_version = 0;
                 let mut credential_scopes = Vec::with_capacity(account.credentials.len());
 
                 credential_scopes.push(AccessScope::new(permissions.finalize(), u32::MAX));
@@ -131,6 +133,8 @@ impl Server {
                 for credential in account.credentials {
                     match credential {
                         structs::Credential::Password(credential) => {
+                            credential_version = xxh3::xxh3_64(credential.secret.as_bytes()).max(1);
+
                             if credential.expires_at.is_some() || !credential.allowed_ips.is_empty()
                             {
                                 let credential_scope = &mut credential_scopes[0];
@@ -201,6 +205,7 @@ impl Server {
                     obj_size: 0,
                     revision,
                     revision_account,
+                    credential_version,
                     account_id,
                     tenant_id,
                     member_of,
@@ -243,6 +248,7 @@ impl Server {
                     obj_size: 0,
                     revision,
                     revision_account,
+                    credential_version: 0,
                     account_id,
                     tenant_id,
                     member_of: Default::default(),
@@ -552,6 +558,7 @@ impl AccessToken {
                     concurrent_uploads: old_inner.concurrent_uploads.clone(),
                     revision_account: old_inner.revision_account,
                     revision: old_inner.revision,
+                    credential_version: old_inner.credential_version,
                     obj_size: old_inner.obj_size,
                 };
 
@@ -760,6 +767,7 @@ impl AccessToken {
                 concurrent_uploads: Default::default(),
                 revision: Default::default(),
                 revision_account: Default::default(),
+                credential_version: Default::default(),
                 obj_size: Default::default(),
             }),
         }
@@ -804,6 +812,7 @@ impl AccessTokenInner {
             concurrent_uploads: Default::default(),
             revision: Default::default(),
             revision_account: Default::default(),
+            credential_version: Default::default(),
             obj_size: Default::default(),
         }
     }
@@ -814,6 +823,10 @@ impl AccessTokenInner {
 
     pub fn revision_account(&self) -> u64 {
         self.revision_account
+    }
+
+    pub fn credential_version(&self) -> u64 {
+        self.credential_version
     }
 }
 
