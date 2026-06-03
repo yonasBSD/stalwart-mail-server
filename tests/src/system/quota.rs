@@ -104,11 +104,8 @@ pub async fn test(test: &mut TestServer) {
     // Test temporary blob quota (3 files)
     DISABLE_UPLOAD_QUOTA.store(false, std::sync::atomic::Ordering::Relaxed);
     let client = account.jmap_client().await;
-    let raw_http = HttpRequest::with_credentials(
-        8899,
-        "user1@example.org",
-        "this is a very strong password1",
-    );
+    let raw_http =
+        HttpRequest::with_credentials(8899, "user1@example.org", "this is a very strong password1");
     let upload_url = format!("/jmap/upload/{account_id}");
     for i in 0..3 {
         assert_eq!(

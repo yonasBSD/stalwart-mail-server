@@ -386,12 +386,7 @@ async fn dkim_management(server: &Server, task: &TaskDomainManagement) -> trc::R
         let record = generate_dkim_dns_record_name(&signature.object, &domain.name);
         if let Some((updater, origin)) = &dns_updater {
             match updater
-                .set_rrset(
-                    origin,
-                    &record,
-                    dns_update::DnsRecordType::TXT,
-                    Vec::new(),
-                )
+                .set_rrset(origin, &record, dns_update::DnsRecordType::TXT, Vec::new())
                 .await
             {
                 Ok(_) => {

@@ -272,11 +272,8 @@ pub async fn test(test: &mut TestServer) {
 
     // Concurrent requests check
     let client = Arc::new(client);
-    let raw_http = HttpRequest::with_credentials(
-        8899,
-        "user@example.org",
-        "this is a very strong password",
-    );
+    let raw_http =
+        HttpRequest::with_credentials(8899, "user@example.org", "this is a very strong password");
     for _ in 0..8 {
         let client_ = client.clone();
         tokio::spawn(async move {
