@@ -230,8 +230,35 @@ impl Server {
                 {
                     let item_id = object.id().document_id();
                     let result = match object.object() {
-                        ObjectType::Account => EmailCache::Account(item_id),
-                        ObjectType::MailingList => EmailCache::MailingList(item_id),
+                        ObjectType::Account => {
+                            if self
+                                .account(item_id)
+                                .await
+                                .caused_by(trc::location!())?
+                                .addresses
+                                .iter()
+                                .any(|address| {
+                                    address.local_part.as_ref() == local_part
+                                        && address.domain_id == domain_id
+                                })
+                            {
+                                EmailCache::Account(item_id)
+                            } else {
+                                EmailCache::DisabledAccountAddress(item_id)
+                            }
+                        }
+                        ObjectType::MailingList => {
+                            if let Some(list) = self.try_list(item_id).await?
+                                && !list.addresses.iter().any(|address| {
+                                    address.local_part.as_ref() == local_part
+                                        && address.domain_id == domain_id
+                                })
+                            {
+                                EmailCache::DisabledListAddress(item_id)
+                            } else {
+                                EmailCache::MailingList(item_id)
+                            }
+                        }
                         _ => {
                             return Err(trc::AuthEvent::Error
                                 .into_err()
@@ -422,10 +449,16 @@ impl Server {
                                 domain_id: account.domain_id.document_id(),
                             }]
                             .into_iter()
-                            .chain(account.aliases.into_iter().map(|alias| EmailAddress {
-                                local_part: alias.name.into(),
-                                domain_id: alias.domain_id.document_id(),
-                            }))
+                            .chain(
+                                account
+                                    .aliases
+                                    .into_iter()
+                                    .filter(|alias| alias.enabled)
+                                    .map(|alias| EmailAddress {
+                                        local_part: alias.name.into(),
+                                        domain_id: alias.domain_id.document_id(),
+                                    }),
+                            )
                             .collect(),
                             id_tenant: account.member_tenant_id.map(|id| id.document_id()),
                             id_member_of: account
@@ -479,10 +512,16 @@ impl Server {
                                 domain_id: account.domain_id.document_id(),
                             }]
                             .into_iter()
-                            .chain(account.aliases.into_iter().map(|alias| EmailAddress {
-                                local_part: alias.name.into(),
-                                domain_id: alias.domain_id.document_id(),
-                            }))
+                            .chain(
+                                account
+                                    .aliases
+                                    .into_iter()
+                                    .filter(|alias| alias.enabled)
+                                    .map(|alias| EmailAddress {
+                                        local_part: alias.name.into(),
+                                        domain_id: alias.domain_id.document_id(),
+                                    }),
+                            )
                             .collect(),
                             id_tenant: account.member_tenant_id.map(|id| id.document_id()),
                             id_member_of: Default::default(),
@@ -764,9 +803,22 @@ impl Server {
                 let Some(list) = self.registry().object::<MailingList>(id.into()).await? else {
                     return Ok(None);
                 };
-                let cache = Arc::new(MailingListCache {
-                    recipients: list.recipients.into_iter().map(Into::into).collect(),
-                });
+                let cache =
+                    Arc::new(MailingListCache {
+                        addresses: [EmailAddress {
+                            local_part: list.name.into(),
+                            domain_id: list.domain_id.document_id(),
+                        }]
+                        .into_iter()
+                        .chain(list.aliases.into_iter().filter(|alias| alias.enabled).map(
+                            |alias| EmailAddress {
+                                local_part: alias.name.into(),
+                                domain_id: alias.domain_id.document_id(),
+                            },
+                        ))
+                        .collect(),
+                        recipients: list.recipients.into_iter().map(Into::into).collect(),
+                    });
                 let _ = guard.insert(cache.clone());
                 Ok(Some(cache))
             }

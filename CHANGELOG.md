@@ -12,7 +12,9 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 - OAuth: Rework access tokens to an `AES-256-GCM-SIV` AEAD format that carries the account name for proxy routing and revokes tokens on credential change.
 
 ## Fixed
-- MTA: Sub-addressing with external directories returns `550 Mailbox not found`.
+- MTA: 
+  - Sub-addressing with external directories returns `550 Mailbox not found`.
+  - Disabled aliases continue receiving messages.
 
 ## [0.16.7] - 2026-05-28
 

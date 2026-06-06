@@ -327,9 +327,14 @@ impl Server {
                 }
                 CacheInvalidation::Account(id) => {
                     cache.accounts.remove(id);
-                    cache.emails.inner().retain(
-                        |_, v| !matches!(v, EmailCache::Account(account_id) if account_id == id),
-                    );
+                    cache.emails.inner().retain(|_, v| {
+                        !matches!(
+                            v,
+                            EmailCache::Account(account_id)
+                                | EmailCache::DisabledAccountAddress(account_id)
+                            if account_id == id
+                        )
+                    });
                 }
                 CacheInvalidation::DkimSignature(id) => {
                     cache.dkim_signers.remove(id);
@@ -342,9 +347,14 @@ impl Server {
                 }
                 CacheInvalidation::List(id) => {
                     cache.lists.remove(id);
-                    cache.emails.inner().retain(
-                        |_, v| !matches!(v, EmailCache::MailingList(list_id) if list_id == id),
-                    );
+                    cache.emails.inner().retain(|_, v| {
+                        !matches!(
+                            v,
+                            EmailCache::MailingList(list_id)
+                                | EmailCache::DisabledListAddress(list_id)
+                            if list_id == id
+                        )
+                    });
                 }
                 CacheInvalidation::DomainLogo(id) => {
                     self.inner
