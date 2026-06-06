@@ -112,7 +112,7 @@ impl FileNodeGet for Server {
         }
         let mut response = GetResponse {
             account_id: request.account_id.into(),
-            state: cache.get_state(true).into(),
+            state: cache.get_state(false).into(),
             list: Vec::with_capacity(ids.len()),
             not_found: vec![],
         };
