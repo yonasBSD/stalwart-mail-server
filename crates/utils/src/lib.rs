@@ -354,7 +354,18 @@ pub fn sanitize_domain(domain: &str) -> Option<String> {
 }
 
 pub fn is_valid_domain(domain: &str) -> bool {
-    const RESERVED_TLDS: &[&str] = &["test", "localhost", "local", "internal"];
+    const RESERVED_TLDS: &[&str] = &[
+        "test",
+        "localhost",
+        "local",
+        "internal",
+        "lan",
+        "home",
+        "corp",
+        "intranet",
+        "private",
+        "localdomain",
+    ];
     psl::domain(domain.as_bytes()).is_some_and(|d| d.suffix().typ().is_some())
         || RESERVED_TLDS.contains(&domain)
         || domain

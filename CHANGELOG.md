@@ -10,6 +10,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 
 ## Changed
 - OAuth: Rework access tokens to an `AES-256-GCM-SIV` AEAD format that carries the account name for proxy routing and revokes tokens on credential change.
+- Added more internal TLDs to the domain validation.
 
 ## Fixed
 - MTA: 
