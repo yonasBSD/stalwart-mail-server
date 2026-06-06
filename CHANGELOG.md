@@ -17,6 +17,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
   - Disabled aliases continue receiving messages.
 - JMAP for File Storage: `FileNode/get` returns a stale state string.
 - Make `SieveSystemInterpreter.defaultReturnPath` and `MtaQueueQuota.match` optional expressions.
+- Rate limiter panics when periods under 1 second are used.
 
 ## [0.16.7] - 2026-05-28
 
