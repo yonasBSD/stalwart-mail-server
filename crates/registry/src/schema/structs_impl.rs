@@ -27038,7 +27038,9 @@ impl ObjectImpl for MtaQueueQuota {
             errors.push(ValidationError::min_items(Property::Key, 1));
         }
         let value = &self.match_;
-        value.validate(errors);
+        if !value.match_.is_empty() || !value.else_.is_empty() {
+            value.validate(errors);
+        }
         if let Some(value) = &self.messages {
             if *value < 1 {
                 errors.push(ValidationError::min_value(Property::Messages, 1));
@@ -35218,7 +35220,9 @@ impl ObjectImpl for SieveSystemInterpreter {
             }
         }
         let value = &self.default_return_path;
-        value.validate(errors);
+        if !value.match_.is_empty() || !value.else_.is_empty() {
+            value.validate(errors);
+        }
         let value = &self.dkim_sign_domain;
         value.validate(errors);
         let value = &self.max_cpu_cycles;

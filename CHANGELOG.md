@@ -15,6 +15,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 - MTA: 
   - Sub-addressing with external directories returns `550 Mailbox not found`.
   - Disabled aliases continue receiving messages.
+- Make `SieveSystemInterpreter.defaultReturnPath` and `MtaQueueQuota.match` optional expressions.
 
 ## [0.16.7] - 2026-05-28
 
