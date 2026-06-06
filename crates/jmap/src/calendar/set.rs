@@ -282,12 +282,15 @@ impl CalendarSet for Server {
                 destroy_parents.insert(document_id);
 
                 // Delete record
+                let delete_path = cache
+                    .container_resource_path_by_id(document_id)
+                    .map(|resource| cache.format_resource(resource));
                 DestroyArchive(calendar)
                     .delete(
                         access_token.account_tenant_ids(),
                         account_id,
                         document_id,
-                        None,
+                        delete_path,
                         &mut batch,
                     )
                     .caused_by(trc::location!())?;

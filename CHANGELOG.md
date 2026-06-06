@@ -19,6 +19,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 - JMAP for File Storage: `FileNode/get` returns a stale state string.
 - Make `SieveSystemInterpreter.defaultReturnPath` and `MtaQueueQuota.match` optional expressions.
 - Rate limiter panics when periods under 1 second are used.
+- CalDAV/CardDAV: Calendar events, contacts, calendars and address books deleted via JMAP do not write a vanished tombstone.
 
 ## [0.16.7] - 2026-05-28
 

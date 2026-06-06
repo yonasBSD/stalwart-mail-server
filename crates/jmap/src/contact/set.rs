@@ -30,7 +30,7 @@ use trc::AddContext;
 use types::{
     acl::Acl,
     blob::BlobId,
-    collection::{Collection, SyncCollection},
+    collection::{Collection, SyncCollection, VanishedCollection},
     id::Id,
 };
 
@@ -338,6 +338,10 @@ impl ContactCardSet for Server {
                     &mut batch,
                 )
                 .caused_by(trc::location!())?;
+
+            for path in cache.format_resource_paths_by_id(document_id) {
+                batch.log_vanished_item(VanishedCollection::AddressBook, path);
+            }
 
             response.destroyed.push(id);
         }
