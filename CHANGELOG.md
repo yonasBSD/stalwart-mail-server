@@ -11,7 +11,8 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 ## Changed
 
 ## Fixed
-- JMAP: `*/changes` methods leak ids of non-shared objects 
+- JMAP: `*/changes` methods leak ids of non-shared objects (reported by @5ud0er).
+- Sieve: Do not allow invalid certs in `http_header` function.
 
 ## [0.16.8] - 2026-06-06
 
