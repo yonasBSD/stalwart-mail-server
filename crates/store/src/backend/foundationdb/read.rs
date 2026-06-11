@@ -55,7 +55,8 @@ impl FdbStore {
                 }
                 Ok(ChunkedValue::None) => return Ok(None),
                 Err(err) => {
-                    self.on_read_error(trx, err, &mut retry_count, start).await?;
+                    self.on_read_error(trx, err, &mut retry_count, start)
+                        .await?;
                 }
             }
         }
@@ -73,7 +74,8 @@ impl FdbStore {
                 Ok(ChunkedValue::Single(_) | ChunkedValue::Chunked { .. }) => return Ok(true),
                 Ok(ChunkedValue::None) => return Ok(false),
                 Err(err) => {
-                    self.on_read_error(trx, err, &mut retry_count, start).await?;
+                    self.on_read_error(trx, err, &mut retry_count, start)
+                        .await?;
                 }
             }
         }
