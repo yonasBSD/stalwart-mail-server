@@ -13,6 +13,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 ## Fixed
 - JMAP: `*/changes` methods leak ids of non-shared objects (reported by @5ud0er).
 - Sieve: Do not allow invalid certs in `http_header` function.
+- FoundationDB: Fix read version cache expiration logic.
 
 ## [0.16.8] - 2026-06-06
 
