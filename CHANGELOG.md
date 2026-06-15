@@ -14,7 +14,8 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 - JMAP: `*/changes` methods leak ids of non-shared objects (reported by @5ud0er).
 - Sieve: Do not allow invalid certs in `http_header` function.
 - FoundationDB: Fix read version cache expiration logic.
-- MTA: Re-scheduling or editing a queued message reports success but persists nothing for recipients in a non-`default` virtual queue (reported by @DorianCoding).
+- MTA: Re-scheduling or editing a queued message reports success but persists nothing for recipients in a non-`default` virtual queue.
+- CardDAV: Version requests included in `address-data` are ignored.
 
 ## [0.16.8] - 2026-06-06
 

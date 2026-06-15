@@ -34,7 +34,9 @@ use store::write::{
     AlignedBytes, Archive, Archiver, BatchBuilder, BlobLink, BlobOp, MergeResult, Params,
     QueueClass, RegistryClass, ValueClass, now,
 };
-use store::{Deserialize, IterateParams, Serialize, SerializeInfallible, U32_LEN, U64_LEN, ValueKey};
+use store::{
+    Deserialize, IterateParams, Serialize, SerializeInfallible, U32_LEN, U64_LEN, ValueKey,
+};
 use trc::{AddContext, ServerEvent, SpamEvent};
 use types::blob::BlobId;
 use types::blob_hash::BlobHash;
