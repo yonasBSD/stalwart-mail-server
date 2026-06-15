@@ -27,14 +27,13 @@ use x509_parser::prelude::{GeneralName, ParsedExtension};
 const HOSTNAMES: &[&str] = &["mta-sts", "ua-auto-config", "autoconfig", "autodiscover"];
 
 impl AcmeRequestBuilder {
-    pub async fn renew(
+    pub fn build_domains(
         &self,
         server: &Server,
         domain: &str,
         hostnames: &[String],
-        dns_parameters: Option<AcmeDnsParameters>,
-    ) -> AcmeResult<PemCert> {
-        let domains = if hostnames.is_empty() {
+    ) -> Vec<String> {
+        if hostnames.is_empty() {
             if matches!(
                 self.challenge,
                 ChallengeType::Dns01 | ChallengeType::DnsPersist01
@@ -87,8 +86,15 @@ impl AcmeRequestBuilder {
                     }
                 })
                 .collect()
-        };
+        }
+    }
 
+    pub async fn renew(
+        &self,
+        server: &Server,
+        domains: Vec<String>,
+        dns_parameters: Option<AcmeDnsParameters>,
+    ) -> AcmeResult<PemCert> {
         let mut params = CertificateParams::new(domains.clone()).map_err(|err| {
             AcmeError::Crypto(format!("Failed to create certificate params: {}", err))
         })?;
@@ -339,78 +345,66 @@ impl AcmeRequestBuilder {
 
 impl ParsedCert {
     pub fn parse(certificate: impl AsRef<[u8]>) -> AcmeResult<ParsedCert> {
-        pem::parse_many(certificate)
-            .map_err(|err| AcmeError::Crypto(format!("Failed to parse PEM: {}", err)))
-            .and_then(|pems| {
-                pems.into_iter()
-                    .next()
-                    .ok_or_else(|| AcmeError::Crypto("No certificates found in PEM".to_string()))
-            })
-            .and_then(|der| {
-                parse_x509_certificate(der.contents())
-                    .map_err(|err| {
-                        AcmeError::Crypto(format!("Failed to parse X.509 certificate: {}", err))
-                    })
-                    .and_then(|(_, cert)| {
-                        // Add CNs and SANs to the list of names
-                        let mut names: BTreeSet<String> = BTreeSet::new();
-                        for name in cert.subject().iter_common_name() {
-                            if let Ok(name) = name.as_str() {
-                                names.insert(name.into());
-                            }
-                        }
-                        for ext in cert.extensions() {
-                            if let ParsedExtension::SubjectAlternativeName(san) =
-                                ext.parsed_extension()
-                            {
-                                for name in &san.general_names {
-                                    let name = match name {
-                                        GeneralName::DNSName(name) => (*name).into(),
-                                        GeneralName::IPAddress(ip) => match ip.len() {
-                                            4 => Ipv4Addr::from(<[u8; 4]>::try_from(*ip).unwrap())
-                                                .to_string(),
-                                            16 => {
-                                                Ipv6Addr::from(<[u8; 16]>::try_from(*ip).unwrap())
-                                                    .to_string()
-                                            }
-                                            _ => continue,
-                                        },
-                                        _ => {
-                                            continue;
-                                        }
-                                    };
-                                    names.insert(name);
-                                }
-                            }
-                        }
+        let der = pem::parse_many(certificate)
+            .map_err(|err| AcmeError::Crypto(format!("Failed to parse PEM: {}", err)))?
+            .into_iter()
+            .next()
+            .ok_or_else(|| AcmeError::Crypto("No certificates found in PEM".to_string()))?;
+        Self::parse_der(der.contents())
+    }
 
-                        Ok(ParsedCert {
-                            sans: names.into_iter().collect(),
-                            issuer: cert.tbs_certificate.issuer().to_string(),
-                            valid_not_before: Utc
-                                .timestamp_opt(
-                                    cert.tbs_certificate.validity().not_before.timestamp(),
-                                    0,
-                                )
-                                .single()
-                                .ok_or_else(|| {
-                                    AcmeError::Crypto(
-                                        "Certificate not_before time is out of range".to_string(),
-                                    )
-                                })?,
-                            valid_not_after: Utc
-                                .timestamp_opt(
-                                    cert.tbs_certificate.validity().not_after.timestamp(),
-                                    0,
-                                )
-                                .single()
-                                .ok_or_else(|| {
-                                    AcmeError::Crypto(
-                                        "Certificate not_after time is out of range".to_string(),
-                                    )
-                                })?,
-                        })
-                    })
+    pub fn parse_der(der: &[u8]) -> AcmeResult<ParsedCert> {
+        parse_x509_certificate(der)
+            .map_err(|err| AcmeError::Crypto(format!("Failed to parse X.509 certificate: {}", err)))
+            .and_then(|(_, cert)| {
+                // Add CNs and SANs to the list of names
+                let mut names: BTreeSet<String> = BTreeSet::new();
+                for name in cert.subject().iter_common_name() {
+                    if let Ok(name) = name.as_str() {
+                        names.insert(name.into());
+                    }
+                }
+                for ext in cert.extensions() {
+                    if let ParsedExtension::SubjectAlternativeName(san) = ext.parsed_extension() {
+                        for name in &san.general_names {
+                            let name = match name {
+                                GeneralName::DNSName(name) => (*name).into(),
+                                GeneralName::IPAddress(ip) => match ip.len() {
+                                    4 => Ipv4Addr::from(<[u8; 4]>::try_from(*ip).unwrap())
+                                        .to_string(),
+                                    16 => Ipv6Addr::from(<[u8; 16]>::try_from(*ip).unwrap())
+                                        .to_string(),
+                                    _ => continue,
+                                },
+                                _ => {
+                                    continue;
+                                }
+                            };
+                            names.insert(name);
+                        }
+                    }
+                }
+
+                Ok(ParsedCert {
+                    sans: names.into_iter().collect(),
+                    issuer: cert.tbs_certificate.issuer().to_string(),
+                    valid_not_before: Utc
+                        .timestamp_opt(cert.tbs_certificate.validity().not_before.timestamp(), 0)
+                        .single()
+                        .ok_or_else(|| {
+                            AcmeError::Crypto(
+                                "Certificate not_before time is out of range".to_string(),
+                            )
+                        })?,
+                    valid_not_after: Utc
+                        .timestamp_opt(cert.tbs_certificate.validity().not_after.timestamp(), 0)
+                        .single()
+                        .ok_or_else(|| {
+                            AcmeError::Crypto(
+                                "Certificate not_after time is out of range".to_string(),
+                            )
+                        })?,
+                })
             })
     }
 }

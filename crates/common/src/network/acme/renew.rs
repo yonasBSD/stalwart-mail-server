@@ -55,10 +55,24 @@ impl Server {
                 cert.acme_provider_id
             )));
         };
+        let challenge_type = acme_provider.challenge_type;
+        let renew_before = acme_provider.renew_before;
+        let request = AcmeRequestBuilder::new(acme_provider).await?;
+        let domains = request.build_domains(
+            self,
+            &domain.name,
+            &cert.subject_alternative_names.into_inner(),
+        );
+
+        if let Some(renew_at) = self.acme_certificate_renewal_due(&domains, renew_before, now()) {
+            return Ok(vec![Task::AcmeRenewal(TaskDomainManagement {
+                domain_id,
+                status: TaskStatus::at(renew_at as i64),
+            })]);
+        }
+
         let dns_parameters = match &domain.dns_management {
-            DnsManagement::Automatic(props)
-                if acme_provider.challenge_type == AcmeChallengeType::Dns01 =>
-            {
+            DnsManagement::Automatic(props) if challenge_type == AcmeChallengeType::Dns01 => {
                 match self.build_dns_updater(props.dns_server_id).await? {
                     Ok(updater) => Some(AcmeDnsParameters {
                         updater,
@@ -74,22 +88,13 @@ impl Server {
             }
             _ => None,
         };
-        if acme_provider.challenge_type == AcmeChallengeType::Dns01 && dns_parameters.is_none() {
+        if challenge_type == AcmeChallengeType::Dns01 && dns_parameters.is_none() {
             return Err(AcmeError::Invalid(
                 "ACME provider requires DNS challenge but a DNS provider was not configured"
                     .to_string(),
             ));
         }
-        let renew_before = acme_provider.renew_before;
-        let pem_cert = AcmeRequestBuilder::new(acme_provider)
-            .await?
-            .renew(
-                self,
-                &domain.name,
-                &cert.subject_alternative_names.into_inner(),
-                dns_parameters,
-            )
-            .await?;
+        let pem_cert = request.renew(self, domains, dns_parameters).await?;
         let parsed_cert = ParsedCert::parse(&pem_cert.certificate)?;
         let mut new_sans = parsed_cert.sans.clone();
         new_sans.sort();
@@ -204,5 +209,57 @@ impl Server {
             }
             err => Err(AcmeError::Registry(err)),
         }
+    }
+
+    fn acme_certificate_renewal_due(
+        &self,
+        domains: &[String],
+        renew_before: AcmeRenewBefore,
+        now: u64,
+    ) -> Option<u64> {
+        let mut target = domains.iter().map(|d| d.as_str()).collect::<Vec<_>>();
+        target.sort();
+
+        let now = now as i64;
+        let certificates = self.inner.data.tls_certificates.load();
+        for name in &target {
+            let Some(certified_key) = certificates.get(name.strip_prefix("*.").unwrap_or(name))
+            else {
+                continue;
+            };
+            let Ok(leaf) = certified_key.end_entity_cert() else {
+                continue;
+            };
+            let Ok(parsed) = ParsedCert::parse_der(leaf.as_ref()) else {
+                continue;
+            };
+
+            let mut sans = parsed.sans;
+            sans.sort();
+            if sans != target {
+                continue;
+            }
+
+            let not_valid_after = parsed.valid_not_after.timestamp();
+            if not_valid_after <= now {
+                return None;
+            }
+            let not_valid_before = parsed.valid_not_before.timestamp();
+            let total = not_valid_after.saturating_sub(not_valid_before);
+            let (numerator, denominator) = match renew_before {
+                AcmeRenewBefore::R12 => (1, 2),
+                AcmeRenewBefore::R23 => (2, 3),
+                AcmeRenewBefore::R34 => (3, 4),
+                AcmeRenewBefore::R45 => (4, 5),
+            };
+            let renew_at = not_valid_before + total * numerator / denominator;
+            return if now < renew_at {
+                Some(renew_at as u64)
+            } else {
+                None
+            };
+        }
+
+        None
     }
 }

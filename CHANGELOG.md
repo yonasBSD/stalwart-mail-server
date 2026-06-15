@@ -16,6 +16,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 - FoundationDB: Fix read version cache expiration logic.
 - MTA: Re-scheduling or editing a queued message reports success but persists nothing for recipients in a non-`default` virtual queue.
 - CardDAV: Version requests included in `address-data` are ignored.
+- ACME: Add freshness check when renewing certificates.
 
 ## [0.16.8] - 2026-06-06
 
