@@ -3187,6 +3187,7 @@ dependencies = [
  "mail-builder",
  "mail-parser",
  "mime",
+ "percent-encoding",
  "pkcs8",
  "quick-xml 0.40.1",
  "registry",

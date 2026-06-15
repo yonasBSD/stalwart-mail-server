@@ -35,6 +35,7 @@ use hyper::{
     service::service_fn,
 };
 use hyper_util::rt::TokioIo;
+use percent_encoding::percent_decode_str;
 use jmap::{
     api::{
         ToJmapHttpResponse, event_source::EventSourceHandler, request::RequestHandler,
@@ -471,8 +472,12 @@ impl ParseHttp for Server {
                     self.is_http_anonymous_request_allowed(session.remote_ip)
                         .await?;
 
+                    let path_email = path.find(|segment| segment.contains('@')).map(|segment| {
+                        percent_decode_str(segment).decode_utf8_lossy().into_owned()
+                    });
+
                     return self
-                        .handle_autodiscover_v2_request(req.uri().query())
+                        .handle_autodiscover_v2_request(req.uri().query(), path_email.as_deref())
                         .await
                         .map(|result| match result {
                             Ok(resource) => resource.into_http_response(),

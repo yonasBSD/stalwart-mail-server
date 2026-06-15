@@ -17,6 +17,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 - MTA: Re-scheduling or editing a queued message reports success but persists nothing for recipients in a non-`default` virtual queue.
 - CardDAV: Version requests included in `address-data` are ignored.
 - ACME: Add freshness check when renewing certificates.
+- Autodiscover v2: Read email address from query parameters.
 
 ## [0.16.8] - 2026-06-06
 
