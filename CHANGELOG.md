@@ -18,6 +18,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 - CardDAV: Version requests included in `address-data` are ignored.
 - ACME: Add freshness check when renewing certificates.
 - Autodiscover v2: Read email address from query parameters.
+- Sieve: Do not keep copies of redirected messages when `keep` is not specified.
 
 ## [0.16.8] - 2026-06-06
 
