@@ -26,6 +26,7 @@ use registry::{
 use serde_json::json;
 use store::{registry::write::RegistryWrite, write::now};
 use x509_parser::parse_x509_certificate;
+use x509_parser::pem::Pem;
 
 pub async fn test(test: &TestServer) {
     println!("Running ACME tests...");
@@ -415,6 +416,127 @@ pub async fn test(test: &TestServer) {
         vec!["*.persist.org".to_string(), "persist.org".to_string()]
     );
 
+    // Test preferred chain selection against the alternate chains Pebble offers (RFC 8555 7.4.2)
+    let pebble_roots = pebble_root_common_names().await;
+    assert!(
+        pebble_roots.len() >= 2,
+        "Expected Pebble to offer multiple root chains, found: {:?}",
+        pebble_roots
+    );
+
+    // Renew without a preferred chain to discover the default root
+    let default_acme_id = account
+        .registry_create_object(AcmeProvider {
+            directory: "https://localhost:14000/dir".to_string(),
+            contact: Map::new(vec!["mailto:hello@chain.org".to_string()]),
+            challenge_type: AcmeChallengeType::TlsAlpn01,
+            ..Default::default()
+        })
+        .await;
+    let default_domain_id = account
+        .registry_create_object(Domain {
+            name: "chain.org".to_string(),
+            certificate_management: CertificateManagement::Automatic(
+                CertificateManagementProperties {
+                    acme_provider_id: default_acme_id,
+                    subject_alternative_names: Default::default(),
+                },
+            ),
+            dkim_management: DkimManagement::Manual,
+            dns_management: DnsManagement::Automatic(DnsManagementProperties {
+                dns_server_id: in_memory_dns_id,
+                ..Default::default()
+            }),
+            ..Default::default()
+        })
+        .await;
+    test.wait_for_tasks_skip_not_due().await;
+    let default_chain = account
+        .registry_get_all::<Certificate>()
+        .await
+        .into_iter()
+        .next()
+        .unwrap()
+        .1
+        .certificate
+        .value()
+        .await
+        .unwrap()
+        .into_owned();
+    let default_root = top_issuer_common_name(&default_chain)
+        .expect("default chain should expose a top issuer common name");
+    assert!(
+        pebble_roots.contains(&default_root),
+        "Default root {:?} not among Pebble roots {:?}",
+        default_root,
+        pebble_roots
+    );
+    account.registry_destroy_all(ObjectType::Certificate).await;
+    account.registry_destroy_all(ObjectType::Task).await;
+
+    // Renew with a preferred chain pointing at an alternate root and verify it is honored
+    let preferred_root = pebble_roots
+        .iter()
+        .find(|cn| **cn != default_root)
+        .cloned()
+        .expect("an alternate root distinct from the default");
+    let preferred_acme_id = account
+        .registry_create_object(AcmeProvider {
+            directory: "https://localhost:14000/dir".to_string(),
+            contact: Map::new(vec!["mailto:hello@chainalt.org".to_string()]),
+            challenge_type: AcmeChallengeType::TlsAlpn01,
+            preferred_chain: Some(preferred_root.clone()),
+            ..Default::default()
+        })
+        .await;
+    let preferred_domain_id = account
+        .registry_create_object(Domain {
+            name: "chainalt.org".to_string(),
+            certificate_management: CertificateManagement::Automatic(
+                CertificateManagementProperties {
+                    acme_provider_id: preferred_acme_id,
+                    subject_alternative_names: Default::default(),
+                },
+            ),
+            dkim_management: DkimManagement::Manual,
+            dns_management: DnsManagement::Automatic(DnsManagementProperties {
+                dns_server_id: in_memory_dns_id,
+                ..Default::default()
+            }),
+            ..Default::default()
+        })
+        .await;
+    test.wait_for_tasks_skip_not_due().await;
+    let preferred_chain = account
+        .registry_get_all::<Certificate>()
+        .await
+        .into_iter()
+        .next()
+        .unwrap()
+        .1
+        .certificate
+        .value()
+        .await
+        .unwrap()
+        .into_owned();
+    let selected_root = top_issuer_common_name(&preferred_chain)
+        .expect("preferred chain should expose a top issuer common name");
+    assert_eq!(
+        selected_root, preferred_root,
+        "ACME did not select the preferred certificate chain"
+    );
+    assert_ne!(
+        selected_root, default_root,
+        "Preferred chain matches the default; selection was not exercised"
+    );
+    account
+        .registry_destroy(ObjectType::Domain, [default_domain_id, preferred_domain_id])
+        .await
+        .assert_destroyed(&[default_domain_id, preferred_domain_id]);
+    account.registry_destroy_all(ObjectType::Certificate).await;
+    account.registry_destroy_all(ObjectType::Task).await;
+    account.registry_destroy_all(ObjectType::AcmeProvider).await;
+
     // Cleanup
     account
         .registry_update_object(
@@ -593,3 +715,49 @@ wRLU49cXsnLbCKTbfMxMa9HB1PuJivwuMf4IBWYsQQKBgQC5KNAWEHWrnxiNeCS0
 9MBumBf1lgiJZSsloOKWQvLchg==
 -----END PRIVATE KEY-----
 "#;
+
+async fn pebble_root_common_names() -> Vec<String> {
+    let client = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)
+        .build()
+        .expect("Failed to build HTTP client");
+    let mut common_names = Vec::new();
+    for index in 0.. {
+        let response = client
+            .get(format!("https://localhost:15000/roots/{index}"))
+            .send()
+            .await
+            .expect("Failed to query Pebble management API");
+        if !response.status().is_success() {
+            break;
+        }
+        let pem = response.text().await.expect("Failed to read Pebble root");
+        match subject_common_name(&pem) {
+            Some(common_name) => common_names.push(common_name),
+            None => break,
+        }
+    }
+    common_names
+}
+
+fn subject_common_name(pem: &str) -> Option<String> {
+    let block = Pem::iter_from_buffer(pem.as_bytes()).next()?.ok()?;
+    let cert = block.parse_x509().ok()?;
+    cert.subject()
+        .iter_common_name()
+        .filter_map(|cn| cn.as_str().ok())
+        .next()
+        .map(str::to_string)
+}
+
+fn top_issuer_common_name(chain: &str) -> Option<String> {
+    let block = Pem::iter_from_buffer(chain.as_bytes())
+        .filter_map(Result::ok)
+        .last()?;
+    let cert = block.parse_x509().ok()?;
+    cert.issuer()
+        .iter_common_name()
+        .filter_map(|cn| cn.as_str().ok())
+        .next()
+        .map(str::to_string)
+}

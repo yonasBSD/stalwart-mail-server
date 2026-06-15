@@ -303,6 +303,7 @@ async fn ensure_pebble() {
             GenericImage::new("ghcr.io/letsencrypt/pebble", "latest")
                 .with_env_var("PEBBLE_VA_NOSLEEP", "1")
                 .with_env_var("PEBBLE_WFE_NONCEREJECT", "0")
+                .with_env_var("PEBBLE_ALTERNATE_ROOTS", "2")
                 .with_cmd([
                     "-config",
                     "/test/config/pebble-config.json",

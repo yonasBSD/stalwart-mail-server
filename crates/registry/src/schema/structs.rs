@@ -57,6 +57,8 @@ pub struct AcmeProvider {
     pub max_retries: i64,
     #[serde(rename = "memberTenantId")]
     pub member_tenant_id: Option<Id>,
+    #[serde(rename = "preferredChain")]
+    pub preferred_chain: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

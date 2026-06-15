@@ -893,6 +893,7 @@ pub enum Property {
     PoolTimeoutWait = 481,
     PoolWorkers = 657,
     Port = 299,
+    PreferredChain = 910,
     Prefix = 856,
     PreserveIntermediates = 306,
     Priority = 483,

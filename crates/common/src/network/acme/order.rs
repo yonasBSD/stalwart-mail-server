@@ -178,7 +178,7 @@ impl AcmeRequestBuilder {
                         Hostname = domains.as_slice(),
                     );
 
-                    let certificate = self.certificate(certificate).await?;
+                    let certificate = self.select_certificate(&domains, certificate).await?;
 
                     return Ok(PemCert {
                         certificate,
@@ -341,6 +341,60 @@ impl AcmeRequestBuilder {
             max_retries: self.max_retries,
         })
     }
+
+    async fn select_certificate(&self, domains: &[String], url: String) -> AcmeResult<String> {
+        let response = self.certificate(url).await?;
+        let Some(preferred) = self.preferred_chain.as_deref() else {
+            return Ok(response.body);
+        };
+
+        if chain_matches(&response.body, preferred) {
+            return Ok(response.body);
+        }
+
+        for alternate in &response.alternates {
+            match self.certificate(alternate).await {
+                Ok(alternate) if chain_matches(&alternate.body, preferred) => {
+                    return Ok(alternate.body);
+                }
+                Ok(_) => {}
+                Err(err) => {
+                    trc::event!(
+                        Acme(AcmeEvent::ProcessCert),
+                        Url = alternate.to_string(),
+                        Hostname = domains,
+                        Reason = err.to_string(),
+                    );
+                }
+            }
+        }
+
+        trc::event!(
+            Acme(AcmeEvent::ProcessCert),
+            Hostname = domains,
+            Reason = format!(
+                "Preferred certificate chain '{preferred}' not offered by the CA; using the default chain",
+            ),
+        );
+
+        Ok(response.body)
+    }
+}
+
+fn chain_matches(pem_chain: &str, preferred: &str) -> bool {
+    let Ok(blocks) = pem::parse_many(pem_chain) else {
+        return false;
+    };
+    let Some(top) = blocks.last() else {
+        return false;
+    };
+    let Ok((_, cert)) = parse_x509_certificate(top.contents()) else {
+        return false;
+    };
+    cert.issuer()
+        .iter_common_name()
+        .filter_map(|cn| cn.as_str().ok())
+        .any(|cn| cn == preferred)
 }
 
 impl ParsedCert {
@@ -406,5 +460,58 @@ impl ParsedCert {
                         })?,
                 })
             })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::chain_matches;
+    use rcgen::{CertificateParams, DistinguishedName, DnType, KeyPair, PKCS_ECDSA_P256_SHA256};
+
+    fn self_signed_pem(common_name: &str) -> String {
+        let mut params = CertificateParams::new(vec!["host.example".to_string()]).unwrap();
+        let mut dn = DistinguishedName::new();
+        dn.push(DnType::CommonName, common_name);
+        params.distinguished_name = dn;
+        let key_pair = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+        params.self_signed(&key_pair).unwrap().pem()
+    }
+
+    #[test]
+    fn matches_top_certificate_issuer() {
+        let chain = self_signed_pem("ISRG Root X1");
+        assert!(chain_matches(&chain, "ISRG Root X1"));
+    }
+
+    #[test]
+    fn match_is_case_sensitive() {
+        let chain = self_signed_pem("ISRG Root X1");
+        assert!(!chain_matches(&chain, "isrg root x1"));
+    }
+
+    #[test]
+    fn match_is_exact_not_substring() {
+        let chain = self_signed_pem("ISRG Root X10");
+        assert!(!chain_matches(&chain, "ISRG Root X1"));
+    }
+
+    #[test]
+    fn does_not_match_unrelated_issuer() {
+        let chain = self_signed_pem("ISRG Root X2");
+        assert!(!chain_matches(&chain, "ISRG Root X1"));
+    }
+
+    #[test]
+    fn uses_topmost_certificate_not_leaf() {
+        let leaf = self_signed_pem("Leaf Issuer");
+        let top = self_signed_pem("ISRG Root X1");
+        let chain = format!("{leaf}{top}");
+        assert!(chain_matches(&chain, "ISRG Root X1"));
+        assert!(!chain_matches(&chain, "Leaf Issuer"));
+    }
+
+    #[test]
+    fn rejects_unparseable_chain() {
+        assert!(!chain_matches("not a pem", "ISRG Root X1"));
     }
 }

@@ -35,7 +35,6 @@ use hyper::{
     service::service_fn,
 };
 use hyper_util::rt::TokioIo;
-use percent_encoding::percent_decode_str;
 use jmap::{
     api::{
         ToJmapHttpResponse, event_source::EventSourceHandler, request::RequestHandler,
@@ -45,6 +44,7 @@ use jmap::{
     websocket::upgrade::WebSocketUpgrade,
 };
 use jmap_proto::request::{Request, capability::Session};
+use percent_encoding::percent_decode_str;
 use registry::schema::enums::Permission;
 use std::{net::IpAddr, str::FromStr, sync::Arc};
 use store::dispatch::lookup::KeyValue;

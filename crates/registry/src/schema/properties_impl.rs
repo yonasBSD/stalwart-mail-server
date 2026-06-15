@@ -1046,6 +1046,7 @@ impl EnumImpl for Property {
             b"poolTimeoutWait" => Property::PoolTimeoutWait,
             b"poolWorkers" => Property::PoolWorkers,
             b"port" => Property::Port,
+            b"preferredChain" => Property::PreferredChain,
             b"prefix" => Property::Prefix,
             b"preserveIntermediates" => Property::PreserveIntermediates,
             b"priority" => Property::Priority,
@@ -1961,6 +1962,7 @@ impl EnumImpl for Property {
             Property::PoolTimeoutWait => "poolTimeoutWait",
             Property::PoolWorkers => "poolWorkers",
             Property::Port => "port",
+            Property::PreferredChain => "preferredChain",
             Property::Prefix => "prefix",
             Property::PreserveIntermediates => "preserveIntermediates",
             Property::Priority => "priority",
@@ -2880,6 +2882,7 @@ impl EnumImpl for Property {
             481 => Some(Property::PoolTimeoutWait),
             657 => Some(Property::PoolWorkers),
             299 => Some(Property::Port),
+            910 => Some(Property::PreferredChain),
             856 => Some(Property::Prefix),
             306 => Some(Property::PreserveIntermediates),
             483 => Some(Property::Priority),
@@ -3155,7 +3158,7 @@ impl EnumImpl for Property {
         }
     }
 
-    const COUNT: usize = 910;
+    const COUNT: usize = 911;
 }
 
 impl serde::Serialize for Property {
