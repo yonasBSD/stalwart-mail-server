@@ -2087,9 +2087,9 @@ dependencies = [
 
 [[package]]
 name = "dns-update"
-version = "0.5.1"
+version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "979ac56202ff07803ffb7d2c0f053e0d62018f87583b9f944de8abe93220253f"
+checksum = "61121fe40a074b4b6f5bad089259c492a1d786c6346362a2a4b8961f484f36c5"
 dependencies = [
  "aws-lc-rs",
  "base64 0.22.1",
@@ -2906,9 +2906,9 @@ dependencies = [
 
 [[package]]
 name = "h2"
-version = "0.4.14"
+version = "0.4.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "171fefbc92fe4a4de27e0698d6a5b392d6a0e333506bc49133760b3bcf948733"
+checksum = "6cb093c84e8bd9b188d4c4a8cb6579fc016968d14c99882163cd3ff402a4f155"
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -3882,9 +3882,9 @@ dependencies = [
 
 [[package]]
 name = "jmap-tools"
-version = "0.1.5"
+version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "751dc449b93fc24f460c346ac2e0a87f410cd3f78971709c4e7b80236432aa30"
+checksum = "acb13aa98c80fe11bd7fb170bb8485d5844a30a41398894a3adb5c1216d3c357"
 dependencies = [
  "hashify",
  "rkyv",
