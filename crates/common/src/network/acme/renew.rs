@@ -65,10 +65,11 @@ impl Server {
         );
 
         if let Some(renew_at) = self.acme_certificate_renewal_due(&domains, renew_before, now()) {
-            return Ok(vec![Task::AcmeRenewal(TaskDomainManagement {
-                domain_id,
-                status: TaskStatus::at(renew_at as i64),
-            })]);
+            return Err(AcmeError::NotDue(format!(
+                "Certificate for domain {} is still valid; renewal is not due until {}",
+                domain.name,
+                UTCDateTime::from_timestamp(renew_at as i64)
+            )));
         }
 
         let dns_parameters = match &domain.dns_management {
@@ -168,29 +169,15 @@ impl Server {
                 self.cluster_broadcast(BroadcastEvent::RegistryChange(change))
                     .await;
 
-                // Schedule next renewal
                 let mut tasks = Vec::new();
-                let renew_in = match renew_before {
-                    AcmeRenewBefore::R12 => {
-                        // 1/2 of the remaining time until expiration
-                        expires_in / 2
-                    }
-                    AcmeRenewBefore::R23 => {
-                        // 2/3 of the remaining time until expiration
-                        expires_in * 2 / 3
-                    }
-                    AcmeRenewBefore::R34 => {
-                        // 3/4 of the remaining time until expiration
-                        expires_in * 3 / 4
-                    }
-                    AcmeRenewBefore::R45 => {
-                        // 4/5 of the remaining time until expiration
-                        expires_in * 4 / 5
-                    }
-                };
+                let renew_at = Self::acme_renewal_due_at(
+                    parsed_cert.valid_not_before.timestamp(),
+                    parsed_cert.valid_not_after.timestamp(),
+                    renew_before,
+                );
                 tasks.push(Task::AcmeRenewal(TaskDomainManagement {
                     domain_id,
-                    status: TaskStatus::at((now + renew_in) as i64),
+                    status: TaskStatus::at(renew_at),
                 }));
 
                 // Update TLSA records
@@ -245,14 +232,8 @@ impl Server {
                 return None;
             }
             let not_valid_before = parsed.valid_not_before.timestamp();
-            let total = not_valid_after.saturating_sub(not_valid_before);
-            let (numerator, denominator) = match renew_before {
-                AcmeRenewBefore::R12 => (1, 2),
-                AcmeRenewBefore::R23 => (2, 3),
-                AcmeRenewBefore::R34 => (3, 4),
-                AcmeRenewBefore::R45 => (4, 5),
-            };
-            let renew_at = not_valid_before + total * numerator / denominator;
+            let renew_at =
+                Self::acme_renewal_due_at(not_valid_before, not_valid_after, renew_before);
             return if now < renew_at {
                 Some(renew_at as u64)
             } else {
@@ -261,5 +242,20 @@ impl Server {
         }
 
         None
+    }
+
+    fn acme_renewal_due_at(
+        not_valid_before: i64,
+        not_valid_after: i64,
+        renew_before: AcmeRenewBefore,
+    ) -> i64 {
+        let total = not_valid_after.saturating_sub(not_valid_before);
+        let (numerator, denominator) = match renew_before {
+            AcmeRenewBefore::R12 => (1, 2),
+            AcmeRenewBefore::R23 => (2, 3),
+            AcmeRenewBefore::R34 => (3, 4),
+            AcmeRenewBefore::R45 => (4, 5),
+        };
+        not_valid_before + total * numerator / denominator
     }
 }

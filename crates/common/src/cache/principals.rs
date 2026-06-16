@@ -238,8 +238,8 @@ impl Server {
                                 .addresses
                                 .iter()
                                 .any(|address| {
-                                    address.local_part.as_ref() == local_part
-                                        && address.domain_id == domain_id
+                                    address.domain_id == domain_id
+                                        && address.local_part.as_ref() == local_part
                                 })
                             {
                                 EmailCache::Account(item_id)
@@ -250,8 +250,8 @@ impl Server {
                         ObjectType::MailingList => {
                             if let Some(list) = self.try_list(item_id).await?
                                 && !list.addresses.iter().any(|address| {
-                                    address.local_part.as_ref() == local_part
-                                        && address.domain_id == domain_id
+                                    address.domain_id == domain_id
+                                        && address.local_part.as_ref() == local_part
                                 })
                             {
                                 EmailCache::DisabledListAddress(item_id)
