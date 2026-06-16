@@ -472,9 +472,11 @@ impl ParseHttp for Server {
                     self.is_http_anonymous_request_allowed(session.remote_ip)
                         .await?;
 
-                    let path_email = path.find(|segment| segment.contains('@')).map(|segment| {
-                        percent_decode_str(segment).decode_utf8_lossy().into_owned()
-                    });
+                    let path_email = path
+                        .map(|segment| {
+                            percent_decode_str(segment).decode_utf8_lossy().into_owned()
+                        })
+                        .find(|segment| segment.contains('@'));
 
                     return self
                         .handle_autodiscover_v2_request(req.uri().query(), path_email.as_deref())
