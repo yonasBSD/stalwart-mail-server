@@ -19,11 +19,12 @@ use common::{
         },
     },
 };
+use directory::core::secret::{hash_secret, verify_secret_hash};
 use http_proto::{request::fetch_body, *};
 use hyper::StatusCode;
 use registry::schema::{
-    enums::Permission,
-    prelude::{ObjectType, Property},
+    enums::{PasswordHashAlgorithm, Permission},
+    prelude::{ObjectType, Property, UTCDateTime},
     structs::OAuthClient,
 };
 use std::future::Future;
@@ -47,6 +48,12 @@ pub trait ClientRegistrationHandler: Sync + Send {
         client_id: &str,
         redirect_uri: Option<&str>,
         account_id: u32,
+    ) -> impl Future<Output = trc::Result<Option<ErrorType>>> + Send;
+
+    fn verify_client_secret(
+        &self,
+        client_id: &str,
+        client_secret: Option<&str>,
     ) -> impl Future<Output = trc::Result<Option<ErrorType>>> + Send;
 }
 impl ClientRegistrationHandler for Server {
@@ -143,6 +150,19 @@ impl ClientRegistrationHandler for Server {
             .map(|ch| char::from(ch.to_ascii_lowercase()))
             .collect::<String>();
 
+        // Generate client secret
+        let client_secret = rng()
+            .sample_iter(Alphanumeric)
+            .take(48)
+            .map(char::from)
+            .collect::<String>();
+        let secret_hash = hash_secret(
+            PasswordHashAlgorithm::Argon2id,
+            client_secret.clone().into_bytes(),
+        )
+        .await
+        .caused_by(trc::location!())?;
+
         let result = self
             .registry()
             .write(RegistryWrite::insert(
@@ -153,6 +173,8 @@ impl ClientRegistrationHandler for Server {
                     member_tenant_id: tenant_id.map(|id| Id::new(id as u64)),
                     redirect_uris: request.redirect_uris.clone().into(),
                     logo: request.logo_uri.clone(),
+                    secret: Some(secret_hash),
+                    created_at: UTCDateTime::now(),
                     ..Default::default()
                 }
                 .into(),
@@ -178,6 +200,9 @@ impl ClientRegistrationHandler for Server {
             StatusCode::CREATED,
             ClientRegistrationResponse {
                 client_id,
+                client_secret: Some(client_secret),
+                client_id_issued_at: Some(now()),
+                client_secret_expires_at: Some(0),
                 request,
                 ..Default::default()
             },
@@ -252,6 +277,50 @@ impl ClientRegistrationHandler for Server {
         } else {
             ErrorType::InvalidRequest
         }))
+    }
+
+    async fn verify_client_secret(
+        &self,
+        client_id: &str,
+        client_secret: Option<&str>,
+    ) -> trc::Result<Option<ErrorType>> {
+        // Stateless and unregistered clients have no secret to verify
+        if decode_client_id(self.core.oauth.oauth_key.as_bytes(), client_id).is_some() {
+            return Ok(None);
+        }
+        let Some(client_id) = self
+            .registry()
+            .primary_key(
+                ObjectType::OAuthClient.into(),
+                Property::ClientId,
+                client_id.as_bytes().to_vec(),
+            )
+            .await?
+        else {
+            return Ok(None);
+        };
+        let Some(client) = self
+            .registry()
+            .object::<OAuthClient>(client_id.id())
+            .await
+            .caused_by(trc::location!())?
+        else {
+            return Ok(None);
+        };
+
+        match client.secret.as_deref() {
+            Some(hash) if !hash.is_empty() => match client_secret {
+                Some(secret)
+                    if verify_secret_hash(hash, secret.as_bytes())
+                        .await
+                        .caused_by(trc::location!())? =>
+                {
+                    Ok(None)
+                }
+                _ => Ok(Some(ErrorType::InvalidClient)),
+            },
+            _ => Ok(None),
+        }
     }
 }
 

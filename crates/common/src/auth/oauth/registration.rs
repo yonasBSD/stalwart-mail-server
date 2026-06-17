@@ -212,16 +212,16 @@ pub fn validate_redirect_uri(uri: &str) -> Result<(), ClientRegistrationError> {
         return Err(ClientRegistrationError::invalid_redirect_uri(
             "Redirect URI must not contain a fragment.",
         ));
-    }
-    if uri.contains("..") {
+    } else if uri.contains("..") {
         return Err(ClientRegistrationError::invalid_redirect_uri(
             "Redirect URI must not contain consecutive dots.",
         ));
-    }
-    if uri.starts_with("http://127.0.0.1/") || uri.starts_with("http://[::1]/") {
+    } else if uri.starts_with("http://127.0.0.1/")
+        || uri.starts_with("http://[::1]/")
+        || uri.starts_with("https://")
+    {
         return Ok(());
-    }
-    if let Some((scheme, _)) = uri.split_once(':')
+    } else if let Some((scheme, _)) = uri.split_once(':')
         && scheme.contains('.')
         && scheme
             .as_bytes()
@@ -235,7 +235,7 @@ pub fn validate_redirect_uri(uri: &str) -> Result<(), ClientRegistrationError> {
     }
 
     Err(ClientRegistrationError::invalid_redirect_uri(
-        "Redirect URI must be a loopback (http://127.0.0.1/, http://[::1]/) or private-use scheme URI.",
+        "Redirect URI must be an https URL, a loopback (http://127.0.0.1/, http://[::1]/) or a private-use scheme URI.",
     ))
 }
 

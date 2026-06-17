@@ -31,6 +31,7 @@ use common::{
     Server, auth::AccessToken, cache::invalidate::CacheInvalidationBuilder,
     expr::if_block::BootstrapExprExt, ipc::CacheInvalidation,
 };
+use directory::core::secret::{hash_secret, is_password_hash};
 use http_proto::HttpSessionData;
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
@@ -463,8 +464,25 @@ impl RegistrySet for Server {
                         ObjectInner::MailingList(_) if is_create => {
                             validate_tenant_quota(&set, TenantStorageQuota::MaxMailingLists).await?
                         }
-                        ObjectInner::OAuthClient(_) if is_create => {
-                            validate_tenant_quota(&set, TenantStorageQuota::MaxOauthClients).await?
+                        ObjectInner::OAuthClient(client) => {
+                            if let Some(secret) = client.secret.as_mut()
+                                && !secret.is_empty()
+                                && !(matches!(secret.as_bytes().first(), Some(&b'$' | &b'{'))
+                                    && is_password_hash(secret))
+                            {
+                                *secret = hash_secret(
+                                    set.server.core.network.security.password_hash_algorithm,
+                                    std::mem::take(secret).into_bytes(),
+                                )
+                                .await
+                                .caused_by(trc::location!())?;
+                            }
+                            if is_create {
+                                validate_tenant_quota(&set, TenantStorageQuota::MaxOauthClients)
+                                    .await?
+                            } else {
+                                Ok(ObjectResponse::default())
+                            }
                         }
                         ObjectInner::Directory(_) if is_create => {
                             validate_tenant_quota(&set, TenantStorageQuota::MaxDirectories).await?

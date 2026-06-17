@@ -219,7 +219,7 @@ impl OAuthApiHandler for Server {
                         }
                         grant_scope(scope.as_deref(), meta.scope_mask)
                     }
-                    None => grant_scope(scope.as_deref(), u64::MAX),
+                    None => scope,
                 };
 
                 // Validate Resource Indicators (RFC 8707)

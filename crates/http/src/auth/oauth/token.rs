@@ -8,7 +8,11 @@ use super::{
     ArchivedOAuthStatus, ArchivedPkceCodeChallenge, ErrorType, FormData, MAX_POST_LEN, OAuthCode,
     OAuthResponse, OAuthStatus, TokenResponse, registration::ClientRegistrationHandler,
 };
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use crate::auth::authenticate::HttpHeaders;
+use base64::{
+    Engine,
+    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
+};
 use common::{
     KV_OAUTH, Server,
     auth::{
@@ -19,7 +23,7 @@ use common::{
 use http_proto::*;
 use hyper::StatusCode;
 use sha2::{Digest, Sha256};
-use std::future::Future;
+use std::{borrow::Cow, future::Future};
 use store::{
     dispatch::lookup::KeyValue,
     write::{AlignedBytes, Archive},
@@ -63,6 +67,7 @@ impl TokenHandler for Server {
         // Parse form
         let params = FormData::from_request(req, MAX_POST_LEN, session.session_id).await?;
         let grant_type = params.get("grant_type").unwrap_or_default();
+        let (client_id_cred, client_secret_cred) = client_credentials(req, &params);
 
         let mut response = TokenResponse::error(ErrorType::InvalidGrant);
 
@@ -71,7 +76,7 @@ impl TokenHandler for Server {
         if grant_type.eq_ignore_ascii_case("authorization_code") {
             response = if let (Some(code), Some(client_id), Some(redirect_uri)) = (
                 params.get("code"),
-                params.get("client_id"),
+                client_id_cred.as_deref(),
                 params.get("redirect_uri"),
             ) {
                 // Obtain code
@@ -99,6 +104,11 @@ impl TokenHandler for Server {
                                     redirect_uri.into(),
                                     oauth.account_id.into(),
                                 )
+                                .await?
+                            {
+                                TokenResponse::error(error)
+                            } else if let Some(error) = self
+                                .verify_client_secret(client_id, client_secret_cred.as_deref())
                                 .await?
                             {
                                 TokenResponse::error(error)
@@ -212,6 +222,17 @@ impl TokenHandler for Server {
             }
         } else if grant_type.eq_ignore_ascii_case("refresh_token") {
             if let Some(refresh_token) = params.get("refresh_token") {
+                if let Some(client_id) = client_id_cred.as_deref()
+                    && let Some(error) = self
+                        .verify_client_secret(client_id, client_secret_cred.as_deref())
+                        .await?
+                {
+                    return Ok(JsonResponse::with_status(
+                        StatusCode::BAD_REQUEST,
+                        TokenResponse::error(error),
+                    )
+                    .into_http_response());
+                }
                 response = match self
                     .validate_access_token(GrantType::RefreshToken.into(), refresh_token)
                     .await
@@ -350,6 +371,35 @@ impl TokenHandler for Server {
             scope,
         })
     }
+}
+
+fn client_credentials<'x>(
+    req: &'x HttpRequest,
+    params: &'x FormData,
+) -> (Option<Cow<'x, str>>, Option<Cow<'x, str>>) {
+    let mut client_id = params.get("client_id").map(Cow::Borrowed);
+    let mut client_secret = params.get("client_secret").map(Cow::Borrowed);
+
+    if (client_id.is_none() || client_secret.is_none())
+        && let Some((id, secret)) = req
+            .authorization_basic()
+            .and_then(|token| STANDARD.decode(token).ok())
+            .and_then(|bytes| String::from_utf8(bytes).ok())
+            .and_then(|creds| {
+                creds
+                    .split_once(':')
+                    .map(|(id, secret)| (id.to_string(), secret.to_string()))
+            })
+    {
+        if client_id.is_none() {
+            client_id = Some(Cow::Owned(id));
+        }
+        if client_secret.is_none() {
+            client_secret = Some(Cow::Owned(secret));
+        }
+    }
+
+    (client_id, client_secret)
 }
 
 fn verify_pkce(stored: &ArchivedPkceCodeChallenge, verifier: Option<&str>) -> bool {

@@ -58,10 +58,10 @@ pub async fn system_tests() {
         .await;
     test.insert_account(admin);
 
-    /*directory::test(&test).await;
-    authentication::test(&test).await;*/
+    directory::test(&test).await;
+    authentication::test(&test).await;
     oidc::test(&mut test).await;
-    /*authorization::test(&mut test).await;
+    authorization::test(&mut test).await;
     tenant::test(&mut test).await;
     security::test(&mut test).await;
     quota::test(&mut test).await;
@@ -70,7 +70,7 @@ pub async fn system_tests() {
     crypto::test(&mut test).await;
     antispam::test(&mut test).await;
     archiving::test(&mut test).await;
-    task::test(&mut test).await;*/
+    task::test(&mut test).await;
 
     if test.is_reset() {
         test.temp_dir.delete();

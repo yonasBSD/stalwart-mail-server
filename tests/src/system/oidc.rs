@@ -17,7 +17,9 @@ use bytes::Bytes;
 use common::auth::oauth::{
     introspect::OAuthIntrospect,
     oidc::StandardClaims,
-    registration::{ClientRegistrationRequest, ClientRegistrationResponse},
+    registration::{
+        ClientRegistrationRequest, ClientRegistrationResponse, TokenEndpointAuthMethod,
+    },
 };
 use http::auth::oauth::{
     DeviceAuthResponse, ErrorType, TokenResponse,
@@ -31,7 +33,7 @@ use jmap_client::{
 use registry::schema::{
     enums::JwtSignatureAlgorithm,
     prelude::{ObjectType, Property},
-    structs::{OidcProvider, SecretText, SecretTextValue},
+    structs::{OAuthClient, OidcProvider, SecretText, SecretTextValue},
 };
 use serde::{Serialize, de::DeserializeOwned};
 use std::time::{Duration, Instant};
@@ -222,7 +224,7 @@ pub async fn test(test: &mut TestServer) {
 
     // Dynamic Client Registration: invalid redirect URIs are rejected (RFC 7591 §3.2.2)
     for bad_uri in [
-        "https://example.com/cb",
+        "http://example.com/cb",
         "http://127.0.0.1/cb#frag",
         "http://127.0.0.1/../cb",
     ] {
@@ -510,6 +512,176 @@ pub async fn test(test: &mut TestServer) {
     pop3.assert_read(crate::utils::pop3::ResponseType::Ok).await;
 
     // ------------------------
+    // Confidential client with client_secret
+    // ------------------------
+
+    // Registering a confidential client requires authentication and returns a
+    // generated client_secret exactly once. Web (https) redirect URIs are allowed.
+    let confidential_redirect = "https://confidential.example.org/callback";
+    let confidential: ClientRegistrationResponse = post_json_basic(
+        &metadata.registration_endpoint,
+        "admin",
+        "popolna_zapora",
+        &ClientRegistrationRequest {
+            redirect_uris: vec![confidential_redirect.to_string()],
+            scope: Some(PROFILE_SCOPE.to_string()),
+            token_endpoint_auth_method: Some(TokenEndpointAuthMethod::ClientSecretPost),
+            ..Default::default()
+        },
+    )
+    .await;
+    let confidential_id = confidential.client_id;
+    let confidential_secret = confidential
+        .client_secret
+        .expect("confidential client must receive a client_secret");
+    assert!(
+        !confidential_id.starts_with("swc1."),
+        "confidential client id must be registry-backed, got {confidential_id}"
+    );
+    assert!(
+        confidential_secret.len() >= 40,
+        "client secret is too short: {confidential_secret}"
+    );
+
+    // Registering a confidential client anonymously must be rejected
+    let (status, _) = post_json_raw(
+        &metadata.registration_endpoint,
+        &ClientRegistrationRequest {
+            redirect_uris: vec![confidential_redirect.to_string()],
+            token_endpoint_auth_method: Some(TokenEndpointAuthMethod::ClientSecretBasic),
+            ..Default::default()
+        },
+    )
+    .await;
+    assert_ne!(
+        status, 201,
+        "anonymous confidential client registration must be rejected"
+    );
+
+    let base_params = || {
+        AHashMap::from_iter([
+            ("client_id".to_string(), confidential_id.to_string()),
+            (
+                "redirect_uri".to_string(),
+                confidential_redirect.to_string(),
+            ),
+            ("grant_type".to_string(), "authorization_code".to_string()),
+        ])
+    };
+
+    // A confidential client that omits its secret must be rejected
+    let mut params = base_params();
+    params.insert(
+        "code".to_string(),
+        obtain_auth_code(&http, &confidential_id, confidential_redirect).await,
+    );
+    assert_eq!(
+        post::<TokenResponse>(&metadata.token_endpoint, &params).await,
+        TokenResponse::Error {
+            error: ErrorType::InvalidClient
+        },
+        "token request without client_secret must be rejected"
+    );
+
+    // A confidential client that presents a wrong secret must be rejected
+    let mut params = base_params();
+    params.insert(
+        "code".to_string(),
+        obtain_auth_code(&http, &confidential_id, confidential_redirect).await,
+    );
+    params.insert("client_secret".to_string(), "not-the-secret".to_string());
+    assert_eq!(
+        post::<TokenResponse>(&metadata.token_endpoint, &params).await,
+        TokenResponse::Error {
+            error: ErrorType::InvalidClient
+        },
+        "token request with a wrong client_secret must be rejected"
+    );
+
+    // The correct secret in the request body (client_secret_post) grants a usable token
+    let mut params = base_params();
+    params.insert(
+        "code".to_string(),
+        obtain_auth_code(&http, &confidential_id, confidential_redirect).await,
+    );
+    params.insert("client_secret".to_string(), confidential_secret.to_string());
+    let (token, _, _) = unwrap_token_response(post(&metadata.token_endpoint, &params).await);
+    let confidential_client = Client::new()
+        .credentials(Credentials::bearer(&token))
+        .accept_invalid_certs(true)
+        .follow_redirects(["127.0.0.1"])
+        .connect("https://127.0.0.1:8899")
+        .await
+        .unwrap();
+    assert_eq!(
+        confidential_client.default_account_id(),
+        user_id.to_string()
+    );
+
+    // The correct secret in the Authorization header (client_secret_basic) also works
+    let mut params = base_params();
+    params.remove("client_id");
+    params.insert(
+        "code".to_string(),
+        obtain_auth_code(&http, &confidential_id, confidential_redirect).await,
+    );
+    let granted: TokenResponse = post_form_basic(
+        &metadata.token_endpoint,
+        &confidential_id,
+        &confidential_secret,
+        &params,
+    )
+    .await;
+    unwrap_token_response(granted);
+
+    // A confidential client created through the management API must have its
+    // secret hashed before storage; authenticating with the plaintext secret
+    // only succeeds if the stored value is a verifiable hash.
+    let managed_secret = "managed-client-secret-abcdefghijklmnopqrstuvwxyz";
+    let managed_id = "managed-confidential-client";
+    admin
+        .registry_create_object(OAuthClient {
+            client_id: managed_id.to_string(),
+            redirect_uris: vec![confidential_redirect.to_string()].into(),
+            secret: Some(managed_secret.to_string()),
+            ..Default::default()
+        })
+        .await;
+
+    let managed_params = || {
+        AHashMap::from_iter([
+            ("client_id".to_string(), managed_id.to_string()),
+            (
+                "redirect_uri".to_string(),
+                confidential_redirect.to_string(),
+            ),
+            ("grant_type".to_string(), "authorization_code".to_string()),
+        ])
+    };
+
+    let mut params = managed_params();
+    params.insert(
+        "code".to_string(),
+        obtain_auth_code(&http, managed_id, confidential_redirect).await,
+    );
+    params.insert("client_secret".to_string(), "wrong-secret".to_string());
+    assert_eq!(
+        post::<TokenResponse>(&metadata.token_endpoint, &params).await,
+        TokenResponse::Error {
+            error: ErrorType::InvalidClient
+        },
+        "management-api client must reject a wrong secret"
+    );
+
+    let mut params = managed_params();
+    params.insert(
+        "code".to_string(),
+        obtain_auth_code(&http, managed_id, confidential_redirect).await,
+    );
+    params.insert("client_secret".to_string(), managed_secret.to_string());
+    unwrap_token_response(post(&metadata.token_endpoint, &params).await);
+
+    // ------------------------
     // Device code flow
     // ------------------------
 
@@ -732,6 +904,74 @@ async fn post_json<D: DeserializeOwned>(
             .unwrap(),
     )
     .unwrap()
+}
+
+async fn post_json_basic<D: DeserializeOwned>(
+    url: &str,
+    username: &str,
+    password: &str,
+    body: &impl Serialize,
+) -> D {
+    let response = reqwest::Client::builder()
+        .timeout(Duration::from_millis(500))
+        .danger_accept_invalid_certs(true)
+        .build()
+        .unwrap_or_default()
+        .post(url)
+        .basic_auth(username, Some(password))
+        .body(serde_json::to_string(body).unwrap().into_bytes())
+        .send()
+        .await
+        .unwrap()
+        .bytes()
+        .await
+        .unwrap();
+    serde_json::from_slice(&response).unwrap()
+}
+
+async fn post_form_basic<T: DeserializeOwned>(
+    url: &str,
+    username: &str,
+    password: &str,
+    params: &AHashMap<String, String>,
+) -> T {
+    let response = reqwest::Client::builder()
+        .timeout(Duration::from_millis(500))
+        .danger_accept_invalid_certs(true)
+        .build()
+        .unwrap_or_default()
+        .post(url)
+        .basic_auth(username, Some(password))
+        .form(params)
+        .send()
+        .await
+        .unwrap()
+        .bytes()
+        .await
+        .unwrap();
+    serde_json::from_slice(&response).unwrap()
+}
+
+async fn obtain_auth_code(http: &HttpRequest, client_id: &str, redirect_uri: &str) -> String {
+    http.post::<LoginResponse>(
+        "/api/auth",
+        &LoginRequest::AuthCode {
+            account_name: "user@example.org".to_string(),
+            account_secret: "this is a very strong password".to_string(),
+            mfa_token: None,
+            client_id: client_id.to_string(),
+            redirect_uri: redirect_uri.to_string().into(),
+            nonce: None,
+            scope: Some(PROFILE_SCOPE.to_string()),
+            code_challenge: None,
+            code_challenge_method: None,
+            state: None,
+            resource: vec![],
+        },
+    )
+    .await
+    .unwrap()
+    .unwrap_code()
 }
 
 async fn post_json_raw(url: &str, body: &impl Serialize) -> (u16, serde_json::Value) {

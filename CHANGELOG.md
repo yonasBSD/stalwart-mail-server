@@ -8,6 +8,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 
 ## Added
 - OAuth Profile for Open Public Clients ([draft-ietf-mailmaint-oauth-public](https://datatracker.ietf.org/doc/draft-ietf-mailmaint-oauth-public/))
+- OAuth client secret verification for confidential clients.
 
 ## Changed
 
