@@ -10,10 +10,17 @@ use common::{
     Server,
     auth::{
         BuildAccessToken,
-        oauth::registration::{ClientRegistrationRequest, ClientRegistrationResponse},
+        oauth::{
+            client_id::{ClientMeta, decode_client_id, encode_client_id, scopes_to_mask},
+            registration::{
+                ClientRegistrationError, ClientRegistrationRequest, ClientRegistrationResponse,
+                TokenEndpointAuthMethod, validate_grant_metadata, validate_redirect_uri,
+            },
+        },
     },
 };
 use http_proto::{request::fetch_body, *};
+use hyper::StatusCode;
 use registry::schema::{
     enums::Permission,
     prelude::{ObjectType, Property},
@@ -23,6 +30,7 @@ use std::future::Future;
 use store::{
     rand::{Rng, distr::Alphanumeric, rng},
     registry::write::{RegistryWrite, RegistryWriteResult},
+    write::now,
 };
 use trc::{AddContext, AuthEvent};
 use types::id::Id;
@@ -47,19 +55,6 @@ impl ClientRegistrationHandler for Server {
         req: &mut HttpRequest,
         session: HttpSessionData,
     ) -> trc::Result<HttpResponse> {
-        let tenant_id = if !self.core.oauth.allow_anonymous_client_registration {
-            // Authenticate request
-            let (_, access_token) = self.authenticate_headers(req, &session).await?;
-
-            // Validate permissions
-            access_token.enforce_permission(Permission::OAuthClientRegistration)?;
-            access_token.tenant_id()
-        } else {
-            self.is_http_anonymous_request_allowed(session.remote_ip)
-                .await?;
-            None
-        };
-
         // Parse request
         let body = fetch_body(req, 20 * 1024, session.session_id).await;
         let request = serde_json::from_slice::<ClientRegistrationRequest>(
@@ -68,6 +63,78 @@ impl ClientRegistrationHandler for Server {
         .map_err(|err| {
             trc::EventType::Resource(trc::ResourceEvent::BadParameters).from_json_error(err)
         })?;
+
+        // Validate redirect URIs and grant metadata (RFC 7591 + OAuth Public Clients profile)
+        if request.redirect_uris.is_empty() {
+            return Ok(registration_error(
+                ClientRegistrationError::invalid_redirect_uri(
+                    "At least one redirect URI is required.",
+                ),
+            ));
+        }
+        for uri in &request.redirect_uris {
+            if let Err(err) = validate_redirect_uri(uri) {
+                return Ok(registration_error(err));
+            }
+        }
+        if let Err(err) = validate_grant_metadata(&request) {
+            return Ok(registration_error(err));
+        }
+
+        let is_public = matches!(
+            request.token_endpoint_auth_method,
+            None | Some(TokenEndpointAuthMethod::None)
+        );
+
+        if is_public {
+            // Public client: issue a stateless, self-describing client id with no database write
+            if self.core.oauth.allow_anonymous_client_registration {
+                self.is_http_anonymous_request_allowed(session.remote_ip)
+                    .await?;
+            } else {
+                let (_, access_token) = self.authenticate_headers(req, &session).await?;
+                access_token.enforce_permission(Permission::OAuthClientRegistration)?;
+            }
+
+            let client_id = encode_client_id(
+                self.core.oauth.oauth_key.as_bytes(),
+                &ClientMeta {
+                    redirect_uris: request.redirect_uris.clone(),
+                    scope_mask: scopes_to_mask(request.scope.as_deref().unwrap_or_default()),
+                    client_name: request.client_name.clone(),
+                },
+            )
+            .map_err(|err| {
+                trc::AuthEvent::Error
+                    .into_err()
+                    .details("Failed to encode client id.")
+                    .reason(err)
+                    .caused_by(trc::location!())
+            })?;
+
+            trc::event!(
+                Auth(AuthEvent::ClientRegistration),
+                Id = client_id.clone(),
+                RemoteIp = session.remote_ip
+            );
+
+            return Ok(JsonResponse::with_status(
+                StatusCode::CREATED,
+                ClientRegistrationResponse {
+                    client_id_issued_at: Some(now()),
+                    client_id,
+                    request,
+                    ..Default::default()
+                },
+            )
+            .no_cache()
+            .into_http_response());
+        }
+
+        // Confidential client: authenticate and persist the registration
+        let (_, access_token) = self.authenticate_headers(req, &session).await?;
+        access_token.enforce_permission(Permission::OAuthClientRegistration)?;
+        let tenant_id = access_token.tenant_id();
 
         // Generate client ID
         let client_id = rng()
@@ -107,11 +174,14 @@ impl ClientRegistrationHandler for Server {
             RemoteIp = session.remote_ip
         );
 
-        Ok(JsonResponse::new(ClientRegistrationResponse {
-            client_id,
-            request,
-            ..Default::default()
-        })
+        Ok(JsonResponse::with_status(
+            StatusCode::CREATED,
+            ClientRegistrationResponse {
+                client_id,
+                request,
+                ..Default::default()
+            },
+        )
         .no_cache()
         .into_http_response())
     }
@@ -122,6 +192,10 @@ impl ClientRegistrationHandler for Server {
         redirect_uri: Option<&str>,
         account_id: u32,
     ) -> trc::Result<Option<ErrorType>> {
+        // Stateless client ids are self-describing and validated at the authorization endpoint
+        if decode_client_id(self.core.oauth.oauth_key.as_bytes(), client_id).is_some() {
+            return Ok(None);
+        }
         if !self.core.oauth.require_client_authentication {
             return Ok(None);
         }
@@ -179,4 +253,10 @@ impl ClientRegistrationHandler for Server {
             ErrorType::InvalidRequest
         }))
     }
+}
+
+fn registration_error(error: ClientRegistrationError) -> HttpResponse {
+    JsonResponse::with_status(StatusCode::BAD_REQUEST, error)
+        .no_cache()
+        .into_http_response()
 }

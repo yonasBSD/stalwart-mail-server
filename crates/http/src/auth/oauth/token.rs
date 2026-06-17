@@ -40,12 +40,14 @@ pub trait TokenHandler: Sync + Send {
         session_id: u64,
     ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
 
+    #[allow(clippy::too_many_arguments)]
     fn issue_token(
         &self,
         account_id: u32,
         client_id: &str,
         issuer: String,
         nonce: Option<String>,
+        scope: Option<String>,
         with_refresh_token: bool,
         with_id_token: bool,
     ) -> impl Future<Output = trc::Result<OAuthResponse>> + Send;
@@ -115,6 +117,7 @@ impl TokenHandler for Server {
                                     &oauth.client_id,
                                     issuer,
                                     oauth.nonce.as_ref().map(|s| s.as_str().into()),
+                                    oauth.scope.as_ref().map(|s| s.as_str().into()),
                                     true,
                                     true,
                                 )
@@ -183,6 +186,7 @@ impl TokenHandler for Server {
                                         &oauth.client_id,
                                         issuer,
                                         oauth.nonce.as_ref().map(|s| s.as_str().into()),
+                                        oauth.scope.as_ref().map(|s| s.as_str().into()),
                                         true,
                                         true,
                                     )
@@ -217,6 +221,7 @@ impl TokenHandler for Server {
                             token_info.account_id,
                             "",
                             issuer,
+                            None,
                             None,
                             token_info.expires_in
                                 <= self.core.oauth.oauth_expiry_refresh_token_renew,
@@ -282,6 +287,7 @@ impl TokenHandler for Server {
         client_id: &str,
         issuer: String,
         nonce: Option<String>,
+        scope: Option<String>,
         with_refresh_token: bool,
         with_id_token: bool,
     ) -> trc::Result<OAuthResponse> {
@@ -341,7 +347,7 @@ impl TokenHandler for Server {
             } else {
                 None
             },
-            scope: None,
+            scope,
         })
     }
 }

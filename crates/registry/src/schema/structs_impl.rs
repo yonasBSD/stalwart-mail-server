@@ -30125,7 +30125,7 @@ impl Default for OidcProvider {
     fn default() -> Self {
         Self {
             auth_code_max_attempts: 3u64,
-            anonymous_client_registration: false,
+            anonymous_client_registration: true,
             require_client_registration: false,
             auth_code_expiry: Duration::from_millis(600000),
             refresh_token_expiry: Duration::from_millis(2592000000),

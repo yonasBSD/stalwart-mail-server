@@ -48,8 +48,22 @@ pub struct OAuthMetadata {
     pub grant_types_supported: Vec<String>,
     pub response_types_supported: Vec<String>,
     pub scopes_supported: Vec<String>,
+    pub token_endpoint_auth_methods_supported: Vec<String>,
     pub code_challenge_methods_supported: Vec<String>,
+    pub authorization_response_iss_parameter_supported: bool,
 }
+
+#[derive(Debug, serde::Deserialize)]
+pub struct ProtectedResourceMetadata {
+    pub resource: String,
+    pub authorization_servers: Vec<String>,
+    pub scopes_supported: Vec<String>,
+    pub bearer_methods_supported: Vec<String>,
+}
+
+const PKCE_VERIFIER: &str = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
+const PKCE_CHALLENGE: &str = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
+const PROFILE_SCOPE: &str = "urn:ietf:params:oauth:scope:mail offline_access";
 
 #[derive(Debug, serde::Deserialize)]
 pub struct OpenIdMetadata {
@@ -64,9 +78,11 @@ pub struct OpenIdMetadata {
     pub response_types_supported: Vec<String>,
     pub subject_types_supported: Vec<String>,
     pub grant_types_supported: Vec<String>,
+    pub token_endpoint_auth_methods_supported: Vec<String>,
     pub id_token_signing_alg_values_supported: Vec<String>,
     pub claims_supported: Vec<String>,
     pub code_challenge_methods_supported: Vec<String>,
+    pub authorization_response_iss_parameter_supported: bool,
 }
 
 pub async fn test(test: &mut TestServer) {
@@ -131,17 +147,141 @@ pub async fn test(test: &mut TestServer) {
         get("https://127.0.0.1:8899/.well-known/openid-configuration").await;
     let jwk_set: JWKSet<()> = get(&oidc_metadata.jwks_uri).await;
 
-    // Register client
+    // OAuth Public Clients profile: the authorization server metadata must advertise the
+    // mandatory properties (RFC 8414 + draft-ietf-mailmaint-oauth-public).
+    assert!(
+        metadata
+            .grant_types_supported
+            .iter()
+            .any(|g| g == "authorization_code")
+    );
+    assert!(
+        metadata
+            .grant_types_supported
+            .iter()
+            .any(|g| g == "refresh_token")
+    );
+    assert!(
+        metadata
+            .response_types_supported
+            .iter()
+            .any(|r| r == "code")
+    );
+    assert!(
+        metadata
+            .token_endpoint_auth_methods_supported
+            .iter()
+            .any(|m| m == "none")
+    );
+    assert!(
+        metadata
+            .code_challenge_methods_supported
+            .iter()
+            .any(|m| m == "S256")
+    );
+    assert!(metadata.authorization_response_iss_parameter_supported);
+    for scope in [
+        "urn:ietf:params:oauth:scope:mail",
+        "urn:ietf:params:oauth:scope:contacts",
+        "urn:ietf:params:oauth:scope:calendars",
+        "offline_access",
+    ] {
+        assert!(
+            metadata.scopes_supported.iter().any(|s| s == scope),
+            "missing scope {scope}"
+        );
+    }
+    assert!(
+        oidc_metadata
+            .grant_types_supported
+            .iter()
+            .any(|g| g == "refresh_token")
+    );
+    assert!(
+        oidc_metadata
+            .token_endpoint_auth_methods_supported
+            .iter()
+            .any(|m| m == "none")
+    );
+    assert!(oidc_metadata.authorization_response_iss_parameter_supported);
+
+    // Protected Resource Metadata (RFC 9728)
+    let resource_metadata: ProtectedResourceMetadata =
+        get("https://127.0.0.1:8899/.well-known/oauth-protected-resource").await;
+    assert_eq!(
+        resource_metadata.authorization_servers,
+        vec![metadata.issuer.clone()]
+    );
+    assert!(
+        resource_metadata
+            .bearer_methods_supported
+            .iter()
+            .any(|m| m == "header")
+    );
+    assert!(!resource_metadata.resource.is_empty());
+
+    // Dynamic Client Registration: invalid redirect URIs are rejected (RFC 7591 §3.2.2)
+    for bad_uri in [
+        "https://example.com/cb",
+        "http://127.0.0.1/cb#frag",
+        "http://127.0.0.1/../cb",
+    ] {
+        let (status, body) = post_json_raw(
+            &metadata.registration_endpoint,
+            &ClientRegistrationRequest {
+                redirect_uris: vec![bad_uri.to_string()],
+                ..Default::default()
+            },
+        )
+        .await;
+        assert_eq!(status, 400, "expected rejection for {bad_uri}: {body}");
+        assert_eq!(body["error"], "invalid_redirect_uri", "for {bad_uri}");
+    }
+
+    // A loopback redirect URI is accepted and registration returns 201 Created
+    let (status, _) = post_json_raw(
+        &metadata.registration_endpoint,
+        &ClientRegistrationRequest {
+            redirect_uris: vec!["http://127.0.0.1/cb".to_string()],
+            scope: Some(PROFILE_SCOPE.to_string()),
+            ..Default::default()
+        },
+    )
+    .await;
+    assert_eq!(status, 201, "registration should return 201 Created");
+
+    // Register the client used for the flow with a private-use scheme redirect URI
     let registration: ClientRegistrationResponse = post_json(
         &metadata.registration_endpoint,
         None,
         &ClientRegistrationRequest {
-            redirect_uris: vec!["https://localhost".to_string()],
+            redirect_uris: vec!["com.example.app:/cb".to_string()],
+            scope: Some(PROFILE_SCOPE.to_string()),
             ..Default::default()
         },
     )
     .await;
     let client_id = registration.client_id;
+
+    // Public client ids are stateless (self-describing) and issued deterministically
+    assert!(
+        client_id.starts_with("swc1."),
+        "expected stateless client id, got {client_id}"
+    );
+    let registration2: ClientRegistrationResponse = post_json(
+        &metadata.registration_endpoint,
+        None,
+        &ClientRegistrationRequest {
+            redirect_uris: vec!["com.example.app:/cb".to_string()],
+            scope: Some(PROFILE_SCOPE.to_string()),
+            ..Default::default()
+        },
+    )
+    .await;
+    assert_eq!(
+        registration2.client_id, client_id,
+        "identical registration must be deterministic"
+    );
 
     /*println!("OAuth metadata: {:#?}", metadata);
     println!("OpenID metadata: {:#?}", oidc_metadata);
@@ -151,7 +291,48 @@ pub async fn test(test: &mut TestServer) {
     // Authorization code flow
     // ------------------------
 
-    // Authenticate with the correct password
+    // A redirect URI that does not match the client registration must be rejected
+    // and the authorization server must not issue a code (OAuth Public Clients §3.4)
+    let (status, _) = post_login_raw(&LoginRequest::AuthCode {
+        account_name: "user@example.org".to_string(),
+        account_secret: "this is a very strong password".to_string(),
+        mfa_token: None,
+        client_id: client_id.to_string(),
+        redirect_uri: "com.example.app:/evil".to_string().into(),
+        nonce: None,
+        scope: Some(PROFILE_SCOPE.to_string()),
+        code_challenge: Some(PKCE_CHALLENGE.to_string()),
+        code_challenge_method: Some("S256".to_string()),
+        state: None,
+        resource: vec![],
+    })
+    .await;
+    assert_ne!(
+        status, 200,
+        "mismatched redirect URI must not be authorized"
+    );
+
+    // An unknown resource indicator must be rejected (RFC 8707)
+    let (status, _) = post_login_raw(&LoginRequest::AuthCode {
+        account_name: "user@example.org".to_string(),
+        account_secret: "this is a very strong password".to_string(),
+        mfa_token: None,
+        client_id: client_id.to_string(),
+        redirect_uri: "com.example.app:/cb".to_string().into(),
+        nonce: None,
+        scope: Some(PROFILE_SCOPE.to_string()),
+        code_challenge: Some(PKCE_CHALLENGE.to_string()),
+        code_challenge_method: Some("S256".to_string()),
+        state: None,
+        resource: vec!["https://evil.example.com/jmap".to_string()],
+    })
+    .await;
+    assert_ne!(
+        status, 200,
+        "unknown resource indicator must not be authorized"
+    );
+
+    // Authenticate with the correct password, PKCE (S256), scope and a valid resource indicator
     let response = http
         .post::<LoginResponse>(
             "/api/auth",
@@ -160,23 +341,35 @@ pub async fn test(test: &mut TestServer) {
                 account_secret: "this is a very strong password".to_string(),
                 mfa_token: None,
                 client_id: client_id.to_string(),
-                redirect_uri: "https://localhost".to_string().into(),
+                redirect_uri: "com.example.app:/cb".to_string().into(),
                 nonce: "abc1234".to_string().into(),
-                scope: None,
-                code_challenge: None,
-                code_challenge_method: None,
+                scope: Some(PROFILE_SCOPE.to_string()),
+                code_challenge: Some(PKCE_CHALLENGE.to_string()),
+                code_challenge_method: Some("S256".to_string()),
                 state: None,
+                resource: vec!["https://127.0.0.1:8899/jmap/session".to_string()],
             },
         )
         .await
         .unwrap();
 
+    // The issuer returned in the authorization response must match the metadata issuer (RFC 9207)
+    if let LoginResponse::Authenticated { iss, .. } = &response {
+        assert_eq!(iss, &metadata.issuer);
+    } else {
+        panic!("Expected an authenticated response, got {response:?}");
+    }
+
     // Both client_id and redirect_uri have to match
     let mut token_params = AHashMap::from_iter([
         ("client_id".to_string(), "invalid_client".to_string()),
-        ("redirect_uri".to_string(), "https://localhost".to_string()),
+        (
+            "redirect_uri".to_string(),
+            "com.example.app:/cb".to_string(),
+        ),
         ("grant_type".to_string(), "authorization_code".to_string()),
         ("code".to_string(), response.unwrap_code()),
+        ("code_verifier".to_string(), PKCE_VERIFIER.to_string()),
     ]);
     assert_eq!(
         post::<TokenResponse>(&metadata.token_endpoint, &token_params).await,
@@ -187,7 +380,7 @@ pub async fn test(test: &mut TestServer) {
     token_params.insert("client_id".to_string(), client_id.to_string());
     token_params.insert(
         "redirect_uri".to_string(),
-        "https://some-other.url".to_string(),
+        "com.example.app:/other".to_string(),
     );
     assert_eq!(
         post::<TokenResponse>(&metadata.token_endpoint, &token_params).await,
@@ -196,10 +389,29 @@ pub async fn test(test: &mut TestServer) {
         }
     );
 
-    // Obtain token
-    token_params.insert("redirect_uri".to_string(), "https://localhost".to_string());
-    let (token, refresh_token, id_token) =
-        unwrap_oidc_token_response(post(&metadata.token_endpoint, &token_params).await);
+    // A missing or invalid PKCE verifier must be rejected (RFC 7636)
+    token_params.insert(
+        "redirect_uri".to_string(),
+        "com.example.app:/cb".to_string(),
+    );
+    token_params.insert(
+        "code_verifier".to_string(),
+        "the-wrong-verifier".to_string(),
+    );
+    assert_eq!(
+        post::<TokenResponse>(&metadata.token_endpoint, &token_params).await,
+        TokenResponse::Error {
+            error: ErrorType::InvalidGrant
+        }
+    );
+
+    // Obtain token and verify the granted scope is echoed back
+    token_params.insert("code_verifier".to_string(), PKCE_VERIFIER.to_string());
+    let granted = post::<TokenResponse>(&metadata.token_endpoint, &token_params).await;
+    if let TokenResponse::Granted(response) = &granted {
+        assert_eq!(response.scope.as_deref(), Some(PROFILE_SCOPE));
+    }
+    let (token, refresh_token, id_token) = unwrap_oidc_token_response(granted);
 
     // Connect to account using token and attempt to search
     let john_client = Client::new()
@@ -522,6 +734,27 @@ async fn post_json<D: DeserializeOwned>(
     .unwrap()
 }
 
+async fn post_json_raw(url: &str, body: &impl Serialize) -> (u16, serde_json::Value) {
+    let response = reqwest::Client::builder()
+        .timeout(Duration::from_millis(500))
+        .danger_accept_invalid_certs(true)
+        .build()
+        .unwrap_or_default()
+        .post(url)
+        .body(serde_json::to_string(body).unwrap().into_bytes())
+        .send()
+        .await
+        .unwrap();
+    let status = response.status().as_u16();
+    let value =
+        serde_json::from_slice(&response.bytes().await.unwrap()).unwrap_or(serde_json::Value::Null);
+    (status, value)
+}
+
+async fn post_login_raw(body: &impl Serialize) -> (u16, serde_json::Value) {
+    post_json_raw("https://127.0.0.1:8899/api/auth", body).await
+}
+
 async fn post<T: DeserializeOwned>(url: &str, params: &AHashMap<String, String>) -> T {
     post_with_auth(url, None, params).await
 }
@@ -603,7 +836,7 @@ pub trait LoginResponseTest {
 impl LoginResponseTest for LoginResponse {
     fn unwrap_code(self) -> String {
         match self {
-            LoginResponse::Authenticated { client_code } => client_code,
+            LoginResponse::Authenticated { client_code, .. } => client_code,
             _ => panic!("Expected auth code response, got {:?}", self),
         }
     }

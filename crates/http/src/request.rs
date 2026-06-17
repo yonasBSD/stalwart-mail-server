@@ -274,6 +274,13 @@ impl ParseHttp for Server {
 
                     return self.handle_oauth_metadata().await;
                 }
+                ("oauth-protected-resource", &Method::GET) => {
+                    // Limit anonymous requests
+                    self.is_http_anonymous_request_allowed(session.remote_ip)
+                        .await?;
+
+                    return self.handle_oauth_protected_resource().await;
+                }
                 ("openid-configuration", &Method::GET) => {
                     // Limit anonymous requests
                     self.is_http_anonymous_request_allowed(session.remote_ip)
@@ -473,9 +480,7 @@ impl ParseHttp for Server {
                         .await?;
 
                     let path_email = path
-                        .map(|segment| {
-                            percent_decode_str(segment).decode_utf8_lossy().into_owned()
-                        })
+                        .map(|segment| percent_decode_str(segment).decode_utf8_lossy().into_owned())
                         .find(|segment| segment.contains('@'));
 
                     return self
