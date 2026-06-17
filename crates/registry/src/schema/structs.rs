@@ -2930,6 +2930,8 @@ pub struct Http {
     pub response_headers: VecMap<String, String>,
     #[serde(rename = "useXForwarded")]
     pub use_x_forwarded: bool,
+    #[serde(rename = "redirectRoot")]
+    pub redirect_root: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

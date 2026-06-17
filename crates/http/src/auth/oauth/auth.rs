@@ -233,24 +233,22 @@ impl OAuthApiHandler for Server {
 
                 // Parse and validate PKCE challenge (RFC 7636).
                 let pkce_challenge = match code_challenge {
-                    Some(challenge) => {
-                        match code_challenge_method.as_deref().unwrap_or("plain") {
-                            "S256" => PkceCodeChallenge::S256(challenge),
-                            "plain" if stateless_client.is_none() => {
-                                PkceCodeChallenge::Plain(challenge)
-                            }
-                            _ => {
-                                return Err(trc::AuthEvent::Error
-                                    .into_err()
-                                    .details("Unsupported PKCE code_challenge_method."));
-                            }
+                    Some(challenge) => match code_challenge_method.as_deref().unwrap_or("plain") {
+                        "S256" => PkceCodeChallenge::S256(challenge),
+                        "plain" if stateless_client.is_none() => {
+                            PkceCodeChallenge::Plain(challenge)
                         }
-                    }
-                    None => {
-                        if stateless_client.is_some() {
+                        _ => {
                             return Err(trc::AuthEvent::Error
                                 .into_err()
-                                .details("A PKCE code_challenge with the S256 method is required."));
+                                .details("Unsupported PKCE code_challenge_method."));
+                        }
+                    },
+                    None => {
+                        if stateless_client.is_some() {
+                            return Err(trc::AuthEvent::Error.into_err().details(
+                                "A PKCE code_challenge with the S256 method is required.",
+                            ));
                         }
                         PkceCodeChallenge::None
                     }

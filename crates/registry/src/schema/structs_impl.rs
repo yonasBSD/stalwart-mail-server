@@ -21203,7 +21203,7 @@ impl RegistryJsonPropertyPatch for GroupAccount {
 
 impl ObjectImpl for Http {
     const FLAGS: u64 = OBJ_SINGLETON;
-    const VERSION: u8 = 0;
+    const VERSION: u8 = 1;
     const OBJECT: ObjectType = ObjectType::Http;
 
     fn validate(&self, errors: &mut Vec<ValidationError>) -> bool {
@@ -21220,6 +21220,11 @@ impl ObjectImpl for Http {
         for value in value.values() {
             if value.is_empty() {
                 errors.push(ValidationError::required(Property::ResponseHeaders));
+            }
+        }
+        if let Some(value) = &self.redirect_root {
+            if value.is_empty() {
+                errors.push(ValidationError::required(Property::RedirectRoot));
             }
         }
         errors.len() == neb
@@ -21256,6 +21261,7 @@ impl Pickle for Http {
         self.use_permissive_cors.pickle(out);
         self.response_headers.pickle(out);
         self.use_x_forwarded.pickle(out);
+        self.redirect_root.pickle(out);
     }
 
     fn unpickle(stream: &mut crate::pickle::PickledStream<'_>) -> Option<Self> {
@@ -21267,6 +21273,9 @@ impl Pickle for Http {
         this.use_permissive_cors = Pickle::unpickle(stream)?;
         this.response_headers = Pickle::unpickle(stream)?;
         this.use_x_forwarded = Pickle::unpickle(stream)?;
+        if stream.version() >= 1 {
+            this.redirect_root = Pickle::unpickle(stream)?;
+        }
         Some(this)
     }
 }
@@ -21290,13 +21299,14 @@ impl Default for Http {
             use_permissive_cors: false,
             response_headers: Default::default(),
             use_x_forwarded: false,
+            redirect_root: Some("/account".to_string()),
         }
     }
 }
 
 impl IntoValue for Http {
     fn into_value(self) -> JmapValue<'static> {
-        let mut map = jmap_tools::Map::with_capacity(9);
+        let mut map = jmap_tools::Map::with_capacity(10);
         map.insert_unchecked(
             Property::RateLimitAuthenticated,
             self.rate_limit_authenticated.into_value(),
@@ -21319,6 +21329,7 @@ impl IntoValue for Http {
             self.response_headers.into_value(),
         );
         map.insert_unchecked(Property::UseXForwarded, self.use_x_forwarded.into_value());
+        map.insert_unchecked(Property::RedirectRoot, self.redirect_root.into_value());
         JmapValue::Object(map)
     }
 }
@@ -21341,6 +21352,9 @@ impl RegistryJsonPropertyPatch for Http {
                 .response_headers
                 .patch(pointer.with_validators(&[StringValidator::Trim]), value),
             Some(Property::UseXForwarded) => self.use_x_forwarded.patch(pointer, value),
+            Some(Property::RedirectRoot) => self
+                .redirect_root
+                .patch(pointer.with_validators(&[StringValidator::Trim]), value),
             Some(Property::Type) => Ok(MaybeUnpatched::Unpatched {
                 property: Property::Type,
                 value,

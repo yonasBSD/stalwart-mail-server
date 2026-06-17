@@ -948,6 +948,7 @@ pub enum Property {
     Recipients = 484,
     Records = 256,
     RecurrenceId = 805,
+    RedirectRoot = 911,
     RedirectUris = 605,
     Refresh = 419,
     RefreshTokenExpiry = 617,

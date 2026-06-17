@@ -1101,6 +1101,7 @@ impl EnumImpl for Property {
             b"recipients" => Property::Recipients,
             b"records" => Property::Records,
             b"recurrenceId" => Property::RecurrenceId,
+            b"redirectRoot" => Property::RedirectRoot,
             b"redirectUris" => Property::RedirectUris,
             b"refresh" => Property::Refresh,
             b"refreshTokenExpiry" => Property::RefreshTokenExpiry,
@@ -2017,6 +2018,7 @@ impl EnumImpl for Property {
             Property::Recipients => "recipients",
             Property::Records => "records",
             Property::RecurrenceId => "recurrenceId",
+            Property::RedirectRoot => "redirectRoot",
             Property::RedirectUris => "redirectUris",
             Property::Refresh => "refresh",
             Property::RefreshTokenExpiry => "refreshTokenExpiry",
@@ -2937,6 +2939,7 @@ impl EnumImpl for Property {
             484 => Some(Property::Recipients),
             256 => Some(Property::Records),
             805 => Some(Property::RecurrenceId),
+            911 => Some(Property::RedirectRoot),
             605 => Some(Property::RedirectUris),
             419 => Some(Property::Refresh),
             617 => Some(Property::RefreshTokenExpiry),
@@ -3158,7 +3161,7 @@ impl EnumImpl for Property {
         }
     }
 
-    const COUNT: usize = 911;
+    const COUNT: usize = 912;
 }
 
 impl serde::Serialize for Property {

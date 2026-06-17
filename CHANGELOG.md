@@ -7,8 +7,10 @@ All notable changes to this project will be documented in this file. This projec
 If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If you are upgrading from v0.15.x and below, please read the [upgrading documentation](https://github.com/stalwartlabs/stalwart/blob/main/UPGRADING/v0_16.md) for more information on how to upgrade from previous versions.
 
 ## Added
-- OAuth Profile for Open Public Clients ([draft-ietf-mailmaint-oauth-public](https://datatracker.ietf.org/doc/draft-ietf-mailmaint-oauth-public/))
-- OAuth client secret verification for confidential clients.
+- OAuth:
+  - OAuth Profile for Open Public Clients ([draft-ietf-mailmaint-oauth-public](https://datatracker.ietf.org/doc/draft-ietf-mailmaint-oauth-public/))
+  - Client secret verification for confidential clients.
+- HTTP: Add `redirectRoot` option to `Http` object to allow redirecting requests to the root path to a different path (e.g. `/account`).
 
 ## Changed
 

@@ -611,6 +611,8 @@ impl ParseHttp for Server {
                 if path.next().is_none() {
                     if !external.is_empty() {
                         return Ok(HttpResponse::redirect(format!("/{external}/")));
+                    } else if let Some(url) = &self.core.network.http.redirect_root {
+                        return Ok(HttpResponse::redirect(url.clone()));
                     }
                 } else if let Some(resource) = self
                     .inner
