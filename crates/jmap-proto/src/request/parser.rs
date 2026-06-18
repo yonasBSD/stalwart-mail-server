@@ -10,8 +10,7 @@ use super::{
 };
 use crate::request::{
     CopyRequestMethod, GetRequestMethod, ParseRequestMethod, QueryChangesRequestMethod,
-    QueryRequestMethod, SetRequestMethod,
-    deserialize::DeserializeArguments,
+    QueryRequestMethod, SetRequestMethod, deserialize::DeserializeArguments,
 };
 use serde::{
     Deserialize, Deserializer,

@@ -151,7 +151,11 @@ impl QueryChanges for Server {
             }
             QueryChangesRequestMethod::FileNode(mut request) => {
                 // Query changes
-                resolve_account_id(&mut request.account_id, MethodObject::FileNode, access_token)?;
+                resolve_account_id(
+                    &mut request.account_id,
+                    MethodObject::FileNode,
+                    access_token,
+                )?;
                 changes = self
                     .changes(
                         build_changes_request(&request),

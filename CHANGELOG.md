@@ -23,6 +23,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
   - `*/set`: Unchanged immutable `id` property is rejected on update.
   - `*/query` and `*/queryChanges`: null` rejected as `notRequest`.
   - `Email/query`:
+    * Improper `anchor` handling.
     * Total miscount when `collapseThreads` is enabled.
     * Wrong sort order on `hasKeyword`, `allInThreadHaveKeyword`, and `someInThreadHaveKeyword` conditions.
     * Non-standard header values are not searchable.

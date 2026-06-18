@@ -102,7 +102,9 @@ impl<'de, T: JmapObject> DeserializeArguments<'de> for QueryRequest<T> {
                 self.position = map.next_value()?;
             },
             b"anchor" => {
-                self.anchor = map.next_value()?;
+                self.anchor = map
+                    .next_value::<Option<crate::request::MaybeInvalid<Id>>>()?
+                    .map(|anchor| anchor.try_unwrap().unwrap_or(Id::from(u64::MAX)));
             },
             b"anchorOffset" => {
                 self.anchor_offset = map.next_value()?;
