@@ -200,8 +200,8 @@ impl QueryResults {
                 for comparator in &comparators {
                     let (a, b, is_ascending) = match comparator {
                         SearchComparator::DocumentSet { set, ascending } => (
-                            !set.contains(*a) as u32,
-                            !set.contains(*b) as u32,
+                            set.contains(*a) as u32,
+                            set.contains(*b) as u32,
                             *ascending,
                         ),
                         SearchComparator::SortedSet { set, ascending } => {

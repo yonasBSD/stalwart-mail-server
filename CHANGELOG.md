@@ -17,13 +17,16 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 ## Fixed
 - JMAP conformance (pass the [jmap-test-suite](https://github.com/jmapio/jmap-test-suite) tests):
   - Default calendars and address books are not subscribed by default.
-  - Unchanged immutable `id` property is rejected on `/set`.
-  - `filter: null` rejected as `notRequest` on `/query` and `/queryChanges`.
-  - `Email/query` total miscount when `collapseThreads` is enabled.
-  - `SearchSnippet/get` response structure.
-  - `VacationResponse` singleton handling.
-  - `EmailSubmission/set` must return `sendAt` and `undoStatus` in the created response.
-  - `Thread/changes` never emits a container delete when a thread becomes empty.
+  - `*/set`: Unchanged immutable `id` property is rejected on update.
+  - `*/query` and `*/queryChanges`: null` rejected as `notRequest`.
+  - `Email/query`:
+    * Total miscount when `collapseThreads` is enabled.
+    * Wrong sort order on `hasKeyword`, `allInThreadHaveKeyword`, and `someInThreadHaveKeyword` conditions.
+    * Non-standard header values are not searchable.
+  - `SearchSnippet/get`: incorrect response structure.
+  - `VacationResponse/set`: incorrect singleton handling.
+  - `EmailSubmission/set`: return `sendAt` and `undoStatus` in the created response.
+  - `Thread/changes`: emit a container delete when a thread becomes empty.
 - OIDC: Add default domain name to groups that are not email addresses.
 - RocksDB: Enable blob garbage collection to reclaim disk space from deleted blobs.
 
