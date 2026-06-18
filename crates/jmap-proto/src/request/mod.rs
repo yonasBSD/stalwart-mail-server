@@ -189,6 +189,18 @@ impl<'de, V: FromStr> serde::Deserialize<'de> for MaybeInvalid<V> {
     }
 }
 
+impl<V: FromStr + serde::Serialize> serde::Serialize for MaybeInvalid<V> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            MaybeInvalid::Value(v) => v.serialize(serializer),
+            MaybeInvalid::Invalid(s) => serializer.serialize_str(s),
+        }
+    }
+}
+
 impl<V: FromStr> Default for MaybeInvalid<V> {
     fn default() -> Self {
         MaybeInvalid::Invalid("".to_string())

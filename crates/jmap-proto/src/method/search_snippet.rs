@@ -33,8 +33,7 @@ pub struct GetSearchSnippetResponse {
     pub list: Vec<SearchSnippet>,
 
     #[serde(rename = "notFound")]
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub not_found: Vec<Id>,
+    pub not_found: Option<Vec<MaybeInvalid<Id>>>,
 }
 
 #[derive(serde::Serialize, Clone, Debug)]
@@ -42,10 +41,8 @@ pub struct SearchSnippet {
     #[serde(rename = "emailId")]
     pub email_id: Id,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub subject: Option<String>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub preview: Option<String>,
 }
 
