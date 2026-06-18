@@ -25,9 +25,9 @@ use jmap_proto::{
         method::{MethodFunction, MethodName, MethodObject},
         reference::{MaybeIdReference, MaybeResultReference},
     },
-    types::state::State,
+    types::{date::UTCDate, state::State},
 };
-use jmap_tools::{Key, Value};
+use jmap_tools::{Key, Map, Value};
 use smtp::{
     core::{Session, SessionData},
     queue::spool::SmtpSpool,
@@ -88,6 +88,13 @@ impl EmailSubmissionSet for Server {
                         Id::from_parts(submission.thread_id, submission.email_id),
                     );
 
+                    let send_at = submission.send_at;
+                    let undo_status = match submission.undo_status {
+                        UndoStatus::Pending => email_submission::UndoStatus::Pending,
+                        UndoStatus::Final => email_submission::UndoStatus::Final,
+                        UndoStatus::Canceled => email_submission::UndoStatus::Canceled,
+                    };
+
                     // Insert record
                     let document_id = self
                         .store()
@@ -101,7 +108,27 @@ impl EmailSubmissionSet for Server {
                         .custom(ObjectIndexBuilder::<(), _>::new().with_changes(submission))
                         .caused_by(trc::location!())?
                         .commit_point();
-                    response.created(id, document_id);
+
+                    response.created.insert(
+                        id,
+                        Value::Object(
+                            Map::with_capacity(3)
+                                .with_key_value(
+                                    EmailSubmissionProperty::Id,
+                                    Value::Element(Id::from(document_id).into()),
+                                )
+                                .with_key_value(
+                                    EmailSubmissionProperty::SendAt,
+                                    Value::Element(EmailSubmissionValue::Date(
+                                        UTCDate::from_timestamp(send_at as i64),
+                                    )),
+                                )
+                                .with_key_value(
+                                    EmailSubmissionProperty::UndoStatus,
+                                    Value::Element(EmailSubmissionValue::UndoStatus(undo_status)),
+                                ),
+                        ),
+                    );
                 }
                 Err(err) => {
                     response.not_created.append(id, err);
