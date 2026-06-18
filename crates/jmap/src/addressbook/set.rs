@@ -31,6 +31,7 @@ use types::{
     acl::Acl,
     collection::{Collection, SyncCollection},
     field::PrincipalField,
+    id::Id,
 };
 
 pub trait AddressBookSet: Sync + Send {
@@ -89,7 +90,7 @@ impl AddressBookSet for Server {
             };
 
             // Process changes
-            if let Err(err) = update_address_book(object, &mut address_book, access_token) {
+            if let Err(err) = update_address_book(None, object, &mut address_book, access_token) {
                 response.not_created.append(id, err);
                 continue 'create;
             }
@@ -164,7 +165,7 @@ impl AddressBookSet for Server {
 
             // Apply changes
             let has_acl_changes =
-                match update_address_book(object, &mut new_address_book, access_token) {
+                match update_address_book(Some(id), object, &mut new_address_book, access_token) {
                     Ok(has_acl_changes_) => has_acl_changes_,
                     Err(err) => {
                         response.not_updated.append(id, err);
@@ -398,6 +399,7 @@ impl AddressBookSet for Server {
 }
 
 fn update_address_book(
+    expected_id: Option<Id>,
     updates: Value<'_, AddressBookProperty, AddressBookValue>,
     address_book: &mut AddressBook,
     access_token: &AccessToken,
@@ -455,6 +457,13 @@ fn update_address_book(
                     value,
                 )?;
                 has_acl_changes = true;
+            }
+            (AddressBookProperty::Id, value) => {
+                if !expected_id.is_some_and(|expected| crate::matches_id(&value, expected)) {
+                    return Err(SetError::invalid_properties()
+                        .with_property(AddressBookProperty::Id)
+                        .with_description("The id property is immutable."));
+                }
             }
             (property, _) => {
                 return Err(SetError::invalid_properties()

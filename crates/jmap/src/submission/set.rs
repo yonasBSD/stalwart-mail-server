@@ -145,6 +145,19 @@ impl EmailSubmissionSet for Server {
                     continue 'update;
                 };
 
+                if matches!(&property, Key::Property(EmailSubmissionProperty::Id)) {
+                    if !crate::matches_id(&value, id) {
+                        response.not_updated.append(
+                            id,
+                            SetError::invalid_properties()
+                                .with_property(EmailSubmissionProperty::Id)
+                                .with_description("The id property is immutable."),
+                        );
+                        continue 'update;
+                    }
+                    continue;
+                }
+
                 if let (
                     Key::Property(EmailSubmissionProperty::UndoStatus),
                     Value::Element(EmailSubmissionValue::UndoStatus(undo_status_)),

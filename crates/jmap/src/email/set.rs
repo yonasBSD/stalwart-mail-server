@@ -870,6 +870,17 @@ impl EmailSet for Server {
                             }
                         }
                     }
+                    (Key::Property(EmailProperty::Id), value) => {
+                        if !crate::matches_id(&value, id) {
+                            response.not_updated.append(
+                                id,
+                                SetError::invalid_properties()
+                                    .with_property(EmailProperty::Id)
+                                    .with_description("The id property is immutable."),
+                            );
+                            continue 'update;
+                        }
+                    }
                     (property, _) => {
                         response.invalid_property_update(id, property.into_owned());
                         continue 'update;

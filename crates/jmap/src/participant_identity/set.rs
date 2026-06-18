@@ -21,7 +21,7 @@ use store::{
     write::{Archiver, BatchBuilder},
 };
 use trc::AddContext;
-use types::{collection::Collection, field::PrincipalField};
+use types::{collection::Collection, field::PrincipalField, id::Id};
 use utils::sanitize_email;
 
 pub trait ParticipantIdentitySet: Sync + Send {
@@ -68,7 +68,7 @@ impl ParticipantIdentitySet for Server {
         'create: for (id, object) in request.unwrap_create() {
             let mut identity = ParticipantIdentity::default();
 
-            if let Err(err) = validate_identity_value(object, &mut identity, &allowed_emails) {
+            if let Err(err) = validate_identity_value(None, object, &mut identity, &allowed_emails) {
                 response.not_created.append(id, err);
                 continue 'create;
             }
@@ -142,7 +142,7 @@ impl ParticipantIdentitySet for Server {
                 continue 'update;
             };
 
-            if let Err(err) = validate_identity_value(object, identity, &allowed_emails) {
+            if let Err(err) = validate_identity_value(Some(id), object, identity, &allowed_emails) {
                 response.not_updated.append(id, err);
                 continue 'update;
             }
@@ -200,6 +200,7 @@ impl ParticipantIdentitySet for Server {
 }
 
 fn validate_identity_value(
+    expected_id: Option<Id>,
     update: Value<'_, ParticipantIdentityProperty, ParticipantIdentityValue>,
     identity: &mut ParticipantIdentity,
     allowed_emails: &AHashSet<&str>,
@@ -238,6 +239,13 @@ fn validate_identity_value(
                             .with_property(ParticipantIdentityProperty::CalendarAddress)
                             .with_description("Invalid or missing calendar address.".to_string()));
                     }
+                }
+            }
+            (ParticipantIdentityProperty::Id, value) => {
+                if !expected_id.is_some_and(|expected| crate::matches_id(&value, expected)) {
+                    return Err(SetError::invalid_properties()
+                        .with_property(ParticipantIdentityProperty::Id)
+                        .with_description("The id property is immutable."));
                 }
             }
             (property, _) => {

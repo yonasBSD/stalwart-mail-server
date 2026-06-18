@@ -189,6 +189,7 @@ impl CalendarEventSet for Server {
             // Process changes
             if let Err(err) = update_calendar_event(
                 access_token,
+                Some(id),
                 object,
                 &mut new_calendar_event,
                 &mut js_calendar_group,
@@ -532,6 +533,7 @@ impl CalendarEventSet for Server {
         let mut event = CalendarEvent::default();
         let use_default_alerts = match update_calendar_event(
             access_token,
+            None,
             updates,
             &mut event,
             &mut js_calendar_group,
@@ -697,6 +699,7 @@ impl CalendarEventSet for Server {
 
 fn update_calendar_event<'x>(
     _access_token: &AccessToken,
+    expected_id: Option<Id>,
     updates: Value<'x, JSCalendarProperty<Id>, JSCalendarValue<Id, BlobId>>,
     event: &mut CalendarEvent,
     js_calendar_group: &mut JSCalendar<'x, Id, BlobId>,
@@ -789,16 +792,24 @@ fn update_calendar_event<'x>(
                 }
                 entries = js_calendar_event.as_object_mut().unwrap();
             }
+            (JSCalendarProperty::Id, value) => {
+                if !expected_id.is_some_and(|expected| crate::matches_id(&value, expected)) {
+                    return Err(SetError::invalid_properties()
+                        .with_property(JSCalendarProperty::Id)
+                        .with_description("This property is immutable."));
+                }
+            }
             (
-                property @ (JSCalendarProperty::Id
-                | JSCalendarProperty::BaseEventId
+                property @ (JSCalendarProperty::BaseEventId
                 | JSCalendarProperty::IsOrigin
                 | JSCalendarProperty::Method),
-                _,
+                value,
             ) => {
-                return Err(SetError::invalid_properties()
-                    .with_property(property)
-                    .with_description("This property is immutable."));
+                if entries.get(&Key::Property(property.clone())) != Some(&value) {
+                    return Err(SetError::invalid_properties()
+                        .with_property(property)
+                        .with_description("This property is immutable."));
+                }
             }
             (
                 property @ (JSCalendarProperty::IsDraft

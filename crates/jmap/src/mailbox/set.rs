@@ -435,6 +435,17 @@ impl MailboxSet for Server {
                     }
                 }
 
+                (Key::Property(MailboxProperty::Id), value) => {
+                    if update
+                        .as_ref()
+                        .map(|(document_id, _)| Id::from(*document_id))
+                        .is_none_or(|expected| !crate::matches_id(&value, expected))
+                    {
+                        return Ok(Err(SetError::invalid_properties()
+                            .with_property(MailboxProperty::Id)
+                            .with_description("The id property is immutable.".to_string())));
+                    }
+                }
                 _ => {
                     return Ok(Err(SetError::invalid_properties()
                         .with_property(property.into_owned())

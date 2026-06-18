@@ -25,7 +25,7 @@ use store::{
     write::{AlignedBytes, Archive, Archiver, BatchBuilder, now},
 };
 use trc::{AddContext, ServerEvent};
-use types::{collection::Collection, field::PrincipalField};
+use types::{collection::Collection, field::PrincipalField, id::Id};
 use utils::map::bitmap::Bitmap;
 
 const EXPIRES_MAX: i64 = 7 * 24 * 3600; // 7 days
@@ -96,7 +96,7 @@ impl PushSubscriptionSet for Server {
             for (property, mut value) in object.into_expanded_object() {
                 if let Err(err) = response
                     .resolve_self_references(&mut value, 0, false)
-                    .and_then(|_| validate_push_value(&property, value, &mut push, true))
+                    .and_then(|_| validate_push_value(None, &property, value, &mut push, true))
                 {
                     response.not_created.append(id, err);
                     continue 'create;
@@ -175,7 +175,7 @@ impl PushSubscriptionSet for Server {
             for (property, mut value) in object.into_expanded_object() {
                 if let Err(err) = response
                     .resolve_self_references(&mut value, 0, false)
-                    .and_then(|_| validate_push_value(&property, value, push, false))
+                    .and_then(|_| validate_push_value(Some(id), &property, value, push, false))
                 {
                     response.not_updated.append(id, err);
                     continue 'update;
@@ -269,6 +269,7 @@ impl PushSubscriptionSet for Server {
 }
 
 fn validate_push_value(
+    expected_id: Option<Id>,
     property: &Key<PushSubscriptionProperty>,
     value: Value<'_, PushSubscriptionProperty, PushSubscriptionValue>,
     push: &mut PushSubscription,
@@ -350,6 +351,13 @@ fn validate_push_value(
             push.types = Bitmap::all();
         }
         (PushSubscriptionProperty::VerificationCode, Value::Null) => {}
+        (PushSubscriptionProperty::Id, value) => {
+            if !expected_id.is_some_and(|expected| crate::matches_id(&value, expected)) {
+                return Err(SetError::invalid_properties()
+                    .with_property(PushSubscriptionProperty::Id)
+                    .with_description("The id property is immutable."));
+            }
+        }
         (property, _) => {
             return Err(SetError::invalid_properties()
                 .with_property(property.clone())

@@ -89,7 +89,7 @@ impl FileNodeSet for Server {
             let mut file_node = FileNode::default();
 
             // Process changes
-            let has_acl_changes = match update_file_node(object, &mut file_node, true, &response) {
+            let has_acl_changes = match update_file_node(None, object, &mut file_node, true, &response) {
                 Ok(result) => {
                     if let Some(blob_id) = result.blob_id {
                         let file_details = file_node.file.get_or_insert_default();
@@ -343,7 +343,7 @@ impl FileNodeSet for Server {
 
             // Apply changes
             let (has_acl_changes, modified_set) =
-                match update_file_node(object, &mut new_file_node, false, &response) {
+                match update_file_node(Some(id), object, &mut new_file_node, false, &response) {
                     Ok(result) => {
                         let modified_set = result.modified_set;
                         if let Some(blob_id) = result.blob_id {
@@ -651,6 +651,7 @@ impl ResolveCreatedReference<FileNodeProperty, FileNodeValue> for NoResolver {
 }
 
 pub(super) fn update_file_node<R: ResolveCreatedReference<FileNodeProperty, FileNodeValue>>(
+    expected_id: Option<Id>,
     updates: Value<'_, FileNodeProperty, FileNodeValue>,
     file_node: &mut FileNode,
     is_create: bool,
@@ -791,6 +792,13 @@ pub(super) fn update_file_node<R: ResolveCreatedReference<FileNodeProperty, File
                     value,
                 )?;
                 has_acl_changes = true;
+            }
+            (FileNodeProperty::Id, value) => {
+                if !expected_id.is_some_and(|expected| crate::matches_id(&value, expected)) {
+                    return Err(SetError::invalid_properties()
+                        .with_property(FileNodeProperty::Id)
+                        .with_description("The id property is immutable."));
+                }
             }
             (property, _) => {
                 return Err(SetError::invalid_properties()

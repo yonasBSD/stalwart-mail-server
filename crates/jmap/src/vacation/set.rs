@@ -245,6 +245,17 @@ impl VacationResponseSet for Server {
                             }
                         }
                     }
+                    (Key::Property(VacationResponseProperty::Id), value) => {
+                        if create_id.is_some() || !crate::matches_id(&value, Id::singleton()) {
+                            return Ok(set_error(
+                                response,
+                                create_id,
+                                SetError::invalid_properties()
+                                    .with_property(VacationResponseProperty::Id)
+                                    .with_description("The id property is immutable."),
+                            ));
+                        }
+                    }
                     _ => {
                         return Ok(set_error(
                             response,

@@ -153,7 +153,7 @@ impl ContactCardSet for Server {
 
             // Process changes
             if let Err(err) =
-                update_contact_card(object, &mut new_contact_card.names, &mut js_contact)
+                update_contact_card(Some(id), object, &mut new_contact_card.names, &mut js_contact)
             {
                 response.not_updated.append(id, err);
                 continue 'update;
@@ -375,7 +375,7 @@ impl ContactCardSet for Server {
     ) -> trc::Result<Result<u32, SetError<JSContactProperty<Id>>>> {
         // Process changes
         let mut names = Vec::new();
-        if let Err(err) = update_contact_card(updates, &mut names, &mut js_contact) {
+        if let Err(err) = update_contact_card(None, updates, &mut names, &mut js_contact) {
             return Ok(Err(err));
         }
 
@@ -452,6 +452,7 @@ impl ContactCardSet for Server {
 }
 
 fn update_contact_card<'x>(
+    expected_id: Option<Id>,
     updates: Value<'x, JSContactProperty<Id>, JSContactValue<Id, BlobId>>,
     addressbooks: &mut Vec<DavName>,
     js_contact: &mut JSContact<'x, Id, BlobId>,
@@ -498,6 +499,13 @@ fn update_contact_card<'x>(
                     }
                 }
                 entries.insert(JSContactProperty::Media, Value::Object(media));
+            }
+            (JSContactProperty::Id, value) => {
+                if !expected_id.is_some_and(|expected| crate::matches_id(&value, expected)) {
+                    return Err(SetError::invalid_properties()
+                        .with_property(JSContactProperty::Id)
+                        .with_description("The id property is immutable."));
+                }
             }
             (property, value) => {
                 entries.insert(property, value);

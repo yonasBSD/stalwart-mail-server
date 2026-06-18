@@ -474,6 +474,17 @@ impl SieveScriptSet for Server {
                     set_item = Some(value);
                     continue;
                 }
+                (Key::Property(SieveProperty::Id), value) => {
+                    if update
+                        .as_ref()
+                        .map(|(document_id, _)| Id::from(*document_id))
+                        .is_none_or(|expected| !crate::matches_id(&value, expected))
+                    {
+                        return Ok(Err(SetError::invalid_properties()
+                            .with_property(SieveProperty::Id)
+                            .with_description("The id property is immutable.".to_string())));
+                    }
+                }
                 _ => {
                     return Ok(Err(SetError::invalid_properties()
                         .with_property(property.into_owned())

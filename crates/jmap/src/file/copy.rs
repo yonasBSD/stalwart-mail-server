@@ -171,7 +171,7 @@ impl FileNodeCopy for Server {
             // ACLs are account-scoped; do not carry the source account's grants over.
             file_node.acls.clear();
 
-            let has_acl_changes = match update_file_node(create, &mut file_node, true, &NoResolver)
+            let has_acl_changes = match update_file_node(None, create, &mut file_node, true, &NoResolver)
             {
                 Ok(result) => {
                     if let Some(blob_id) = result.blob_id {

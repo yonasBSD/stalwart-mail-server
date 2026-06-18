@@ -25,6 +25,7 @@ use trc::AddContext;
 use types::{
     collection::{Collection, SyncCollection},
     field::{Field, IdentityField},
+    id::Id,
 };
 use utils::sanitize_email;
 
@@ -59,7 +60,7 @@ impl IdentitySet for Server {
             for (property, mut value) in object.into_expanded_object() {
                 if let Err(err) = response
                     .resolve_self_references(&mut value, 0, false)
-                    .and_then(|_| validate_identity_value(&property, value, &mut identity, true))
+                    .and_then(|_| validate_identity_value(None, &property, value, &mut identity, true))
                 {
                     response.not_created.append(id, err);
                     continue 'create;
@@ -162,7 +163,7 @@ impl IdentitySet for Server {
                 if let Err(err) = response
                     .resolve_self_references(&mut value, 0, false)
                     .and_then(|_| {
-                        validate_identity_value(&property, value, &mut new_identity, false)
+                        validate_identity_value(Some(id), &property, value, &mut new_identity, false)
                     })
                 {
                     response.not_updated.append(id, err);
@@ -220,6 +221,7 @@ impl IdentitySet for Server {
 }
 
 fn validate_identity_value(
+    expected_id: Option<Id>,
     property: &Key<'_, IdentityProperty>,
     value: Value<'_, IdentityProperty, IdentityValue>,
     identity: &mut Identity,
@@ -309,6 +311,13 @@ fn validate_identity_value(
         }
         (IdentityProperty::ReplyTo, Value::Null) => identity.reply_to = None,
         (IdentityProperty::Bcc, Value::Null) => identity.bcc = None,
+        (IdentityProperty::Id, value) => {
+            if !expected_id.is_some_and(|expected| crate::matches_id(&value, expected)) {
+                return Err(SetError::invalid_properties()
+                    .with_property(IdentityProperty::Id)
+                    .with_description("The id property is immutable."));
+            }
+        }
         (property, _) => {
             return Err(SetError::invalid_properties()
                 .with_property(property.clone())

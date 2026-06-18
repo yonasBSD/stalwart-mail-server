@@ -36,6 +36,7 @@ use types::{
     acl::Acl,
     collection::{Collection, SyncCollection},
     field::PrincipalField,
+    id::Id,
 };
 
 pub trait CalendarSet: Sync + Send {
@@ -94,7 +95,7 @@ impl CalendarSet for Server {
             };
 
             // Process changes
-            if let Err(err) = update_calendar(object, &mut calendar, access_token) {
+            if let Err(err) = update_calendar(None, object, &mut calendar, access_token) {
                 response.not_created.append(id, err);
                 continue 'create;
             }
@@ -168,7 +169,7 @@ impl CalendarSet for Server {
                 .caused_by(trc::location!())?;
 
             // Apply changes
-            let has_acl_changes = match update_calendar(object, &mut new_calendar, access_token) {
+            let has_acl_changes = match update_calendar(Some(id), object, &mut new_calendar, access_token) {
                 Ok(has_acl_changes_) => has_acl_changes_,
                 Err(err) => {
                     response.not_updated.append(id, err);
@@ -400,6 +401,7 @@ impl CalendarSet for Server {
 }
 
 fn update_calendar(
+    expected_id: Option<Id>,
     updates: Value<'_, CalendarProperty, CalendarValue>,
     calendar: &mut Calendar,
     access_token: &AccessToken,
@@ -544,6 +546,13 @@ fn update_calendar(
                             .with_property(CalendarProperty::Pointer(pointer))
                             .with_description("Field could not be patched."));
                     }
+                }
+            }
+            (CalendarProperty::Id, value) => {
+                if !expected_id.is_some_and(|expected| crate::matches_id(&value, expected)) {
+                    return Err(SetError::invalid_properties()
+                        .with_property(CalendarProperty::Id)
+                        .with_description("The id property is immutable."));
                 }
             }
             (property, _) => {
