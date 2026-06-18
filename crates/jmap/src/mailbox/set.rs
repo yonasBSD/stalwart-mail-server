@@ -561,13 +561,13 @@ impl MailboxSet for Server {
             if update
                 .as_ref()
                 .is_none_or(|(_, m)| m.inner.name != changes.name)
-                && cached_mailboxes.mailboxes.items.iter().any(|m| {
+                && let Some(existing) = cached_mailboxes.mailboxes.items.iter().find(|m| {
                     m.name.to_lowercase() == lower_name
                         && m.parent_id().map_or(0, |id| id + 1) == changes.parent_id
                 })
             {
-                return Ok(Err(SetError::invalid_properties()
-                    .with_property(MailboxProperty::Name)
+                return Ok(Err(SetError::already_exists()
+                    .with_existing_id(Id::from(existing.document_id))
                     .with_description(format!(
                         "A mailbox with name '{}' already exists.",
                         changes.name

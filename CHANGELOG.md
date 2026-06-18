@@ -27,6 +27,10 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
   - `VacationResponse/set`: incorrect singleton handling.
   - `EmailSubmission/set`: return `sendAt` and `undoStatus` in the created response.
   - `Thread/changes`: emit a container delete when a thread becomes empty.
+  - `Mailbox/set`: Return `alreadyExists` instead of `invalidProperties` when creating a mailbox with an existing name.
+  - `Email/copy`: Take the source message id from the value's `id` property.
+  - `Email/set`: Bump reference-resolution max_depth from 1 to 2.
+  - `Email/import`: Reject blobs that do not contain valid messages.
 - OIDC: Add default domain name to groups that are not email addresses.
 - RocksDB: Enable blob garbage collection to reclaim disk space from deleted blobs.
 
