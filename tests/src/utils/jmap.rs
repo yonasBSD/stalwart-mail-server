@@ -132,6 +132,7 @@ impl Account {
             })
             .collect::<Vec<Value>>();
         let arguments = [
+            ("accountId".to_string(), self.id_string().into()),
             ("filter".to_string(), Value::Object(filter)),
             ("sort".to_string(), Value::Array(sort_by)),
         ]
@@ -295,6 +296,7 @@ impl Account {
         self.jmap_method_calls(json!([[
             format!("{object}/changes"),
             {
+                "accountId": self.id_string(),
                 "sinceState": state.to_string()
             },
             "0"
