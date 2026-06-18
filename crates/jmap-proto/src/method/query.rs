@@ -195,6 +195,20 @@ where
                 write!(formatter, "a filter object")
             }
 
+            fn visit_unit<E>(self) -> Result<(), E>
+            where
+                E: de::Error,
+            {
+                Ok(())
+            }
+
+            fn visit_none<E>(self) -> Result<(), E>
+            where
+                E: de::Error,
+            {
+                Ok(())
+            }
+
             fn visit_map<V>(self, mut map: V) -> Result<(), V::Error>
             where
                 V: MapAccess<'de>,
@@ -261,7 +275,7 @@ where
             }
         }
 
-        deserializer.deserialize_map(FilterVisitor(self.0))
+        deserializer.deserialize_any(FilterVisitor(self.0))
     }
 }
 

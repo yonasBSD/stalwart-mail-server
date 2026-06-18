@@ -17,7 +17,8 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 ## Fixed
 - JMAP:
   - Default calendars and address books are not subscribed by default.
-  - Do not reject an unchanged immutable `id` property.
+  - Unchanged immutable `id` property is rejected on `/set`.
+  - `filter: null` rejected as `notRequest` on `/query` and `/queryChanges`.
 - OIDC: Add default domain name to groups that are not email addresses.
 - RocksDB: Enable blob garbage collection to reclaim disk space from deleted blobs.
 
