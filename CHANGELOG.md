@@ -17,6 +17,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 ## Fixed
 - JMAP conformance (pass the [jmap-test-suite](https://github.com/jmapio/jmap-test-suite) tests):
   - Methods are only available if their capability is in `using`.
+  - Reject requests that do not specify `application/json` in the `Content-Type` header.
   - Default calendars and address books are not subscribed by default.
   - `*/set`: Unchanged immutable `id` property is rejected on update.
   - `*/query` and `*/queryChanges`: null` rejected as `notRequest`.
@@ -24,14 +25,14 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
     * Total miscount when `collapseThreads` is enabled.
     * Wrong sort order on `hasKeyword`, `allInThreadHaveKeyword`, and `someInThreadHaveKeyword` conditions.
     * Non-standard header values are not searchable.
-  - `SearchSnippet/get`: incorrect response structure.
-  - `VacationResponse/set`: incorrect singleton handling.
-  - `EmailSubmission/set`: return `sendAt` and `undoStatus` in the created response.
-  - `Thread/changes`: emit a container delete when a thread becomes empty.
-  - `Mailbox/set`: Return `alreadyExists` instead of `invalidProperties` when creating a mailbox with an existing name.
   - `Email/copy`: Take the source message id from the value's `id` property.
   - `Email/set`: Bump reference-resolution max_depth from 1 to 2.
   - `Email/import`: Reject blobs that do not contain valid messages.
+  - `EmailSubmission/set`: return `sendAt` and `undoStatus` in the created response.
+  - `Mailbox/set`: Return `alreadyExists` instead of `invalidProperties` when creating a mailbox with an existing name.
+  - `SearchSnippet/get`: incorrect response structure.
+  - `Thread/changes`: emit a container delete when a thread becomes empty.
+  - `VacationResponse/set`: incorrect singleton handling.
 - OIDC: Add default domain name to groups that are not email addresses.
 - RocksDB: Enable blob garbage collection to reclaim disk space from deleted blobs.
 

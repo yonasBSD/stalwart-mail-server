@@ -88,6 +88,24 @@ impl ParseHttp for Server {
                         let (_in_flight, access_token) =
                             self.authenticate_headers(&req, &session).await?;
 
+                        if let Some(content_type) = req.headers().get(CONTENT_TYPE) {
+                            let is_json = content_type
+                                .to_str()
+                                .ok()
+                                .map(|ct| {
+                                    ct.split_once(';')
+                                        .map_or(ct, |(m, _)| m)
+                                        .trim()
+                                        .eq_ignore_ascii_case("application/json")
+                                })
+                                .unwrap_or(false);
+                            if !is_json {
+                                return Err(trc::JmapEvent::NotJson
+                                    .into_err()
+                                    .details("The Content-Type header must be application/json."));
+                            }
+                        }
+
                         let bytes = fetch_body(
                             &mut req,
                             if !access_token.has_permission(Permission::UnlimitedUploads) {
