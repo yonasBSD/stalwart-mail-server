@@ -68,7 +68,8 @@ impl ParticipantIdentitySet for Server {
         'create: for (id, object) in request.unwrap_create() {
             let mut identity = ParticipantIdentity::default();
 
-            if let Err(err) = validate_identity_value(None, object, &mut identity, &allowed_emails) {
+            if let Err(err) = validate_identity_value(None, object, &mut identity, &allowed_emails)
+            {
                 response.not_created.append(id, err);
                 continue 'create;
             }

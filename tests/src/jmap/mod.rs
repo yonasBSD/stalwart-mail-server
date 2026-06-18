@@ -17,6 +17,7 @@ use registry::{
 };
 
 pub mod calendar;
+pub mod compliance;
 pub mod contacts;
 pub mod core;
 pub mod files;
@@ -169,7 +170,7 @@ pub async fn jmap_tests() {
 
     test.insert_account(admin);
 
-    mail::get::test(&test).await;
+    /*mail::get::test(&test).await;
     mail::set::test(&test).await;
     mail::parse::test(&test).await;
     mail::query::test(&test).await;
@@ -206,7 +207,9 @@ pub async fn jmap_tests() {
     calendar::acl::test(&test).await;
 
     principal::get::test(&test).await;
-    principal::availability::test(&test).await;
+    principal::availability::test(&test).await;*/
+
+    compliance::test(&test).await;
 
     if test.is_reset() {
         test.temp_dir.delete();

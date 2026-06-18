@@ -169,13 +169,14 @@ impl CalendarSet for Server {
                 .caused_by(trc::location!())?;
 
             // Apply changes
-            let has_acl_changes = match update_calendar(Some(id), object, &mut new_calendar, access_token) {
-                Ok(has_acl_changes_) => has_acl_changes_,
-                Err(err) => {
-                    response.not_updated.append(id, err);
-                    continue 'update;
-                }
-            };
+            let has_acl_changes =
+                match update_calendar(Some(id), object, &mut new_calendar, access_token) {
+                    Ok(has_acl_changes_) => has_acl_changes_,
+                    Err(err) => {
+                        response.not_updated.append(id, err);
+                        continue 'update;
+                    }
+                };
 
             // Validate ACL
             if is_shared {

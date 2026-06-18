@@ -60,7 +60,9 @@ impl IdentitySet for Server {
             for (property, mut value) in object.into_expanded_object() {
                 if let Err(err) = response
                     .resolve_self_references(&mut value, 0, false)
-                    .and_then(|_| validate_identity_value(None, &property, value, &mut identity, true))
+                    .and_then(|_| {
+                        validate_identity_value(None, &property, value, &mut identity, true)
+                    })
                 {
                     response.not_created.append(id, err);
                     continue 'create;
@@ -163,7 +165,13 @@ impl IdentitySet for Server {
                 if let Err(err) = response
                     .resolve_self_references(&mut value, 0, false)
                     .and_then(|_| {
-                        validate_identity_value(Some(id), &property, value, &mut new_identity, false)
+                        validate_identity_value(
+                            Some(id),
+                            &property,
+                            value,
+                            &mut new_identity,
+                            false,
+                        )
                     })
                 {
                     response.not_updated.append(id, err);

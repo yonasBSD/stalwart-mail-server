@@ -152,9 +152,12 @@ impl ContactCardSet for Server {
             let mut js_contact = new_contact_card.card.into_jscontact();
 
             // Process changes
-            if let Err(err) =
-                update_contact_card(Some(id), object, &mut new_contact_card.names, &mut js_contact)
-            {
+            if let Err(err) = update_contact_card(
+                Some(id),
+                object,
+                &mut new_contact_card.names,
+                &mut js_contact,
+            ) {
                 response.not_updated.append(id, err);
                 continue 'update;
             }
