@@ -21,6 +21,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
   - `filter: null` rejected as `notRequest` on `/query` and `/queryChanges`.
   - `Email/query` total miscount when `collapseThreads` is enabled.
   - `SearchSnippet/get` response structure.
+  - `VacationResponse` singleton handling.
 - OIDC: Add default domain name to groups that are not email addresses.
 - RocksDB: Enable blob garbage collection to reclaim disk space from deleted blobs.
 
