@@ -50,7 +50,7 @@ use http_proto::HttpSessionData;
 use jmap_proto::{
     request::{
         Call, CopyRequestMethod, GetRequestMethod, ParseRequestMethod, QueryRequestMethod, Request,
-        RequestMethod, SetRequestMethod, method::MethodName,
+        RequestMethod, SetRequestMethod, capability::Capability, method::MethodName,
     },
     response::{Response, ResponseMethod, SetResponseMethod},
 };
@@ -85,6 +85,7 @@ impl RequestHandler for Server {
         session: &HttpSessionData,
     ) -> Response<'x> {
         let add_created_ids = request.created_ids.is_some();
+        let using = request.using;
         let mut response = Response::new(
             access_token.state(),
             request.created_ids.unwrap_or_default(),
@@ -100,6 +101,22 @@ impl RequestHandler for Server {
 
                 response.push_response(call.id, MethodName::error(), method_error);
                 continue;
+            }
+
+            if !matches!(call.method, RequestMethod::Error(_)) {
+                let capability = call.name.obj.capability();
+                if capability != Capability::Stalwart && !using.contains(capability) {
+                    response.push_response(
+                        call.id,
+                        MethodName::error(),
+                        trc::JmapEvent::UnknownMethod.into_err().details(format!(
+                            "Method {} requires capability {} which is not present in the \"using\" property.",
+                            call.name,
+                            capability.as_str()
+                        )),
+                    );
+                    continue;
+                }
             }
 
             loop {

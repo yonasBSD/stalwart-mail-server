@@ -16,6 +16,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 
 ## Fixed
 - JMAP conformance (pass the [jmap-test-suite](https://github.com/jmapio/jmap-test-suite) tests):
+  - Methods are only available if their capability is in `using`.
   - Default calendars and address books are not subscribed by default.
   - `*/set`: Unchanged immutable `id` property is rejected on update.
   - `*/query` and `*/queryChanges`: null` rejected as `notRequest`.
