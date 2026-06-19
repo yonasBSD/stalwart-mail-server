@@ -232,6 +232,13 @@ pub async fn imap_tests() {
         imap.authenticate(account.name(), account.secret()).await;
     }
 
+    // Test GETJMAPACCESS (RFC 9698)
+    imap.send("GETJMAPACCESS").await;
+    imap.assert_read(Type::Tagged, ResponseType::Ok)
+        .await
+        .assert_contains("* JMAPACCESS \"")
+        .assert_contains("/.well-known/jmap\"");
+
     // Delete folders
     for mailbox in ["Drafts", "Junk Mail", "Sent Items"] {
         imap.send(&format!("DELETE \"{}\"", mailbox)).await;

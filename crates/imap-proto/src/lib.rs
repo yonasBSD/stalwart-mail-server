@@ -74,6 +74,9 @@ pub enum Command {
     // RFC 9208
     GetQuota,
     GetQuotaRoot,
+
+    // RFC 9698
+    GetJmapAccess,
 }
 
 impl Command {

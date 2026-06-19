@@ -726,6 +726,7 @@ impl Display for Command {
             Command::Id => write!(f, "ID"),
             Command::GetQuota => write!(f, "GETQUOTA"),
             Command::GetQuotaRoot => write!(f, "GETQUOTAROOT"),
+            Command::GetJmapAccess => write!(f, "GETJMAPACCESS"),
         }
     }
 }

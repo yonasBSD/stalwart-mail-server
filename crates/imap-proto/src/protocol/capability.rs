@@ -142,11 +142,11 @@ impl Capability {
             Capability::LiteralPlus,
             Capability::Id,
             Capability::Utf8Accept,
-            Capability::JmapAccess,
         ];
 
         if is_authenticated {
             capabilities.extend([
+                Capability::JmapAccess,
                 Capability::Idle,
                 Capability::Namespace,
                 Capability::Children,
