@@ -390,7 +390,26 @@ impl Account {
         );
 
         let body = json!({
-          "using": [ "urn:ietf:params:jmap:core", "urn:ietf:params:jmap:mail", "urn:ietf:params:jmap:submission", "urn:ietf:params:jmap:vacationresponse", "urn:ietf:params:jmap:quota" ],
+          "using": [
+            "urn:ietf:params:jmap:core",
+            "urn:ietf:params:jmap:mail",
+            "urn:ietf:params:jmap:submission",
+            "urn:ietf:params:jmap:vacationresponse",
+            "urn:ietf:params:jmap:contacts",
+            "urn:ietf:params:jmap:contacts:parse",
+            "urn:ietf:params:jmap:calendars",
+            "urn:ietf:params:jmap:calendars:parse",
+            "urn:ietf:params:jmap:websocket",
+            "urn:ietf:params:jmap:sieve",
+            "urn:ietf:params:jmap:blob",
+            "urn:ietf:params:jmap:quota",
+            "urn:ietf:params:jmap:principals",
+            "urn:ietf:params:jmap:principals:owner",
+            "urn:ietf:params:jmap:principals:availability",
+            "urn:ietf:params:jmap:filenode",
+            "urn:ietf:params:jmap:mail:share",
+            "urn:stalwart:jmap"
+          ],
           "methodCalls": calls
         });
 
@@ -457,6 +476,7 @@ impl Account {
         self.jmap_method_calls(json!([[
             "AddressBook/get",
             {
+              "accountId": self.id_string(),
               "ids" : (),
               "properties" : [
                 "id"
@@ -467,6 +487,7 @@ impl Account {
           [
             "AddressBook/set",
             {
+              "accountId": self.id_string(),
               "#destroy" : {
                     "resultOf": "R1",
                     "name": "AddressBook/get",
@@ -484,6 +505,7 @@ impl Account {
         self.jmap_method_calls(json!([[
             "Calendar/get",
             {
+              "accountId": self.id_string(),
               "ids" : (),
               "properties" : [
                 "id"
@@ -494,6 +516,7 @@ impl Account {
           [
             "Calendar/set",
             {
+              "accountId": self.id_string(),
               "#destroy" : {
                     "resultOf": "R1",
                     "name": "Calendar/get",
@@ -511,6 +534,7 @@ impl Account {
         self.jmap_method_calls(json!([[
             "CalendarEventNotification/get",
             {
+              "accountId": self.id_string(),
               "ids" : (),
               "properties" : [
                 "id"
@@ -521,6 +545,7 @@ impl Account {
           [
             "CalendarEventNotification/set",
             {
+              "accountId": self.id_string(),
               "#destroy" : {
                     "resultOf": "R1",
                     "name": "CalendarEventNotification/get",
