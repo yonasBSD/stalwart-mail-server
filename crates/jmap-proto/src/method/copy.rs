@@ -75,7 +75,7 @@ pub struct CopyBlobResponse {
 
     #[serde(rename = "notCopied")]
     #[serde(skip_serializing_if = "VecMap::is_empty")]
-    pub not_copied: VecMap<BlobId, SetError<BlobProperty>>,
+    pub not_copied: VecMap<MaybeInvalid<BlobId>, SetError<BlobProperty>>,
 }
 
 impl<'de, T: JmapObject> DeserializeArguments<'de> for CopyRequest<'de, T> {

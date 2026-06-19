@@ -11,7 +11,7 @@ use jmap_proto::{
     method::set::{SetRequest, SetResponse},
     object::identity::{self, IdentityProperty, IdentityValue},
     references::resolve::ResolveCreatedReference,
-    request::IntoValid,
+    request::MaybeInvalid,
     types::state::State,
 };
 use jmap_tools::{Key, Value};
@@ -46,7 +46,7 @@ impl IdentitySet for Server {
             .document_ids(account_id, Collection::Identity, IdentityField::DocumentId)
             .await?;
         let mut response = SetResponse::from_request(&request, self.core.jmap.set_max_objects)?;
-        let will_destroy = request.unwrap_destroy().into_valid().collect::<Vec<_>>();
+        let will_destroy = response.collect_will_destroy(request.unwrap_destroy());
         let account_info = self
             .account_info(account_id)
             .await
@@ -131,7 +131,14 @@ impl IdentitySet for Server {
         }
 
         // Process updates
-        'update: for (id, object) in request.unwrap_update().into_valid() {
+        'update: for (id, object) in request.unwrap_update() {
+            let id = match id {
+                MaybeInvalid::Value(id) => id,
+                invalid => {
+                    response.not_updated.append(invalid, SetError::not_found());
+                    continue 'update;
+                }
+            };
             // Make sure id won't be destroyed
             if will_destroy.contains(&id) {
                 response.not_updated.append(id, SetError::will_destroy());

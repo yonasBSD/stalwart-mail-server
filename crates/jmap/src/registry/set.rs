@@ -38,7 +38,7 @@ use jmap_proto::{
     method::set::{SetRequest, SetResponse},
     object::registry::Registry,
     references::resolve::ResolveCreatedReference,
-    request::IntoValid,
+    request::{IntoValid, MaybeInvalid},
 };
 use jmap_tools::{JsonPointer, JsonPointerItem, Key};
 use registry::{
@@ -125,9 +125,11 @@ impl RegistrySet for Server {
         // Initial destroy validation for singletons
         let mut destroy = request.unwrap_destroy().into_valid().collect::<Vec<_>>();
         if is_singleton && !destroy.is_empty() {
-            response
-                .not_destroyed
-                .extend(destroy.drain(..).map(|id| (id, SetError::singleton())));
+            response.not_destroyed.extend(
+                destroy
+                    .drain(..)
+                    .map(|id| (MaybeInvalid::Value(id), SetError::singleton())),
+            );
         }
 
         // Update validation for willDestroy

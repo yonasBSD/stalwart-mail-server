@@ -40,7 +40,7 @@ pub struct ParseResponse<T: JmapObject> {
 
     #[serde(rename = "notFound")]
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub not_found: Vec<BlobId>,
+    pub not_found: Vec<MaybeInvalid<BlobId>>,
 }
 
 impl<'de, T: JmapObject> DeserializeArguments<'de> for ParseRequest<T> {

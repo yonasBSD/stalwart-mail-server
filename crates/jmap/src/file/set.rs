@@ -19,7 +19,7 @@ use jmap_proto::{
         file_node::{self, FileNodeProperty, FileNodeValue, OnExists},
     },
     references::resolve::ResolveCreatedReference,
-    request::IntoValid,
+    request::MaybeInvalid,
     types::state::State,
 };
 use jmap_tools::{JsonPointerItem, Key, Value};
@@ -68,7 +68,7 @@ impl FileNodeSet for Server {
             )
             .await?;
         let mut response = SetResponse::from_request(&request, self.core.jmap.set_max_objects)?;
-        let mut will_destroy = request.unwrap_destroy().into_valid().collect::<Vec<_>>();
+        let mut will_destroy = response.collect_will_destroy(request.unwrap_destroy());
         let is_shared = access_token.is_shared(account_id);
         let on_destroy_remove_children = request
             .arguments
@@ -312,7 +312,14 @@ impl FileNodeSet for Server {
         }
 
         // Process updates
-        'update: for (id, object) in request.unwrap_update().into_valid() {
+        'update: for (id, object) in request.unwrap_update() {
+            let id = match id {
+                MaybeInvalid::Value(id) => id,
+                invalid => {
+                    response.not_updated.append(invalid, SetError::not_found());
+                    continue 'update;
+                }
+            };
             // Make sure id won't be destroyed
             if will_destroy.contains(&id) || implicit_destroys.contains(&id.document_id()) {
                 response.not_updated.append(id, SetError::will_destroy());

@@ -13,7 +13,10 @@ use common::{
     network::acme::account::acme_create_account, psl,
 };
 use directory::core::secret::hash_secret;
-use jmap_proto::error::set::{SetError, SetErrorType};
+use jmap_proto::{
+    error::set::{SetError, SetErrorType},
+    request::MaybeInvalid,
+};
 use jmap_tools::{JsonPointer, JsonPointerItem, Key};
 use rand::{Rng, distr::Alphanumeric, rng};
 use registry::{
@@ -67,7 +70,7 @@ pub(crate) async fn bootstrap_get(
         }
     }
 
-    get.response.not_found.extend(ids);
+    get.response.not_found.extend(ids.map(MaybeInvalid::Value));
     Ok(get)
 }
 

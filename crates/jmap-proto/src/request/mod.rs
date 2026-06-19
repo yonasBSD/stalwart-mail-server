@@ -214,6 +214,12 @@ impl<V: FromStr + serde::Serialize> serde::Serialize for MaybeInvalid<V> {
     }
 }
 
+impl<V: FromStr> From<V> for MaybeInvalid<V> {
+    fn from(value: V) -> Self {
+        MaybeInvalid::Value(value)
+    }
+}
+
 impl<V: FromStr> Default for MaybeInvalid<V> {
     fn default() -> Self {
         MaybeInvalid::Invalid("".to_string())
