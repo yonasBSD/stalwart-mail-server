@@ -38,6 +38,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
   - `VacationResponse/set`: incorrect singleton handling.
 - OIDC: Add default domain name to groups that are not email addresses.
 - RocksDB: Enable blob garbage collection to reclaim disk space from deleted blobs.
+- Sieve: `include` statements ignore capitalisation of sub-script names (#1643)
 
 ## [0.16.9] - 2026-06-15
 

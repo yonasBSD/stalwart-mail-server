@@ -611,7 +611,7 @@ impl SieveScriptIngest for Server {
                 account_id,
                 Collection::SieveScript,
                 SieveField::Name,
-                name.as_bytes(),
+                name.to_lowercase().as_bytes(),
             )
             .await
             .caused_by(trc::location!())?
