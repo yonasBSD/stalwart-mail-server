@@ -141,9 +141,7 @@ impl EmailSubmissionSet for Server {
             let id = match id {
                 MaybeInvalid::Value(id) => id,
                 invalid => {
-                    response
-                        .not_updated
-                        .append(invalid, SetError::not_found());
+                    response.not_updated.append(invalid, SetError::not_found());
                     continue 'update;
                 }
             };

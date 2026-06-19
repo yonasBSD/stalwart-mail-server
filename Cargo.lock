@@ -2087,9 +2087,9 @@ dependencies = [
 
 [[package]]
 name = "dns-update"
-version = "0.5.2"
+version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61121fe40a074b4b6f5bad089259c492a1d786c6346362a2a4b8961f484f36c5"
+checksum = "ad8114773ce0ea3c3443cfb63025aa02fcddddf5f2b3d090e822e10dbf0572c2"
 dependencies = [
  "aws-lc-rs",
  "base64 0.22.1",
@@ -2097,7 +2097,7 @@ dependencies = [
  "hex",
  "hickory-net",
  "hickory-proto",
- "quick-xml 0.39.4",
+ "quick-xml 0.40.1",
  "reqwest 0.13.4",
  "rustls 0.23.40",
  "serde",
@@ -4345,9 +4345,9 @@ dependencies = [
 
 [[package]]
 name = "mail-auth"
-version = "0.9.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c99f0db3f1292f72149bd50fcca0354d243defda0d26532ef7281ca716c77592"
+checksum = "62a9d0c96cc84030705fec4bc4789fa918c89caec0d95ce7ee96b6f922d4a664"
 dependencies = [
  "aws-lc-rs",
  "flate2",
@@ -4355,7 +4355,7 @@ dependencies = [
  "hickory-resolver",
  "mail-builder",
  "mail-parser",
- "quick-xml 0.39.4",
+ "quick-xml 0.40.1",
  "rand 0.8.6",
  "rkyv",
  "rsa",
@@ -5864,21 +5864,12 @@ dependencies = [
 
 [[package]]
 name = "quick-xml"
-version = "0.39.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cdcc8dd4e2f670d309a5f0e83fe36dfdc05af317008fea29144da1a2ac858e5e"
-dependencies = [
- "memchr",
- "serde",
-]
-
-[[package]]
-name = "quick-xml"
 version = "0.40.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2474bd2e5029e7ccb6abb2ba48cf2383a333851dedf495901544281590c7da7f"
 dependencies = [
  "memchr",
+ "serde",
 ]
 
 [[package]]
@@ -6255,9 +6246,9 @@ dependencies = [
 
 [[package]]
 name = "redis"
-version = "1.2.3"
+version = "1.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f9fd510128eda94d1d49b9f81487744d5c451422431cce41238fe2853d29f4cc"
+checksum = "bae41a63fd0b8a5372f82b21e810e09a316f5dd7efd96bf08e678fb240fc1918"
 dependencies = [
  "arcstr",
  "async-lock",
@@ -8060,6 +8051,7 @@ dependencies = [
  "pop3",
  "quick-xml 0.40.1",
  "rayon",
+ "rcgen",
  "registry",
  "reqwest 0.13.4",
  "rkyv",
@@ -8071,12 +8063,14 @@ dependencies = [
  "serde_json",
  "serial_test",
  "services",
+ "sha2 0.11.0",
  "sieve-rs",
  "smtp",
  "smtp-proto",
  "spam-filter",
  "store",
  "testcontainers",
+ "time",
  "tokio",
  "tokio-rustls",
  "trc",
@@ -9656,6 +9650,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d43b0f71ce057da06bc0851b23ee24f3f86190b07203dd8f567d0b706a185202"
 dependencies = [
  "asn1-rs",
+ "aws-lc-rs",
  "data-encoding",
  "der-parser",
  "lazy_static",
