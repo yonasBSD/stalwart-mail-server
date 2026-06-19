@@ -11,8 +11,9 @@ use common::network::SessionStream;
 use imap_proto::{
     Command, StatusResponse,
     protocol::{
-        ImapResponse, quoted_string,
+        ImapResponse,
         capability::{Capability, Response},
+        quoted_string,
     },
     receiver::Request,
 };

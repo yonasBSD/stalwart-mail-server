@@ -38,6 +38,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
   - `SearchSnippet/get`: incorrect response structure.
   - `Thread/changes`: emit a container delete when a thread becomes empty.
   - `VacationResponse/set`: incorrect singleton handling.
+- IMAP: Discard oversized non-synchronizing literals (#2768).
 - DANE: Improper `TLSA` record validation (#2328).
 - OIDC: Add default domain name to groups that are not email addresses.
 - RocksDB: Enable blob garbage collection to reclaim disk space from deleted blobs.
