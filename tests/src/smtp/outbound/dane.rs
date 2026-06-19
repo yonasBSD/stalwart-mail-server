@@ -34,7 +34,6 @@ use rustls_pki_types::CertificateDer;
 use sha2::{Digest, Sha256};
 use smtp::outbound::dane::{dnssec::TlsaLookup, verify::TlsaVerify};
 use smtp::queue::{Error, ErrorDetails, Status};
-use store::write::now;
 use std::{
     collections::BTreeSet,
     fs::{self, File},
@@ -44,6 +43,7 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
+use store::write::now;
 
 #[tokio::test]
 #[serial_test::serial]

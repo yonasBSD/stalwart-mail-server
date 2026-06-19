@@ -1141,6 +1141,7 @@ impl EnumImpl for Property {
             b"retryCount" => Property::RetryCount,
             b"retryDue" => Property::RetryDue,
             b"returnPath" => Property::ReturnPath,
+            b"reuseKey" => Property::ReuseKey,
             b"reverseIpVerify" => Property::ReverseIpVerify,
             b"rewrite" => Property::Rewrite,
             b"roleIds" => Property::RoleIds,
@@ -2058,6 +2059,7 @@ impl EnumImpl for Property {
             Property::RetryCount => "retryCount",
             Property::RetryDue => "retryDue",
             Property::ReturnPath => "returnPath",
+            Property::ReuseKey => "reuseKey",
             Property::ReverseIpVerify => "reverseIpVerify",
             Property::Rewrite => "rewrite",
             Property::RoleIds => "roleIds",
@@ -2979,6 +2981,7 @@ impl EnumImpl for Property {
             640 => Some(Property::RetryCount),
             641 => Some(Property::RetryDue),
             635 => Some(Property::ReturnPath),
+            912 => Some(Property::ReuseKey),
             692 => Some(Property::ReverseIpVerify),
             565 => Some(Property::Rewrite),
             193 => Some(Property::RoleIds),
@@ -3161,7 +3164,7 @@ impl EnumImpl for Property {
         }
     }
 
-    const COUNT: usize = 912;
+    const COUNT: usize = 913;
 }
 
 impl serde::Serialize for Property {

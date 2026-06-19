@@ -59,6 +59,8 @@ pub struct AcmeProvider {
     pub member_tenant_id: Option<Id>,
     #[serde(rename = "preferredChain")]
     pub preferred_chain: Option<String>,
+    #[serde(rename = "reuseKey")]
+    pub reuse_key: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

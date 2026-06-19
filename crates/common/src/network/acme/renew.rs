@@ -14,7 +14,7 @@ use crate::{
 use registry::{
     schema::{
         enums::{AcmeChallengeType, AcmeRenewBefore, DnsRecordType},
-        prelude::ObjectType,
+        prelude::{ObjectType, Property},
         structs::{
             AcmeProvider, Certificate, CertificateManagement, DnsManagement, Domain, PublicText,
             PublicTextValue, SecretText, SecretTextValue, SystemSettings, Task, TaskDnsManagement,
@@ -24,7 +24,10 @@ use registry::{
     types::{datetime::UTCDateTime, id::ObjectId, map::Map},
 };
 use store::{
-    registry::write::{RegistryWrite, RegistryWriteResult},
+    registry::{
+        RegistryQuery,
+        write::{RegistryWrite, RegistryWriteResult},
+    },
     write::now,
 };
 use types::id::Id;
@@ -57,6 +60,7 @@ impl Server {
         };
         let challenge_type = acme_provider.challenge_type;
         let renew_before = acme_provider.renew_before;
+        let reuse_key = acme_provider.reuse_key;
         let request = AcmeRequestBuilder::new(acme_provider).await?;
         let domains = request.build_domains(
             self,
@@ -64,7 +68,10 @@ impl Server {
             &cert.subject_alternative_names.into_inner(),
         );
 
-        if let Some(renew_at) = self.acme_certificate_renewal_due(&domains, renew_before, now()) {
+        if let Some(renew_at) = self
+            .acme_certificate_renewal_due(&domains, renew_before, now())
+            .await?
+        {
             return Err(AcmeError::NotDue(format!(
                 "Certificate for domain {} is still valid; renewal is not due until {}",
                 domain.name,
@@ -95,7 +102,25 @@ impl Server {
                     .to_string(),
             ));
         }
-        let pem_cert = request.renew(self, domains, dns_parameters).await?;
+        let reuse_key_pem = if reuse_key {
+            match self.acme_certificate_by_domains(&domains).await? {
+                Some(certificate) => certificate
+                    .private_key
+                    .secret()
+                    .await
+                    .map(std::borrow::Cow::into_owned)
+                    .map_err(|err| {
+                        AcmeError::Crypto(format!("Failed to load certificate private key: {err}"))
+                    })?
+                    .into(),
+                None => None,
+            }
+        } else {
+            None
+        };
+        let pem_cert = request
+            .renew(self, domains, reuse_key_pem, dns_parameters)
+            .await?;
         let parsed_cert = ParsedCert::parse(&pem_cert.certificate)?;
         let mut new_sans = parsed_cert.sans.clone();
         new_sans.sort();
@@ -198,50 +223,63 @@ impl Server {
         }
     }
 
-    fn acme_certificate_renewal_due(
+    async fn acme_certificate_by_domains(
+        &self,
+        domains: &[String],
+    ) -> AcmeResult<Option<Certificate>> {
+        let mut wanted = domains.iter().collect::<Vec<_>>();
+        wanted.sort();
+        let Some(reference) = wanted.first() else {
+            return Ok(None);
+        };
+
+        let candidate_ids = self
+            .registry()
+            .query::<Vec<Id>>(
+                RegistryQuery::new(ObjectType::Certificate)
+                    .text(Property::SubjectAlternativeNames, reference.as_str()),
+            )
+            .await?;
+
+        for id in candidate_ids {
+            let Some(certificate) = self.registry().object::<Certificate>(id).await? else {
+                continue;
+            };
+            let mut sans = certificate
+                .subject_alternative_names
+                .iter()
+                .collect::<Vec<_>>();
+            sans.sort();
+            if sans == wanted {
+                return Ok(Some(certificate));
+            }
+        }
+
+        Ok(None)
+    }
+
+    async fn acme_certificate_renewal_due(
         &self,
         domains: &[String],
         renew_before: AcmeRenewBefore,
         now: u64,
-    ) -> Option<u64> {
-        let mut target = domains.iter().map(|d| d.as_str()).collect::<Vec<_>>();
-        target.sort();
-
+    ) -> AcmeResult<Option<u64>> {
         let now = now as i64;
-        let certificates = self.inner.data.tls_certificates.load();
-        for name in &target {
-            let Some(certified_key) = certificates.get(name.strip_prefix("*.").unwrap_or(name))
-            else {
-                continue;
-            };
-            let Ok(leaf) = certified_key.end_entity_cert() else {
-                continue;
-            };
-            let Ok(parsed) = ParsedCert::parse_der(leaf.as_ref()) else {
-                continue;
-            };
+        let Some(certificate) = self.acme_certificate_by_domains(domains).await? else {
+            return Ok(None);
+        };
 
-            let mut sans = parsed.sans;
-            sans.sort();
-            if sans != target {
-                continue;
-            }
-
-            let not_valid_after = parsed.valid_not_after.timestamp();
-            if not_valid_after <= now {
-                return None;
-            }
-            let not_valid_before = parsed.valid_not_before.timestamp();
-            let renew_at =
-                Self::acme_renewal_due_at(not_valid_before, not_valid_after, renew_before);
-            return if now < renew_at {
-                Some(renew_at as u64)
-            } else {
-                None
-            };
+        let not_valid_after = certificate.not_valid_after.timestamp();
+        if not_valid_after <= now {
+            return Ok(None);
         }
-
-        None
+        let not_valid_before = certificate.not_valid_before.timestamp();
+        let renew_at = Self::acme_renewal_due_at(not_valid_before, not_valid_after, renew_before);
+        Ok(if now < renew_at {
+            Some(renew_at as u64)
+        } else {
+            None
+        })
     }
 
     fn acme_renewal_due_at(

@@ -11,6 +11,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
   - OAuth Profile for Open Public Clients ([draft-ietf-mailmaint-oauth-public](https://datatracker.ietf.org/doc/draft-ietf-mailmaint-oauth-public/))
   - Client secret verification for confidential clients.
 - HTTP: Add `redirectRoot` option to `Http` object to allow redirecting requests to the root path to a different path (e.g. `/account`).
+- ACME: `reuseKey` option to allow reusing private keys in renewals.
 
 ## Changed
 

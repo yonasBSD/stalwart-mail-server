@@ -988,6 +988,7 @@ pub enum Property {
     RetryCount = 640,
     RetryDue = 641,
     ReturnPath = 635,
+    ReuseKey = 912,
     ReverseIpVerify = 692,
     Rewrite = 565,
     RoleIds = 193,

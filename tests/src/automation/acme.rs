@@ -21,7 +21,7 @@ use registry::{
             TaskDomainManagement,
         },
     },
-    types::{datetime::UTCDateTime, map::Map},
+    types::{datetime::UTCDateTime, id::ObjectId, map::Map},
 };
 use serde_json::json;
 use store::{registry::write::RegistryWrite, write::now};
@@ -280,10 +280,10 @@ pub async fn test(test: &TestServer) {
     let not_valid_before = certificate.not_valid_before.timestamp();
     let length = not_valid_after - not_valid_before;
     assert_eq!(
-        not_valid_after - length / 2,
+        not_valid_before + length / 2,
         task.due_timestamp() as i64,
         "ACME renewal task has incorrect due timestamp, expected around {} but found {}",
-        not_valid_after - length / 2,
+        not_valid_before + length / 2,
         task.due_timestamp() as i64
     );
     account.registry_destroy_all(ObjectType::Certificate).await;
@@ -537,6 +537,105 @@ pub async fn test(test: &TestServer) {
     account.registry_destroy_all(ObjectType::Task).await;
     account.registry_destroy_all(ObjectType::AcmeProvider).await;
 
+    // reuse_key: the keypair (and thus the SPKI published in DANE "3 1 1" records) must
+    // stay stable across renewals when enabled, and rotate when disabled.
+    for (reuse_key, expect_stable) in [(true, true), (false, false)] {
+        account.registry_destroy_all(ObjectType::Certificate).await;
+        account.registry_destroy_all(ObjectType::Task).await;
+
+        let reuse_acme_id = account
+            .registry_create_object(AcmeProvider {
+                directory: "https://localhost:14000/dir".to_string(),
+                contact: Map::new(vec!["mailto:hello@reuse.org".to_string()]),
+                challenge_type: AcmeChallengeType::TlsAlpn01,
+                reuse_key,
+                ..Default::default()
+            })
+            .await;
+        let reuse_domain_id = account
+            .registry_create_object(Domain {
+                name: "reuse.org".to_string(),
+                certificate_management: CertificateManagement::Automatic(
+                    CertificateManagementProperties {
+                        acme_provider_id: reuse_acme_id,
+                        subject_alternative_names: Default::default(),
+                    },
+                ),
+                dkim_management: DkimManagement::Manual,
+                dns_management: DnsManagement::Automatic(DnsManagementProperties {
+                    dns_server_id: in_memory_dns_id,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            })
+            .await;
+
+        // Initial issuance
+        test.wait_for_tasks_skip_not_due().await;
+        let (first_id, first_cert) = account
+            .registry_get_all::<Certificate>()
+            .await
+            .into_iter()
+            .next()
+            .expect("a certificate to be issued");
+        let first_chain = first_cert.certificate.value().await.unwrap().into_owned();
+        let first_key = leaf_public_key(&first_chain);
+
+        // Backdate the stored certificate so a renewal is immediately due, then renew it.
+        // The reuse path must locate this certificate by its SANs and reuse its private key.
+        let reference = store::write::now() as i64;
+        let object_id = ObjectId::new(ObjectType::Certificate, first_id);
+        let old = test
+            .server
+            .registry()
+            .get(object_id)
+            .await
+            .unwrap()
+            .expect("stored certificate");
+        let mut backdated = Certificate::from(old.clone());
+        backdated.not_valid_before = UTCDateTime::from_timestamp(reference - 1_000_000);
+        backdated.not_valid_after = UTCDateTime::from_timestamp(reference - 10);
+        test.server
+            .registry()
+            .write(RegistryWrite::update(first_id, &backdated.into(), &old))
+            .await
+            .unwrap();
+        test.server
+            .acme_renew(reuse_domain_id)
+            .await
+            .ok()
+            .expect("certificate renewal to succeed");
+
+        let (_, renewed_cert) = account
+            .registry_get_all::<Certificate>()
+            .await
+            .into_iter()
+            .find(|(id, _)| *id != first_id)
+            .expect("a renewed certificate");
+        let renewed_chain = renewed_cert.certificate.value().await.unwrap().into_owned();
+        let second_key = leaf_public_key(&renewed_chain);
+
+        if expect_stable {
+            assert_eq!(
+                first_key, second_key,
+                "reuse_key=true must preserve the certificate public key across renewals"
+            );
+        } else {
+            assert_ne!(
+                first_key, second_key,
+                "reuse_key=false must rotate the certificate public key on renewal"
+            );
+        }
+
+        account
+            .registry_destroy(ObjectType::Domain, [reuse_domain_id])
+            .await
+            .assert_destroyed(&[reuse_domain_id]);
+        account.registry_destroy_all(ObjectType::Certificate).await;
+        account.registry_destroy_all(ObjectType::Task).await;
+        account.registry_destroy_all(ObjectType::AcmeProvider).await;
+    }
+
     // Cleanup
     account
         .registry_update_object(
@@ -748,6 +847,15 @@ fn subject_common_name(pem: &str) -> Option<String> {
         .filter_map(|cn| cn.as_str().ok())
         .next()
         .map(str::to_string)
+}
+
+fn leaf_public_key(chain: &str) -> Vec<u8> {
+    let block = Pem::iter_from_buffer(chain.as_bytes())
+        .next()
+        .expect("certificate chain should contain a leaf")
+        .expect("valid PEM block");
+    let cert = block.parse_x509().expect("valid leaf certificate");
+    cert.public_key().raw.to_vec()
 }
 
 fn top_issuer_common_name(chain: &str) -> Option<String> {

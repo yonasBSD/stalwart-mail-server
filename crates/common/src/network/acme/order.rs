@@ -93,14 +93,21 @@ impl AcmeRequestBuilder {
         &self,
         server: &Server,
         domains: Vec<String>,
+        reuse_key_pem: Option<String>,
         dns_parameters: Option<AcmeDnsParameters>,
     ) -> AcmeResult<PemCert> {
         let mut params = CertificateParams::new(domains.clone()).map_err(|err| {
             AcmeError::Crypto(format!("Failed to create certificate params: {}", err))
         })?;
         params.distinguished_name = DistinguishedName::new();
-        let key_pair = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256)
-            .map_err(|err| AcmeError::Crypto(format!("Failed to generate key pair: {}", err)))?;
+        let key_pair = match reuse_key_pem {
+            Some(pem) => KeyPair::from_pem(&pem).map_err(|err| {
+                AcmeError::Crypto(format!("Failed to load private key for reuse: {}", err))
+            })?,
+            None => KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).map_err(|err| {
+                AcmeError::Crypto(format!("Failed to generate key pair: {}", err))
+            })?,
+        };
         let response = self.new_order(domains.clone()).await?;
         let order_url = response.location;
         let mut order = response.body;

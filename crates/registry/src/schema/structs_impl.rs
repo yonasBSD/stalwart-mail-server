@@ -289,7 +289,7 @@ impl RegistryJsonPropertyPatch for AccountSettings {
 
 impl ObjectImpl for AcmeProvider {
     const FLAGS: u64 = OBJ_FILTER_TENANT;
-    const VERSION: u8 = 1;
+    const VERSION: u8 = 2;
     const OBJECT: ObjectType = ObjectType::AcmeProvider;
 
     fn validate(&self, errors: &mut Vec<ValidationError>) -> bool {
@@ -351,6 +351,7 @@ impl Pickle for AcmeProvider {
         self.max_retries.pickle(out);
         self.member_tenant_id.pickle(out);
         self.preferred_chain.pickle(out);
+        self.reuse_key.pickle(out);
     }
 
     fn unpickle(stream: &mut crate::pickle::PickledStream<'_>) -> Option<Self> {
@@ -365,6 +366,9 @@ impl Pickle for AcmeProvider {
         this.member_tenant_id = Pickle::unpickle(stream)?;
         if stream.version() >= 1 {
             this.preferred_chain = Pickle::unpickle(stream)?;
+        }
+        if stream.version() >= 2 {
+            this.reuse_key = Pickle::unpickle(stream)?;
         }
         Some(this)
     }
@@ -382,13 +386,14 @@ impl Default for AcmeProvider {
             max_retries: 10i64,
             member_tenant_id: Default::default(),
             preferred_chain: Default::default(),
+            reuse_key: false,
         }
     }
 }
 
 impl IntoValue for AcmeProvider {
     fn into_value(self) -> JmapValue<'static> {
-        let mut map = jmap_tools::Map::with_capacity(11);
+        let mut map = jmap_tools::Map::with_capacity(12);
         map.insert_unchecked(Property::ChallengeType, self.challenge_type.into_value());
         map.insert_unchecked(Property::Contact, self.contact.into_value());
         map.insert_unchecked(Property::Directory, self.directory.into_value());
@@ -398,6 +403,7 @@ impl IntoValue for AcmeProvider {
         map.insert_unchecked(Property::MaxRetries, self.max_retries.into_value());
         map.insert_unchecked(Property::MemberTenantId, self.member_tenant_id.into_value());
         map.insert_unchecked(Property::PreferredChain, self.preferred_chain.into_value());
+        map.insert_unchecked(Property::ReuseKey, self.reuse_key.into_value());
         JmapValue::Object(map)
     }
 }
@@ -435,6 +441,7 @@ impl RegistryJsonPropertyPatch for AcmeProvider {
             Some(Property::PreferredChain) => self
                 .preferred_chain
                 .patch(pointer.with_validators(&[StringValidator::Trim]), value),
+            Some(Property::ReuseKey) => self.reuse_key.patch(pointer, value),
             Some(Property::Type) => Ok(MaybeUnpatched::Unpatched {
                 property: Property::Type,
                 value,
