@@ -93,7 +93,7 @@ impl SmtpSpool for Server {
             span_id,
             message: Message {
                 created,
-                return_path: return_path.to_lowercase_domain().into_boxed_str(),
+                return_path: return_path.to_lowercase_address(false).into_boxed_str(),
                 recipients: Vec::with_capacity(1),
                 flags: 0,
                 env_id: None,

@@ -41,9 +41,14 @@ use store::{
 };
 use trc::{AddContext, StoreEvent};
 use types::id::Id;
+use utils::DomainPart;
 
 impl Server {
     pub async fn domain(&self, domain: &str) -> trc::Result<Option<Arc<DomainCache>>> {
+        let Some(domain) = domain.to_ascii_domain() else {
+            return Ok(None);
+        };
+        let domain = domain.as_ref();
         let domain_names = &self.inner.cache.domain_names;
 
         if let Some(domain_id) = domain_names.get(domain) {
