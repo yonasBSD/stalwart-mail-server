@@ -211,5 +211,7 @@ async fn rcpt() {
     session.ehlo("mx1.foobar.org").await;
     session.mail_from("idn2@example.net", "250").await;
     session.rcpt_to("nobody@straß6.de", "550 5.1.2").await;
-    session.rcpt_to("nobody@xn--stra6-oqa.de", "550 5.1.2").await;
+    session
+        .rcpt_to("nobody@xn--stra6-oqa.de", "550 5.1.2")
+        .await;
 }

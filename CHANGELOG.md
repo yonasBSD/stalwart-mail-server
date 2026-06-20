@@ -44,6 +44,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 - OIDC: Add default domain name to groups that are not email addresses.
 - RocksDB: Enable blob garbage collection to reclaim disk space from deleted blobs.
 - Sieve: `include` statements ignore capitalisation of sub-script names (#1643)
+- Cache: Invalidate negative email caches when an account is created.
 - Troubleshoot tool: Use the configured source IP address when connecting to remote servers (#2867).
 
 ## [0.16.9] - 2026-06-15

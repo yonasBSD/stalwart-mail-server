@@ -602,6 +602,7 @@ impl RegistrySet for Server {
                             Modification::Create { client_id, .. },
                             RegistryWriteResult::Success(id),
                         ) => {
+                            cache_invalidator.process_create(&new_object);
                             response.object.insert(Property::Id, RegistryValue::Id(id));
                             set.response
                                 .created
