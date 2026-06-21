@@ -15,6 +15,7 @@ pub mod fetch;
 pub mod idle;
 pub mod mailbox;
 pub mod managesieve;
+pub mod objectid;
 pub mod pop;
 pub mod search;
 pub mod store;
@@ -249,6 +250,7 @@ pub async fn imap_tests() {
     append::test(&mut imap, &mut imap_check, &test).await;
     search::test(&mut imap, &mut imap_check, &test).await;
     fetch::test(&mut imap, &mut imap_check).await;
+    objectid::test(&test).await;
     store::test(&mut imap, &mut imap_check, &test).await;
     copy_move::test(&mut imap, &mut imap_check).await;
     thread::test(&mut imap, &mut imap_check, &test).await;

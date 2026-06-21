@@ -13,7 +13,9 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
   - Client secret verification for confidential clients.
 - HTTP: Add `redirectRoot` option to `Http` object to allow redirecting requests to the root path to a different path (e.g. `/account`).
 - ACME: `reuseKey` option to allow reusing private keys in renewals.
-- IMAP: `GETJMAPACCESS` command to discover the JMAP session resource URL (#2736).
+- IMAP: 
+  - IMAP Extension for Object Identifiers ([draft-ietf-mailmaint-imap-objectid-bis](https://datatracker.ietf.org/doc/draft-ietf-mailmaint-imap-objectid-bis/))
+  - `GETJMAPACCESS` command to discover the JMAP session resource URL (#2736).
 
 ## Changed
 

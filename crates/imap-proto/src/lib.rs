@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use protocol::ObjectId;
 use protocol::capability::Capability;
 use std::borrow::Cow;
 
@@ -149,9 +150,7 @@ pub enum ResponseCode {
     },
 
     // ObjectID
-    MailboxId {
-        mailbox_id: String,
-    },
+    ObjectId(ObjectId),
 
     // USEATTR
     UseAttr,
