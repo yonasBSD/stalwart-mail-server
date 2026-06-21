@@ -22,8 +22,8 @@ use mail_auth::{
     report::tlsrpt::ResultType,
 };
 use rcgen::{
-    BasicConstraints, CertificateParams, DnType, IsCa, Issuer, KeyPair, KeyUsagePurpose,
-    PublicKeyData, date_time_ymd,
+    BasicConstraints, CertificateParams, DnType, ExtendedKeyUsagePurpose, IsCa, Issuer, KeyPair,
+    KeyUsagePurpose, PublicKeyData, date_time_ymd,
 };
 use registry::schema::{
     enums::MtaRequiredOrOptional,
@@ -48,7 +48,7 @@ use store::write::now;
 #[tokio::test]
 #[serial_test::serial]
 async fn dane_verify() {
-    let mut local = TestServerBuilder::new("smtp_dane_local")
+    let mut local = TestServerBuilder::new("smtp_dane_verify_local")
         .await
         .with_http_listener(19018)
         .await
@@ -57,7 +57,7 @@ async fn dane_verify() {
         .capture_reporting()
         .build()
         .await;
-    let mut remote = TestServerBuilder::new("smtp_dane_remote")
+    let mut remote = TestServerBuilder::new("smtp_dane_verify_remote")
         .await
         .with_dummy_tls_cert(["*.foobar.org"])
         .await
@@ -373,6 +373,7 @@ async fn dane_downgrade_on_tlsa_servfail() {
 }
 
 #[tokio::test]
+#[serial_test::serial]
 async fn dane_test() {
     let test = TestServerBuilder::new("smtp_dane_remote")
         .await
@@ -699,6 +700,20 @@ fn sub_ca(common_name: &str, parent: &TestCa) -> TestCa {
     }
 }
 
+fn sub_ca_path_len(common_name: &str, parent: &TestCa, path_len: u8) -> TestCa {
+    let key = KeyPair::generate().unwrap();
+    let mut params = ca_params(common_name);
+    params.is_ca = IsCa::Ca(BasicConstraints::Constrained(path_len));
+    let cert = params.signed_by(&key, &parent.issuer).unwrap();
+    let der = cert.der().clone();
+    let spki = key.subject_public_key_info();
+    TestCa {
+        issuer: Issuer::new(params, key),
+        der,
+        spki,
+    }
+}
+
 fn leaf_cert(san: &str, parent: &TestCa) -> (CertificateDer<'static>, Vec<u8>) {
     let key = KeyPair::generate().unwrap();
     let mut params = CertificateParams::new(vec![san.to_string()]).unwrap();
@@ -740,4 +755,580 @@ fn tlsa(entries: Vec<TlsaEntry>) -> Tlsa {
         has_intermediates: entries.iter().any(|entry| !entry.is_end_entity),
         entries,
     }
+}
+
+#[test]
+fn dane_ta_does_not_match_leaf() {
+    let root = root_ca("Depth Root");
+    let intermediate = sub_ca("Depth Intermediate", &root);
+    let (leaf_der, _) = leaf_cert("mx.foobar.org", &intermediate);
+    let chain = vec![leaf_der.clone(), intermediate.der.clone(), root.der.clone()];
+
+    let record = tlsa(vec![ta_full_sha256(&leaf_der)]);
+    assert!(
+        record
+            .verify(0, "mx.foobar.org", &["mx.foobar.org"], Some(&chain))
+            .is_err()
+    );
+
+    let ee = tlsa(vec![ee_full_sha256(&leaf_der)]);
+    assert!(
+        ee.verify(0, "mx.foobar.org", &["mx.foobar.org"], Some(&chain))
+            .is_ok()
+    );
+}
+
+#[test]
+fn dane_ta_bare_key_in_chain() {
+    let root = root_ca("In Chain Root");
+    let intermediate = sub_ca("In Chain Intermediate", &root);
+    let (leaf_der, _) = leaf_cert("mx.foobar.org", &intermediate);
+    let chain = vec![leaf_der, intermediate.der.clone(), root.der.clone()];
+
+    let record = tlsa(vec![ta_spki_full(&intermediate.spki)]);
+    assert!(
+        record
+            .verify(0, "mx.foobar.org", &["mx.foobar.org"], Some(&chain))
+            .is_ok()
+    );
+}
+
+#[test]
+fn dane_ta_bare_key_anchors_deep_chain() {
+    let root = root_ca("Deep Bare Key Root");
+    let intermediate1 = sub_ca("Deep Bare Key Intermediate 1", &root);
+    let intermediate2 = sub_ca("Deep Bare Key Intermediate 2", &intermediate1);
+    let (leaf_der, _) = leaf_cert("mx.foobar.org", &intermediate2);
+    let chain = vec![
+        leaf_der,
+        intermediate2.der.clone(),
+        intermediate1.der.clone(),
+    ];
+
+    let record = tlsa(vec![ta_spki_full(&root.spki)]);
+    assert!(
+        record
+            .verify(0, "mx.foobar.org", &["mx.foobar.org"], Some(&chain))
+            .is_ok()
+    );
+
+    let unrelated = root_ca("Deep Bare Key Unrelated");
+    let wrong = tlsa(vec![ta_spki_full(&unrelated.spki)]);
+    assert!(
+        wrong
+            .verify(0, "mx.foobar.org", &["mx.foobar.org"], Some(&chain))
+            .is_err()
+    );
+}
+
+#[test]
+fn dane_ta_rejects_path_len_violation() {
+    let root = root_ca("Path Len Root");
+    let constrained = sub_ca_path_len("Path Len Constrained", &root, 0);
+    let extra = sub_ca("Path Len Extra", &constrained);
+    let (leaf_der, _) = leaf_cert("mx.foobar.org", &extra);
+    let chain = vec![
+        leaf_der,
+        extra.der.clone(),
+        constrained.der.clone(),
+        root.der.clone(),
+    ];
+
+    let record = tlsa(vec![ta_full_sha256(&root.der)]);
+    assert!(
+        record
+            .verify(0, "mx.foobar.org", &["mx.foobar.org"], Some(&chain))
+            .is_err()
+    );
+
+    let allowed = root_ca("Path Len Allowed Root");
+    let constrained = sub_ca_path_len("Path Len Allowed Constrained", &allowed, 0);
+    let (leaf_der, _) = leaf_cert("mx.foobar.org", &constrained);
+    let chain = vec![leaf_der, constrained.der.clone(), allowed.der.clone()];
+
+    let record = tlsa(vec![ta_full_sha256(&allowed.der)]);
+    assert!(
+        record
+            .verify(0, "mx.foobar.org", &["mx.foobar.org"], Some(&chain))
+            .is_ok()
+    );
+}
+
+#[test]
+fn dane_ta_validates_unordered_padded_chain() {
+    let root = root_ca("Unordered Root");
+    let intermediate = sub_ca("Unordered Intermediate", &root);
+    let (leaf_der, _) = leaf_cert("mx.foobar.org", &intermediate);
+    let noise = root_ca("Unordered Noise");
+    let chain = vec![
+        leaf_der,
+        root.der.clone(),
+        noise.der.clone(),
+        intermediate.der.clone(),
+    ];
+
+    let record = tlsa(vec![ta_full_sha256(&intermediate.der)]);
+    assert!(
+        record
+            .verify(0, "mx.foobar.org", &["mx.foobar.org"], Some(&chain))
+            .is_ok()
+    );
+}
+
+#[test]
+fn dane_ta_rejects_non_ca_issuer() {
+    let root = root_ca("Non CA Root");
+    let forged = sub_ca_non_ca("Non CA Intermediate", &root);
+    let (leaf_der, _) = leaf_cert("mx.foobar.org", &forged);
+    let chain = vec![leaf_der, forged.der.clone(), root.der.clone()];
+
+    let record = tlsa(vec![ta_full_sha256(&root.der)]);
+    assert!(
+        record
+            .verify(0, "mx.foobar.org", &["mx.foobar.org"], Some(&chain))
+            .is_err()
+    );
+}
+
+#[test]
+fn dane_ta_rejects_ee_without_server_auth_eku() {
+    let root = root_ca("EKU Root");
+    let intermediate = sub_ca("EKU Intermediate", &root);
+    let (leaf_der, _) = leaf_cert_eku(
+        "mx.foobar.org",
+        &intermediate,
+        vec![ExtendedKeyUsagePurpose::ClientAuth],
+    );
+    let chain = vec![leaf_der, intermediate.der.clone(), root.der.clone()];
+
+    let record = tlsa(vec![ta_full_sha256(&intermediate.der)]);
+    assert!(
+        record
+            .verify(0, "mx.foobar.org", &["mx.foobar.org"], Some(&chain))
+            .is_err()
+    );
+}
+
+#[test]
+fn dane_ta_accepts_ee_with_server_auth_eku() {
+    let root = root_ca("EKU OK Root");
+    let intermediate = sub_ca("EKU OK Intermediate", &root);
+    let (leaf_der, _) = leaf_cert_eku(
+        "mx.foobar.org",
+        &intermediate,
+        vec![ExtendedKeyUsagePurpose::ServerAuth],
+    );
+    let chain = vec![leaf_der, intermediate.der.clone(), root.der.clone()];
+
+    let record = tlsa(vec![ta_full_sha256(&intermediate.der)]);
+    assert!(
+        record
+            .verify(0, "mx.foobar.org", &["mx.foobar.org"], Some(&chain))
+            .is_ok()
+    );
+}
+
+#[test]
+fn dane_ta_ignores_common_name() {
+    let root = root_ca("CN Root");
+    let intermediate = sub_ca("CN Intermediate", &root);
+    let leaf_der = leaf_cert_cn_only("mx.foobar.org", &intermediate);
+    let chain = vec![leaf_der, intermediate.der.clone(), root.der.clone()];
+
+    let record = tlsa(vec![ta_full_sha256(&intermediate.der)]);
+    assert!(
+        record
+            .verify(0, "mx.foobar.org", &["mx.foobar.org"], Some(&chain))
+            .is_err()
+    );
+}
+
+fn sub_ca_non_ca(common_name: &str, parent: &TestCa) -> TestCa {
+    let key = KeyPair::generate().unwrap();
+    let mut params = CertificateParams::new(Vec::<String>::new()).unwrap();
+    params.is_ca = IsCa::ExplicitNoCa;
+    params
+        .distinguished_name
+        .push(DnType::CommonName, common_name);
+    let cert = params.signed_by(&key, &parent.issuer).unwrap();
+    let der = cert.der().clone();
+    let spki = key.subject_public_key_info();
+    TestCa {
+        issuer: Issuer::new(params, key),
+        der,
+        spki,
+    }
+}
+
+fn leaf_cert_eku(
+    san: &str,
+    parent: &TestCa,
+    ekus: Vec<ExtendedKeyUsagePurpose>,
+) -> (CertificateDer<'static>, Vec<u8>) {
+    let key = KeyPair::generate().unwrap();
+    let mut params = CertificateParams::new(vec![san.to_string()]).unwrap();
+    params.distinguished_name.push(DnType::CommonName, san);
+    params.extended_key_usages = ekus;
+    let cert = params.signed_by(&key, &parent.issuer).unwrap();
+    (cert.der().clone(), key.subject_public_key_info())
+}
+
+fn leaf_cert_cn_only(common_name: &str, parent: &TestCa) -> CertificateDer<'static> {
+    let key = KeyPair::generate().unwrap();
+    let mut params = CertificateParams::new(Vec::<String>::new()).unwrap();
+    params
+        .distinguished_name
+        .push(DnType::CommonName, common_name);
+    let cert = params.signed_by(&key, &parent.issuer).unwrap();
+    cert.der().clone()
+}
+
+fn ee_full_sha256(der: &CertificateDer<'_>) -> TlsaEntry {
+    TlsaEntry {
+        is_end_entity: true,
+        is_spki: false,
+        matching: TlsaMatching::Sha256,
+        data: Sha256::digest(der.as_ref()).to_vec(),
+    }
+}
+
+#[tokio::test]
+#[ignore = "live network test: requires outbound TCP port 25 and a DNSSEC-validating resolver path"]
+async fn dane_live_smtp_hosts() {
+    use mail_auth::hickory_resolver::{
+        TokioResolver,
+        config::{CLOUDFLARE, ResolverConfig, ResolverOpts},
+        net::runtime::TokioRuntimeProvider,
+        proto::rr::{
+            Name, RData,
+            rdata::tlsa::{CertUsage, Matching, Selector},
+        },
+    };
+    use smtp::outbound::client::{SmtpClient, StartTlsResult};
+    use std::net::{IpAddr, SocketAddr};
+    use tokio::io::AsyncWriteExt;
+    use tokio_rustls::TlsConnector;
+    use utils::tls::build_tls_connector;
+
+    enum DaneProbe {
+        Verified {
+            mx: String,
+            usages: Vec<String>,
+            chain_len: usize,
+            native_ee: bool,
+            native_ta: bool,
+            webpki_forced: Option<bool>,
+        },
+        Skipped(String),
+        Failed {
+            mx: String,
+            reason: String,
+        },
+    }
+
+    async fn probe(resolver: &TokioResolver, connector: &TlsConnector, domain: &str) -> DaneProbe {
+        let mx_lookup = match resolver.mx_lookup(format!("{domain}.")).await {
+            Ok(lookup) => lookup,
+            Err(err) => return DaneProbe::Skipped(format!("MX lookup failed: {err}")),
+        };
+        let mut mx_hosts: Vec<(u16, String)> = mx_lookup
+            .answers()
+            .iter()
+            .filter_map(|record| match &record.data {
+                RData::MX(mx) => Some((
+                    mx.preference,
+                    mx.exchange.to_string().trim_end_matches('.').to_string(),
+                )),
+                _ => None,
+            })
+            .collect();
+        mx_hosts.sort_by_key(|(preference, _)| *preference);
+        if mx_hosts.is_empty() {
+            mx_hosts.push((0, domain.to_string()));
+        }
+
+        for (_, mx) in &mx_hosts {
+            let tlsa_name = match Name::from_str_relaxed(format!("_25._tcp.{mx}.")) {
+                Ok(name) => name,
+                Err(err) => {
+                    return DaneProbe::Skipped(format!("invalid TLSA name for {mx}: {err}"));
+                }
+            };
+            let tlsa_lookup = match resolver.tlsa_lookup(tlsa_name).await {
+                Ok(lookup) => lookup,
+                Err(_) => continue,
+            };
+
+            let mut entries = Vec::new();
+            let mut usages = Vec::new();
+            let mut has_end_entities = false;
+            let mut has_intermediates = false;
+            for record in tlsa_lookup.answers() {
+                if let RData::TLSA(tlsa) = &record.data {
+                    if !record.proof.is_secure() {
+                        continue;
+                    }
+                    let is_end_entity = match tlsa.cert_usage {
+                        CertUsage::DaneEe => true,
+                        CertUsage::DaneTa => false,
+                        _ => continue,
+                    };
+                    let matching = match tlsa.matching {
+                        Matching::Raw => TlsaMatching::Full,
+                        Matching::Sha256 => TlsaMatching::Sha256,
+                        Matching::Sha512 => TlsaMatching::Sha512,
+                        _ => continue,
+                    };
+                    let is_spki = match tlsa.selector {
+                        Selector::Spki => true,
+                        Selector::Full => false,
+                        _ => continue,
+                    };
+                    if is_end_entity {
+                        has_end_entities = true;
+                    } else {
+                        has_intermediates = true;
+                    }
+                    let usage = format!(
+                        "{} {} {}",
+                        if is_end_entity { 3 } else { 2 },
+                        if is_spki { 1 } else { 0 },
+                        match matching {
+                            TlsaMatching::Full => 0,
+                            TlsaMatching::Sha256 => 1,
+                            TlsaMatching::Sha512 => 2,
+                        }
+                    );
+                    if !usages.contains(&usage) {
+                        usages.push(usage);
+                    }
+                    entries.push(TlsaEntry {
+                        is_end_entity,
+                        is_spki,
+                        matching,
+                        data: tlsa.cert_data.clone(),
+                    });
+                }
+            }
+            if entries.is_empty() {
+                continue;
+            }
+            let tlsa = Tlsa {
+                entries,
+                has_end_entities,
+                has_intermediates,
+            };
+
+            let mut ips: Vec<IpAddr> = match resolver.lookup_ip(format!("{mx}.")).await {
+                Ok(ips) => ips.iter().collect(),
+                Err(err) => {
+                    return DaneProbe::Skipped(format!("address lookup failed for {mx}: {err}"));
+                }
+            };
+            if ips.is_empty() {
+                return DaneProbe::Skipped(format!("no A/AAAA records for {mx}"));
+            }
+            ips.sort_by_key(|ip| ip.is_ipv6());
+
+            let mut connected = None;
+            let mut last_error = String::new();
+            for ip in ips {
+                match SmtpClient::connect(SocketAddr::new(ip, 25), Duration::from_secs(20), 0).await
+                {
+                    Ok(client) => {
+                        connected = Some(client);
+                        break;
+                    }
+                    Err(err) => {
+                        last_error = format!("connect to [{ip}]:25 ({mx}) failed: {err:?}");
+                    }
+                }
+            }
+            let mut client = match connected {
+                Some(client) => client,
+                None => return DaneProbe::Skipped(last_error),
+            };
+            if let Err(err) = client.read_greeting(mx).await {
+                return DaneProbe::Skipped(format!("greeting from {mx} failed: {err:?}"));
+            }
+            if client
+                .stream
+                .write_all(b"EHLO dane-live-test.invalid\r\n")
+                .await
+                .is_err()
+            {
+                return DaneProbe::Skipped(format!("EHLO write to {mx} failed"));
+            }
+            let _ = client.stream.flush().await;
+            let capabilities = match client.read_ehlo().await {
+                Ok(capabilities) => capabilities,
+                Err(err) => return DaneProbe::Skipped(format!("EHLO to {mx} failed: {err:?}")),
+            };
+
+            let tls_client = match client.try_start_tls(connector, mx, &capabilities).await {
+                StartTlsResult::Success { smtp_client } => smtp_client,
+                StartTlsResult::Unavailable { .. } => {
+                    return DaneProbe::Skipped(format!("{mx} does not offer STARTTLS"));
+                }
+                StartTlsResult::Error { error } => {
+                    return DaneProbe::Skipped(format!("STARTTLS with {mx} failed: {error:?}"));
+                }
+            };
+
+            let certificates = match tls_client.tls_connection().peer_certificates() {
+                Some(certificates) => certificates.to_vec(),
+                None => {
+                    return DaneProbe::Failed {
+                        mx: mx.clone(),
+                        reason: "server presented no certificates after TLS handshake".into(),
+                    };
+                }
+            };
+
+            let reference_ids = [mx.as_str(), domain];
+
+            if let Err(status) = tlsa.verify(0, mx, &reference_ids, Some(&certificates)) {
+                return DaneProbe::Failed {
+                    mx: mx.clone(),
+                    reason: format!("TLSA verification rejected a live DANE host: {status:?}"),
+                };
+            }
+
+            let verify_subset = |keep_end_entity: bool| {
+                let entries: Vec<TlsaEntry> = tlsa
+                    .entries
+                    .iter()
+                    .filter(|entry| entry.is_end_entity == keep_end_entity)
+                    .cloned()
+                    .collect();
+                if entries.is_empty() {
+                    return false;
+                }
+                Tlsa {
+                    has_end_entities: keep_end_entity,
+                    has_intermediates: !keep_end_entity,
+                    entries,
+                }
+                .verify(0, mx, &reference_ids, Some(&certificates))
+                .is_ok()
+            };
+            let native_ee = verify_subset(true);
+            let native_ta = verify_subset(false);
+
+            // Force the rustls-webpki trust-chain path
+            let webpki_forced = (certificates.len() >= 2).then(|| {
+                let anchor = certificates.last().unwrap();
+                Tlsa {
+                    entries: vec![TlsaEntry {
+                        is_end_entity: false,
+                        is_spki: false,
+                        matching: TlsaMatching::Sha256,
+                        data: Sha256::digest(anchor.as_ref()).to_vec(),
+                    }],
+                    has_end_entities: false,
+                    has_intermediates: true,
+                }
+                .verify(0, mx, &reference_ids, Some(&certificates))
+                .is_ok()
+            });
+
+            return DaneProbe::Verified {
+                mx: mx.clone(),
+                usages,
+                chain_len: certificates.len(),
+                native_ee,
+                native_ta,
+                webpki_forced,
+            };
+        }
+
+        DaneProbe::Skipped("no MX host published usable secure TLSA records".into())
+    }
+
+    let _ = tokio_rustls::rustls::crypto::aws_lc_rs::default_provider().install_default();
+
+    let mut opts = ResolverOpts::default();
+    opts.validate = true;
+    opts.cache_size = 0;
+    let resolver = TokioResolver::builder_with_config(
+        ResolverConfig::udp_and_tcp(&CLOUDFLARE),
+        TokioRuntimeProvider::default(),
+    )
+    .with_options(opts)
+    .build()
+    .expect("failed to build DNSSEC-validating resolver");
+    let connector = build_tls_connector(true).expect("failed to build TLS connector");
+
+    let domains = [
+        "dukhovni.org",
+        "nlnetlabs.nl",
+        "debian.org",
+        "freebsd.org",
+        "posteo.de",
+        "mailbox.org",
+    ];
+
+    let mut verified = 0usize;
+    let mut webpki_chain_validated = 0usize;
+    let mut hard_failures = Vec::new();
+    for domain in domains {
+        match probe(&resolver, &connector, domain).await {
+            DaneProbe::Verified {
+                mx,
+                usages,
+                chain_len,
+                native_ee,
+                native_ta,
+                webpki_forced,
+            } => {
+                verified += 1;
+                let native_path = match (native_ee, native_ta) {
+                    (true, true) => "EE+TA",
+                    (true, false) => "EE (no webpki)",
+                    (false, true) => "TA (webpki)",
+                    (false, false) => "?",
+                };
+                let forced = match webpki_forced {
+                    Some(true) => {
+                        webpki_chain_validated += 1;
+                        "PASS"
+                    }
+                    Some(false) => "FAIL",
+                    None => "n/a (single-cert chain)",
+                };
+                if native_ta {
+                    webpki_chain_validated += 1;
+                }
+                println!(
+                    "[ OK ] {domain}: MX {mx} | TLSA [{}] | chain {chain_len} certs | native path: {native_path} | forced webpki-TA vs real chain: {forced}",
+                    usages.join(", ")
+                );
+                if webpki_forced == Some(false) {
+                    hard_failures.push(format!(
+                        "{domain} (MX {mx}): rustls-webpki rejected the server's own presented chain"
+                    ));
+                }
+            }
+            DaneProbe::Skipped(reason) => {
+                println!("[SKIP] {domain}: {reason}");
+            }
+            DaneProbe::Failed { mx, reason } => {
+                println!("[FAIL] {domain} (MX {mx}): {reason}");
+                hard_failures.push(format!("{domain} (MX {mx}): {reason}"));
+            }
+        }
+    }
+
+    assert!(
+        hard_failures.is_empty(),
+        "DANE verification rejected hosts that published valid secure TLSA records: {hard_failures:#?}"
+    );
+    assert!(
+        verified > 0,
+        "no DANE-enabled host could be reached and verified; check outbound port 25 and DNSSEC connectivity"
+    );
+    assert!(
+        webpki_chain_validated > 0,
+        "no host exercised the rustls-webpki trust-chain path; the live test only covered DANE-EE direct matches"
+    );
 }

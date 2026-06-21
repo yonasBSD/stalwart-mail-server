@@ -4,13 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use crate::queue::{Error, ErrorDetails, HostResponse, Status};
 use common::config::smtp::resolver::{Tlsa, TlsaEntry, TlsaMatching};
-use rustls_pki_types::CertificateDer;
+use rustls_pki_types::{CertificateDer, Der, ServerName, TrustAnchor, UnixTime};
 use sha2::{Digest, Sha256, Sha512};
 use trc::DaneEvent;
-use x509_parser::prelude::{FromDer, GeneralName, SubjectPublicKeyInfo, X509Certificate};
-
-use crate::queue::{Error, ErrorDetails, HostResponse, Status};
+use webpki::{ALL_VERIFICATION_ALGS, EndEntityCert, KeyUsage, anchor_from_trusted_cert};
+use x509_parser::asn1_rs::Any;
+use x509_parser::prelude::{FromDer, X509Certificate};
 
 pub trait TlsaVerify {
     fn verify(
@@ -20,11 +21,6 @@ pub trait TlsaVerify {
         reference_ids: &[&str],
         certificates: Option<&[CertificateDer<'_>]>,
     ) -> Result<(), Status<HostResponse<Box<str>>, ErrorDetails>>;
-}
-
-struct ChainCert<'a> {
-    raw: &'a [u8],
-    cert: X509Certificate<'a>,
 }
 
 impl TlsaVerify for Tlsa {
@@ -51,13 +47,10 @@ impl TlsaVerify for Tlsa {
             }
         };
 
-        let mut chain = Vec::with_capacity(certificates.len());
+        let mut parsed = Vec::with_capacity(certificates.len());
         for der_certificate in certificates {
             match X509Certificate::from_der(der_certificate.as_ref()) {
-                Ok((_, cert)) => chain.push(ChainCert {
-                    raw: der_certificate.as_ref(),
-                    cert,
-                }),
+                Ok((_, cert)) => parsed.push(cert),
                 Err(err) => {
                     trc::event!(
                         Dane(DaneEvent::CertificateParseError),
@@ -74,8 +67,15 @@ impl TlsaVerify for Tlsa {
             }
         }
 
-        if verify_end_entity(self, session_id, hostname, &chain)
-            || verify_trust_anchor(self, session_id, hostname, reference_ids, &chain)
+        if verify_end_entity(self, session_id, hostname, certificates, &parsed)
+            || verify_trust_anchor(
+                self,
+                session_id,
+                hostname,
+                reference_ids,
+                certificates,
+                &parsed,
+            )
         {
             trc::event!(
                 Dane(DaneEvent::AuthenticationSuccess),
@@ -103,23 +103,23 @@ fn verify_end_entity(
     tlsa: &Tlsa,
     session_id: u64,
     hostname: &str,
-    chain: &[ChainCert<'_>],
+    certificates: &[CertificateDer<'_>],
+    parsed: &[X509Certificate<'_>],
 ) -> bool {
-    if !tlsa.has_end_entities {
-        return false;
-    }
-    let leaf = &chain[0];
-    for record in tlsa.entries.iter().filter(|record| record.is_end_entity) {
-        if record_matches(record, &leaf.cert, leaf.raw) {
-            trc::event!(
-                Dane(DaneEvent::TlsaRecordMatch),
-                SpanId = session_id,
-                Hostname = hostname.to_string(),
-                Type = "end-entity",
-            );
-            return true;
+    if tlsa.has_end_entities {
+        for record in tlsa.entries.iter().filter(|record| record.is_end_entity) {
+            if record_matches(record, &parsed[0], certificates[0].as_ref()) {
+                trc::event!(
+                    Dane(DaneEvent::TlsaRecordMatch),
+                    SpanId = session_id,
+                    Hostname = hostname.to_string(),
+                    Type = "end-entity",
+                );
+                return true;
+            }
         }
     }
+
     false
 }
 
@@ -128,86 +128,98 @@ fn verify_trust_anchor(
     session_id: u64,
     hostname: &str,
     reference_ids: &[&str],
-    chain: &[ChainCert<'_>],
+    certificates: &[CertificateDer<'_>],
+    parsed: &[X509Certificate<'_>],
 ) -> bool {
     if !tlsa.has_intermediates {
         return false;
     }
 
-    let path = build_verified_chain(chain);
-    let leaf = &chain[path[0]];
+    let end_entity = match EndEntityCert::try_from(&certificates[0]) {
+        Ok(end_entity) => end_entity,
+        Err(_) => return false,
+    };
 
-    for depth in 0..path.len() {
-        let anchor = &chain[path[depth]];
+    let mut anchors: Vec<TrustAnchor<'static>> = Vec::new();
 
-        for record in tlsa.entries.iter().filter(|record| !record.is_end_entity) {
-            if record_matches(record, &anchor.cert, anchor.raw)
-                && dates_valid(chain, &path[..depth])
-                && name_matches(&leaf.cert, reference_ids)
-            {
-                trc::event!(
-                    Dane(DaneEvent::TlsaRecordMatch),
-                    SpanId = session_id,
-                    Hostname = hostname.to_string(),
-                    Type = "trust-anchor",
-                );
-                return true;
+    for record in tlsa.entries.iter().filter(|record| !record.is_end_entity) {
+        match (record.is_spki, record.matching) {
+            (false, TlsaMatching::Full) => {
+                let der = CertificateDer::from(record.data.clone());
+                if let Ok(anchor) = anchor_from_trusted_cert(&der) {
+                    anchors.push(anchor.to_owned());
+                }
             }
-        }
-
-        for record in tlsa.entries.iter().filter(|record| {
-            !record.is_end_entity && record.is_spki && record.matching == TlsaMatching::Full
-        }) {
-            if let Ok((_, spki)) = SubjectPublicKeyInfo::from_der(&record.data)
-                && anchor.cert.verify_signature(Some(&spki)).is_ok()
-                && dates_valid(chain, &path[..=depth])
-                && name_matches(&leaf.cert, reference_ids)
-            {
-                trc::event!(
-                    Dane(DaneEvent::TlsaRecordMatch),
-                    SpanId = session_id,
-                    Hostname = hostname.to_string(),
-                    Type = "trust-anchor-bare-key",
-                );
-                return true;
+            (true, TlsaMatching::Full) => {
+                if let Some(depth) = (1..certificates.len())
+                    .find(|&depth| parsed[depth].public_key().raw == record.data.as_slice())
+                {
+                    if let Ok(anchor) = anchor_from_trusted_cert(&certificates[depth]) {
+                        anchors.push(anchor.to_owned());
+                    }
+                } else if let Some(spki) = der_value(&record.data) {
+                    for depth in 1..certificates.len() {
+                        if is_chain_top(parsed, depth)
+                            && let Some(subject) = der_value(parsed[depth].issuer().as_raw())
+                        {
+                            anchors.push(TrustAnchor {
+                                subject: Der::from(subject.to_vec()),
+                                subject_public_key_info: Der::from(spki.to_vec()),
+                                name_constraints: None,
+                            });
+                        }
+                    }
+                }
+            }
+            _ => {
+                for depth in 1..certificates.len() {
+                    if record_matches(record, &parsed[depth], certificates[depth].as_ref())
+                        && let Ok(anchor) = anchor_from_trusted_cert(&certificates[depth])
+                    {
+                        anchors.push(anchor.to_owned());
+                    }
+                }
             }
         }
     }
 
-    false
-}
+    if anchors.is_empty()
+        || end_entity
+            .verify_for_usage(
+                ALL_VERIFICATION_ALGS,
+                &anchors,
+                &certificates[1..],
+                UnixTime::now(),
+                KeyUsage::server_auth(),
+                None,
+                None,
+            )
+            .is_err()
+        || !reference_ids.iter().any(|reference| {
+            ServerName::try_from(*reference)
+                .map(|name| end_entity.verify_is_valid_for_subject_name(&name).is_ok())
+                .unwrap_or(false)
+        })
+    {
+        false
+    } else {
+        trc::event!(
+            Dane(DaneEvent::TlsaRecordMatch),
+            SpanId = session_id,
+            Hostname = hostname.to_string(),
+            Type = "trust-anchor",
+        );
 
-fn build_verified_chain(chain: &[ChainCert<'_>]) -> Vec<usize> {
-    let mut path = vec![0];
-    let mut used = vec![false; chain.len()];
-    used[0] = true;
-
-    loop {
-        let current = &chain[*path.last().unwrap()].cert;
-        if current.verify_signature(None).is_ok() {
-            break;
-        }
-        let issuer = (0..chain.len()).find(|&idx| {
-            !used[idx]
-                && current
-                    .verify_signature(Some(chain[idx].cert.public_key()))
-                    .is_ok()
-        });
-        match issuer {
-            Some(idx) => {
-                used[idx] = true;
-                path.push(idx);
-            }
-            None => break,
-        }
+        true
     }
-
-    path
 }
 
-fn dates_valid(chain: &[ChainCert<'_>], path: &[usize]) -> bool {
-    path.iter()
-        .all(|&idx| chain[idx].cert.validity().is_valid())
+fn is_chain_top(parsed: &[X509Certificate<'_>], depth: usize) -> bool {
+    let issuer = parsed[depth].issuer().as_raw();
+    !parsed
+        .iter()
+        .enumerate()
+        .any(|(other, cert)| other != depth && cert.subject().as_raw() == issuer)
 }
 
 fn record_matches(record: &TlsaEntry, cert: &X509Certificate<'_>, raw: &[u8]) -> bool {
@@ -224,45 +236,7 @@ fn record_matches(record: &TlsaEntry, cert: &X509Certificate<'_>, raw: &[u8]) ->
     }
 }
 
-fn name_matches(cert: &X509Certificate<'_>, reference_ids: &[&str]) -> bool {
-    if let Ok(Some(san)) = cert.subject_alternative_name() {
-        let mut has_dns_id = false;
-        for name in &san.value.general_names {
-            if let GeneralName::DNSName(dns_id) = name {
-                has_dns_id = true;
-                if reference_ids
-                    .iter()
-                    .any(|reference| dns_id_matches(dns_id, reference))
-                {
-                    return true;
-                }
-            }
-        }
-        if has_dns_id {
-            return false;
-        }
-    }
-
-    cert.subject()
-        .iter_common_name()
-        .filter_map(|cn| cn.as_str().ok())
-        .any(|cn| {
-            reference_ids
-                .iter()
-                .any(|reference| dns_id_matches(cn, reference))
-        })
-}
-
-fn dns_id_matches(presented: &str, reference: &str) -> bool {
-    let presented = presented.trim_end_matches('.');
-    let reference = reference.trim_end_matches('.');
-
-    if let Some(suffix) = presented.strip_prefix("*.") {
-        match reference.split_once('.') {
-            Some((label, rest)) => !label.is_empty() && rest.eq_ignore_ascii_case(suffix),
-            None => false,
-        }
-    } else {
-        presented.eq_ignore_ascii_case(reference)
-    }
+#[inline(always)]
+fn der_value(der: &[u8]) -> Option<&[u8]> {
+    Any::from_der(der).ok().map(|(_, any)| any.data)
 }

@@ -42,7 +42,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
   - `Thread/changes`: emit a container delete when a thread becomes empty.
   - `VacationResponse/set`: incorrect singleton handling.
 - IMAP: Discard oversized non-synchronizing literals (#2768).
-- DANE: Improper `TLSA` record validation (#2328).
+- DANE: Improper `TLSA` record validation (#2328 - credits to @vdukhovni).
 - OIDC: Add default domain name to groups that are not email addresses.
 - RocksDB: Enable blob garbage collection to reclaim disk space from deleted blobs.
 - Sieve: `include` statements ignore capitalisation of sub-script names (#1643)
