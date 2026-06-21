@@ -203,7 +203,10 @@ async fn rcpt() {
     session.mail_from("idn@example.net", "250").await;
     session.rcpt_to("cornelius@straß6.de", "250").await;
     session.rcpt_to("cornelius@xn--stra6-oqa.de", "250").await;
-    assert_eq!(session.data.rcpt_to.len(), 2);
+    assert_eq!(session.data.rcpt_to.len(), 1);
+    let rcpt = session.data.rcpt_to.last().unwrap();
+    assert_eq!(rcpt.address_lcase, "cornelius@xn--stra6-oqa.de");
+    assert_eq!(rcpt.domain, "xn--stra6-oqa.de");
 
     let mut session = test.new_mta_session();
     session.data.remote_ip_str = "10.0.0.1".into();
