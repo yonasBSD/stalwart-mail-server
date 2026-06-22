@@ -640,9 +640,12 @@ impl QueuedMessage {
                 );
 
                 // Obtain source and remote IPs
+                let dane_enabled = tls_strategy.try_dane()
+                    && is_smtp
+                    && server.core.smtp.resolvers.dnssec_available;
                 let time = Instant::now();
                 let resolve_result = match server
-                    .resolve_host(remote_host, &envelope, tls_strategy.try_dane() && is_smtp)
+                    .resolve_host(remote_host, &envelope, dane_enabled)
                     .await
                 {
                     Ok(result) => {
@@ -678,7 +681,7 @@ impl QueuedMessage {
                 };
 
                 // Lookup DANE policy
-                let dane_policy = if tls_strategy.try_dane() && is_smtp {
+                let dane_policy = if dane_enabled {
                     let time = Instant::now();
                     let strict = tls_strategy.is_dane_required();
 

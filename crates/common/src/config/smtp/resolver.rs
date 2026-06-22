@@ -13,13 +13,14 @@ use mail_auth::{
             ResolverConfig, ResolverOpts,
         },
         net::runtime::TokioRuntimeProvider,
+        proto::rr::{Name, RecordType},
         system_conf::read_system_conf,
     },
 };
 use registry::schema::{
-    enums::{DnsResolverProtocol, PolicyEnforcement},
+    enums::{DnsResolverProtocol, MtaRequiredOrOptional, PolicyEnforcement},
     prelude::ObjectType,
-    structs::{DnsResolver, MtaSts, SystemSettings},
+    structs::{DnsResolver, MtaSts, MtaTlsStrategy, SystemSettings},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -34,6 +35,7 @@ use utils::cache::CacheItemWeight;
 pub struct Resolvers {
     pub dns: MessageAuthenticator,
     pub dnssec: DnssecResolver,
+    pub dnssec_available: bool,
 }
 
 #[derive(Clone)]
@@ -211,19 +213,57 @@ impl Resolvers {
         let mut opts_dnssec = opts.clone();
         opts_dnssec.validate = true;
 
+        let dnssec = DnssecResolver {
+            resolver: TokioResolver::builder_with_config(
+                config_dnssec,
+                TokioRuntimeProvider::default(),
+            )
+            .with_options(opts_dnssec)
+            .build()
+            .expect("Failed to build DNSSEC resolver"),
+        };
+
+        let uses_dane = bp
+            .list_infallible::<MtaTlsStrategy>()
+            .await
+            .iter()
+            .any(|obj| obj.object.dane != MtaRequiredOrOptional::Disable);
+
+        let dnssec_available = if uses_dane && !cfg!(any(test, feature = "test_mode")) {
+            let available = dnssec_capable(&dnssec.resolver).await;
+            if !available {
+                bp.build_warning(
+                    ObjectType::DnsResolver.singleton(),
+                    concat!(
+                        "The configured DNS resolver cannot validate DNSSEC. ",
+                        "DANE has been disabled to avoid deferring mail. ",
+                        "Configure a DNSSEC-validating resolver to enable DANE."
+                    ),
+                );
+            }
+            available
+        } else {
+            true
+        };
+
         Resolvers {
             dns: MessageAuthenticator::new(resolver_config, opts).unwrap(),
-            dnssec: DnssecResolver {
-                resolver: TokioResolver::builder_with_config(
-                    config_dnssec,
-                    TokioRuntimeProvider::default(),
-                )
-                .with_options(opts_dnssec)
-                .build()
-                .expect("Failed to build DNSSEC resolver"),
-            },
+            dnssec,
+            dnssec_available,
         }
     }
+}
+
+async fn dnssec_capable(resolver: &TokioResolver) -> bool {
+    resolver
+        .lookup(Name::root(), RecordType::DNSKEY)
+        .await
+        .is_ok_and(|lookup| {
+            lookup
+                .answers()
+                .iter()
+                .any(|record| record.proof.is_secure())
+        })
 }
 
 impl Policy {
@@ -319,6 +359,7 @@ impl Default for Resolvers {
                 .build()
                 .expect("Failed to build DNSSEC resolver"),
             },
+            dnssec_available: true,
         }
     }
 }
@@ -363,6 +404,7 @@ impl Clone for Resolvers {
         Self {
             dns: self.dns.clone(),
             dnssec: self.dnssec.clone(),
+            dnssec_available: self.dnssec_available,
         }
     }
 }
