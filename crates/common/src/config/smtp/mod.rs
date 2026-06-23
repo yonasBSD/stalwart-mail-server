@@ -61,11 +61,12 @@ impl SmtpConfig {
         };
 
         if !config.resolvers.dnssec_available
-            && config
-                .queue
-                .tls_strategy
-                .values()
-                .any(|t| !matches!(t.dane, RequireOptional::Disable))
+            && (config.queue.tls_strategy.is_empty()
+                || config
+                    .queue
+                    .tls_strategy
+                    .values()
+                    .any(|t| !matches!(t.dane, RequireOptional::Disable)))
         {
             bp.build_warning(
                 ObjectType::DnsResolver.singleton(),
