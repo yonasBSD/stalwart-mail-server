@@ -13,14 +13,13 @@ use mail_auth::{
             ResolverConfig, ResolverOpts,
         },
         net::runtime::TokioRuntimeProvider,
-        proto::rr::{Name, RecordType},
         system_conf::read_system_conf,
     },
 };
 use registry::schema::{
-    enums::{DnsResolverProtocol, MtaRequiredOrOptional, PolicyEnforcement},
+    enums::{DnsResolverProtocol, PolicyEnforcement},
     prelude::ObjectType,
-    structs::{DnsResolver, MtaSts, MtaTlsStrategy, SystemSettings},
+    structs::{DnsResolver, MtaSts, SystemSettings},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -223,40 +222,24 @@ impl Resolvers {
             .expect("Failed to build DNSSEC resolver"),
         };
 
-        let uses_dane = bp
-            .list_infallible::<MtaTlsStrategy>()
-            .await
-            .iter()
-            .any(|obj| obj.object.dane != MtaRequiredOrOptional::Disable);
-
-        let dnssec_available = if uses_dane && !cfg!(any(test, feature = "test_mode")) {
-            let available = dnssec_capable(&dnssec.resolver).await;
-            if !available {
-                bp.build_warning(
-                    ObjectType::DnsResolver.singleton(),
-                    concat!(
-                        "The configured DNS resolver cannot validate DNSSEC. ",
-                        "DANE has been disabled to avoid deferring mail. ",
-                        "Configure a DNSSEC-validating resolver to enable DANE."
-                    ),
-                );
-            }
-            available
-        } else {
-            true
-        };
-
         Resolvers {
             dns: MessageAuthenticator::new(resolver_config, opts).unwrap(),
+            #[cfg(not(feature = "test_mode"))]
+            dnssec_available: dnssec_capable(&dnssec.resolver).await,
+            #[cfg(feature = "test_mode")]
+            dnssec_available: true,
             dnssec,
-            dnssec_available,
         }
     }
 }
 
+#[cfg(not(feature = "test_mode"))]
 async fn dnssec_capable(resolver: &TokioResolver) -> bool {
     resolver
-        .lookup(Name::root(), RecordType::DNSKEY)
+        .lookup(
+            hickory_proto::rr::Name::root(),
+            hickory_proto::rr::RecordType::DNSKEY,
+        )
         .await
         .is_ok_and(|lookup| {
             lookup
