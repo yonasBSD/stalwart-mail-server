@@ -1118,9 +1118,9 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "chacha20"
-version = "0.10.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f8d983286843e49675a4b7a2d174efe136dc93a18d69130dd18198a6c167601"
+checksum = "d524456ba66e72eb8b115ff89e01e497f8e6d11d78b70b1aa13c0fbd97540a81"
 dependencies = [
  "cfg-if",
  "cpufeatures 0.3.0",
@@ -3033,6 +3033,7 @@ dependencies = [
  "rand 0.10.1",
  "rustls",
  "rustls-pki-types",
+ "rustls-platform-verifier 0.7.0",
  "thiserror 2.0.18",
  "time",
  "tinyvec",
@@ -4346,9 +4347,9 @@ dependencies = [
 
 [[package]]
 name = "mail-auth"
-version = "0.9.1"
+version = "0.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62a9d0c96cc84030705fec4bc4789fa918c89caec0d95ce7ee96b6f922d4a664"
+checksum = "7d3c5a279d798bf41bfcf94ee593a34b545fb2010ebf5cfce3416d6b4019f697"
 dependencies = [
  "aws-lc-rs",
  "flate2",
