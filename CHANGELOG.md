@@ -15,6 +15,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 - DANE: Verify DNSSEC is supported by the resolver before attempting to validate TLSA records.
 - TLS: Update search index when file-backed certificates are refreshed.
 - JMAP: `Principal/query` returns broad results when a `name` or `email` filter cannot be resolved.
+- Webhooks: event IDs collide for same event type emitted in the same second.
 
 ## [0.16.10] - 2026-06-21
 
