@@ -16,7 +16,7 @@ use common::{
     ipc::PolicyType,
 };
 use mail_auth::{
-    MX,
+    DnssecStatus, MX,
     common::parse::TxtRecordParser,
     mta_sts::{ReportUri, TlsRpt},
     report::tlsrpt::ResultType,
@@ -32,7 +32,10 @@ use registry::schema::{
 };
 use rustls_pki_types::CertificateDer;
 use sha2::{Digest, Sha256};
-use smtp::outbound::dane::{dnssec::TlsaLookup, verify::TlsaVerify};
+use smtp::outbound::dane::{
+    dnssec::{TlsaLookup, TlsaResult},
+    verify::TlsaVerify,
+};
 use smtp::queue::{Error, ErrorDetails, Status};
 use std::{
     collections::BTreeSet,
@@ -118,6 +121,7 @@ async fn dane_verify() {
             exchanges: vec!["mx.foobar.org".into()].into_boxed_slice(),
             preference: 10,
         }],
+        DnssecStatus::Secure,
         Instant::now() + Duration::from_secs(10),
     );
     local.server.ipv4_add(
@@ -255,9 +259,13 @@ async fn dane_verify() {
 
     // An insecure (non-DNSSEC) MX zone must not honor TLSA records,
     // even when valid records are cached.
-    local.server.dnssec_add(
-        "mx.foobar.org",
-        false,
+    local.server.mx_add(
+        "foobar.org",
+        vec![MX {
+            exchanges: vec!["mx.foobar.org".into()].into_boxed_slice(),
+            preference: 10,
+        }],
+        DnssecStatus::Insecure,
         Instant::now() + Duration::from_secs(10),
     );
     session
@@ -347,6 +355,7 @@ async fn dane_downgrade_on_tlsa_servfail() {
             exchanges: vec!["mx._dns_error.foobar.org".into()].into_boxed_slice(),
             preference: 10,
         }],
+        DnssecStatus::Secure,
         Instant::now() + Duration::from_secs(10),
     );
     local.server.ipv4_add(
@@ -370,6 +379,135 @@ async fn dane_downgrade_on_tlsa_servfail() {
     let retry = local.expect_message().await;
     assert!(retry.message.recipients[0].retry.due > now());
     remote.assert_no_events();
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn dane_bogus_dnssec_temp_fails() {
+    let mut local = TestServerBuilder::new("smtp_dane_bogus_local")
+        .await
+        .with_http_listener(19022)
+        .await
+        .disable_services()
+        .capture_queue()
+        .capture_reporting()
+        .build()
+        .await;
+
+    let local_admin = local.account("admin");
+    local_admin.mta_allow_relaying().await;
+    local_admin.mta_no_auth().await;
+    local_admin
+        .registry_create_object(TlsReportSettings {
+            send_frequency: Expression {
+                else_: "weekly".into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .await;
+    let (tls_strategy_id, mut tls_strategy) = local_admin
+        .registry_get_all::<MtaTlsStrategy>()
+        .await
+        .into_iter()
+        .find(|(_, s)| s.name == "default")
+        .unwrap();
+    tls_strategy.dane = MtaRequiredOrOptional::Require;
+    tls_strategy.start_tls = MtaRequiredOrOptional::Require;
+    let mut tls_strategy = serde_json::to_value(tls_strategy).unwrap();
+    tls_strategy
+        .as_object_mut()
+        .unwrap()
+        .retain(|k, _| k != "name");
+    local_admin
+        .registry_update_object(ObjectType::MtaTlsStrategy, tls_strategy_id, tls_strategy)
+        .await;
+    local_admin.reload_settings().await;
+    local.reload_core();
+    local.expect_reload_settings().await;
+
+    local.server.txt_add(
+        "_smtp._tls.foobar.org",
+        TlsRpt::parse(b"v=TLSRPTv1; rua=mailto:reports@foobar.org").unwrap(),
+        Instant::now() + Duration::from_secs(30),
+    );
+    local.server.ipv4_add(
+        "mx.foobar.org",
+        vec!["127.0.0.1".parse().unwrap()],
+        Instant::now() + Duration::from_secs(30),
+    );
+    local.server.ipv4_add(
+        "mx._dnssec_bogus.foobar.org",
+        vec!["127.0.0.1".parse().unwrap()],
+        Instant::now() + Duration::from_secs(30),
+    );
+
+    let mut session = local.new_mta_session();
+    session.data.remote_ip_str = "10.0.0.1".into();
+    session.eval_session_params().await;
+    session.ehlo("mx.test.org").await;
+
+    local.server.mx_add(
+        "foobar.org",
+        vec![MX {
+            exchanges: vec!["mx.foobar.org".into()].into_boxed_slice(),
+            preference: 10,
+        }],
+        DnssecStatus::Bogus,
+        Instant::now() + Duration::from_secs(30),
+    );
+    session
+        .send_message("john@test.org", &["bill@foobar.org"], "test:no_dkim", "250")
+        .await;
+    local
+        .expect_message_then_deliver()
+        .await
+        .try_deliver(local.server.clone());
+    let retry = local.expect_message().await;
+    assert!(retry.message.recipients[0].retry.due > now());
+
+    let report = local.read_report().await.unwrap_tls();
+    assert_eq!(report.domain, "foobar.org");
+    assert_eq!(report.policy, PolicyType::Tlsa(None));
+    assert_eq!(
+        report.failure.as_ref().unwrap().result_type,
+        ResultType::DnssecInvalid
+    );
+    assert_eq!(
+        report.failure.as_ref().unwrap().receiving_mx_hostname,
+        Some("mx.foobar.org".to_string())
+    );
+
+    local.server.mx_add(
+        "foobar.org",
+        vec![MX {
+            exchanges: vec!["mx._dnssec_bogus.foobar.org".into()].into_boxed_slice(),
+            preference: 10,
+        }],
+        DnssecStatus::Secure,
+        Instant::now() + Duration::from_secs(30),
+    );
+    session
+        .send_message("john@test.org", &["bill@foobar.org"], "test:no_dkim", "250")
+        .await;
+    local
+        .expect_message_then_deliver()
+        .await
+        .try_deliver(local.server.clone());
+    let retry = local.expect_message().await;
+    assert!(retry.message.recipients[0].retry.due > now());
+
+    let report = local.read_report().await.unwrap_tls();
+    assert_eq!(report.domain, "foobar.org");
+    assert_eq!(report.policy, PolicyType::Tlsa(None));
+    assert_eq!(
+        report.failure.as_ref().unwrap().result_type,
+        ResultType::DnssecInvalid
+    );
+    assert_eq!(
+        report.failure.as_ref().unwrap().receiving_mx_hostname,
+        Some("mx._dnssec_bogus.foobar.org".to_string())
+    );
 }
 
 #[tokio::test]
@@ -462,12 +600,15 @@ async fn dane_test() {
         }
 
         // Successful DANE verification (end-entity match, RFC 7671 Section 5.1)
-        let tlsa = test
+        let tlsa = match test
             .server
             .tlsa_lookup(format!("_25._tcp.{host}."))
             .await
             .unwrap()
-            .unwrap();
+        {
+            TlsaResult::Secure(tlsa) => tlsa,
+            _ => panic!("expected secure TLSA records"),
+        };
 
         assert_eq!(
             tlsa.verify(0, &host, &[host.as_str()], Some(&certs)),

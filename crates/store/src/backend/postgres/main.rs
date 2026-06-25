@@ -14,9 +14,7 @@ use crate::{
     *,
 };
 use ::registry::schema::{enums::PostgreSqlRecyclingMethod, structs};
-use deadpool_postgres::{
-    Config, ManagerConfig, Object, PoolConfig, RecyclingMethod, Runtime,
-};
+use deadpool_postgres::{Config, ManagerConfig, Object, PoolConfig, RecyclingMethod, Runtime};
 use tokio_postgres::NoTls;
 use utils::tls::rustls_client_config;
 

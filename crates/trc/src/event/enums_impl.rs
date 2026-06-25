@@ -81,6 +81,7 @@ impl EventType {
             b"dane.tlsa-record-not-found" => EventType::Dane(DaneEvent::TlsaRecordNotFound),
             b"dane.tlsa-record-not-dnssec-signed" => EventType::Dane(DaneEvent::TlsaRecordNotDnssecSigned),
             b"dane.tlsa-record-invalid" => EventType::Dane(DaneEvent::TlsaRecordInvalid),
+            b"dane.bogus-dnssec-record" => EventType::Dane(DaneEvent::BogusDnssecRecord),
             b"delivery.attempt-start" => EventType::Delivery(DeliveryEvent::AttemptStart),
             b"delivery.attempt-end" => EventType::Delivery(DeliveryEvent::AttemptEnd),
             b"delivery.completed" => EventType::Delivery(DeliveryEvent::Completed),
@@ -702,6 +703,7 @@ impl EventType {
                 "dane.tlsa-record-not-dnssec-signed"
             }
             EventType::Dane(DaneEvent::TlsaRecordInvalid) => "dane.tlsa-record-invalid",
+            EventType::Dane(DaneEvent::BogusDnssecRecord) => "dane.bogus-dnssec-record",
             EventType::Delivery(DeliveryEvent::AttemptStart) => "delivery.attempt-start",
             EventType::Delivery(DeliveryEvent::AttemptEnd) => "delivery.attempt-end",
             EventType::Delivery(DeliveryEvent::Completed) => "delivery.completed",
@@ -1436,6 +1438,7 @@ impl EventType {
             EventType::Dane(DaneEvent::TlsaRecordNotFound) => 75,
             EventType::Dane(DaneEvent::TlsaRecordNotDnssecSigned) => 74,
             EventType::Dane(DaneEvent::TlsaRecordInvalid) => 72,
+            EventType::Dane(DaneEvent::BogusDnssecRecord) => 605,
             EventType::Delivery(DeliveryEvent::AttemptStart) => 77,
             EventType::Delivery(DeliveryEvent::AttemptEnd) => 76,
             EventType::Delivery(DeliveryEvent::Completed) => 80,
@@ -2046,6 +2049,7 @@ impl EventType {
             75 => Some(EventType::Dane(DaneEvent::TlsaRecordNotFound)),
             74 => Some(EventType::Dane(DaneEvent::TlsaRecordNotDnssecSigned)),
             72 => Some(EventType::Dane(DaneEvent::TlsaRecordInvalid)),
+            605 => Some(EventType::Dane(DaneEvent::BogusDnssecRecord)),
             77 => Some(EventType::Delivery(DeliveryEvent::AttemptStart)),
             76 => Some(EventType::Delivery(DeliveryEvent::AttemptEnd)),
             80 => Some(EventType::Delivery(DeliveryEvent::Completed)),
@@ -2710,6 +2714,7 @@ impl EventType {
             EventType::Dane(DaneEvent::TlsaRecordNotFound) => Level::Info,
             EventType::Dane(DaneEvent::TlsaRecordNotDnssecSigned) => Level::Info,
             EventType::Dane(DaneEvent::TlsaRecordInvalid) => Level::Info,
+            EventType::Dane(DaneEvent::BogusDnssecRecord) => Level::Info,
             EventType::Delivery(DeliveryEvent::AttemptStart) => Level::Info,
             EventType::Delivery(DeliveryEvent::AttemptEnd) => Level::Info,
             EventType::Delivery(DeliveryEvent::Completed) => Level::Info,
@@ -3059,6 +3064,7 @@ impl EventType {
                 "TLSA record not DNSSEC signed"
             }
             EventType::Dane(DaneEvent::TlsaRecordInvalid) => "Invalid TLSA record",
+            EventType::Dane(DaneEvent::BogusDnssecRecord) => "Bogus DNSSEC record",
             EventType::Delivery(DeliveryEvent::AttemptStart) => "Delivery attempt started",
             EventType::Delivery(DeliveryEvent::AttemptEnd) => "Delivery attempt ended",
             EventType::Delivery(DeliveryEvent::Completed) => "Delivery completed",
@@ -4072,6 +4078,7 @@ impl EventType {
             EventType::Dane(DaneEvent::TlsaRecordNotFound),
             EventType::Dane(DaneEvent::TlsaRecordNotDnssecSigned),
             EventType::Dane(DaneEvent::TlsaRecordInvalid),
+            EventType::Dane(DaneEvent::BogusDnssecRecord),
             EventType::Delivery(DeliveryEvent::AttemptStart),
             EventType::Delivery(DeliveryEvent::AttemptEnd),
             EventType::Delivery(DeliveryEvent::Completed),
@@ -4652,6 +4659,7 @@ impl MetricType {
             b"dane.tlsa-record-not-found" => MetricType::DaneTlsaRecordNotFound,
             b"dane.tlsa-record-not-dnssec-signed" => MetricType::DaneTlsaRecordNotDnssecSigned,
             b"dane.tlsa-record-invalid" => MetricType::DaneTlsaRecordInvalid,
+            b"dane.bogus-dnssec-record" => MetricType::DaneBogusDnssecRecord,
             b"delivery.total-time" => MetricType::DeliveryTotalTime,
             b"delivery.attempt-time" => MetricType::DeliveryAttemptTime,
             b"delivery.active-connections" => MetricType::DeliveryActiveConnections,
@@ -4997,6 +5005,7 @@ impl MetricType {
             MetricType::DaneTlsaRecordNotFound => "dane.tlsa-record-not-found",
             MetricType::DaneTlsaRecordNotDnssecSigned => "dane.tlsa-record-not-dnssec-signed",
             MetricType::DaneTlsaRecordInvalid => "dane.tlsa-record-invalid",
+            MetricType::DaneBogusDnssecRecord => "dane.bogus-dnssec-record",
             MetricType::DeliveryTotalTime => "delivery.total-time",
             MetricType::DeliveryAttemptTime => "delivery.attempt-time",
             MetricType::DeliveryActiveConnections => "delivery.active-connections",
@@ -5353,6 +5362,7 @@ impl MetricType {
             MetricType::DaneTlsaRecordNotFound => 61,
             MetricType::DaneTlsaRecordNotDnssecSigned => 62,
             MetricType::DaneTlsaRecordInvalid => 63,
+            MetricType::DaneBogusDnssecRecord => 339,
             MetricType::DeliveryTotalTime => 2,
             MetricType::DeliveryAttemptTime => 3,
             MetricType::DeliveryActiveConnections => 22,
@@ -5697,6 +5707,7 @@ impl MetricType {
             61 => Some(MetricType::DaneTlsaRecordNotFound),
             62 => Some(MetricType::DaneTlsaRecordNotDnssecSigned),
             63 => Some(MetricType::DaneTlsaRecordInvalid),
+            339 => Some(MetricType::DaneBogusDnssecRecord),
             2 => Some(MetricType::DeliveryTotalTime),
             3 => Some(MetricType::DeliveryAttemptTime),
             22 => Some(MetricType::DeliveryActiveConnections),
@@ -6042,6 +6053,7 @@ impl MetricType {
             MetricType::DaneTlsaRecordNotFound => 75,
             MetricType::DaneTlsaRecordNotDnssecSigned => 74,
             MetricType::DaneTlsaRecordInvalid => 72,
+            MetricType::DaneBogusDnssecRecord => 605,
             MetricType::DeliveryAttemptStart => 77,
             MetricType::DeliveryAttemptEnd => 76,
             MetricType::DeliveryCompleted => 80,
@@ -6360,6 +6372,7 @@ impl MetricType {
             MetricType::DaneTlsaRecordNotFound => "TLSA record not found",
             MetricType::DaneTlsaRecordNotDnssecSigned => "TLSA record not DNSSEC signed",
             MetricType::DaneTlsaRecordInvalid => "Invalid TLSA record",
+            MetricType::DaneBogusDnssecRecord => "Bogus DNSSEC record",
             MetricType::DeliveryTotalTime => {
                 "Total message delivery time from submission to delivery"
             }
@@ -6726,6 +6739,7 @@ impl MetricType {
             | MetricType::DaneTlsaRecordNotFound
             | MetricType::DaneTlsaRecordNotDnssecSigned
             | MetricType::DaneTlsaRecordInvalid
+            | MetricType::DaneBogusDnssecRecord
             | MetricType::DeliveryAttemptStart
             | MetricType::DeliveryAttemptEnd
             | MetricType::DeliveryCompleted
@@ -7060,6 +7074,7 @@ impl MetricType {
             MetricType::DaneTlsaRecordNotFound,
             MetricType::DaneTlsaRecordNotDnssecSigned,
             MetricType::DaneTlsaRecordInvalid,
+            MetricType::DaneBogusDnssecRecord,
             MetricType::DeliveryTotalTime,
             MetricType::DeliveryAttemptTime,
             MetricType::DeliveryActiveConnections,

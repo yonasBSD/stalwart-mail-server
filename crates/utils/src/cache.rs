@@ -5,7 +5,7 @@
  */
 
 use arcstr::ArcStr;
-use mail_auth::{MX, ResolverCache, Txt};
+use mail_auth::{DnssecStatus, MX, RecordSet, ResolverCache, Txt};
 use quick_cache::{
     Equivalent, Weighter,
     sync::{DefaultLifecycle, PlaceholderGuard},
@@ -255,6 +255,12 @@ impl<T: CacheItemWeight> CacheItemWeight for Box<[T]> {
 impl<T: CacheItemWeight> CacheItemWeight for Arc<[T]> {
     fn weight(&self) -> u64 {
         std::mem::size_of::<Arc<[T]>>() as u64 + self.iter().map(|item| item.weight()).sum::<u64>()
+    }
+}
+
+impl<T: CacheItemWeight> CacheItemWeight for RecordSet<T> {
+    fn weight(&self) -> u64 {
+        self.rrset.weight() + std::mem::size_of::<DnssecStatus>() as u64
     }
 }
 
