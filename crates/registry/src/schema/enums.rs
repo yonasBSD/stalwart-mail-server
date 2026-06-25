@@ -681,6 +681,8 @@ pub enum EncryptionAtRestType {
     Disabled = 0,
     Aes128 = 1,
     Aes256 = 2,
+    Aes256Gcm = 3,
+    ChaCha20Poly1305 = 4,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]

@@ -2785,6 +2785,8 @@ pub enum EncryptionAtRest {
     Disabled,
     Aes128(EncryptionSettings),
     Aes256(EncryptionSettings),
+    Aes256Gcm(EncryptionSettings),
+    ChaCha20Poly1305(EncryptionSettings),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

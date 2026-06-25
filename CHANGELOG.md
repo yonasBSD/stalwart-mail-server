@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file. This projec
 If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If you are upgrading from v0.15.x and below, please read the [upgrading documentation](https://github.com/stalwartlabs/stalwart/blob/main/UPGRADING/v0_16.md) for more information on how to upgrade from previous versions.
 
 ## Added
+- Encryption-at-rest: Support for `AES-256-GCM` and `ChaCha20-Poly1305` for S/MIME (#161).
 - S3: Support for `allowInvalidCerts` option to allow connecting to S3 endpoints with invalid TLS certificates.
 
 ## Changed

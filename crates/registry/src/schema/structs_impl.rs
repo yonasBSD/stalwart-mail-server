@@ -20233,6 +20233,8 @@ impl EncryptionAtRest {
             EncryptionAtRest::Disabled => true,
             EncryptionAtRest::Aes128(inner) => inner.validate(errors),
             EncryptionAtRest::Aes256(inner) => inner.validate(errors),
+            EncryptionAtRest::Aes256Gcm(inner) => inner.validate(errors),
+            EncryptionAtRest::ChaCha20Poly1305(inner) => inner.validate(errors),
         }
     }
 
@@ -20243,6 +20245,12 @@ impl EncryptionAtRest {
                 object.index(i);
             }
             EncryptionAtRest::Aes256(object) => {
+                object.index(i);
+            }
+            EncryptionAtRest::Aes256Gcm(object) => {
+                object.index(i);
+            }
+            EncryptionAtRest::ChaCha20Poly1305(object) => {
                 object.index(i);
             }
         }
@@ -20269,6 +20277,14 @@ impl Pickle for EncryptionAtRest {
                 2u16.pickle(out);
                 inner.pickle(out);
             }
+            EncryptionAtRest::Aes256Gcm(inner) => {
+                3u16.pickle(out);
+                inner.pickle(out);
+            }
+            EncryptionAtRest::ChaCha20Poly1305(inner) => {
+                4u16.pickle(out);
+                inner.pickle(out);
+            }
         }
     }
 
@@ -20277,6 +20293,8 @@ impl Pickle for EncryptionAtRest {
             0 => Some(EncryptionAtRest::Disabled),
             1 => Pickle::unpickle(stream).map(EncryptionAtRest::Aes128),
             2 => Pickle::unpickle(stream).map(EncryptionAtRest::Aes256),
+            3 => Pickle::unpickle(stream).map(EncryptionAtRest::Aes256Gcm),
+            4 => Pickle::unpickle(stream).map(EncryptionAtRest::ChaCha20Poly1305),
             _ => None,
         }
     }
@@ -20304,6 +20322,20 @@ impl IntoValue for EncryptionAtRest {
                     .insert_unchecked(Property::Type, JmapValue::Str("Aes256".into()));
                 obj
             }
+            EncryptionAtRest::Aes256Gcm(obj) => {
+                let mut obj = obj.into_value();
+                obj.as_object_mut()
+                    .unwrap()
+                    .insert_unchecked(Property::Type, JmapValue::Str("Aes256Gcm".into()));
+                obj
+            }
+            EncryptionAtRest::ChaCha20Poly1305(obj) => {
+                let mut obj = obj.into_value();
+                obj.as_object_mut()
+                    .unwrap()
+                    .insert_unchecked(Property::Type, JmapValue::Str("ChaCha20Poly1305".into()));
+                obj
+            }
         }
     }
 }
@@ -20323,12 +20355,20 @@ impl RegistryJsonPatch for EncryptionAtRest {
                 EncryptionAtRestType::Aes256 => {
                     *self = EncryptionAtRest::Aes256(Default::default())
                 }
+                EncryptionAtRestType::Aes256Gcm => {
+                    *self = EncryptionAtRest::Aes256Gcm(Default::default())
+                }
+                EncryptionAtRestType::ChaCha20Poly1305 => {
+                    *self = EncryptionAtRest::ChaCha20Poly1305(Default::default())
+                }
             }
         }
         match self {
             EncryptionAtRest::Disabled => pointer.assert_eof(),
             EncryptionAtRest::Aes128(inner) => inner.patch(pointer, value),
             EncryptionAtRest::Aes256(inner) => inner.patch(pointer, value),
+            EncryptionAtRest::Aes256Gcm(inner) => inner.patch(pointer, value),
+            EncryptionAtRest::ChaCha20Poly1305(inner) => inner.patch(pointer, value),
         }
     }
 }
@@ -20339,6 +20379,8 @@ impl EncryptionAtRest {
             EncryptionAtRest::Disabled => EncryptionAtRestType::Disabled,
             EncryptionAtRest::Aes128(_) => EncryptionAtRestType::Aes128,
             EncryptionAtRest::Aes256(_) => EncryptionAtRestType::Aes256,
+            EncryptionAtRest::Aes256Gcm(_) => EncryptionAtRestType::Aes256Gcm,
+            EncryptionAtRest::ChaCha20Poly1305(_) => EncryptionAtRestType::ChaCha20Poly1305,
         }
     }
 }

@@ -3349,6 +3349,8 @@ impl EnumImpl for EncryptionAtRestType {
             b"Disabled" => EncryptionAtRestType::Disabled,
             b"Aes128" => EncryptionAtRestType::Aes128,
             b"Aes256" => EncryptionAtRestType::Aes256,
+            b"Aes256Gcm" => EncryptionAtRestType::Aes256Gcm,
+            b"ChaCha20Poly1305" => EncryptionAtRestType::ChaCha20Poly1305,
         }
     }
 
@@ -3357,6 +3359,8 @@ impl EnumImpl for EncryptionAtRestType {
             EncryptionAtRestType::Disabled => "Disabled",
             EncryptionAtRestType::Aes128 => "Aes128",
             EncryptionAtRestType::Aes256 => "Aes256",
+            EncryptionAtRestType::Aes256Gcm => "Aes256Gcm",
+            EncryptionAtRestType::ChaCha20Poly1305 => "ChaCha20Poly1305",
         }
     }
 
@@ -3369,11 +3373,13 @@ impl EnumImpl for EncryptionAtRestType {
             0 => Some(EncryptionAtRestType::Disabled),
             1 => Some(EncryptionAtRestType::Aes128),
             2 => Some(EncryptionAtRestType::Aes256),
+            3 => Some(EncryptionAtRestType::Aes256Gcm),
+            4 => Some(EncryptionAtRestType::ChaCha20Poly1305),
             _ => None,
         }
     }
 
-    const COUNT: usize = 3;
+    const COUNT: usize = 5;
 }
 
 impl serde::Serialize for EncryptionAtRestType {

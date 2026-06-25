@@ -94,6 +94,8 @@ pub const ACCOUNT_FLAG_ENCRYPT_METHOD_PGP: u64 = 1 << 3;
 pub const ACCOUNT_FLAG_ENCRYPT_ALGO_AES256: u64 = 1 << 4;
 pub const ACCOUNT_FLAG_ENCRYPT_ALGO_AES128: u64 = 1 << 5;
 pub const ACCOUNT_FLAG_ENCRYPT_APPEND: u64 = 1 << 6;
+pub const ACCOUNT_FLAG_ENCRYPT_ALGO_AES256_GCM: u64 = 1 << 7;
+pub const ACCOUNT_FLAG_ENCRYPT_ALGO_CHACHA20_POLY1305: u64 = 1 << 8;
 
 #[derive(Debug, Clone)]
 pub struct RoleCache {

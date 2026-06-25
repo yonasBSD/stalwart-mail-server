@@ -8,6 +8,7 @@ use crate::{
     Server,
     auth::{
         ACCOUNT_FLAG_ENCRYPT_ALGO_AES128, ACCOUNT_FLAG_ENCRYPT_ALGO_AES256,
+        ACCOUNT_FLAG_ENCRYPT_ALGO_AES256_GCM, ACCOUNT_FLAG_ENCRYPT_ALGO_CHACHA20_POLY1305,
         ACCOUNT_FLAG_ENCRYPT_APPEND, ACCOUNT_FLAG_ENCRYPT_METHOD_PGP,
         ACCOUNT_FLAG_ENCRYPT_METHOD_SMIME, ACCOUNT_FLAG_ENCRYPT_TRAIN_SPAM_FILTER, ACCOUNT_IS_USER,
         AccountCache, AccountInfo, AccountTenantIds, DOMAIN_FLAG_RELAY, DOMAIN_FLAG_SUB_ADDRESSING,
@@ -410,6 +411,14 @@ impl Server {
                             }
                             EncryptionAtRest::Aes128(settings) => {
                                 flags |= ACCOUNT_FLAG_ENCRYPT_ALGO_AES128;
+                                settings.into()
+                            }
+                            EncryptionAtRest::Aes256Gcm(settings) => {
+                                flags |= ACCOUNT_FLAG_ENCRYPT_ALGO_AES256_GCM;
+                                settings.into()
+                            }
+                            EncryptionAtRest::ChaCha20Poly1305(settings) => {
+                                flags |= ACCOUNT_FLAG_ENCRYPT_ALGO_CHACHA20_POLY1305;
                                 settings.into()
                             }
                         };
