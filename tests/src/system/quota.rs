@@ -212,6 +212,7 @@ pub async fn test(test: &mut TestServer) {
         .jmap_method_call(
             "Quota/get",
             json!({
+                "accountId": account.id_string(),
                 "ids": null
             }),
         )
@@ -265,6 +266,7 @@ pub async fn test(test: &mut TestServer) {
         .jmap_method_call(
             "Quota/get",
             json!({
+                "accountId": account.id_string(),
                 "ids": null
             }),
         )
