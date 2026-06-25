@@ -788,6 +788,7 @@ pub enum Coordinator {
     Zenoh(ZenohCoordinator),
     Redis(RedisStore),
     RedisCluster(RedisClusterStore),
+    RedisSentinel(RedisSentinelStore),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -3075,6 +3076,7 @@ pub enum InMemoryStore {
     Sharded(ShardedInMemoryStore),
     Redis(RedisStore),
     RedisCluster(RedisClusterStore),
+    RedisSentinel(RedisSentinelStore),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -3082,6 +3084,7 @@ pub enum InMemoryStore {
 pub enum InMemoryStoreBase {
     Redis(RedisStore),
     RedisCluster(RedisClusterStore),
+    RedisSentinel(RedisSentinelStore),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -3258,6 +3261,7 @@ pub enum LookupStore {
     Sharded(ShardedInMemoryStore),
     Redis(RedisStore),
     RedisCluster(RedisClusterStore),
+    RedisSentinel(RedisSentinelStore),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -4314,6 +4318,35 @@ pub struct RedisClusterStore {
     pub max_retries: Option<u64>,
     #[serde(rename = "readFromReplicas")]
     pub read_from_replicas: bool,
+    #[serde(rename = "protocolVersion")]
+    pub protocol_version: RedisProtocol,
+    #[serde(rename = "poolMaxConnections")]
+    pub pool_max_connections: u64,
+    #[serde(rename = "poolTimeoutCreate")]
+    pub pool_timeout_create: Option<Duration>,
+    #[serde(rename = "poolTimeoutWait")]
+    pub pool_timeout_wait: Option<Duration>,
+    #[serde(rename = "poolTimeoutRecycle")]
+    pub pool_timeout_recycle: Option<Duration>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RedisSentinelStore {
+    #[serde(rename = "urls")]
+    pub urls: Map<String>,
+    #[serde(rename = "serviceName")]
+    pub service_name: String,
+    #[serde(rename = "timeout")]
+    pub timeout: Duration,
+    #[serde(rename = "authUsername")]
+    pub auth_username: Option<String>,
+    #[serde(rename = "authSecret")]
+    pub auth_secret: SecretKeyOptional,
+    #[serde(rename = "sentinelUsername")]
+    pub sentinel_username: Option<String>,
+    #[serde(rename = "sentinelSecret")]
+    pub sentinel_secret: SecretKeyOptional,
     #[serde(rename = "protocolVersion")]
     pub protocol_version: RedisProtocol,
     #[serde(rename = "poolMaxConnections")]

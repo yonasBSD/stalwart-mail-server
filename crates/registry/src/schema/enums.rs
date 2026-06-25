@@ -270,6 +270,7 @@ pub enum CoordinatorType {
     Zenoh = 4,
     Redis = 5,
     RedisCluster = 6,
+    RedisSentinel = 7,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
@@ -848,6 +849,7 @@ pub enum InMemoryStoreBaseType {
     #[default]
     Redis = 0,
     RedisCluster = 1,
+    RedisSentinel = 2,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
@@ -858,6 +860,7 @@ pub enum InMemoryStoreType {
     Sharded = 1,
     Redis = 2,
     RedisCluster = 3,
+    RedisSentinel = 4,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
@@ -1265,6 +1268,7 @@ pub enum LookupStoreType {
     Sharded = 3,
     Redis = 4,
     RedisCluster = 5,
+    RedisSentinel = 6,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]

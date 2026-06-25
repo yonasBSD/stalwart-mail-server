@@ -9,6 +9,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 ## Added
 - Encryption-at-rest: Support for `AES-256-GCM` and `ChaCha20-Poly1305` for S/MIME (#161).
 - S3: Support for `allowInvalidCerts` option to allow connecting to S3 endpoints with invalid TLS certificates.
+- Redis Sentinel support as an in-memory store and cluster coordinator backend (#2430).
 
 ## Changed
 

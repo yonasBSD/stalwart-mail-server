@@ -14,8 +14,9 @@ use crate::{
     *,
 };
 use ::registry::schema::{enums::PostgreSqlRecyclingMethod, structs};
-use deadpool::managed::Object;
-use deadpool_postgres::{Config, Manager, ManagerConfig, PoolConfig, RecyclingMethod, Runtime};
+use deadpool_postgres::{
+    Config, ManagerConfig, Object, PoolConfig, RecyclingMethod, Runtime,
+};
 use tokio_postgres::NoTls;
 use utils::tls::rustls_client_config;
 
@@ -169,7 +170,7 @@ impl PostgresStore {
 }
 
 async fn create_search_tables<T: SearchableField + PsqlSearchField + 'static>(
-    conn: &Object<Manager>,
+    conn: &Object,
 ) -> trc::Result<()> {
     let table_name = T::index().psql_table();
     let mut query = format!("CREATE TABLE IF NOT EXISTS {} (", table_name);

@@ -1176,10 +1176,13 @@ impl EnumImpl for Property {
             b"selectorTemplate" => Property::SelectorTemplate,
             b"sendFrequency" => Property::SendFrequency,
             b"sendingMtaIp" => Property::SendingMtaIp,
+            b"sentinelSecret" => Property::SentinelSecret,
+            b"sentinelUsername" => Property::SentinelUsername,
             b"separator" => Property::Separator,
             b"serverHostname" => Property::ServerHostname,
             b"servers" => Property::Servers,
             b"serviceAccountJson" => Property::ServiceAccountJson,
+            b"serviceName" => Property::ServiceName,
             b"services" => Property::Services,
             b"sessionToken" => Property::SessionToken,
             b"setMaxObjects" => Property::SetMaxObjects,
@@ -2094,10 +2097,13 @@ impl EnumImpl for Property {
             Property::SelectorTemplate => "selectorTemplate",
             Property::SendFrequency => "sendFrequency",
             Property::SendingMtaIp => "sendingMtaIp",
+            Property::SentinelSecret => "sentinelSecret",
+            Property::SentinelUsername => "sentinelUsername",
             Property::Separator => "separator",
             Property::ServerHostname => "serverHostname",
             Property::Servers => "servers",
             Property::ServiceAccountJson => "serviceAccountJson",
+            Property::ServiceName => "serviceName",
             Property::Services => "services",
             Property::SessionToken => "sessionToken",
             Property::SetMaxObjects => "setMaxObjects",
@@ -3016,10 +3022,13 @@ impl EnumImpl for Property {
             226 => Some(Property::SelectorTemplate),
             230 => Some(Property::SendFrequency),
             833 => Some(Property::SendingMtaIp),
+            915 => Some(Property::SentinelSecret),
+            914 => Some(Property::SentinelUsername),
             97 => Some(Property::Separator),
             121 => Some(Property::ServerHostname),
             308 => Some(Property::Servers),
             316 => Some(Property::ServiceAccountJson),
+            913 => Some(Property::ServiceName),
             794 => Some(Property::Services),
             329 => Some(Property::SessionToken),
             440 => Some(Property::SetMaxObjects),
@@ -3164,7 +3173,7 @@ impl EnumImpl for Property {
         }
     }
 
-    const COUNT: usize = 913;
+    const COUNT: usize = 916;
 }
 
 impl serde::Serialize for Property {

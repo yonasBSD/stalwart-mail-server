@@ -42,7 +42,7 @@ fn into_error(err: tokio_postgres::error::Error) -> trc::Error {
 }
 
 #[inline(always)]
-fn into_pool_error(err: deadpool::managed::PoolError<tokio_postgres::Error>) -> trc::Error {
+fn into_pool_error(err: deadpool_postgres::PoolError) -> trc::Error {
     trc::StoreEvent::PostgresqlError.reason(err)
 }
 

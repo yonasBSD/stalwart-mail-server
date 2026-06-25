@@ -85,7 +85,7 @@ impl QueuedMessage {
 
                     // Attempt delivery
                     let start_time = Instant::now();
-                    let queue_event = self.deliver_task(server.clone(), message).await;
+                    let queue_event = Box::pin(self.deliver_task(server.clone(), message)).await;
 
                     trc::event!(
                         Delivery(DeliveryEvent::AttemptEnd),

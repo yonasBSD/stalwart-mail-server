@@ -5723,6 +5723,7 @@ impl ObjectImpl for Coordinator {
             Coordinator::Zenoh(inner) => inner.validate(errors),
             Coordinator::Redis(inner) => inner.validate(errors),
             Coordinator::RedisCluster(inner) => inner.validate(errors),
+            Coordinator::RedisSentinel(inner) => inner.validate(errors),
         }
     }
 
@@ -5764,6 +5765,10 @@ impl Pickle for Coordinator {
                 6u16.pickle(out);
                 inner.pickle(out);
             }
+            Coordinator::RedisSentinel(inner) => {
+                7u16.pickle(out);
+                inner.pickle(out);
+            }
         }
     }
 
@@ -5776,6 +5781,7 @@ impl Pickle for Coordinator {
             4 => Pickle::unpickle(stream).map(Coordinator::Zenoh),
             5 => Pickle::unpickle(stream).map(Coordinator::Redis),
             6 => Pickle::unpickle(stream).map(Coordinator::RedisCluster),
+            7 => Pickle::unpickle(stream).map(Coordinator::RedisSentinel),
             _ => None,
         }
     }
@@ -5829,6 +5835,13 @@ impl IntoValue for Coordinator {
                     .insert_unchecked(Property::Type, JmapValue::Str("RedisCluster".into()));
                 obj
             }
+            Coordinator::RedisSentinel(obj) => {
+                let mut obj = obj.into_value();
+                obj.as_object_mut()
+                    .unwrap()
+                    .insert_unchecked(Property::Type, JmapValue::Str("RedisSentinel".into()));
+                obj
+            }
         }
     }
 }
@@ -5850,6 +5863,9 @@ impl RegistryJsonPatch for Coordinator {
                 CoordinatorType::RedisCluster => {
                     *self = Coordinator::RedisCluster(Default::default())
                 }
+                CoordinatorType::RedisSentinel => {
+                    *self = Coordinator::RedisSentinel(Default::default())
+                }
             }
         }
         match self {
@@ -5860,6 +5876,7 @@ impl RegistryJsonPatch for Coordinator {
             Coordinator::Zenoh(inner) => inner.patch(pointer, value),
             Coordinator::Redis(inner) => inner.patch(pointer, value),
             Coordinator::RedisCluster(inner) => inner.patch(pointer, value),
+            Coordinator::RedisSentinel(inner) => inner.patch(pointer, value),
         }
     }
 }
@@ -5874,6 +5891,7 @@ impl Coordinator {
             Coordinator::Zenoh(_) => CoordinatorType::Zenoh,
             Coordinator::Redis(_) => CoordinatorType::Redis,
             Coordinator::RedisCluster(_) => CoordinatorType::RedisCluster,
+            Coordinator::RedisSentinel(_) => CoordinatorType::RedisSentinel,
         }
     }
 }
@@ -22312,6 +22330,7 @@ impl ObjectImpl for InMemoryStore {
             InMemoryStore::Sharded(inner) => inner.validate(errors),
             InMemoryStore::Redis(inner) => inner.validate(errors),
             InMemoryStore::RedisCluster(inner) => inner.validate(errors),
+            InMemoryStore::RedisSentinel(inner) => inner.validate(errors),
         }
     }
 
@@ -22342,6 +22361,10 @@ impl Pickle for InMemoryStore {
                 3u16.pickle(out);
                 inner.pickle(out);
             }
+            InMemoryStore::RedisSentinel(inner) => {
+                4u16.pickle(out);
+                inner.pickle(out);
+            }
         }
     }
 
@@ -22351,6 +22374,7 @@ impl Pickle for InMemoryStore {
             1 => Pickle::unpickle(stream).map(InMemoryStore::Sharded),
             2 => Pickle::unpickle(stream).map(InMemoryStore::Redis),
             3 => Pickle::unpickle(stream).map(InMemoryStore::RedisCluster),
+            4 => Pickle::unpickle(stream).map(InMemoryStore::RedisSentinel),
             _ => None,
         }
     }
@@ -22385,6 +22409,13 @@ impl IntoValue for InMemoryStore {
                     .insert_unchecked(Property::Type, JmapValue::Str("RedisCluster".into()));
                 obj
             }
+            InMemoryStore::RedisSentinel(obj) => {
+                let mut obj = obj.into_value();
+                obj.as_object_mut()
+                    .unwrap()
+                    .insert_unchecked(Property::Type, JmapValue::Str("RedisSentinel".into()));
+                obj
+            }
         }
     }
 }
@@ -22403,6 +22434,9 @@ impl RegistryJsonPatch for InMemoryStore {
                 InMemoryStoreType::RedisCluster => {
                     *self = InMemoryStore::RedisCluster(Default::default())
                 }
+                InMemoryStoreType::RedisSentinel => {
+                    *self = InMemoryStore::RedisSentinel(Default::default())
+                }
             }
         }
         match self {
@@ -22410,6 +22444,7 @@ impl RegistryJsonPatch for InMemoryStore {
             InMemoryStore::Sharded(inner) => inner.patch(pointer, value),
             InMemoryStore::Redis(inner) => inner.patch(pointer, value),
             InMemoryStore::RedisCluster(inner) => inner.patch(pointer, value),
+            InMemoryStore::RedisSentinel(inner) => inner.patch(pointer, value),
         }
     }
 }
@@ -22421,6 +22456,7 @@ impl InMemoryStore {
             InMemoryStore::Sharded(_) => InMemoryStoreType::Sharded,
             InMemoryStore::Redis(_) => InMemoryStoreType::Redis,
             InMemoryStore::RedisCluster(_) => InMemoryStoreType::RedisCluster,
+            InMemoryStore::RedisSentinel(_) => InMemoryStoreType::RedisSentinel,
         }
     }
 }
@@ -22430,6 +22466,7 @@ impl InMemoryStoreBase {
         match self {
             InMemoryStoreBase::Redis(inner) => inner.validate(errors),
             InMemoryStoreBase::RedisCluster(inner) => inner.validate(errors),
+            InMemoryStoreBase::RedisSentinel(inner) => inner.validate(errors),
         }
     }
 }
@@ -22451,6 +22488,10 @@ impl Pickle for InMemoryStoreBase {
                 1u16.pickle(out);
                 inner.pickle(out);
             }
+            InMemoryStoreBase::RedisSentinel(inner) => {
+                2u16.pickle(out);
+                inner.pickle(out);
+            }
         }
     }
 
@@ -22458,6 +22499,7 @@ impl Pickle for InMemoryStoreBase {
         match u16::unpickle(stream)? {
             0 => Pickle::unpickle(stream).map(InMemoryStoreBase::Redis),
             1 => Pickle::unpickle(stream).map(InMemoryStoreBase::RedisCluster),
+            2 => Pickle::unpickle(stream).map(InMemoryStoreBase::RedisSentinel),
             _ => None,
         }
     }
@@ -22480,6 +22522,13 @@ impl IntoValue for InMemoryStoreBase {
                     .insert_unchecked(Property::Type, JmapValue::Str("RedisCluster".into()));
                 obj
             }
+            InMemoryStoreBase::RedisSentinel(obj) => {
+                let mut obj = obj.into_value();
+                obj.as_object_mut()
+                    .unwrap()
+                    .insert_unchecked(Property::Type, JmapValue::Str("RedisSentinel".into()));
+                obj
+            }
         }
     }
 }
@@ -22498,11 +22547,15 @@ impl RegistryJsonPatch for InMemoryStoreBase {
                 InMemoryStoreBaseType::RedisCluster => {
                     *self = InMemoryStoreBase::RedisCluster(Default::default())
                 }
+                InMemoryStoreBaseType::RedisSentinel => {
+                    *self = InMemoryStoreBase::RedisSentinel(Default::default())
+                }
             }
         }
         match self {
             InMemoryStoreBase::Redis(inner) => inner.patch(pointer, value),
             InMemoryStoreBase::RedisCluster(inner) => inner.patch(pointer, value),
+            InMemoryStoreBase::RedisSentinel(inner) => inner.patch(pointer, value),
         }
     }
 }
@@ -22512,6 +22565,7 @@ impl InMemoryStoreBase {
         match self {
             InMemoryStoreBase::Redis(_) => InMemoryStoreBaseType::Redis,
             InMemoryStoreBase::RedisCluster(_) => InMemoryStoreBaseType::RedisCluster,
+            InMemoryStoreBase::RedisSentinel(_) => InMemoryStoreBaseType::RedisSentinel,
         }
     }
 }
@@ -23553,6 +23607,7 @@ impl LookupStore {
             LookupStore::Sharded(inner) => inner.validate(errors),
             LookupStore::Redis(inner) => inner.validate(errors),
             LookupStore::RedisCluster(inner) => inner.validate(errors),
+            LookupStore::RedisSentinel(inner) => inner.validate(errors),
         }
     }
 }
@@ -23590,6 +23645,10 @@ impl Pickle for LookupStore {
                 5u16.pickle(out);
                 inner.pickle(out);
             }
+            LookupStore::RedisSentinel(inner) => {
+                6u16.pickle(out);
+                inner.pickle(out);
+            }
         }
     }
 
@@ -23601,6 +23660,7 @@ impl Pickle for LookupStore {
             3 => Pickle::unpickle(stream).map(LookupStore::Sharded),
             4 => Pickle::unpickle(stream).map(LookupStore::Redis),
             5 => Pickle::unpickle(stream).map(LookupStore::RedisCluster),
+            6 => Pickle::unpickle(stream).map(LookupStore::RedisSentinel),
             _ => None,
         }
     }
@@ -23651,6 +23711,13 @@ impl IntoValue for LookupStore {
                     .insert_unchecked(Property::Type, JmapValue::Str("RedisCluster".into()));
                 obj
             }
+            LookupStore::RedisSentinel(obj) => {
+                let mut obj = obj.into_value();
+                obj.as_object_mut()
+                    .unwrap()
+                    .insert_unchecked(Property::Type, JmapValue::Str("RedisSentinel".into()));
+                obj
+            }
         }
     }
 }
@@ -23671,6 +23738,9 @@ impl RegistryJsonPatch for LookupStore {
                 LookupStoreType::RedisCluster => {
                     *self = LookupStore::RedisCluster(Default::default())
                 }
+                LookupStoreType::RedisSentinel => {
+                    *self = LookupStore::RedisSentinel(Default::default())
+                }
             }
         }
         match self {
@@ -23680,6 +23750,7 @@ impl RegistryJsonPatch for LookupStore {
             LookupStore::Sharded(inner) => inner.patch(pointer, value),
             LookupStore::Redis(inner) => inner.patch(pointer, value),
             LookupStore::RedisCluster(inner) => inner.patch(pointer, value),
+            LookupStore::RedisSentinel(inner) => inner.patch(pointer, value),
         }
     }
 }
@@ -23693,6 +23764,7 @@ impl LookupStore {
             LookupStore::Sharded(_) => LookupStoreType::Sharded,
             LookupStore::Redis(_) => LookupStoreType::Redis,
             LookupStore::RedisCluster(_) => LookupStoreType::RedisCluster,
+            LookupStore::RedisSentinel(_) => LookupStoreType::RedisSentinel,
         }
     }
 }
@@ -32010,6 +32082,173 @@ impl RegistryJsonPropertyPatch for RedisClusterStore {
             Some(Property::MinRetryWait) => self.min_retry_wait.patch(pointer, value),
             Some(Property::MaxRetries) => self.max_retries.patch(pointer, value),
             Some(Property::ReadFromReplicas) => self.read_from_replicas.patch(pointer, value),
+            Some(Property::ProtocolVersion) => self.protocol_version.patch(pointer, value),
+            Some(Property::PoolMaxConnections) => self.pool_max_connections.patch(pointer, value),
+            Some(Property::PoolTimeoutCreate) => self.pool_timeout_create.patch(pointer, value),
+            Some(Property::PoolTimeoutWait) => self.pool_timeout_wait.patch(pointer, value),
+            Some(Property::PoolTimeoutRecycle) => self.pool_timeout_recycle.patch(pointer, value),
+            Some(Property::Type) => Ok(MaybeUnpatched::Unpatched {
+                property: Property::Type,
+                value,
+            }),
+            _ => Err(PatchError::new(pointer, "Invalid property")),
+        }
+    }
+}
+
+impl RedisSentinelStore {
+    fn validate(&self, errors: &mut Vec<ValidationError>) -> bool {
+        let neb = errors.len();
+        let value = &self.urls;
+        for value in value.iter() {
+            if value.is_empty() {
+                errors.push(ValidationError::required(Property::Urls));
+            }
+        }
+        let value = &self.service_name;
+        if value.is_empty() {
+            errors.push(ValidationError::required(Property::ServiceName));
+        }
+        if let Some(value) = &self.auth_username {
+            if value.is_empty() {
+                errors.push(ValidationError::required(Property::AuthUsername));
+            }
+        }
+        let value = &self.auth_secret;
+        value.validate(errors);
+        if let Some(value) = &self.sentinel_username {
+            if value.is_empty() {
+                errors.push(ValidationError::required(Property::SentinelUsername));
+            }
+        }
+        let value = &self.sentinel_secret;
+        value.validate(errors);
+        let value = &self.pool_max_connections;
+        if *value > 8192 {
+            errors.push(ValidationError::max_value(
+                Property::PoolMaxConnections,
+                8192,
+            ));
+        }
+        if *value < 1 {
+            errors.push(ValidationError::min_value(Property::PoolMaxConnections, 1));
+        }
+        errors.len() == neb
+    }
+}
+
+impl Pickle for RedisSentinelStore {
+    fn pickle(&self, out: &mut Vec<u8>) {
+        self.urls.pickle(out);
+        self.service_name.pickle(out);
+        self.timeout.pickle(out);
+        self.auth_username.pickle(out);
+        self.auth_secret.pickle(out);
+        self.sentinel_username.pickle(out);
+        self.sentinel_secret.pickle(out);
+        self.protocol_version.pickle(out);
+        self.pool_max_connections.pickle(out);
+        self.pool_timeout_create.pickle(out);
+        self.pool_timeout_wait.pickle(out);
+        self.pool_timeout_recycle.pickle(out);
+    }
+
+    fn unpickle(stream: &mut crate::pickle::PickledStream<'_>) -> Option<Self> {
+        let mut this = Self::default();
+        this.urls = Pickle::unpickle(stream)?;
+        this.service_name = Pickle::unpickle(stream)?;
+        this.timeout = Pickle::unpickle(stream)?;
+        this.auth_username = Pickle::unpickle(stream)?;
+        this.auth_secret = Pickle::unpickle(stream)?;
+        this.sentinel_username = Pickle::unpickle(stream)?;
+        this.sentinel_secret = Pickle::unpickle(stream)?;
+        this.protocol_version = Pickle::unpickle(stream)?;
+        this.pool_max_connections = Pickle::unpickle(stream)?;
+        this.pool_timeout_create = Pickle::unpickle(stream)?;
+        this.pool_timeout_wait = Pickle::unpickle(stream)?;
+        this.pool_timeout_recycle = Pickle::unpickle(stream)?;
+        Some(this)
+    }
+}
+
+impl Default for RedisSentinelStore {
+    fn default() -> Self {
+        Self {
+            urls: Map::new(vec!["redis://127.0.0.1:26379".to_string()]),
+            service_name: "mymaster".to_string(),
+            timeout: Duration::from_millis(10000),
+            auth_username: Some("stalwart".to_string()),
+            auth_secret: Default::default(),
+            sentinel_username: Default::default(),
+            sentinel_secret: Default::default(),
+            protocol_version: RedisProtocol::Resp2,
+            pool_max_connections: 10u64,
+            pool_timeout_create: Some(Duration::from_millis(30000)),
+            pool_timeout_wait: Some(Duration::from_millis(30000)),
+            pool_timeout_recycle: Some(Duration::from_millis(30000)),
+        }
+    }
+}
+
+impl IntoValue for RedisSentinelStore {
+    fn into_value(self) -> JmapValue<'static> {
+        let mut map = jmap_tools::Map::with_capacity(14);
+        map.insert_unchecked(Property::Urls, self.urls.into_value());
+        map.insert_unchecked(Property::ServiceName, self.service_name.into_value());
+        map.insert_unchecked(Property::Timeout, self.timeout.into_value());
+        map.insert_unchecked(Property::AuthUsername, self.auth_username.into_value());
+        map.insert_unchecked(Property::AuthSecret, self.auth_secret.into_value());
+        map.insert_unchecked(
+            Property::SentinelUsername,
+            self.sentinel_username.into_value(),
+        );
+        map.insert_unchecked(Property::SentinelSecret, self.sentinel_secret.into_value());
+        map.insert_unchecked(
+            Property::ProtocolVersion,
+            self.protocol_version.into_value(),
+        );
+        map.insert_unchecked(
+            Property::PoolMaxConnections,
+            self.pool_max_connections.into_value(),
+        );
+        map.insert_unchecked(
+            Property::PoolTimeoutCreate,
+            self.pool_timeout_create.into_value(),
+        );
+        map.insert_unchecked(
+            Property::PoolTimeoutWait,
+            self.pool_timeout_wait.into_value(),
+        );
+        map.insert_unchecked(
+            Property::PoolTimeoutRecycle,
+            self.pool_timeout_recycle.into_value(),
+        );
+        JmapValue::Object(map)
+    }
+}
+
+impl RegistryJsonPropertyPatch for RedisSentinelStore {
+    fn patch_property<'x>(
+        &mut self,
+        mut pointer: JsonPointerPatch<'_>,
+        value: JmapValue<'x>,
+    ) -> PatchResult<'x> {
+        match pointer.next_property() {
+            Some(Property::Urls) => self
+                .urls
+                .patch(pointer.with_validators(&[StringValidator::Trim]), value),
+            Some(Property::ServiceName) => self
+                .service_name
+                .patch(pointer.with_validators(&[StringValidator::Trim]), value),
+            Some(Property::Timeout) => self.timeout.patch(pointer, value),
+            Some(Property::AuthUsername) => self
+                .auth_username
+                .patch(pointer.with_validators(&[StringValidator::Trim]), value),
+            Some(Property::AuthSecret) => self.auth_secret.patch(pointer, value),
+            Some(Property::SentinelUsername) => self
+                .sentinel_username
+                .patch(pointer.with_validators(&[StringValidator::Trim]), value),
+            Some(Property::SentinelSecret) => self.sentinel_secret.patch(pointer, value),
             Some(Property::ProtocolVersion) => self.protocol_version.patch(pointer, value),
             Some(Property::PoolMaxConnections) => self.pool_max_connections.patch(pointer, value),
             Some(Property::PoolTimeoutCreate) => self.pool_timeout_create.patch(pointer, value),

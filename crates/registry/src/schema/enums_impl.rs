@@ -1402,6 +1402,7 @@ impl EnumImpl for CoordinatorType {
             b"Zenoh" => CoordinatorType::Zenoh,
             b"Redis" => CoordinatorType::Redis,
             b"RedisCluster" => CoordinatorType::RedisCluster,
+            b"RedisSentinel" => CoordinatorType::RedisSentinel,
         }
     }
 
@@ -1414,6 +1415,7 @@ impl EnumImpl for CoordinatorType {
             CoordinatorType::Zenoh => "Zenoh",
             CoordinatorType::Redis => "Redis",
             CoordinatorType::RedisCluster => "RedisCluster",
+            CoordinatorType::RedisSentinel => "RedisSentinel",
         }
     }
 
@@ -1430,11 +1432,12 @@ impl EnumImpl for CoordinatorType {
             4 => Some(CoordinatorType::Zenoh),
             5 => Some(CoordinatorType::Redis),
             6 => Some(CoordinatorType::RedisCluster),
+            7 => Some(CoordinatorType::RedisSentinel),
             _ => None,
         }
     }
 
-    const COUNT: usize = 7;
+    const COUNT: usize = 8;
 }
 
 impl serde::Serialize for CoordinatorType {
@@ -4036,6 +4039,7 @@ impl EnumImpl for InMemoryStoreBaseType {
             value.as_bytes(),
             b"Redis" => InMemoryStoreBaseType::Redis,
             b"RedisCluster" => InMemoryStoreBaseType::RedisCluster,
+            b"RedisSentinel" => InMemoryStoreBaseType::RedisSentinel,
         }
     }
 
@@ -4043,6 +4047,7 @@ impl EnumImpl for InMemoryStoreBaseType {
         match self {
             InMemoryStoreBaseType::Redis => "Redis",
             InMemoryStoreBaseType::RedisCluster => "RedisCluster",
+            InMemoryStoreBaseType::RedisSentinel => "RedisSentinel",
         }
     }
 
@@ -4054,11 +4059,12 @@ impl EnumImpl for InMemoryStoreBaseType {
         match id {
             0 => Some(InMemoryStoreBaseType::Redis),
             1 => Some(InMemoryStoreBaseType::RedisCluster),
+            2 => Some(InMemoryStoreBaseType::RedisSentinel),
             _ => None,
         }
     }
 
-    const COUNT: usize = 2;
+    const COUNT: usize = 3;
 }
 
 impl serde::Serialize for InMemoryStoreBaseType {
@@ -4088,6 +4094,7 @@ impl EnumImpl for InMemoryStoreType {
             b"Sharded" => InMemoryStoreType::Sharded,
             b"Redis" => InMemoryStoreType::Redis,
             b"RedisCluster" => InMemoryStoreType::RedisCluster,
+            b"RedisSentinel" => InMemoryStoreType::RedisSentinel,
         }
     }
 
@@ -4097,6 +4104,7 @@ impl EnumImpl for InMemoryStoreType {
             InMemoryStoreType::Sharded => "Sharded",
             InMemoryStoreType::Redis => "Redis",
             InMemoryStoreType::RedisCluster => "RedisCluster",
+            InMemoryStoreType::RedisSentinel => "RedisSentinel",
         }
     }
 
@@ -4110,11 +4118,12 @@ impl EnumImpl for InMemoryStoreType {
             1 => Some(InMemoryStoreType::Sharded),
             2 => Some(InMemoryStoreType::Redis),
             3 => Some(InMemoryStoreType::RedisCluster),
+            4 => Some(InMemoryStoreType::RedisSentinel),
             _ => None,
         }
     }
 
-    const COUNT: usize = 4;
+    const COUNT: usize = 5;
 }
 
 impl serde::Serialize for InMemoryStoreType {
@@ -5489,6 +5498,7 @@ impl EnumImpl for LookupStoreType {
             b"Sharded" => LookupStoreType::Sharded,
             b"Redis" => LookupStoreType::Redis,
             b"RedisCluster" => LookupStoreType::RedisCluster,
+            b"RedisSentinel" => LookupStoreType::RedisSentinel,
         }
     }
 
@@ -5500,6 +5510,7 @@ impl EnumImpl for LookupStoreType {
             LookupStoreType::Sharded => "Sharded",
             LookupStoreType::Redis => "Redis",
             LookupStoreType::RedisCluster => "RedisCluster",
+            LookupStoreType::RedisSentinel => "RedisSentinel",
         }
     }
 
@@ -5515,11 +5526,12 @@ impl EnumImpl for LookupStoreType {
             3 => Some(LookupStoreType::Sharded),
             4 => Some(LookupStoreType::Redis),
             5 => Some(LookupStoreType::RedisCluster),
+            6 => Some(LookupStoreType::RedisSentinel),
             _ => None,
         }
     }
 
-    const COUNT: usize = 6;
+    const COUNT: usize = 7;
 }
 
 impl serde::Serialize for LookupStoreType {
