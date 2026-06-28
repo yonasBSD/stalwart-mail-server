@@ -12,6 +12,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 
 ## Fixed
 - DANE: Treat DNSSEC `bogus` as a temporary failures to prevent downgrade attacks.
+- OIDC: `ECDSA` private key support for `SEC1` format.
 
 ## [0.16.11] - 2026-06-25
 
