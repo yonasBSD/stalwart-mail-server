@@ -15,6 +15,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 - OIDC: `ECDSA` private key support for `SEC1` format.
 - PostgreSQL: Include error chain in error messages.
 - Prometheus: event counters are exported with incorrect metric names.
+- Registry: Changing the type of an existing account from `user` to `group` panics.
 
 ## [0.16.11] - 2026-06-25
 
