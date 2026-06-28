@@ -14,6 +14,7 @@ If you are upgrading from v0.16.x, replace the binary (or run `docker pull`). If
 - DANE: Treat DNSSEC `bogus` as a temporary failures to prevent downgrade attacks.
 - OIDC: `ECDSA` private key support for `SEC1` format.
 - PostgreSQL: Include error chain in error messages.
+- Prometheus: event counters are exported with incorrect metric names.
 
 ## [0.16.11] - 2026-06-25
 
