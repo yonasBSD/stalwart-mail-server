@@ -172,6 +172,9 @@ impl DkimSigner {
                     domain, signature, key,
                 )))
             }
+            DkimSignature::Dkim2Ed25519Sha256(_) | DkimSignature::Dkim2RsaSha256(_) => {
+                todo!()
+            }
         }
     }
 }

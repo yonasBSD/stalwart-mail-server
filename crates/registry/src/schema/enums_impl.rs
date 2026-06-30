@@ -1857,6 +1857,59 @@ impl<'de> serde::Deserialize<'de> for DirectoryType {
     }
 }
 
+impl EnumImpl for Dkim2Flag {
+    fn parse(value: &str) -> Option<Self> {
+        hashify::tiny_map! {
+            value.as_bytes(),
+            b"donotmodify" => Dkim2Flag::Donotmodify,
+            b"donotexplode" => Dkim2Flag::Donotexplode,
+            b"feedback" => Dkim2Flag::Feedback,
+        }
+    }
+
+    fn as_str(&self) -> &'static str {
+        match self {
+            Dkim2Flag::Donotmodify => "donotmodify",
+            Dkim2Flag::Donotexplode => "donotexplode",
+            Dkim2Flag::Feedback => "feedback",
+        }
+    }
+
+    fn to_id(&self) -> u16 {
+        *self as u16
+    }
+
+    fn from_id(id: u16) -> Option<Self> {
+        match id {
+            0 => Some(Dkim2Flag::Donotmodify),
+            1 => Some(Dkim2Flag::Donotexplode),
+            2 => Some(Dkim2Flag::Feedback),
+            _ => None,
+        }
+    }
+
+    const COUNT: usize = 3;
+}
+
+impl serde::Serialize for Dkim2Flag {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Dkim2Flag {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = Cow::<str>::deserialize(deserializer)?;
+        Self::parse(&s).ok_or_else(|| serde::de::Error::unknown_variant(&s, &[]))
+    }
+}
+
 impl EnumImpl for DkimAuthResult {
     fn parse(value: &str) -> Option<Self> {
         hashify::tiny_map! {
@@ -2140,6 +2193,8 @@ impl EnumImpl for DkimSignatureType {
             value.as_bytes(),
             b"Dkim1Ed25519Sha256" => DkimSignatureType::Dkim1Ed25519Sha256,
             b"Dkim1RsaSha256" => DkimSignatureType::Dkim1RsaSha256,
+            b"Dkim2Ed25519Sha256" => DkimSignatureType::Dkim2Ed25519Sha256,
+            b"Dkim2RsaSha256" => DkimSignatureType::Dkim2RsaSha256,
         }
     }
 
@@ -2147,6 +2202,8 @@ impl EnumImpl for DkimSignatureType {
         match self {
             DkimSignatureType::Dkim1Ed25519Sha256 => "Dkim1Ed25519Sha256",
             DkimSignatureType::Dkim1RsaSha256 => "Dkim1RsaSha256",
+            DkimSignatureType::Dkim2Ed25519Sha256 => "Dkim2Ed25519Sha256",
+            DkimSignatureType::Dkim2RsaSha256 => "Dkim2RsaSha256",
         }
     }
 
@@ -2158,11 +2215,13 @@ impl EnumImpl for DkimSignatureType {
         match id {
             0 => Some(DkimSignatureType::Dkim1Ed25519Sha256),
             1 => Some(DkimSignatureType::Dkim1RsaSha256),
+            2 => Some(DkimSignatureType::Dkim2Ed25519Sha256),
+            3 => Some(DkimSignatureType::Dkim2RsaSha256),
             _ => None,
         }
     }
 
-    const COUNT: usize = 2;
+    const COUNT: usize = 4;
 }
 
 impl serde::Serialize for DkimSignatureType {

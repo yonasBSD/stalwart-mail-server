@@ -4355,6 +4355,10 @@ impl ObjectInner {
                 obj.member_tenant_id
             }
             ObjectInner::DkimSignature(DkimSignature::Dkim1RsaSha256(obj)) => obj.member_tenant_id,
+            ObjectInner::DkimSignature(DkimSignature::Dkim2Ed25519Sha256(obj)) => {
+                obj.member_tenant_id
+            }
+            ObjectInner::DkimSignature(DkimSignature::Dkim2RsaSha256(obj)) => obj.member_tenant_id,
             ObjectInner::DmarcExternalReport(obj) => obj.member_tenant_id,
             ObjectInner::DnsServer(DnsServer::Tsig(obj)) => obj.member_tenant_id,
             ObjectInner::DnsServer(DnsServer::Cloudflare(obj)) => obj.member_tenant_id,
@@ -4447,6 +4451,12 @@ impl ObjectInner {
                 obj.member_tenant_id = Some(id)
             }
             ObjectInner::DkimSignature(DkimSignature::Dkim1RsaSha256(obj)) => {
+                obj.member_tenant_id = Some(id)
+            }
+            ObjectInner::DkimSignature(DkimSignature::Dkim2Ed25519Sha256(obj)) => {
+                obj.member_tenant_id = Some(id)
+            }
+            ObjectInner::DkimSignature(DkimSignature::Dkim2RsaSha256(obj)) => {
                 obj.member_tenant_id = Some(id)
             }
             ObjectInner::DmarcExternalReport(obj) => obj.member_tenant_id = Some(id),

@@ -345,7 +345,7 @@ impl QueuedMessage {
 
                                     TlsRptOptions { record, interval }.into()
                                 }
-                                Err(mail_auth::Error::DnsRecordNotFound(_)) => {
+                                Err(mail_auth::Error::Dns(mail_auth::DnsError::RecordNotFound(_))) => {
                                     trc::event!(
                                         TlsRpt(TlsRptEvent::RecordNotFound),
                                         SpanId = message.span_id,
@@ -400,7 +400,7 @@ impl QueuedMessage {
                         let strict = tls_strategy.is_mta_sts_required();
                         if let Some(tls_report) = &tls_report {
                             match &err {
-                                mta_sts::Error::Dns(mail_auth::Error::DnsRecordNotFound(_)) => {
+                                mta_sts::Error::Dns(mail_auth::Error::Dns(mail_auth::DnsError::RecordNotFound(_))) => {
                                     if strict {
                                         server.schedule_report(TlsEvent {
                                             policy: PolicyType::Sts(None),
@@ -417,7 +417,7 @@ impl QueuedMessage {
                                         .await;
                                     }
                                 }
-                                mta_sts::Error::Dns(mail_auth::Error::DnsError(_)) => (),
+                                mta_sts::Error::Dns(mail_auth::Error::Dns(mail_auth::DnsError::Resolver(_))) => (),
                                 _ => {
                                     server
                                         .schedule_report(TlsEvent {
@@ -436,7 +436,7 @@ impl QueuedMessage {
                         }
 
                         match &err {
-                            mta_sts::Error::Dns(mail_auth::Error::DnsRecordNotFound(_)) => {
+                            mta_sts::Error::Dns(mail_auth::Error::Dns(mail_auth::DnsError::RecordNotFound(_))) => {
                                 trc::event!(
                                     MtaSts(MtaStsEvent::PolicyNotFound),
                                     SpanId = message.span_id,
@@ -499,7 +499,7 @@ impl QueuedMessage {
                 let time = Instant::now();
                 mx_list = match server.mx_lookup(domain).await {
                     Ok(mx) => mx,
-                    Err(mail_auth::Error::DnsRecordNotFound(_)) => {
+                    Err(mail_auth::Error::Dns(mail_auth::DnsError::RecordNotFound(_))) => {
                         trc::event!(
                             Delivery(DeliveryEvent::MxLookupFailed),
                             SpanId = message.span_id,
@@ -822,7 +822,7 @@ impl QueuedMessage {
                                 }
                                 Err(err) => {
                                     let not_found =
-                                        matches!(&err, mail_auth::Error::DnsRecordNotFound(_));
+                                        matches!(&err, mail_auth::Error::Dns(mail_auth::DnsError::RecordNotFound(_)));
 
                                     if not_found {
                                         trc::event!(

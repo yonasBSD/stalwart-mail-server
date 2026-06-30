@@ -150,6 +150,8 @@ async fn dkim_management(server: &Server, task: &TaskDomainManagement) -> trc::R
                 match algorithm {
                     DkimSignatureType::Dkim1Ed25519Sha256 => TEST_ED25519_KEY.to_string(),
                     DkimSignatureType::Dkim1RsaSha256 => TEST_RSA_KEY.to_string(),
+                    DkimSignatureType::Dkim2Ed25519Sha256
+                    | DkimSignatureType::Dkim2RsaSha256 => todo!(),
                 }
             } else {
                 generate_dkim_private_key(algorithm).await.unwrap().unwrap()
@@ -186,6 +188,7 @@ async fn dkim_management(server: &Server, task: &TaskDomainManagement) -> trc::R
         let mut signature = match algorithm {
             DkimSignatureType::Dkim1Ed25519Sha256 => DkimSignature::Dkim1Ed25519Sha256(signature),
             DkimSignatureType::Dkim1RsaSha256 => DkimSignature::Dkim1RsaSha256(signature),
+            DkimSignatureType::Dkim2Ed25519Sha256 | DkimSignatureType::Dkim2RsaSha256 => todo!(),
         };
 
         // Publish key

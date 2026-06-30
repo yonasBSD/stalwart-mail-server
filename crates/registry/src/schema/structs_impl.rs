@@ -7397,6 +7397,134 @@ impl RegistryJsonPropertyPatch for Dkim1Signature {
     }
 }
 
+impl Dkim2Signature {
+    fn validate(&self, errors: &mut Vec<ValidationError>) -> bool {
+        let neb = errors.len();
+        let value = &self.private_key;
+        value.validate(errors);
+        let value = &self.domain_id;
+        if !value.is_valid() {
+            errors.push(ValidationError::required(Property::DomainId));
+        }
+        if let Some(value) = &self.member_tenant_id {
+            if !value.is_valid() {
+                errors.push(ValidationError::required(Property::MemberTenantId));
+            }
+        }
+        let value = &self.selector;
+        if value.is_empty() {
+            errors.push(ValidationError::required(Property::Selector));
+        }
+        let value = &self.created_at;
+        if !value.is_valid() {
+            errors.push(ValidationError::invalid(Property::CreatedAt, value));
+        }
+        if let Some(value) = &self.next_transition_at {
+            if !value.is_valid() {
+                errors.push(ValidationError::invalid(Property::NextTransitionAt, value));
+            }
+        }
+        errors.len() == neb
+    }
+
+    fn index<'x>(&'x self, i: &mut IndexBuilder<'x>) {
+        i.foreign_key(ObjectType::Domain, self.domain_id.into(), None);
+        i.search(Property::DomainId, &self.domain_id);
+        i.foreign_key(ObjectType::Tenant, self.member_tenant_id, None);
+        if let Some(value) = &self.member_tenant_id {
+            i.search(Property::MemberTenantId, value);
+        }
+    }
+}
+
+impl Pickle for Dkim2Signature {
+    fn pickle(&self, out: &mut Vec<u8>) {
+        self.flags.pickle(out);
+        self.private_key.pickle(out);
+        self.domain_id.pickle(out);
+        self.member_tenant_id.pickle(out);
+        self.selector.pickle(out);
+        self.created_at.pickle(out);
+        self.next_transition_at.pickle(out);
+        self.stage.pickle(out);
+    }
+
+    fn unpickle(stream: &mut crate::pickle::PickledStream<'_>) -> Option<Self> {
+        let mut this = Self::default();
+        this.flags = Pickle::unpickle(stream)?;
+        this.private_key = Pickle::unpickle(stream)?;
+        this.domain_id = Pickle::unpickle(stream)?;
+        this.member_tenant_id = Pickle::unpickle(stream)?;
+        this.selector = Pickle::unpickle(stream)?;
+        this.created_at = Pickle::unpickle(stream)?;
+        this.next_transition_at = Pickle::unpickle(stream)?;
+        this.stage = Pickle::unpickle(stream)?;
+        Some(this)
+    }
+}
+
+impl Default for Dkim2Signature {
+    fn default() -> Self {
+        Self {
+            flags: Default::default(),
+            private_key: Default::default(),
+            domain_id: Default::default(),
+            member_tenant_id: Default::default(),
+            selector: Default::default(),
+            created_at: Default::default(),
+            next_transition_at: Default::default(),
+            stage: DkimRotationStage::Active,
+        }
+    }
+}
+
+impl IntoValue for Dkim2Signature {
+    fn into_value(self) -> JmapValue<'static> {
+        let mut map = jmap_tools::Map::with_capacity(10);
+        map.insert_unchecked(Property::Flags, self.flags.into_value());
+        map.insert_unchecked(Property::PrivateKey, self.private_key.into_value());
+        map.insert_unchecked(Property::DomainId, self.domain_id.into_value());
+        map.insert_unchecked(Property::MemberTenantId, self.member_tenant_id.into_value());
+        map.insert_unchecked(Property::Selector, self.selector.into_value());
+        map.insert_unchecked(Property::CreatedAt, self.created_at.into_value());
+        map.insert_unchecked(
+            Property::NextTransitionAt,
+            self.next_transition_at.into_value(),
+        );
+        map.insert_unchecked(Property::Stage, self.stage.into_value());
+        JmapValue::Object(map)
+    }
+}
+
+impl RegistryJsonPropertyPatch for Dkim2Signature {
+    fn patch_property<'x>(
+        &mut self,
+        mut pointer: JsonPointerPatch<'_>,
+        value: JmapValue<'x>,
+    ) -> PatchResult<'x> {
+        match pointer.next_property() {
+            Some(Property::Flags) => self.flags.patch(pointer, value),
+            Some(Property::PrivateKey) => self.private_key.patch(pointer, value),
+            Some(Property::PublicKey) => pointer.assert_server_set(),
+            Some(Property::DomainId) => self.domain_id.patch(pointer, value),
+            Some(Property::MemberTenantId) => self
+                .member_tenant_id
+                .patch(pointer.assert_can_set_tenant()?, value),
+            Some(Property::Selector) => self
+                .selector
+                .patch(pointer.with_validators(&[StringValidator::Trim]), value),
+            Some(Property::CreatedAt) => pointer.assert_server_set(),
+            Some(Property::NextTransitionAt) => self.next_transition_at.patch(pointer, value),
+            Some(Property::Stage) => self.stage.patch(pointer, value),
+            Some(Property::Type) => Ok(MaybeUnpatched::Unpatched {
+                property: Property::Type,
+                value,
+            }),
+            _ => Err(PatchError::new(pointer, "Invalid property")),
+        }
+    }
+}
+
 impl DkimManagement {
     fn validate(&self, errors: &mut Vec<ValidationError>) -> bool {
         match self {
@@ -7756,6 +7884,8 @@ impl ObjectImpl for DkimSignature {
         match self {
             DkimSignature::Dkim1Ed25519Sha256(inner) => inner.validate(errors),
             DkimSignature::Dkim1RsaSha256(inner) => inner.validate(errors),
+            DkimSignature::Dkim2Ed25519Sha256(inner) => inner.validate(errors),
+            DkimSignature::Dkim2RsaSha256(inner) => inner.validate(errors),
         }
     }
 
@@ -7765,6 +7895,12 @@ impl ObjectImpl for DkimSignature {
                 object.index(i);
             }
             DkimSignature::Dkim1RsaSha256(object) => {
+                object.index(i);
+            }
+            DkimSignature::Dkim2Ed25519Sha256(object) => {
+                object.index(i);
+            }
+            DkimSignature::Dkim2RsaSha256(object) => {
                 object.index(i);
             }
         }
@@ -7788,6 +7924,14 @@ impl Pickle for DkimSignature {
                 1u16.pickle(out);
                 inner.pickle(out);
             }
+            DkimSignature::Dkim2Ed25519Sha256(inner) => {
+                2u16.pickle(out);
+                inner.pickle(out);
+            }
+            DkimSignature::Dkim2RsaSha256(inner) => {
+                3u16.pickle(out);
+                inner.pickle(out);
+            }
         }
     }
 
@@ -7795,6 +7939,8 @@ impl Pickle for DkimSignature {
         match u16::unpickle(stream)? {
             0 => Pickle::unpickle(stream).map(DkimSignature::Dkim1Ed25519Sha256),
             1 => Pickle::unpickle(stream).map(DkimSignature::Dkim1RsaSha256),
+            2 => Pickle::unpickle(stream).map(DkimSignature::Dkim2Ed25519Sha256),
+            3 => Pickle::unpickle(stream).map(DkimSignature::Dkim2RsaSha256),
             _ => None,
         }
     }
@@ -7817,6 +7963,20 @@ impl IntoValue for DkimSignature {
                     .insert_unchecked(Property::Type, JmapValue::Str("Dkim1RsaSha256".into()));
                 obj
             }
+            DkimSignature::Dkim2Ed25519Sha256(obj) => {
+                let mut obj = obj.into_value();
+                obj.as_object_mut()
+                    .unwrap()
+                    .insert_unchecked(Property::Type, JmapValue::Str("Dkim2Ed25519Sha256".into()));
+                obj
+            }
+            DkimSignature::Dkim2RsaSha256(obj) => {
+                let mut obj = obj.into_value();
+                obj.as_object_mut()
+                    .unwrap()
+                    .insert_unchecked(Property::Type, JmapValue::Str("Dkim2RsaSha256".into()));
+                obj
+            }
         }
     }
 }
@@ -7835,11 +7995,19 @@ impl RegistryJsonPatch for DkimSignature {
                 DkimSignatureType::Dkim1RsaSha256 => {
                     *self = DkimSignature::Dkim1RsaSha256(Default::default())
                 }
+                DkimSignatureType::Dkim2Ed25519Sha256 => {
+                    *self = DkimSignature::Dkim2Ed25519Sha256(Default::default())
+                }
+                DkimSignatureType::Dkim2RsaSha256 => {
+                    *self = DkimSignature::Dkim2RsaSha256(Default::default())
+                }
             }
         }
         match self {
             DkimSignature::Dkim1Ed25519Sha256(inner) => inner.patch(pointer, value),
             DkimSignature::Dkim1RsaSha256(inner) => inner.patch(pointer, value),
+            DkimSignature::Dkim2Ed25519Sha256(inner) => inner.patch(pointer, value),
+            DkimSignature::Dkim2RsaSha256(inner) => inner.patch(pointer, value),
         }
     }
 }
@@ -7849,6 +8017,8 @@ impl DkimSignature {
         match self {
             DkimSignature::Dkim1Ed25519Sha256(_) => DkimSignatureType::Dkim1Ed25519Sha256,
             DkimSignature::Dkim1RsaSha256(_) => DkimSignatureType::Dkim1RsaSha256,
+            DkimSignature::Dkim2Ed25519Sha256(_) => DkimSignatureType::Dkim2Ed25519Sha256,
+            DkimSignature::Dkim2RsaSha256(_) => DkimSignatureType::Dkim2RsaSha256,
         }
     }
 }

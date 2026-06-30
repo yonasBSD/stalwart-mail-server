@@ -30,7 +30,12 @@ use common::{
 };
 use mail_auth::{
     AuthenticatedMessage, AuthenticationResults, DkimResult, DmarcResult, ReceivedSpf,
-    common::{crypto::Algorithm, headers::HeaderWriter, verify::VerifySignature},
+    common::{
+        crypto::Algorithm,
+        headers::{Header, HeaderWriter},
+        verify::VerifySignature,
+    },
+    dkim::DkimError,
     dmarc::{self, verify::DmarcParameters},
 };
 use mail_builder::headers::{date::Date, message_id::generate_message_id_header};
@@ -108,17 +113,22 @@ impl<T: SessionStream> Session<T> {
             .unwrap_or(VerifyStrategy::Relaxed);
         let dkim_output = if dkim.verify() || dmarc.verify() {
             // Remove insecure DKIM signatures before verification
-            for header in &mut auth_message.dkim_headers {
-                if let Ok(signature) = &mut header.header
-                    && (signature.algorithm() == Algorithm::RsaSha1
-                        || (signature.algorithm() == Algorithm::RsaSha256
-                            && signature.b.len() < 128))
+            auth_message.dkim_headers.retain(|header| {
+                let signature = &header.header;
+                if signature.algorithm() == Algorithm::RsaSha1
+                    || (signature.algorithm() == Algorithm::RsaSha256 && signature.b.len() < 128)
                 {
-                    header.header = Err(mail_auth::Error::CryptoError(
-                        "Insecure DKIM signature".into(),
-                    ));
+                    auth_message.errors.push(Header {
+                        name: header.name,
+                        value: header.value,
+                        header: mail_auth::Error::Dkim(DkimError::UnsupportedAlgorithm),
+                    });
+                    auth_message.has_dkim_errors = true;
+                    false
+                } else {
+                    true
                 }
-            }
+            });
 
             let time = Instant::now();
             let dkim_output = self

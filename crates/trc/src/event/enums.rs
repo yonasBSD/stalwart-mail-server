@@ -6,8 +6,8 @@
 
 // This file is auto-generated. Do not edit directly.
 
-pub const TOTAL_EVENT_COUNT: usize = 606;
-pub const TOTAL_METRIC_COUNT: usize = 340;
+pub const TOTAL_EVENT_COUNT: usize = 630;
+pub const TOTAL_METRIC_COUNT: usize = 364;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EventType {
@@ -229,6 +229,30 @@ pub enum DkimEvent {
     SignatureRetiring = 598,
     SignatureRetired = 599,
     SignatureDeleted = 600,
+    InstanceMissing = 606,
+    InstanceSyntax = 607,
+    InstanceTagMissing = 608,
+    InstanceNotSigned = 609,
+    InstanceAboveSignature = 610,
+    SignatureMissing = 611,
+    SignatureSyntax = 612,
+    SignatureTagMissing = 613,
+    SignatureTagUnexpected = 614,
+    SequenceGap = 615,
+    SequenceOverflow = 616,
+    MailFromMismatch = 617,
+    RcptToMismatch = 618,
+    MailFromDomainMismatch = 619,
+    NextDomainMismatch = 620,
+    PublicKeyFetch = 621,
+    PublicKeyMissing = 622,
+    PublicKeyMultiple = 623,
+    PublicKeySyntax = 624,
+    PublicKeyAlgorithmMismatch = 625,
+    NoValidAlgorithm = 626,
+    HeaderHashMismatch = 627,
+    Modified = 628,
+    Exploded = 629,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -959,6 +983,30 @@ pub enum MetricType {
     DkimSignatureExpired = 103,
     DkimSignatureLength = 104,
     DkimSignerNotFound = 105,
+    DkimInstanceMissing = 340,
+    DkimInstanceSyntax = 341,
+    DkimInstanceTagMissing = 342,
+    DkimInstanceNotSigned = 343,
+    DkimInstanceAboveSignature = 344,
+    DkimSignatureMissing = 345,
+    DkimSignatureSyntax = 346,
+    DkimSignatureTagMissing = 347,
+    DkimSignatureTagUnexpected = 348,
+    DkimSequenceGap = 349,
+    DkimSequenceOverflow = 350,
+    DkimMailFromMismatch = 351,
+    DkimRcptToMismatch = 352,
+    DkimMailFromDomainMismatch = 353,
+    DkimNextDomainMismatch = 354,
+    DkimPublicKeyFetch = 355,
+    DkimPublicKeyMissing = 356,
+    DkimPublicKeyMultiple = 357,
+    DkimPublicKeySyntax = 358,
+    DkimPublicKeyAlgorithmMismatch = 359,
+    DkimNoValidAlgorithm = 360,
+    DkimHeaderHashMismatch = 361,
+    DkimModified = 362,
+    DkimExploded = 363,
     DmarcPass = 106,
     DmarcFail = 107,
     DmarcPermError = 108,

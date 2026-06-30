@@ -5,8 +5,8 @@ edition = "2024"
 
 [dependencies]
 event_macro = { path = "./event-macro" }
-mail-auth = { version = "0.10" }
-mail-parser = { version = "0.11", features = ["full_encoding"] } 
+mail-auth = { path = "/Users/me/code/mail-auth", features = ["arc"] }
+mail-parser = { version = "0.11", features = ["full_encoding"] }
 base64 = "0.22.1"
 serde = "1.0"
 serde_json = "1.0.120"

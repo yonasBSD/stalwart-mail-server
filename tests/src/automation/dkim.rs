@@ -254,6 +254,7 @@ impl Account {
             match signature {
                 DkimSignature::Dkim1RsaSha256(sig) => v1_rsa.push(sig),
                 DkimSignature::Dkim1Ed25519Sha256(sig) => v1_ed25519.push(sig),
+                DkimSignature::Dkim2Ed25519Sha256(_) | DkimSignature::Dkim2RsaSha256(_) => todo!(),
             }
         }
 

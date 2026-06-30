@@ -969,6 +969,27 @@ pub struct Dkim1Signature {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Dkim2Signature {
+    #[serde(rename = "flags")]
+    pub flags: Map<Dkim2Flag>,
+    #[serde(rename = "privateKey")]
+    pub private_key: SecretText,
+    #[serde(rename = "domainId")]
+    pub domain_id: Id,
+    #[serde(rename = "memberTenantId")]
+    pub member_tenant_id: Option<Id>,
+    #[serde(rename = "selector")]
+    pub selector: String,
+    #[serde(rename = "createdAt")]
+    pub created_at: UTCDateTime,
+    #[serde(rename = "nextTransitionAt")]
+    pub next_transition_at: Option<UTCDateTime>,
+    #[serde(rename = "stage")]
+    pub stage: DkimRotationStage,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "@type")]
 pub enum DkimManagement {
     Automatic(DkimManagementProperties),
@@ -1010,6 +1031,8 @@ pub struct DkimReportSettings {
 pub enum DkimSignature {
     Dkim1Ed25519Sha256(Dkim1Signature),
     Dkim1RsaSha256(Dkim1Signature),
+    Dkim2Ed25519Sha256(Dkim2Signature),
+    Dkim2RsaSha256(Dkim2Signature),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
